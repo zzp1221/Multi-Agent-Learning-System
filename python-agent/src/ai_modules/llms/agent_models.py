@@ -385,15 +385,29 @@ class OpenAICompatibleEvaluationGenerator:
         system_prompt: str,
         context_payload: dict[str, Any],
     ) -> EvaluationPayload:
+        max_tokens = self._resolve_max_tokens(context_payload)
         payload = await self.generator.generate(
             system_prompt=system_prompt,
             user_prompt=(
                 "请结合以下上下文评估学生当前水平，并只返回 JSON。\n"
                 f"{json.dumps(context_payload, ensure_ascii=False)}"
             ),
-            max_tokens=1200,
+            max_tokens=max_tokens,
         )
         return EvaluationPayload.model_validate(_normalize_evaluation_payload(payload))
+
+    def _resolve_max_tokens(self, context_payload: dict[str, Any]) -> int:
+        dimensions = context_payload.get("assessmentDimensions")
+        primary_dimension = ""
+        if isinstance(dimensions, list):
+            for item in dimensions:
+                text = str(item).strip()
+                if text:
+                    primary_dimension = text
+                    break
+        if primary_dimension in {"学习主动性", "复盘闭环"}:
+            return 2200
+        return 1200
 
 
 class OpenAICompatibleLearningPathGenerator:

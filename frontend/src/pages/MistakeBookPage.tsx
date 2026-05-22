@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   BookOpenCheck,
@@ -48,22 +48,24 @@ const MISTAKE_TYPE_OPTIONS = [
 ];
 
 const QUALITY_OPTIONS = [
-  { value: 0, label: '完全不会' },
-  { value: 1, label: '很吃力' },
-  { value: 2, label: '仍不稳' },
+  { value: 0, label: '不会' },
+  { value: 1, label: '有点模糊' },
   { value: 3, label: '基本会' },
-  { value: 4, label: '较熟练' },
-  { value: 5, label: '完全掌握' },
+  { value: 5, label: '很稳' },
 ];
+
+const PAGE_SIZE = 12;
 
 export default function MistakeBookPage() {
   const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
-  const [status, setStatus] = useState<MistakeStatus>('active');
+  const [status, setStatus] = useState<MistakeStatus>('due');
   const [difficulty, setDifficulty] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [knowledgeTag, setKnowledgeTag] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [page, setPage] = useState(0);
   const [data, setData] = useState<MistakeListResponse | null>(null);
+  const [mistakes, setMistakes] = useState<MistakeRecordResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
@@ -73,11 +75,26 @@ export default function MistakeBookPage() {
   const [reviewQualities, setReviewQualities] = useState<Record<string, number>>({});
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewMessage, setReviewMessage] = useState('');
+  const loadRequestIdRef = useRef(0);
 
-  const loadMistakes = useCallback(async () => {
+  const loadMistakes = useCallback(async (options?: { pageOverride?: number; replace?: boolean }) => {
     if (!isAuthenticated) {
+      loadRequestIdRef.current += 1;
+      setLoading(false);
+      setData(null);
+      setMistakes([]);
+      setNoteDrafts({});
+      setTypeDrafts({});
+      setReviewSession(null);
+      setReviewQualities({});
+      setReviewMessage('');
+      setError('');
       return;
     }
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+    const pageToLoad = options?.pageOverride ?? page;
+    const shouldReplace = options?.replace ?? pageToLoad === 0;
     setLoading(true);
     setError('');
     try {
@@ -85,16 +102,52 @@ export default function MistakeBookPage() {
         status,
         knowledgeTag: knowledgeTag || undefined,
         difficulty: difficulty || undefined,
-        page,
-        size: 12,
+        page: pageToLoad,
+        size: PAGE_SIZE,
       });
+      if (loadRequestIdRef.current !== requestId) {
+        return;
+      }
       setData(nextData);
-      setNoteDrafts(Object.fromEntries(nextData.items.map((item) => [item.id, item.userNote || ''])));
-      setTypeDrafts(Object.fromEntries(nextData.items.map((item) => [item.id, item.mistakeType || ''])));
+      setMistakes((current) => {
+        if (shouldReplace) {
+          return nextData.items;
+        }
+        const seenIds = new Set(current.map((item) => item.id));
+        return [...current, ...nextData.items.filter((item) => !seenIds.has(item.id))];
+      });
+      setNoteDrafts((current) => {
+        if (shouldReplace) {
+          return Object.fromEntries(nextData.items.map((item) => [item.id, item.userNote || '']));
+        }
+        const nextDrafts = { ...current };
+        nextData.items.forEach((item) => {
+          if (nextDrafts[item.id] === undefined) {
+            nextDrafts[item.id] = item.userNote || '';
+          }
+        });
+        return nextDrafts;
+      });
+      setTypeDrafts((current) => {
+        if (shouldReplace) {
+          return Object.fromEntries(nextData.items.map((item) => [item.id, item.mistakeType || '']));
+        }
+        const nextDrafts = { ...current };
+        nextData.items.forEach((item) => {
+          if (nextDrafts[item.id] === undefined) {
+            nextDrafts[item.id] = item.mistakeType || '';
+          }
+        });
+        return nextDrafts;
+      });
     } catch (loadError) {
-      setError(getErrorMessage(loadError));
+      if (loadRequestIdRef.current === requestId) {
+        setError(getErrorMessage(loadError));
+      }
     } finally {
-      setLoading(false);
+      if (loadRequestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [difficulty, isAuthenticated, knowledgeTag, page, status]);
 
@@ -102,16 +155,57 @@ export default function MistakeBookPage() {
     void loadMistakes();
   }, [loadMistakes]);
 
-  const totalPages = useMemo(() => {
-    if (!data || data.size <= 0) {
-      return 1;
+  const stats = data?.stats ?? { dueCount: 0, activeCount: 0, masteredCount: 0 };
+  const hasMore = Boolean(data && mistakes.length < data.total);
+  const activeFilterLabels = useMemo(() => {
+    const labels: string[] = [];
+    if (status !== 'due') {
+      labels.push(statusLabel(status));
     }
-    return Math.max(1, Math.ceil(data.total / data.size));
-  }, [data]);
+    if (difficulty) {
+      labels.push(difficultyLabel(difficulty));
+    }
+    if (knowledgeTag) {
+      labels.push(`知识点: ${knowledgeTag}`);
+    }
+    return labels;
+  }, [difficulty, knowledgeTag, status]);
 
   const handleApplyFilters = () => {
+    const nextKnowledgeTag = tagInput.trim();
+    if (page === 0 && nextKnowledgeTag === knowledgeTag) {
+      setShowAdvancedFilters(false);
+      return;
+    }
     setPage(0);
-    setKnowledgeTag(tagInput.trim());
+    setKnowledgeTag(nextKnowledgeTag);
+    setShowAdvancedFilters(false);
+    setMistakes([]);
+    setData(null);
+  };
+
+  const handleClearAdvancedFilters = () => {
+    const shouldReload = status !== 'due' || Boolean(difficulty) || Boolean(knowledgeTag) || page !== 0;
+    setTagInput('');
+    setKnowledgeTag('');
+    setDifficulty('');
+    setStatus('due');
+    setPage(0);
+    setShowAdvancedFilters(false);
+    if (shouldReload) {
+      setMistakes([]);
+      setData(null);
+    }
+  };
+
+  const handleStatusChange = (nextStatus: MistakeStatus) => {
+    if (nextStatus === status) {
+      return;
+    }
+    setStatus(nextStatus);
+    setPage(0);
+    setMistakes([]);
+    setData(null);
   };
 
   const handleSave = async (item: MistakeRecordResponse) => {
@@ -126,7 +220,10 @@ export default function MistakeBookPage() {
         payload.mistakeType = selectedType;
       }
       await mistakesApi.update(item.id, payload);
-      await loadMistakes();
+      setPage(0);
+      setMistakes([]);
+      setData(null);
+      await loadMistakes({ pageOverride: 0, replace: true });
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     } finally {
@@ -139,7 +236,10 @@ export default function MistakeBookPage() {
     setError('');
     try {
       await mistakesApi.update(item.id, { mastered: !item.mastered });
-      await loadMistakes();
+      setPage(0);
+      setMistakes([]);
+      setData(null);
+      await loadMistakes({ pageOverride: 0, replace: true });
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     } finally {
@@ -151,7 +251,7 @@ export default function MistakeBookPage() {
     setReviewBusy(true);
     setReviewMessage('');
     try {
-      const session = await mistakesApi.createReviewSession({ limit: 10 });
+      const session = await mistakesApi.createReviewSession({ limit: 8 });
       setReviewSession(session);
       setReviewQualities({});
     } catch (reviewError) {
@@ -183,12 +283,22 @@ export default function MistakeBookPage() {
       });
       setReviewSession(nextSession);
       setReviewMessage('复习结果已保存，下次复习时间已更新');
-      await loadMistakes();
+      setPage(0);
+      setMistakes([]);
+      setData(null);
+      await loadMistakes({ pageOverride: 0, replace: true });
     } catch (reviewError) {
       setReviewMessage(getErrorMessage(reviewError));
     } finally {
       setReviewBusy(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    if (loading || !hasMore) {
+      return;
+    }
+    setPage((prev) => prev + 1);
   };
 
   if (!isAuthenticated) {
@@ -212,90 +322,121 @@ export default function MistakeBookPage() {
     );
   }
 
-  const stats = data?.stats ?? { dueCount: 0, activeCount: 0, masteredCount: 0 };
-
   return (
     <div className="mx-auto max-w-[1180px] space-y-5 px-1 pb-10 md:px-0">
-      <div className="modern-card overflow-hidden">
-        <div className="flex flex-col gap-5 p-5 md:flex-row md:items-center md:justify-between md:p-6">
+      <section className="overflow-hidden rounded-2xl border border-blue-100/80 bg-white/90 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+        <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_280px] md:items-center md:p-6">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-primary-100 bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 dark:border-primary-800 dark:bg-primary-500/10 dark:text-primary-300">
               <BookOpenCheck className="h-3.5 w-3.5" />
-              自动沉淀
+              今日复习
             </div>
-            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[32px]">错题本</h1>
-            <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">判错后的练习会自动进入这里，按下次复习时间排队。</p>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-800 dark:text-white md:text-[32px]">
+              先把今天该看的题过一遍
+            </h1>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+              判错后的练习会自动排队。这里默认只看今天该复习的题，想整理旧题再打开高级筛选。
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <FocusStat icon={Clock3} label="今天要看" value={stats.dueCount} tone="amber" />
+              <FocusStat icon={Target} label="还不稳" value={stats.activeCount} tone="blue" />
+              <FocusStat icon={CheckCircle2} label="已经掌握" value={stats.masteredCount} tone="emerald" />
+            </div>
           </div>
           <button
             type="button"
             onClick={handleStartReview}
             disabled={reviewBusy}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-primary-500/20 transition-all hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-primary-600 px-5 text-base font-semibold text-white shadow-lg shadow-primary-500/20 transition-all hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-16"
           >
-            {reviewBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+            {reviewBusy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <RotateCcw className="h-5 w-5" />}
             开始今日复习
           </button>
         </div>
-        <div className="grid border-t border-slate-100 dark:border-slate-800 md:grid-cols-3">
-          <StatTile icon={Clock3} label="今日待复习" value={stats.dueCount} />
-          <StatTile icon={Target} label="未掌握错题" value={stats.activeCount} />
-          <StatTile icon={CheckCircle2} label="已掌握" value={stats.masteredCount} />
-        </div>
-      </div>
+      </section>
 
-      <div className="modern-card p-4 md:p-5">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-          <Filter className="h-4 w-4 text-primary-500" />
-          筛选错题
-        </div>
-        <div className="grid gap-3 lg:grid-cols-[1fr_180px_150px_auto]">
-          <label className="flex items-center rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 transition-all focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900">
-            <Search className="mr-2 h-4 w-4 text-slate-400" />
-            <input
-              value={tagInput}
-              onChange={(event) => setTagInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  handleApplyFilters();
-                }
-              }}
-              placeholder="按知识点筛选"
-              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200"
-            />
-          </label>
-          <select
-            value={status}
-            onChange={(event) => {
-              setPage(0);
-              setStatus(event.target.value as MistakeStatus);
-            }}
-            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-          >
+      <section className="rounded-2xl border border-blue-100/80 bg-white/85 p-4 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 md:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-2">
             {STATUS_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => handleStatusChange(item.value)}
+                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  status === item.value
+                    ? 'bg-primary-600 text-white shadow-sm shadow-primary-500/20'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:text-primary-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-primary-300'
+                }`}
+              >
+                {item.label}
+              </button>
             ))}
-          </select>
-          <select
-            value={difficulty}
-            onChange={(event) => {
-              setPage(0);
-              setDifficulty(event.target.value);
-            }}
-            className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-          >
-            {DIFFICULTY_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
-            ))}
-          </select>
+          </div>
           <button
             type="button"
-            onClick={handleApplyFilters}
-            className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-2.5 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-500/10 dark:text-primary-300"
+            onClick={() => setShowAdvancedFilters((prev) => !prev)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-primary-200 hover:text-primary-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-primary-300"
           >
-            应用筛选
+            <Filter className="h-4 w-4" />
+            高级筛选
           </button>
         </div>
-      </div>
+
+        {activeFilterLabels.length > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <span>当前范围</span>
+            {activeFilterLabels.map((label) => (
+              <span key={label} className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                {label}
+              </span>
+            ))}
+            <button type="button" onClick={handleClearAdvancedFilters} className="text-primary-600 hover:text-primary-700 dark:text-primary-300">
+              清空
+            </button>
+          </div>
+        ) : null}
+
+        {showAdvancedFilters ? (
+          <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 dark:border-slate-800 lg:grid-cols-[1fr_180px_auto]">
+            <label className="flex items-center rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 transition-all focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-950">
+              <Search className="mr-2 h-4 w-4 text-slate-400" />
+              <input
+                value={tagInput}
+                onChange={(event) => setTagInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    handleApplyFilters();
+                  }
+                }}
+                placeholder="按知识点找题"
+                className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200"
+              />
+            </label>
+            <select
+              value={difficulty}
+              onChange={(event) => {
+                setPage(0);
+                setDifficulty(event.target.value);
+                setMistakes([]);
+                setData(null);
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+            >
+              {DIFFICULTY_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleApplyFilters}
+              className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-2.5 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-500/10 dark:text-primary-300"
+            >
+              应用
+            </button>
+          </div>
+        ) : null}
+      </section>
 
       {error ? <Notice tone="error" message={error} /> : null}
       {reviewMessage ? <Notice tone={reviewSession?.status === 'DONE' ? 'success' : 'warning'} message={reviewMessage} /> : null}
@@ -315,13 +456,13 @@ export default function MistakeBookPage() {
       ) : null}
 
       <div className="space-y-3">
-        {loading ? (
+        {loading && mistakes.length === 0 ? (
           <div className="modern-card flex items-center justify-center gap-2 p-8 text-sm text-slate-500 dark:text-slate-400">
             <LoaderCircle className="h-4 w-4 animate-spin text-primary-500" />
             正在加载错题
           </div>
-        ) : data && data.items.length > 0 ? (
-          data.items.map((item) => (
+        ) : mistakes.length > 0 ? (
+          mistakes.map((item) => (
             <MistakeCard
               key={item.id}
               item={item}
@@ -345,24 +486,16 @@ export default function MistakeBookPage() {
         )}
       </div>
 
-      {data && data.total > data.size ? (
-        <div className="flex items-center justify-center gap-2 sm:justify-end">
+      {hasMore || (loading && mistakes.length > 0) ? (
+        <div className="flex justify-center">
           <button
             type="button"
-            disabled={page <= 0}
-            onClick={() => setPage((prev) => Math.max(0, prev - 1))}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+            disabled={loading || !hasMore}
+            onClick={handleLoadMore}
+            className="inline-flex min-w-36 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
           >
-            上一页
-          </button>
-          <span className="text-xs text-slate-500 dark:text-slate-400">{page + 1} / {totalPages}</span>
-          <button
-            type="button"
-            disabled={page + 1 >= totalPages}
-            onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-          >
-            下一页
+            {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+            {loading ? '加载中' : '再看一些'}
           </button>
         </div>
       ) : null}
@@ -381,6 +514,7 @@ function MistakeCard(props: {
   onToggleMastered: () => void;
 }) {
   const { item } = props;
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const feedback = asText(item.judgeResult.feedback) || asText(item.judgeResult.reason);
 
   return (
@@ -414,74 +548,79 @@ function MistakeCard(props: {
           </button>
         </div>
       </div>
-      <div className="grid gap-4 p-4 md:grid-cols-[1.1fr_0.9fr] md:p-5">
-        <div className="space-y-4">
-          {item.options.length > 0 ? (
-            <div className="space-y-2">
-              {item.options.map((option, index) => (
-                <div key={`${item.id}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
-                  {String.fromCharCode(65 + index)}. {option}
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <AnswerBlock label="你的答案" value={item.learnerAnswer || '未作答'} tone="danger" />
-            <AnswerBlock label="参考答案" value={formatAnswer(item.standardAnswer)} tone="success" />
+      <div className="space-y-4 p-4 md:p-5">
+        {item.options.length > 0 ? (
+          <div className="space-y-2">
+            {item.options.map((option, index) => (
+              <div key={`${item.id}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+                {String.fromCharCode(65 + index)}. {option}
+              </div>
+            ))}
           </div>
+        ) : null}
 
-          {feedback ? (
-            <div className="rounded-xl border border-primary-100 bg-primary-50/60 px-3.5 py-3 text-sm leading-6 text-primary-800 dark:border-primary-900 dark:bg-primary-500/10 dark:text-primary-200">
-              {feedback}
-            </div>
-          ) : null}
+        <div className="grid gap-3 md:grid-cols-2">
+          <AnswerBlock label="你的答案" value={item.learnerAnswer || '未作答'} tone="danger" />
+          <AnswerBlock label="参考答案" value={formatAnswer(item.standardAnswer)} tone="success" />
         </div>
 
-        <div className="space-y-3">
+        {feedback ? (
+          <div className="rounded-xl border border-primary-100 bg-primary-50/60 px-3.5 py-3 text-sm leading-6 text-primary-800 dark:border-primary-900 dark:bg-primary-500/10 dark:text-primary-200">
+            {feedback}
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-2">
-            {item.knowledgeTags.length > 0 ? item.knowledgeTags.map((tag) => (
+            {item.knowledgeTags.length > 0 ? item.knowledgeTags.slice(0, 3).map((tag) => (
               <span key={tag} className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
                 {tag}
               </span>
             )) : (
               <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-400 dark:border-slate-700">未标注知识点</span>
             )}
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              下次 {formatDate(item.nextReviewAt)}
+            </span>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((prev) => !prev)}
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            {detailsOpen ? '收起整理' : '整理错因'}
+          </button>
+        </div>
+
+        {detailsOpen ? (
+          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/50 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-start">
             <select
               value={props.typeDraft}
               onChange={(event) => props.onTypeChange(event.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
             >
               {MISTAKE_TYPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
-              下次：{formatDate(item.nextReviewAt)}
-            </div>
-          </div>
-          <textarea
-            value={props.noteDraft}
-            onChange={(event) => props.onNoteChange(event.target.value)}
-            rows={4}
-            placeholder="记录这道题为什么错、下次怎么检查"
-            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm leading-6 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-          />
-          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-xs text-slate-400 dark:text-slate-500">错因：{mistakeTypeLabel(item.mistakeType)}</span>
+            <textarea
+              value={props.noteDraft}
+              onChange={(event) => props.onNoteChange(event.target.value)}
+              rows={3}
+              placeholder="这题错在哪？下次先检查什么？"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm leading-6 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+            />
             <button
               type="button"
               onClick={props.onSave}
               disabled={props.saving}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-600 px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {props.saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              {props.saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               保存
             </button>
           </div>
-        </div>
+        ) : null}
       </div>
     </article>
   );
@@ -496,13 +635,16 @@ function ReviewPanel(props: {
   onClose: () => void;
 }) {
   const done = props.session.status === 'DONE';
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const currentItem = props.session.items[currentIndex];
+  const answeredCount = props.session.items.filter((item) => props.qualities[item.id] !== undefined).length;
   return (
-    <section className="modern-card overflow-hidden">
+    <section className="overflow-hidden rounded-2xl border border-primary-100 bg-white shadow-lg shadow-blue-100/60 dark:border-primary-900/40 dark:bg-slate-900 dark:shadow-slate-950/20">
       <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800 md:flex-row md:items-center md:justify-between md:px-5">
         <div>
-          <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">今日复习</div>
+          <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{done ? '今日复习完成' : '今日复习中'}</div>
           <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            {done ? `本次得分 ${props.session.score ?? 0}` : `共 ${props.session.items.length} 道错题，按掌握程度评分`}
+            {done ? `本次得分 ${props.session.score ?? 0}` : `${answeredCount} / ${props.session.items.length} 道已判断`}
           </div>
         </div>
         <button
@@ -514,37 +656,66 @@ function ReviewPanel(props: {
           关闭
         </button>
       </div>
-      <div className="space-y-4 p-4 md:p-5">
-        {props.session.items.map((item, index) => (
-          <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-            <div className="text-sm font-semibold leading-6 text-slate-800 dark:text-slate-100">{index + 1}. {item.stem}</div>
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
-              <AnswerBlock label="你的错答" value={item.learnerAnswer || '未作答'} tone="danger" />
-              <AnswerBlock label="参考答案" value={formatAnswer(item.standardAnswer)} tone="success" />
+      <div className="p-4 md:p-5">
+        {currentItem ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/40">
+            <div className="mb-3 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+              <span>第 {currentIndex + 1} 题 / 共 {props.session.items.length} 题</span>
+              <span>{props.qualities[currentItem.id] !== undefined ? '已选择' : '还没判断'}</span>
+            </div>
+            <div className="text-base font-semibold leading-7 text-slate-800 dark:text-slate-100">{currentItem.stem}</div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <AnswerBlock label="你的错答" value={currentItem.learnerAnswer || '未作答'} tone="danger" />
+              <AnswerBlock label="参考答案" value={formatAnswer(currentItem.standardAnswer)} tone="success" />
             </div>
             {!done ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {QUALITY_OPTIONS.map((quality) => {
-                  const active = props.qualities[item.id] === quality.value;
-                  return (
-                    <button
-                      key={quality.value}
-                      type="button"
-                      onClick={() => props.onQualityChange(item.id, quality.value)}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                        active
-                          ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
-                          : 'border-slate-200 bg-white text-slate-500 hover:border-primary-200 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400'
-                      }`}
-                    >
-                      {quality.value} · {quality.label}
-                    </button>
-                  );
-                })}
+              <div className="mt-5">
+                <div className="mb-2 text-sm font-medium text-slate-700 dark:text-slate-300">这题你现在有多稳？</div>
+                <div className="grid gap-2 sm:grid-cols-4">
+                  {QUALITY_OPTIONS.map((quality) => {
+                    const active = props.qualities[currentItem.id] === quality.value;
+                    return (
+                      <button
+                        key={quality.value}
+                        type="button"
+                        onClick={() => props.onQualityChange(currentItem.id, quality.value)}
+                        className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                          active
+                            ? 'border-primary-300 bg-primary-50 text-primary-700 ring-2 ring-primary-500/10 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                            : 'border-slate-200 bg-white text-slate-500 hover:border-primary-200 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400'
+                        }`}
+                      >
+                        {quality.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ) : null}
           </div>
-        ))}
+        ) : (
+          <EmptyState title="暂无可复习题" description="今天没有排队的错题，可以回到列表整理旧题。" />
+        )}
+        {props.session.items.length > 1 ? (
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              disabled={currentIndex <= 0}
+              onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              上一题
+            </button>
+            <button
+              type="button"
+              disabled={currentIndex + 1 >= props.session.items.length}
+              onClick={() => setCurrentIndex((prev) => Math.min(props.session.items.length - 1, prev + 1))}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              下一题
+            </button>
+          </div>
+        ) : null}
         {!done ? (
           <button
             type="button"
@@ -553,7 +724,7 @@ function ReviewPanel(props: {
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {props.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            提交复习结果
+            保存本次复习
           </button>
         ) : null}
       </div>
@@ -561,17 +732,34 @@ function ReviewPanel(props: {
   );
 }
 
-function StatTile(props: { icon: typeof Clock3; label: string; value: number }) {
+function FocusStat(props: { icon: typeof Clock3; label: string; value: number; tone: 'amber' | 'blue' | 'emerald' }) {
   const Icon = props.icon;
+  const toneClass = {
+    amber: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
+    blue: 'bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300',
+    emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+  }[props.tone];
   return (
-    <div className="flex items-center gap-3 border-slate-100 px-5 py-4 dark:border-slate-800 md:border-r md:last:border-r-0">
-      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+      <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${toneClass}`}>
         <Icon className="h-5 w-5" />
       </div>
       <div>
-        <div className="text-xl font-semibold text-slate-800 dark:text-white">{props.value}</div>
+        <div className="text-2xl font-semibold text-slate-800 dark:text-white">{props.value}</div>
         <div className="text-xs text-slate-500 dark:text-slate-400">{props.label}</div>
       </div>
+    </div>
+  );
+}
+
+function EmptyState(props: { title: string; description: string }) {
+  return (
+    <div className="modern-card p-8 text-center">
+      <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800">
+        <Sparkles className="h-5 w-5" />
+      </div>
+      <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.title}</div>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{props.description}</p>
     </div>
   );
 }
@@ -618,8 +806,8 @@ function difficultyLabel(value: string): string {
   return DIFFICULTY_OPTIONS.find((item) => item.value === value)?.label ?? value;
 }
 
-function mistakeTypeLabel(value?: string): string {
-  return MISTAKE_TYPE_OPTIONS.find((item) => item.value === (value || ''))?.label ?? '未分类';
+function statusLabel(value: MistakeStatus): string {
+  return STATUS_OPTIONS.find((item) => item.value === value)?.label ?? value;
 }
 
 function formatDate(value?: string): string {

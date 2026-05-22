@@ -378,12 +378,8 @@ function createInitialEngineSnapshots(): Record<EngineService, EngineTaskSnapsho
   };
 }
 
-function isTaskTerminal(snapshot: EngineTaskSnapshot): boolean {
-  return snapshot.engineState === 'ENGINE_COMPLETED' || snapshot.engineState === 'ENGINE_FAILED';
-}
-
 function hasLockedTask(snapshot: EngineTaskSnapshot): boolean {
-  return Boolean(snapshot.taskId) && !isTaskTerminal(snapshot);
+  return snapshot.engineState === 'ENGINE_SUBMITTING' || snapshot.engineState === 'ENGINE_RUNNING';
 }
 
 function dedupeResultLines(lines: string[]): string[] {
@@ -533,6 +529,12 @@ function sanitizeEngineSnapshot(snapshot: EngineTaskSnapshot): EngineTaskSnapsho
   };
   if (normalized.engineState === 'ENGINE_SUBMITTING' && !normalized.taskId) {
     return createEmptyEngineTaskSnapshot('ENGINE_FORM_EDITING');
+  }
+  if (normalized.taskStatus === '任务已取消') {
+    normalized.engineState = 'ENGINE_FAILED';
+  }
+  if (normalized.taskStatus === '任务完成') {
+    normalized.engineState = 'ENGINE_COMPLETED';
   }
   return syncSnapshotResultRecord(normalized);
 }
@@ -1330,7 +1332,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
         updateServiceSnapshot(service, (current) => ({
           ...current,
           engineState: 'ENGINE_FAILED',
-          taskStatus: '连接中断，请重试',
+          taskStatus: current.taskStatus === '任务已取消' ? current.taskStatus : '连接中断，请重试',
         }));
         return;
       }
@@ -1836,6 +1838,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
       await smartEngineApi.cancelTask(currentTaskId);
       updateServiceSnapshot(service, (current) => ({
         ...current,
+        engineState: 'ENGINE_FAILED',
         taskStatus: '任务已取消',
         serviceResultLines: current.serviceResultLines.includes('后端任务已取消。')
           ? current.serviceResultLines

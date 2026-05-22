@@ -548,6 +548,116 @@ async def test_evaluation_agent_golden_eval_preserves_interactive_question_batch
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("dimension", ["学习主动性", "复盘闭环"])
+async def test_evaluation_agent_profile_dimensions_skip_question_batch(dimension: str) -> None:
+    class GoldenEvaluationGenerator:
+        provider_name = "test-provider"
+        model_name = "test-eval-model"
+
+        async def evaluate(self, *, system_prompt, context_payload):
+            assert "# 评估智能体" in system_prompt
+            assert context_payload["assessmentDimensions"] == [dimension]
+            assert context_payload["outputGuidance"]["detailLevel"] == "high"
+            assert context_payload["outputGuidance"]["minSummaryCharacters"] == 260
+            assert len(context_payload["outputGuidance"]["rubric"]) == 4
+            return EvaluationPayload.model_validate(
+                {
+                    "overallLevel": "INTERMEDIATE",
+                    "strengths": ["能结合画像持续调整学习动作"],
+                    "weaknesses": ["主动追问记录仍偏少"],
+                    "nextFocus": ["设定下一轮学习验证点"],
+                    "dimensions": [
+                        {
+                            "name": dimension,
+                            "level": "INTERMEDIATE",
+                            "evidence": "LLM 综合学生画像、对话行为和近期活动后给出判断。",
+                            "recommendation": "继续根据画像信号做学习行为调整。",
+                        }
+                    ],
+                    "summaryText": f"{dimension}评估：根据学生画像判断，无需生成练习题。",
+                }
+            )
+
+    class FailingQuestionGenerator:
+        provider_name = "test-provider"
+        model_name = "test-practice-model"
+
+        async def generate_batch(self, *, topic, difficulty, count, learning_context):
+            del topic, difficulty, count, learning_context
+            raise AssertionError("画像类评估不应进入出题路径")
+
+    agent = EvaluationAgent(
+        llm_client=RuleBasedPlanningLLM(),
+        generator=GoldenEvaluationGenerator(),
+        question_generator=FailingQuestionGenerator(),
+    )
+    params = {
+        "dimensions": [dimension],
+        "profile": {
+            "studentLevel": "INTERMEDIATE",
+            "knowledgeGaps": ["最左匹配"],
+            "learningHabits": {"selfTesting": True, "noteTaking": True},
+        },
+        "messages": [{"role": "user", "content": "我想根据画像看看自己的学习行为表现。"}],
+        "learningContext": {"course": "数据库原理", "chapter": "联合索引"},
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id=f"task-eval-{dimension}",
+            trace_id=f"trace-eval-{dimension}",
+            seq=1,
+            service_type="EVALUATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=agent.system_prompt(_build_snapshot()),
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "resource_file", "result_chunk"]
+    assert "practiceQuestionBatch" not in params
+    assert "practiceQuestions" not in params
+    assert params["evaluationResult"]["summaryText"] == f"{dimension}评估：根据学生画像判断，无需生成练习题。"
+    assert events[1].payload.generated_by == "LLM"
+    assert events[1].payload.inline_content is not None
+    assert f"{dimension}评估" in events[1].payload.inline_content
+    if dimension == "学习主动性":
+        assert "目标拆解" in events[1].payload.inline_content
+        assert "主动追问" in events[1].payload.inline_content
+        assert "学习主动性强调主动发起" not in events[1].payload.inline_content
+    else:
+        assert "错因定位" in events[1].payload.inline_content
+        assert "间隔复测" in events[1].payload.inline_content
+        assert "目标拆解" not in events[1].payload.inline_content
+
+
+def test_evaluation_agent_context_dimension_falls_back_to_assessment_dimension() -> None:
+    agent = EvaluationAgent(
+        llm_client=RuleBasedPlanningLLM(),
+        generator=None,
+        question_generator=None,
+    )
+
+    payload = agent._build_context_payload(
+        params={"assessmentDimension": "学习主动性"},
+        snapshot=_build_snapshot(),
+        aggregated_behavior={},
+    )
+
+    assert payload["assessmentDimensions"] == ["学习主动性"]
+    assert payload["outputGuidance"]["detailLevel"] == "high"
+
+    default_payload = agent._build_context_payload(
+        params={},
+        snapshot=_build_snapshot(),
+        aggregated_behavior={},
+    )
+
+    assert default_payload["assessmentDimensions"] == ["知识基础"]
+
+
+@pytest.mark.asyncio
 async def test_evaluation_agent_fails_when_assessment_question_llm_fails() -> None:
     class GoldenEvaluationGenerator:
         provider_name = "test-provider"

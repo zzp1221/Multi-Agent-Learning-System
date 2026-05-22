@@ -11,7 +11,6 @@
 | 参考来源 | 链接 | 本项目对应模块 | 参考内容 |
 |----------|------|----------------|----------|
 | **Karpathy LLM Wiki + 三通道混合检索实践** | [博客园: 用 Karpathy LLM Wiki 方法论，为 AI Agent 系统构建结构化知识层](https://www.cnblogs.com/jtuki/p/19861920) | **RAG 检索引擎** (2.3 节)、**离线知识导入** | 三通道混合检索架构 (Grep + 向量 + 图扩展)、RRF 融合权重设计、FMM 分词策略、中文术语检索中 grep 优于向量的发现、IDF+Coverage 评分思路 |
-| **sanyuan-skills (Claude Code 自定义技能)** | [github.com/sanyuan0704/sanyuan-skills](https://github.com/sanyuan0704/sanyuan-skills) | **Agent Skill 系统** (3.4 节 Skill 系统) | SKILL.md 文件格式 (YAML frontmatter + body)、技能目录结构、prompt 从文件加载而非硬编码的工程化思路 |
 | **DH_live (浏览器端数字人)** | [github.com/kleinlee/DH_live](https://github.com/kleinlee/DH_live) | **浏览器端视频合成** (2.5 节视频生成) | DH Live WASM SDK 集成、浏览器端数字人渲染、postMessage 通信协议、音频驱动口型同步 |
 | **Claude Code Agent 运行时架构** | Claude Code 官方文档及源码分析 | **Agent 运行时内核** (3.4 节) | AgentCoreLoop (工具调用循环)、ToolRegistry (工具注册)、HookChain (钩子拦截)、PermissionPolicy (权限分级)、RecoveryEngine (故障恢复)、ConversationCompactor (上下文压缩) |
 
@@ -21,15 +20,12 @@
 
 博客园文章《用 Karpathy LLM Wiki 方法论，为 AI Agent 系统构建结构化知识层》报告了一种面向企业 AI Agent 的结构化知识层方案。其核心发现——在中文技术术语检索中，字面匹配 (grep) 优于语义相似度 (向量)——直接影响了本项目 RAG 检索引擎的设计。本项目实现了相同的三通道架构 (Grep + 向量 + 图扩展)，采用加权 RRF 融合 (grep_weight=3.0, vector_weight=5.0, graph_weight=0.5)，并使用 FMM 分词器处理中文术语。与原文不同的是，本项目额外增加了第四通道 (Tavily 联网搜索)，并将知识领域限定为计算机科学课程。
 
-**2. Agent Skill 系统 (参考 sanyuan-skills)**
 
-sanyuan-skills 项目展示了 Claude Code 的自定义技能机制——通过 SKILL.md 文件 (YAML frontmatter 声明元数据 + Markdown body 定义 prompt) 将 AI Agent 的能力模块化。本项目借鉴了这一思路，将 4 个核心 Agent (Tutor/Profile/Practice/Judge) 的 system prompt 从 Python 代码中抽离，改为 `skills/{agent}/SKILL.md` 文件管理。运行时通过 `SkillPromptLoader` 加载文件，解析 frontmatter 获取 name/description，将 body 中的 `{{snapshot_context}}` 占位符替换为学生画像上下文。这种设计使 prompt 的迭代可以独立于代码变更。
-
-**3. 浏览器端数字人视频 (参考 DH_live)**
+**2. 浏览器端数字人视频 (参考 DH_live)**
 
 DH_live 项目实现了浏览器端的数字人视频渲染，核心是通过 WebAssembly 在客户端完成音频驱动口型同步、视频录制和封装，无需服务端 GPU。本项目将 DH Live SDK 集成为 `frontend/public/dh_live/` 目录下的静态资源，通过 `browserVideoRenderer.ts` 以隐藏 iframe + postMessage 的方式与主应用通信。视频生成流程为：Python Agent 生成脚本 → TTS 语音合成 → 浏览器端 DH Live 渲染 → 输出 MP4 Blob。这一方案将视频渲染的计算成本从服务端转移到客户端，使系统无需 GPU 服务器即可支持视频生成功能。
 
-**4. Agent 运行时内核 (参考 Claude Code)**
+**3. Agent 运行时内核 (参考 Claude Code)**
 
 Claude Code 的 Agent 执行机制——LLM 推理 → 工具调用 → 结果注入 → 再推理的循环——是本项目 Agent 运行时内核的设计蓝本。具体映射关系：
 

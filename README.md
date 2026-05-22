@@ -6,7 +6,7 @@
 
 **智能辅导** — 17 个注册 Agent 协同工作，支持多轮对话、SSE 流式逐字渲染、图片上传分析、深度推理模式、长会话记忆压缩
 
-**RAG 知识检索** — 四通道混合检索（短语优先 grep + 向量语义 + 知识图谱遍历 + 可选联网搜索），覆盖 20 门计算机学科、986+ 知识块，hits@3 100%
+**RAG 知识检索** — 四通道混合检索（短语优先 grep + 向量语义 + 知识图谱遍历 + 可选联网搜索），覆盖 22 门计算机学科、986+ 知识块，hits@3 100%
 
 **多格式资源生成** — 文档 / 思维导图 / 幻灯片(PPTX) / 代码示例 / 练习题 / 数字人视频（6 种格式可多选），LangGraph ResourceBundle 编排
 
@@ -64,7 +64,6 @@
 | 文档库 | MongoDB 7 (对话历史、消息、流事件) | 27017 |
 | 缓存 | Redis 7 Alpine (限流、幂等、缓存, AOF 持久化) | 6379 |
 
-> 详细架构设计见 [系统架构文档](docs/architecture.md)
 
 ## 多智能体系统
 
@@ -72,15 +71,14 @@
 
 | 服务类型 | Agent 链 | 说明 |
 |---|---|---|
-| 智能辅导 (TUTORING) | query_rewrite → retrieval → [image_analysis] → [tutor \| deep_reasoning] → profile | QueryClassifier 动态选择：寒暄短路 / 普通辅导 / 深度推理 |
-| 深度推理 | query_rewrite → retrieval → image_analysis → deep_reasoning → profile | 四步推理：分析→推理→自审→最终回答 |
-| 资源生成 | query_rewrite → retrieval → resource_bundle | LangGraph 并发 fan-out 生成多资源，统一 provenance、质量与安全闸门 |
-| 视频生成 | query_rewrite → retrieval → video_generator | 脚本 → TTS → 浏览器端 DH Live WASM 渲染 |
-| 练习评判 | practice → judge → profile | 自动出题、评分、反馈，错题触发器自动收录错题本 |
-| 路径规划 | path_planning | 基于画像生成个性化学习计划 |
-| 学习评测 | evaluation | 4 维度交互式评估 |
-| 画像构建 | tutor → profile | 从对话/练习/评测信号构建多维度画像 |
-| 资源推送 | resource_push | 匹配已有学习资源 + Tavily 搜索 |
+| 智能辅导 (TUTORING) | query_rewrite → retrieval → [image_analysis] → [tutor \| deep_reasoning] → profile | QueryClassifier 动态路由：寒暄/跟进/回答上题短路至 tutor，深度推理走 4 步 pipeline，图片题先分析再检索 |
+| 资源生成 | query_rewrite → retrieval → resource_bundle | LangGraph StateGraph 并发 fan-out（最多 7 路），bundle_synthesizer 汇总，支持部分成功 |
+| 视频生成 | query_rewrite → retrieval → video_generator | 脚本 → TTS → 浏览器端 DH Live WASM 渲染（服务器零负担） |
+| 练习评判 | practice → judge → profile | 自动出题、评分、反馈，`capture_mistake_from_submission` 触发器自动收录错题本 |
+| 路径规划 | path_planning | 基于画像 + 评估结果生成个性化学习计划 |
+| 学习评测 | evaluation | 4 维度（知识基础/案例迁移/学习主动性/复习循环）交互式评估 |
+| 画像构建 | tutor → profile | 每 3 轮对话自动触发，从对话/练习/评测信号构建 6 维度画像 |
+| 资源推送 | resource_push | 匹配已有学习资源 + Tavily 联网搜索，内容安全过滤 |
 
 支持 3 家 LLM 提供商，**14 个 Agent 组件可独立配置模型**：
 
@@ -99,25 +97,21 @@
 | `AgentCoreLoop` | LLM 推理 → 工具调用 → 结果注入 → 再推理 | 最多 4 轮迭代，无 tool_calls 则输出最终答案 |
 | `ToolRegistry` | 按 name 注册工具，生成 OpenAI function-calling schema | 按 agent_level 过滤可见工具集 |
 | `HookChain` | 工具执行前后的拦截链 | 可修改输入参数、拒绝执行、校验输出结果 |
-| `PermissionPolicy` | allow/deny 规则匹配 + 数值级别检查 | READ_ONLY → FULL_ACCESS 四级权限 |
-| `ConversationCompactor` | Token 预算估计 + 对话摘要 + 保留最近 N 轮 | 1200 token 预算，解决长会话上下文窗口问题 |
+| `PermissionPolicy` | allow/deny 规则匹配 + 数值级别检查 | READ_ONLY(1) → FULL_ACCESS(5) 五级权限，TutorAgent 锁定 READ_ONLY |
+| `ConversationCompactor` | Token 预算估计 + 结构化摘要 + 保留最近 N 轮 | 1200 token 预算，LLM 辅助精炼摘要 |
 | `ContextSnapshot` | 聚合用户画像、学习进度、知识薄弱点 | 注入 Agent prompt 作为运行时上下文 |
 | `RecoveryEngine` | 按 failure_type 分类重试 + 降级 | Timeout 1次, RateLimit 2次, Retrieval 1次 |
+| `Provenance` | 强制 LLM 产物溯源验证 | provider/model/agentName/evidenceIds 缺一不可 |
+| `SmartEngineStreamWorker` | Redis Streams 消费者 | 异步任务队列路径，支持 DLQ 重试与取消 |
 
-**独创机制**:
-
-- **KnowledgeGuardHook**: 拦截所有 `generate_*` 工具调用，自动检索知识依据；无证据则拒绝生成，从源头防止 LLM 幻觉
-- **ResourceBundleWorkflow**: LangGraph StateGraph 编排 6 种资源类型的并发 fan-out 生成，统一 provenance gate 和 quality gate
-- **Skill 系统** (参考 [sanyuan-skills](https://github.com/sanyuan0704/sanyuan-skills)): Agent prompt 通过 `skills/{agent}/SKILL.md` 文件管理 (YAML frontmatter + Markdown body)，运行时注入 `{{snapshot_context}}` 学生画像上下文
-- **QueryClassifier 动态路由**: 4 种输入模式 (寒暄/承接/明确问题/模糊话题) 自动分类，寒暄短路回复不消耗 LLM
 
 ## RAG 知识库
 
 ### 知识覆盖
 
-20 门计算机学科，986+ 知识块：
+22 门计算机学科，986+ 知识块：
 
-操作系统、数据结构、计算机网络、计算机组成原理、编译原理、数据库原理、软件工程、算法设计与分析、程序设计、离散数学、人工智能、机器学习、信息安全、分布式系统、计算机图形学、C语言深入、Go语言、Rust语言、Java深入、JavaScript/TypeScript、Python深入、程序设计语言原理
+操作系统、数据结构、计算机网络、计算机组成原理、编译原理、数据库原理、软件工程、算法设计与分析、程序设计、离散数学、信息安全、分布式系统、计算机图形学、C语言深入、Go语言、Rust语言、Java深入、JavaScript/TypeScript、Python深入、程序设计语言原理、视频资源专题
 
 ### 向量化流程
 
@@ -218,7 +212,7 @@ curl -s http://localhost:8000/health             # Python Agent
 ```
 
 首次启动时，PostgreSQL 容器自动执行：
-1. `init.sql` — 建表、建索引、建枚举、RLS（3 个 Schema, 25+ 表）
+1. `init.sql` — 建表、建索引、建枚举、RLS（3 个 Schema, 28+ 表, 27 条 RLS 策略, 13 个触发器）
 2. `restore_vector_data.sh` — 从 `vector_data.dump` 恢复预置向量数据
 
 ### 本地开发
@@ -242,14 +236,16 @@ uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
 ## 测试
 
+共 53 个测试文件（4 E2E + 33 Python Agent + 16 Java 后端）：
+
 ```bash
-# 端到端测试
+# 端到端测试 (Playwright, 19 个用例)
 pytest tests/ -v
 
-# Python Agent 单元测试
+# Python Agent 单元测试 (33 个文件)
 cd python-agent && pytest tests/ -v
 
-# Java 后端测试
+# Java 后端测试 (16 个文件)
 cd project && mvn test
 
 # 前端类型检查 + 构建
@@ -259,58 +255,63 @@ cd frontend && npx tsc --noEmit && npx vite build
 ## 项目结构
 
 ```
-├── frontend/                    # React 前端
+├── frontend/                    # React 前端 (4 个页面, 38 个源文件)
 │   ├── Dockerfile               # 多阶段构建 (node:20-alpine → nginx:1.27-alpine)
 │   ├── nginx.conf               # SPA 路由 + API 代理 + SSE 透传 (30min 长连接)
 │   ├── public/dh_live/          # DH Live WASM SDK (浏览器端数字人渲染)
 │   └── src/
-│       ├── api/                 # API 调用 & SSE 流式客户端
-│       ├── components/          # UI 组件 (MarkdownRenderer, MermaidDiagram, RadarChart...)
-│       └── pages/               # 页面 (Q&A对话、引擎服务、错题本、学习画像)
+│       ├── api/                 # API 调用 & SSE 流式客户端 (请求去重 + 重试)
+│       ├── components/          # UI 组件 (MarkdownRenderer, MermaidDiagram, RadarChart, VideoCard...)
+│       ├── pages/               # 页面: QnaChatView, LearningStudioDemo, MistakeBook, Profile
+│       └── utils/               # 浏览器端视频渲染 (browserVideoRenderer)
 │
-├── project/                     # Java Spring Boot 后端 (六边形架构)
+├── project/                     # Java 21 Spring Boot 3.3 后端 (六边形架构, 113 个源文件)
 │   ├── Dockerfile               # 多阶段构建 (Maven + Eclipse Temurin 21)
 │   └── src/main/java/com/project/
-│       ├── api/                 # REST 控制器 (Auth, Conversation, SmartEngine, Profile, Artifact, Mistake)
-│       ├── application/         # 业务逻辑 (编排器, SSE emitter, 任务状态机, 限流, 幂等, SM-2)
-│       ├── domain/              # 实体与 Repository (User, Task, Conversation, Profile, Artifact, Audit)
-│       ├── infrastructure/      # HTTP 客户端 (Java → Python Agent 通信)
-│       └── security/            # JWT 认证, 内部 Token 验证
+│       ├── api/                 # 7 个 REST 控制器 (Auth, Conversation, SmartEngine, SmartEngineInternal, Profile, Artifact, Mistake)
+│       ├── application/         # 14 个业务服务 (编排器, SSE emitter, 任务状态机, 限流, 幂等, SM-2 错题本, 用户画像分析)
+│       ├── domain/              # 7 个领域实体 + 9 个 Repository (User, Task, Conversation, Profile, Artifact, Audit, Video)
+│       ├── infrastructure/      # HTTP 客户端 (Java ↔ Python Agent 双向通信) + 限流过滤器
+│       └── security/            # JWT 认证, 内部 Token 验证 (timing-safe)
 │
-├── python-agent/                # Python AI Agent (Supervisor 模式)
+├── python-agent/                # Python 3.11 FastAPI AI Agent (Supervisor 模式, 149 个源文件)
 │   ├── server.py                # FastAPI 入口 + SSE 流式端点 + Lifespan 管理
 │   ├── src/ai_modules/
-│   │   ├── supervisor.py        # Agent 编排器 (路由解析 → Agent 链执行)
-│   │   ├── agents/              # 17 个注册 Agent
-│   │   ├── runtime/             # Agent 运行时内核
-│   │   │   ├── agent_core_loop.py           # 工具调用执行循环
-│   │   │   ├── tool_registry.py             # 工具注册表
+│   │   ├── supervisor.py        # Agent 编排器 (QueryClassifier 动态路由 → Agent 链执行)
+│   │   ├── agents/              # 17 个注册 Agent (TutorAgent, DeepReasoningAgent, JudgeAgent...)
+│   │   ├── runtime/             # Agent 运行时内核 (14 个模块)
+│   │   │   ├── agent_core_loop.py           # 工具调用执行循环 (Hook/Permission/Recovery 集成)
+│   │   │   ├── tool_registry.py             # 工具注册表 (按 agent_level 过滤)
 │   │   │   ├── hook_chain.py                # 前置/后置钩子链
-│   │   │   ├── hooks/knowledge_guard.py     # 知识守卫钩子 (幻觉防护)
-│   │   │   ├── permission_policy.py         # 权限策略
-│   │   │   ├── context_snapshot.py          # 上下文快照
-│   │   │   ├── conversation_compactor.py    # 对话压缩器
-│   │   │   ├── recovery_engine.py           # 故障恢复引擎
-│   │   │   └── resource_bundle_workflow.py  # LangGraph 多资源生成编排
+│   │   │   ├── hooks/knowledge_guard.py     # 知识守卫钩子 (幻觉防护, 拦截无证据生成)
+│   │   │   ├── permission_policy.py         # 五级权限策略 (READ_ONLY → FULL_ACCESS)
+│   │   │   ├── context_snapshot.py          # 上下文快照 (课程/画像/薄弱点注入)
+│   │   │   ├── conversation_compactor.py    # 对话压缩器 (Token 预算 + LLM 辅助摘要)
+│   │   │   ├── recovery_engine.py           # 故障恢复引擎 (按 failure_type 分类重试)
+│   │   │   ├── provenance.py               # LLM 产物溯源验证 (provider/model/agentName)
+│   │   │   ├── resource_bundle_workflow.py  # LangGraph 多资源并发生成编排 (fan-out/fan-in)
+│   │   │   ├── smart_engine_stream_worker.py # Redis Streams 消费者 (异步任务队列)
+│   │   │   ├── topic_canonicalizer.py       # 主题规范化 (去重/别名匹配)
+│   │   │   └── skill_loader.py             # SKILL.md prompt 模板加载器
 │   │   ├── retrieval/           # 四通道混合检索 (grep + vector + graph + web + RRF)
-│   │   ├── llms/                # 多 LLM 提供商适配 + 本地 GGUF 评估器
-│   │   ├── memory/              # 对话记忆 & 学习画像
+│   │   ├── llms/                # 多 LLM 提供商适配 (OpenAI/Bailian/Spark/MiMo) + 本地 GGUF 评估器
+│   │   ├── memory/              # 对话记忆 & 学习画像持久化
 │   │   ├── generation/          # 内容生成链 (资源正文与文件产物)
 │   │   └── prompts/             # Agent 提示词模板
-│   ├── skills/                  # Agent Skill 定义 (SKILL.md, 参考 sanyuan-skills)
-│   ├── knowledge/               # 知识库导入 & 向量化脚本
-│   ├── retrieval/               # 检索模块 (grep/vector/graph/RRF)
+│   ├── skills/                  # 7 个 Agent Skill 定义 (judge, tutor, profile, evaluation, path_planning, query_rewrite, practice)
+│   ├── knowledge/               # 知识库导入 & 向量化 & 基准测试脚本 (17 个)
+│   ├── retrieval/               # 检索模块 (grep/vector/graph/web/RRF/FMM)
 │   ├── recommendation/          # 学习资源推荐引擎
-│   └── scripts/                 # 训练数据生成 & 模型训练脚本
+│   └── scripts/                 # 训练数据生成 & SFT/GRPO 模型训练脚本
 │
-├── wiki/                        # 知识库源文件 (20 门计算机学科, 986+ 知识块)
+├── wiki/                        # 知识库源文件 (22 门计算机学科, 986+ 知识块)
 ├── contracts/                   # SSE 事件 JSON Schema 契约
-├── migrations/                  # 数据库迁移脚本
-├── docs/                        # 文档 (架构文档、部署文档、技术报告、实验日志)
-├── tests/                       # 端到端测试
-├── docker-compose.yml           # 6 服务编排
+├── migrations/                  # 数据库迁移脚本 (4 个幂等迁移)
+├── docs/                        # 7 份文档 (架构、部署、教师指南、实验日志、竞赛提交指南、Judge优化、LangGraph架构)
+├── tests/                       # 端到端测试 (Playwright, 19 个用例)
+├── docker-compose.yml           # 6 服务编排 (postgres, mongo, redis, app, python-agent, frontend)
 ├── docker-compose.local-judge.yml # 可选本地 GGUF Judge overlay
-├── init.sql                     # PostgreSQL 完整 DDL (3 Schema, 25+ 表, RLS, pgvector 索引)
+├── init.sql                     # PostgreSQL 完整 DDL (3 Schema, 28+ 表, 27 条 RLS 策略, pgvector 索引)
 └── vector_data.dump             # 预置向量数据 (pg_dump, ~11.5MB)
 ```
 
@@ -319,26 +320,19 @@ cd frontend && npx tsc --noEmit && npx vite build
 - **JWT 认证** — Access Token 2h / Refresh Token 7d, HMAC-SHA256
 - **滑动窗口限流** — 按用户 (60 req/min) + 按 IP (100 req/min) 双层 Redis Lua
 - **幂等控制** — Idempotency-Key (Redis SETNX, 24h TTL)，防止重复提交
-- **内容安全审查** — SafetyAgent 对生成内容进行合规检查
-- **幻觉防护** — KnowledgeGuardHook 生成前强制检索知识依据
+- **内容安全审查** — SafetyAgent 对生成内容进行合规检查（政治敏感/学术不端）
+- **幻觉防护** — KnowledgeGuardHook 生成前强制检索知识依据，无证据则拒绝执行
+- **产物溯源** — Provenance 验证强制所有 LLM 产物携带 provider/model/agentName/evidenceIds 元数据
 - **SSE 任务取消** — Redis + 文件系统双通道取消标记，支持跨 Worker
 - **沙箱文件清理** — 生成文件 2h TTL，30min 定时清扫
-- **RLS 行级安全** — PostgreSQL 24 张表启用三级访问控制 (GLOBAL/USER/COURSE)
-- **内部通信保护** — X-Zhixue-Internal-Token (timing-safe 比较)
+- **RLS 行级安全** — PostgreSQL 27 张表启用三级访问控制 (GLOBAL/USER/COURSE)
+- **内部通信保护** — X-Zhixue-Internal-Token (timing-safe 比较), DB 端口仅 loopback
 - **Redis 降级** — 限流/幂等/缓存在 Redis 不可用时自动切换到 InMemory 实现
+- **Mermaid 安全** — DOMPurify SVG 消毒，防止 XSS
 
-## 参考资料
 
-本项目在设计与实现过程中参考了以下开源项目和技术文章：
 
-| 参考来源 | 本项目对应模块 |
-|----------|----------------|
-| [用 Karpathy LLM Wiki 方法论，为 AI Agent 系统构建结构化知识层](https://www.cnblogs.com/jtuki/p/19861920) | RAG 四通道混合检索架构、RRF 融合权重设计、FMM 分词策略 |
-| [sanyuan-skills (Claude Code 自定义技能)](https://github.com/sanyuan0704/sanyuan-skills) | Agent Skill 系统 (SKILL.md 文件格式、prompt 工程化管理) |
-| [DH_live (浏览器端数字人)](https://github.com/kleinlee/DH_live) | 浏览器端 DH Live WASM 视频渲染、postMessage 通信协议 |
-| Claude Code Agent 运行时架构 | AgentCoreLoop、ToolRegistry、HookChain、PermissionPolicy、RecoveryEngine |
 
-> 详细参考说明见 [项目技术报告](docs/teacher_guide.md) 开头的"参考资料与设计来源"章节。完整架构设计见 [系统架构文档](docs/architecture.md)。
 
 ## 开源许可
 
