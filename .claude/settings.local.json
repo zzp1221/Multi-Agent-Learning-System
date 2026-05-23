@@ -198,7 +198,13 @@
       "WebFetch(domain:cloud.tencent.com)",
       "WebFetch(domain:mp.weixin.qq.com)",
       "Bash(git diff *)",
-      "Bash(cat python-agent/src/ai_modules/runtime/provenance.py)"
+      "Bash(cat python-agent/src/ai_modules/runtime/provenance.py)",
+      "Bash(ipconfig)",
+      "Bash(ipconfig /all)",
+      "Bash(iconv -f gbk -t utf-8)",
+      "Bash(netsh wlan *)",
+      "Bash(netsh interface *)",
+      "Bash(netsh advfirewall *)"
     ]
   }
 }

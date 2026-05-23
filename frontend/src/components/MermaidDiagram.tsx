@@ -1,23 +1,29 @@
 import { useEffect, useId, useState } from 'react';
 import DOMPurify from 'dompurify';
-import mermaid from 'mermaid';
 
 interface MermaidDiagramProps {
   chart: string;
 }
 
+type MermaidApi = typeof import('mermaid').default;
+
+let mermaidLoadPromise: Promise<MermaidApi> | null = null;
 let mermaidInitialized = false;
 
-function ensureMermaidInitialized(): void {
-  if (mermaidInitialized) {
-    return;
+async function loadMermaid(): Promise<MermaidApi> {
+  if (!mermaidLoadPromise) {
+    mermaidLoadPromise = import('mermaid').then((module) => module.default);
   }
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'loose',
-    theme: 'default',
-  });
-  mermaidInitialized = true;
+  const mermaid = await mermaidLoadPromise;
+  if (!mermaidInitialized) {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'loose',
+      theme: 'default',
+    });
+    mermaidInitialized = true;
+  }
+  return mermaid;
 }
 
 function normalizeMermaidChart(chart: string): string {
@@ -44,6 +50,7 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
 
   useEffect(() => {
     let cancelled = false;
+
     async function renderChart() {
       const normalizedChart = normalizeMermaidChart(chart);
       if (!normalizedChart) {
@@ -51,8 +58,9 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
         setError('');
         return;
       }
-      ensureMermaidInitialized();
+
       try {
+        const mermaid = await loadMermaid();
         const result = await mermaid.render(`mermaid-${id}`, normalizedChart);
         if (!cancelled) {
           setSvg(DOMPurify.sanitize(result.svg, {
@@ -65,11 +73,12 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
       } catch (renderError) {
         if (!cancelled) {
           setSvg('');
-          const message = renderError instanceof Error ? renderError.message : 'Mermaid 渲染失败';
-          setError(`思维导图渲染失败：${message}`);
+          const message = renderError instanceof Error ? renderError.message : 'Mermaid render failed';
+          setError(`Mermaid render failed: ${message}`);
         }
       }
     }
+
     void renderChart();
     return () => {
       cancelled = true;
@@ -87,7 +96,7 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
   if (!svg) {
     return (
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
-        思维导图渲染中...
+        Rendering diagram...
       </div>
     );
   }

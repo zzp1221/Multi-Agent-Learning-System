@@ -11,7 +11,7 @@ spring:
       - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
-    url: jdbc:h2:mem:zhixue;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;INIT=CREATE SCHEMA IF NOT EXISTS app\;CREATE SCHEMA IF NOT EXISTS rag
+    url: jdbc:h2:mem:zhixue;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;INIT=CREATE SCHEMA IF NOT EXISTS app\;CREATE SCHEMA IF NOT EXISTS rag\;CREATE DOMAIN IF NOT EXISTS app.task_status AS VARCHAR(32)\;CREATE DOMAIN IF NOT EXISTS app.resource_type AS VARCHAR(32)\;CREATE DOMAIN IF NOT EXISTS app.conversation_mode AS VARCHAR(32)
     username: sa
     password:
     driver-class-name: org.h2.Driver
@@ -30,6 +30,8 @@ management:
         include: health,info
 
 app:
+  python-agent:
+    internal-token: test-internal-token
   security:
     jwt:
       secret: test-secret-key-for-integration-suite-32-bytes

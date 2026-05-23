@@ -131,7 +131,6 @@ export default function Layout() {
           return;
         }
         window.localStorage.setItem('auth_user', JSON.stringify(resolved));
-        window.localStorage.setItem('userId', String(resolved.id));
         setCurrentUser(resolved);
         await loadRecentConversations();
       } catch (error) {

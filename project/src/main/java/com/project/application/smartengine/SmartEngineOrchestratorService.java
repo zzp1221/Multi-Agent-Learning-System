@@ -11,6 +11,7 @@ import com.project.domain.task.SmartEngineTask;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -29,7 +30,7 @@ public class SmartEngineOrchestratorService {
 
     private final TaskStateMachineService taskStateMachineService;
     private final SseEmitterService sseEmitterService;
-    private final SmartEngineQueueService smartEngineQueueService;
+    private final ObjectProvider<SmartEngineQueueService> smartEngineQueueServiceProvider;
     private final IdempotencyService idempotencyService;
     private final AuditService auditService;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
@@ -37,14 +38,14 @@ public class SmartEngineOrchestratorService {
     public SmartEngineOrchestratorService(
         TaskStateMachineService taskStateMachineService,
         SseEmitterService sseEmitterService,
-        SmartEngineQueueService smartEngineQueueService,
+        ObjectProvider<SmartEngineQueueService> smartEngineQueueServiceProvider,
         IdempotencyService idempotencyService,
         AuditService auditService,
         UserProfileCurrentRepository userProfileCurrentRepository
     ) {
         this.taskStateMachineService = taskStateMachineService;
         this.sseEmitterService = sseEmitterService;
-        this.smartEngineQueueService = smartEngineQueueService;
+        this.smartEngineQueueServiceProvider = smartEngineQueueServiceProvider;
         this.idempotencyService = idempotencyService;
         this.auditService = auditService;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
@@ -130,6 +131,10 @@ public class SmartEngineOrchestratorService {
         );
 
         try {
+            SmartEngineQueueService smartEngineQueueService = smartEngineQueueServiceProvider.getIfAvailable();
+            if (smartEngineQueueService == null) {
+                throw new IllegalStateException("SmartEngine task queue is unavailable");
+            }
             String recordId = smartEngineQueueService.enqueue(invocation);
             auditService.log("TASK", "LOW", "Enqueued SmartEngine task", currentUser.userId(), task.getId(), Map.of(
                 "serviceType", request.serviceType(),
@@ -180,7 +185,10 @@ public class SmartEngineOrchestratorService {
         sseEmitterService.cancelTask(taskId, cancelPayload);
 
         try {
-            smartEngineQueueService.markCancelled(taskId);
+            SmartEngineQueueService smartEngineQueueService = smartEngineQueueServiceProvider.getIfAvailable();
+            if (smartEngineQueueService != null) {
+                smartEngineQueueService.markCancelled(taskId);
+            }
         } catch (Exception ex) {
             LOGGER.warn("Failed to write SmartEngine cancel key taskId={}: {}", taskId, ex.getMessage());
         }

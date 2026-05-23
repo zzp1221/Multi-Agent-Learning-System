@@ -74,7 +74,6 @@ export default function AuthModal(props: AuthModalProps) {
       window.localStorage.setItem('auth_user', JSON.stringify(user));
       persistAuthSession({
         token: result.token,
-        userId: String(user.id),
       });
       props.onSuccess(user);
     } catch (err) {

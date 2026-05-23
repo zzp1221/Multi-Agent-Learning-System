@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.application.smartengine.PythonAgentClient;
 import com.project.application.smartengine.SmartEngineInvocation;
 import com.project.application.smartengine.PythonStreamEvent;
+import com.project.application.conversation.PythonConversationMessageClient;
 import com.project.domain.profile.UserProfileCurrent;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -52,8 +54,13 @@ class ConversationAndProfileIntegrationTest {
     @MockBean
     private PythonAgentClient pythonAgentClient;
 
+    @MockBean
+    private PythonConversationMessageClient pythonConversationMessageClient;
+
     @Test
     void createConversationAndStreamMessage() throws Exception {
+        doAnswer(invocation -> List.of()).when(pythonConversationMessageClient).listMessages(any(), any());
+        doAnswer(invocation -> null).when(pythonConversationMessageClient).appendMessage(any(), any(), any(), any(), any());
         doAnswer(invocation -> {
             SmartEngineInvocation agentInvocation = invocation.getArgument(0, SmartEngineInvocation.class);
             assertThat(agentInvocation.params()).containsEntry("webSearchEnabled", true);

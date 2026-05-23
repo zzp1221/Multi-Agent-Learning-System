@@ -34,15 +34,13 @@ function resolveApiBaseUrl(): string {
   if (configured) {
     return configured.replace(/\/+$/, '');
   }
-  return import.meta.env.PROD ? '' : 'http://localhost:8081';
+  return '';
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
 
 const AUTH_TOKEN_STORAGE_KEY = 'auth_token';
-const USER_ID_HEADER = 'X-User-Id';
 const AUTH_USER_STORAGE_KEY = 'auth_user';
-const AUTH_SESSION_STORAGE_KEY = 'auth_session';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_GET_RETRY_TIMES = 2;
 
@@ -66,51 +64,13 @@ export function getAuthToken(): string {
   return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim() ?? '';
 }
 
-function getCurrentUserId(): string {
-  if (typeof window === 'undefined') {
-    return '';
-  }
-  if (window.sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY) !== '1') {
-    return '';
-  }
-  const storedUserId = window.localStorage.getItem('userId')?.trim();
-  if (storedUserId) {
-    return storedUserId;
-  }
-
-  const rawAuthUser = window.localStorage.getItem(AUTH_USER_STORAGE_KEY);
-  if (!rawAuthUser) {
-    return '';
-  }
-
-  try {
-    const authUser = JSON.parse(rawAuthUser) as { id?: number | string; userId?: number | string };
-    const id = authUser?.userId ?? authUser?.id;
-    if (id === undefined || id === null) {
-      return '';
-    }
-    const parsed = String(id).trim();
-    if (!parsed) {
-      return '';
-    }
-    window.localStorage.setItem('userId', parsed);
-    return parsed;
-  } catch {
-    return '';
-  }
-}
-
-export function persistAuthSession(payload: { token?: string; userId?: string }): void {
+export function persistAuthSession(payload: { token?: string }): void {
   if (typeof window === 'undefined') {
     return;
   }
   if (payload.token) {
     window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, payload.token);
   }
-  if (payload.userId) {
-    window.localStorage.setItem('userId', payload.userId);
-  }
-  window.sessionStorage.setItem(AUTH_SESSION_STORAGE_KEY, '1');
 }
 
 export function clearAuthSession(): void {
@@ -119,8 +79,6 @@ export function clearAuthSession(): void {
   }
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
   window.localStorage.removeItem(AUTH_USER_STORAGE_KEY);
-  window.localStorage.removeItem('userId');
-  window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
 }
 
 export function getAuthHeaders(): Record<string, string> {
@@ -128,10 +86,6 @@ export function getAuthHeaders(): Record<string, string> {
   const token = getAuthToken();
   if (token) {
     headers.Authorization = `Bearer ${token}`;
-  }
-  const userId = getCurrentUserId();
-  if (userId) {
-    headers[USER_ID_HEADER] = userId;
   }
   return headers;
 }

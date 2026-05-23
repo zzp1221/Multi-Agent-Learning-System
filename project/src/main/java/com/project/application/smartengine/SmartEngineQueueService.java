@@ -3,6 +3,7 @@ package com.project.application.smartengine;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.config.AppProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -17,6 +18,7 @@ import java.util.UUID;
  * Redis Streams producer for SmartEngine long-running tasks.
  */
 @Service
+@ConditionalOnBean(StringRedisTemplate.class)
 public class SmartEngineQueueService {
 
     private final StringRedisTemplate redisTemplate;

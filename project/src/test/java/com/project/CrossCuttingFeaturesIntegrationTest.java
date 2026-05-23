@@ -2,9 +2,9 @@ package com.project;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.application.smartengine.PythonAgentClient;
-import com.project.application.smartengine.PythonStreamEvent;
+import com.project.application.smartengine.SmartEngineQueueService;
 import com.project.domain.audit.AuditLogRepository;
+import com.project.security.InternalTokenVerifier;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -21,13 +21,12 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -43,6 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CrossCuttingFeaturesIntegrationTest {
 
     private static final Pattern DOWNLOAD_URL_PATTERN = Pattern.compile("\"downloadUrl\":\"([^\"]+)\"");
+    private static final String INTERNAL_TOKEN = "test-internal-token";
 
     @Autowired
     private MockMvc mockMvc;
@@ -54,38 +54,13 @@ class CrossCuttingFeaturesIntegrationTest {
     private AuditLogRepository auditLogRepository;
 
     @MockBean
-    private PythonAgentClient pythonAgentClient;
+    private SmartEngineQueueService smartEngineQueueService;
 
     @Test
     void submitSupportsIdempotencyAndSignedArtifactDownload() throws Exception {
         Path tempFile = Files.createTempFile("zhixue-artifact-", ".md");
-        Files.writeString(tempFile, "# 数据库索引讲义", StandardCharsets.UTF_8);
-
-        doAnswer(invocation -> {
-            @SuppressWarnings("unchecked")
-            Consumer<PythonStreamEvent> consumer = invocation.getArgument(1, Consumer.class);
-            consumer.accept(new PythonStreamEvent(
-                "resource_file",
-                "generating",
-                Map.ofEntries(
-                    Map.entry("assetType", "DOCUMENT"),
-                    Map.entry("title", "数据库索引讲义"),
-                    Map.entry("fileName", tempFile.getFileName().toString()),
-                    Map.entry("localPath", tempFile.toString()),
-                    Map.entry("mimeType", "text/markdown"),
-                    Map.entry("generatedBy", "LLM"),
-                    Map.entry("contentOrigin", "LLM"),
-                    Map.entry("provider", "test-provider"),
-                    Map.entry("model", "test-model"),
-                    Map.entry("agentName", "document_generation"),
-                    Map.entry("evidenceIds", List.of("doc-1")),
-                    Map.entry("fallback", false),
-                    Map.entry("fromCache", false)
-                )
-            ));
-            consumer.accept(new PythonStreamEvent("done", "completed", Map.of("summary", "资源生成完成")));
-            return null;
-        }).when(pythonAgentClient).stream(any(), any());
+        Files.writeString(tempFile, "# database index guide", StandardCharsets.UTF_8);
+        when(smartEngineQueueService.enqueue(any())).thenReturn("0-1");
 
         AuthContext auth = register("cross_" + System.nanoTime());
         String idempotencyKey = "idem-" + UUID.randomUUID();
@@ -126,6 +101,23 @@ class CrossCuttingFeaturesIntegrationTest {
             .andExpect(jsonPath("$.code").value("IDEMPOTENT_REPLAY"))
             .andExpect(jsonPath("$.taskId").value(taskId));
 
+        recordWorkerEvent(taskId, 1, "resource_file", "generating", Map.ofEntries(
+            Map.entry("assetType", "DOCUMENT"),
+            Map.entry("title", "database index guide"),
+            Map.entry("fileName", tempFile.getFileName().toString()),
+            Map.entry("localPath", tempFile.toString()),
+            Map.entry("mimeType", "text/markdown"),
+            Map.entry("generatedBy", "LLM"),
+            Map.entry("contentOrigin", "LLM"),
+            Map.entry("provider", "test-provider"),
+            Map.entry("model", "test-model"),
+            Map.entry("agentName", "document_generation"),
+            Map.entry("evidenceIds", List.of("doc-1")),
+            Map.entry("fallback", false),
+            Map.entry("fromCache", false)
+        ));
+        recordWorkerEvent(taskId, 2, "done", "completed", Map.of("summary", "resource ready"));
+
         awaitTaskCompletion(auth.token(), taskId);
 
         MvcResult streamResult = mockMvc.perform(get("/api/smart-engine/tasks/" + taskId + "/stream")
@@ -143,7 +135,8 @@ class CrossCuttingFeaturesIntegrationTest {
             .andExpect(status().isOk())
             .andReturn();
 
-        assertThat(downloadResult.getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("数据库索引讲义");
+        assertThat(downloadResult.getResponse().getContentAsString(StandardCharsets.UTF_8))
+            .contains("database index guide");
         assertThat(auditLogRepository.findAll()).extracting("eventCategory")
             .contains("AUTH", "TASK", "DOWNLOAD");
     }
@@ -162,6 +155,25 @@ class CrossCuttingFeaturesIntegrationTest {
         throw new AssertionError("Task did not complete in time");
     }
 
+    private void recordWorkerEvent(
+        String taskId,
+        int seq,
+        String eventType,
+        String stage,
+        Map<String, Object> payload
+    ) throws Exception {
+        mockMvc.perform(post("/internal/smart-engine/tasks/" + taskId + "/events")
+                .header(InternalTokenVerifier.INTERNAL_TOKEN_HEADER, INTERNAL_TOKEN)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "eventType", eventType,
+                    "stage", stage,
+                    "seq", seq,
+                    "payload", payload
+                ))))
+            .andExpect(status().isOk());
+    }
+
     private AuthContext register(String loginId) throws Exception {
         MvcResult registerResult = mockMvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -169,7 +181,7 @@ class CrossCuttingFeaturesIntegrationTest {
                     {
                       "loginId": "%s",
                       "password": "Password123",
-                      "fullName": "测试用户",
+                      "fullName": "Test User",
                       "majorCode": "CS"
                     }
                     """.formatted(loginId)))

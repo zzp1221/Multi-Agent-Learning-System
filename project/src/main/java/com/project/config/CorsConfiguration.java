@@ -22,7 +22,7 @@ public class CorsConfiguration {
             new org.springframework.web.cors.CorsConfiguration();
 
         configuration.setAllowedOrigins(normalizeOrigins(appProperties.getCors().getAllowedOrigins()));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of(
             "Authorization",
             "Content-Type",
