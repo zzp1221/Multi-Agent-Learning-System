@@ -104,6 +104,81 @@
 | `Provenance` | 强制 LLM 产物溯源验证 | provider/model/agentName/evidenceIds 缺一不可 |
 | `SmartEngineStreamWorker` | Redis Streams 消费者 | 异步任务队列路径，支持 DLQ 重试与取消 |
 
+## 记忆系统
+
+记忆系统 (`python-agent/src/ai_modules/memory/`) 实现了分层、可衰减、特征粒度的学习者记忆管理，在教育场景下对标 LETTA/MemGPT 的分层记忆架构。
+
+### 三层记忆架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Layer 1: 工作记忆 (Working Memory)                              │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │ SystemSnapshot + ConversationCompactor                    │  │
+│  │ • 当前课程/章节/进度                                       │  │
+│  │ • 最近 4 轮对话 + 结构化压缩摘要                           │  │
+│  │ • Token 预算 1200，超限自动压缩                             │  │
+│  │ • LLM 辅助精炼（topicFocus, knownGaps, unresolvedQ）       │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                            │ 每次对话注入 Agent prompt            │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 2: 会话记忆 (Session Memory)                              │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │ MongoDB: conversation_messages + conversation_summaries    │  │
+│  │ • 原始消息：user/assistant 全量存储，支持分页回溯           │  │
+│  │ • 结构化摘要：topic/canonical_key/aliases/gaps/goals       │  │
+│  │ • 摘要支持 upsert 覆盖更新，跨会话持久化                    │  │
+│  │ • TutorAgent 压缩后写入，ProfileAgent 读取用于画像分析      │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                            │ ProfileAgent 每 3 轮触发             │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 3: 长期记忆 (Long-Term Memory)                            │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │ PostgreSQL: learner_feature + user_profile_snapshot        │  │
+│  │ • 14 维度特征：知识基础/薄弱点/技能掌握/错误模式/学习偏好等  │  │
+│  │ • 每维度独立 confidence、decay_rate、stability_period       │  │
+│  │ • canonical_key 主题规范化（"死锁"="deadlock"="两把锁等待"） │  │
+│  │ • 状态生命周期：ACTIVE → RESOLVED → REGRESSED → ARCHIVED   │  │
+│  │ • verification_count 重复观察置信度增强                     │  │
+│  │ • 向量嵌入存入 rag.user_profile_vector，支持相似用户匹配    │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 衰减机制
+
+14 个维度各有独立的衰减参数，基于对数衰减函数：
+
+```
+decayed = initial - log1p(decay_days × rate) × (initial - 0.3) × 0.3
+```
+
+| 维度 | 稳定期(天) | 衰减速率 | 说明 |
+|------|-----------|---------|------|
+| 学习习惯 | 14 | 0.07 | 最快衰减，行为变化快 |
+| 推断建议 | 10 | 0.08 | 推测性特征，最快过期 |
+| 当前目标 | 18 | 0.06 | 短期意图 |
+| 错误模式 | 18 | 0.06 | 练习后快速修正 |
+| 技能掌握 | 21 | 0.04 | 中等衰减 |
+| 学习节奏 | 20 | 0.05 | 需要持续观察 |
+| 薄弱点 | 20 | 0.05 | 掌握后自动 RESOLVE |
+| 知识基础 | 45 | 0.02 | 缓慢衰减，长期稳定 |
+| 专业背景 | 90 | 0.01 | 几乎不衰减 |
+
+当 confidence 衰减至 0.31 以下时，特征自动标记为 `ARCHIVED`。已掌握的薄弱点（skill_mastery ≥ 0.85）自动标记为 `RESOLVED`；若后续再次出现，状态回退为 `REGRESSED`。
+
+### 存储后端
+
+| Store | 生产后端 | 内存降级 | 用途 |
+|-------|---------|---------|------|
+| ConversationMessageStore | MongoDB | Python list | 原始对话消息 |
+| ConversationSummaryStore | MongoDB | Python list | 结构化会话摘要 |
+| LearningPlanStore | PostgreSQL | Python dict | 学习计划 + 版本快照 |
+| PracticeStore | PostgreSQL | Python dict | 练习题/评分/错题 |
+| ProfileStore | PostgreSQL | Python dict | 14 维度画像 + 衰减 + 向量嵌入 |
+
+所有 Store 均有 InMemory 降级实现，Redis/MongoDB/PostgreSQL 不可用时自动切换，保证单机开发也能运行。
+
 
 ## RAG 知识库
 
@@ -295,7 +370,7 @@ cd frontend && npx tsc --noEmit && npx vite build
 │   │   │   └── skill_loader.py             # SKILL.md prompt 模板加载器
 │   │   ├── retrieval/           # 四通道混合检索 (grep + vector + graph + web + RRF)
 │   │   ├── llms/                # 多 LLM 提供商适配 (OpenAI/Bailian/Spark/MiMo) + 本地 GGUF 评估器
-│   │   ├── memory/              # 对话记忆 & 学习画像持久化
+│   │   ├── memory/              # 三层记忆系统 (消息/摘要/画像, 含衰减机制)
 │   │   ├── generation/          # 内容生成链 (资源正文与文件产物)
 │   │   └── prompts/             # Agent 提示词模板
 │   ├── skills/                  # 7 个 Agent Skill 定义 (judge, tutor, profile, evaluation, path_planning, query_rewrite, practice)
