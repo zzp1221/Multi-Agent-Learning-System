@@ -24,7 +24,7 @@ public class SseEmitterService {
 
     private final SmartEngineTaskEventRepository taskEventRepository;
     private final SmartEngineTaskRepository taskRepository;
-    private final ConcurrentHashMap<UUID, CopyOnWriteArrayList<Subscriber>> emitters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, SubscriberGroup> emitters = new ConcurrentHashMap<>();
 
     public SseEmitterService(
         SmartEngineTaskEventRepository taskEventRepository,
@@ -34,47 +34,56 @@ public class SseEmitterService {
         this.taskRepository = taskRepository;
     }
 
-    public synchronized SseEmitter subscribe(SmartEngineTask task) {
+    public SseEmitter subscribe(SmartEngineTask task) {
         SseEmitter emitter = new SseEmitter(DEFAULT_TIMEOUT_MS);
         Subscriber subscriber = new Subscriber(emitter);
         emitter.onCompletion(() -> removeEmitter(task.getId(), subscriber));
         emitter.onTimeout(() -> removeEmitter(task.getId(), subscriber));
         emitter.onError(ex -> removeEmitter(task.getId(), subscriber));
 
-        replayEvents(task, subscriber);
-        SmartEngineTask latestTask = taskRepository.findById(task.getId()).orElse(task);
+        SubscriberGroup group = emitters.computeIfAbsent(task.getId(), ignored -> new SubscriberGroup());
+        synchronized (group) {
+            replayEvents(task, subscriber);
+            SmartEngineTask latestTask = taskRepository.findById(task.getId()).orElse(task);
 
-        if (!latestTask.isTerminal()) {
-            emitters.computeIfAbsent(task.getId(), ignored -> new CopyOnWriteArrayList<>()).add(subscriber);
-        } else {
-            emitter.complete();
+            if (!latestTask.isTerminal()) {
+                group.subscribers.add(subscriber);
+            } else {
+                emitter.complete();
+                if (group.subscribers.isEmpty()) {
+                    emitters.remove(task.getId(), group);
+                }
+            }
         }
 
         return emitter;
     }
 
-    public synchronized void publish(TaskStreamEventPayload payload, boolean terminal) {
-        CopyOnWriteArrayList<Subscriber> taskEmitters = emitters.get(payload.taskId());
-        if (taskEmitters == null || taskEmitters.isEmpty()) {
+    public void publish(TaskStreamEventPayload payload, boolean terminal) {
+        SubscriberGroup group = emitters.get(payload.taskId());
+        if (group == null) {
             return;
         }
 
-        for (Subscriber subscriber : taskEmitters) {
-            try {
-                if (payload.seq() > subscriber.lastSentSeq) {
-                    send(subscriber, payload);
-                }
-                if (terminal) {
-                    subscriber.emitter.complete();
-                }
-            } catch (IOException ex) {
-                subscriber.emitter.completeWithError(ex);
-                removeEmitter(payload.taskId(), subscriber);
+        synchronized (group) {
+            if (group.subscribers.isEmpty()) {
+                return;
             }
-        }
+            for (Subscriber subscriber : group.subscribers) {
+                try {
+                    send(subscriber, payload);
+                    if (terminal) {
+                        subscriber.emitter.complete();
+                    }
+                } catch (IOException ex) {
+                    subscriber.emitter.completeWithError(ex);
+                    removeEmitter(payload.taskId(), subscriber);
+                }
+            }
 
-        if (terminal) {
-            emitters.remove(payload.taskId());
+            if (terminal) {
+                emitters.remove(payload.taskId(), group);
+            }
         }
     }
 
@@ -98,6 +107,9 @@ public class SseEmitterService {
     }
 
     private void send(Subscriber subscriber, TaskStreamEventPayload payload) throws IOException {
+        if (payload.seq() <= subscriber.lastSentSeq) {
+            return;
+        }
         subscriber.emitter.send(SseEmitter.event()
             .name(payload.event())
             .id(String.valueOf(payload.seq()))
@@ -108,30 +120,38 @@ public class SseEmitterService {
     /**
      * 强制完成已取消任务的所有 emitter 并发布最终事件。
      */
-    public synchronized void cancelTask(UUID taskId, TaskStreamEventPayload cancelPayload) {
-        CopyOnWriteArrayList<Subscriber> taskEmitters = emitters.remove(taskId);
-        if (taskEmitters == null || taskEmitters.isEmpty()) {
+    public void cancelTask(UUID taskId, TaskStreamEventPayload cancelPayload) {
+        SubscriberGroup group = emitters.remove(taskId);
+        if (group == null || group.subscribers.isEmpty()) {
             return;
         }
-        for (Subscriber subscriber : taskEmitters) {
-            try {
-                send(subscriber, cancelPayload);
-                subscriber.emitter.complete();
-            } catch (IOException ex) {
-                subscriber.emitter.completeWithError(ex);
+        synchronized (group) {
+            for (Subscriber subscriber : group.subscribers) {
+                try {
+                    send(subscriber, cancelPayload);
+                    subscriber.emitter.complete();
+                } catch (IOException ex) {
+                    subscriber.emitter.completeWithError(ex);
+                }
             }
         }
     }
 
     private void removeEmitter(UUID taskId, Subscriber subscriber) {
-        CopyOnWriteArrayList<Subscriber> taskEmitters = emitters.get(taskId);
-        if (taskEmitters == null) {
+        SubscriberGroup group = emitters.get(taskId);
+        if (group == null) {
             return;
         }
-        taskEmitters.remove(subscriber);
-        if (taskEmitters.isEmpty()) {
-            emitters.remove(taskId);
+        synchronized (group) {
+            group.subscribers.remove(subscriber);
+            if (group.subscribers.isEmpty()) {
+                emitters.remove(taskId, group);
+            }
         }
+    }
+
+    private static final class SubscriberGroup {
+        private final CopyOnWriteArrayList<Subscriber> subscribers = new CopyOnWriteArrayList<>();
     }
 
     private static final class Subscriber {

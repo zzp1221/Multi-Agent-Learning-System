@@ -135,7 +135,7 @@
 │  Layer 3: 长期记忆 (Long-Term Memory)                            │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │ PostgreSQL: learner_feature + user_profile_snapshot        │  │
-│  │ • 14 维度特征：知识基础/薄弱点/技能掌握/错误模式/学习偏好等  │  │
+│  │ • 14 维度特征：由 profile_feature_registry.py 统一登记       │  │
 │  │ • 每维度独立 confidence、decay_rate、stability_period       │  │
 │  │ • canonical_key 主题规范化（"死锁"="deadlock"="两把锁等待"） │  │
 │  │ • 状态生命周期：ACTIVE → RESOLVED → REGRESSED → ARCHIVED   │  │
@@ -147,23 +147,28 @@
 
 ### 衰减机制
 
-14 个维度各有独立的衰减参数，基于对数衰减函数：
+14 个维度各有独立的衰减参数，配置集中在 `profile_feature_registry.py`，运行时由 `ProfileStore` 读取，基于对数衰减函数：
 
 ```
 decayed = initial - log1p(decay_days × rate) × (initial - 0.3) × 0.3
 ```
 
-| 维度 | 稳定期(天) | 衰减速率 | 说明 |
+| 维度 | 稳定期(天) | 衰减速率 | 策略 |
 |------|-----------|---------|------|
-| 学习习惯 | 14 | 0.07 | 最快衰减，行为变化快 |
-| 推断建议 | 10 | 0.08 | 推测性特征，最快过期 |
-| 当前目标 | 18 | 0.06 | 短期意图 |
-| 错误模式 | 18 | 0.06 | 练习后快速修正 |
-| 技能掌握 | 21 | 0.04 | 中等衰减 |
-| 学习节奏 | 20 | 0.05 | 需要持续观察 |
-| 薄弱点 | 20 | 0.05 | 掌握后自动 RESOLVE |
-| 知识基础 | 45 | 0.02 | 缓慢衰减，长期稳定 |
-| 专业背景 | 90 | 0.01 | 几乎不衰减 |
+| 知识基础 `knowledge_foundation` | 45 | 0.02 | 单例 |
+| 专业背景 `professional_background` | 90 | 0.01 | 单例 |
+| 学习偏好 `learning_preference` | 35 | 0.03 | 单例 |
+| 认知风格 `cognitive_style` | 45 | 0.03 | 单例 |
+| 学习节奏 `learning_pace` | 20 | 0.05 | 单例 |
+| 信心水平 `confidence_level` | 20 | 0.05 | 单例 |
+| 当前目标 `current_goal` | 18 | 0.06 | 单例 |
+| 学习习惯 `learning_habits` | 14 | 0.07 | 单例 |
+| 讲解偏好 `explanation_preference` | 30 | 0.03 | 单例 |
+| 技能掌握 `skill_mastery` | 21 | 0.04 | canonical 匹配 |
+| 薄弱点 `weak_points` | 20 | 0.05 | canonical 匹配，掌握后 RESOLVE |
+| 错误模式 `error_patterns` | 18 | 0.06 | canonical 匹配 |
+| 偏好资源类型 `preferred_resource_type` | 35 | 0.03 | 可多值 |
+| 推断建议 `inferred_recommendation` | 10 | 0.08 | 可多值，推测性特征 |
 
 当 confidence 衰减至 0.31 以下时，特征自动标记为 `ARCHIVED`。已掌握的薄弱点（skill_mastery ≥ 0.85）自动标记为 `RESOLVED`；若后续再次出现，状态回退为 `REGRESSED`。
 
@@ -175,7 +180,7 @@ decayed = initial - log1p(decay_days × rate) × (initial - 0.3) × 0.3
 | ConversationSummaryStore | MongoDB | Python list | 结构化会话摘要 |
 | LearningPlanStore | PostgreSQL | Python dict | 学习计划 + 版本快照 |
 | PracticeStore | PostgreSQL | Python dict | 练习题/评分/错题 |
-| ProfileStore | PostgreSQL | Python dict | 14 维度画像 + 衰减 + 向量嵌入 |
+| ProfileStore | PostgreSQL | Python dict | 14 维度画像 registry + 衰减 + 向量嵌入 |
 
 所有 Store 均有 InMemory 降级实现，Redis/MongoDB/PostgreSQL 不可用时自动切换，保证单机开发也能运行。
 

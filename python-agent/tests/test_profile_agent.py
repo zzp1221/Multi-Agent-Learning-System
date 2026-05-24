@@ -8,6 +8,12 @@ from src.ai_modules.memory import (
     InMemoryProfileStore,
     PostgresProfileStore,
 )
+from src.ai_modules.memory.profile_feature_registry import (
+    canonical_match_dimensions,
+    exclusive_dimensions,
+    get_feature_dimension_spec,
+    resolved_by_skill_mastery_dimensions,
+)
 from src.ai_modules.models import LearnerProfileDimensions
 from src.ai_modules.runtime import SystemSnapshot
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
@@ -586,6 +592,35 @@ def test_postgres_profile_store_resolves_mastered_weak_points_by_canonical_key()
     assert update_calls
     assert update_calls[0][1][0] == "skill_mastery >= 0.85"
     assert update_calls[0][1][-1] == "deadlock"
+
+
+def test_profile_feature_registry_drives_store_dimension_policies() -> None:
+    store = PostgresProfileStore(connect_fn=lambda **_: None)
+
+    assert store._singleton_dimensions() == exclusive_dimensions()
+    assert store._canonical_match_dimensions() == canonical_match_dimensions()
+    assert "weak_points" in resolved_by_skill_mastery_dimensions()
+
+
+def test_postgres_profile_store_extracts_decay_settings_from_registry() -> None:
+    store = PostgresProfileStore(connect_fn=lambda **_: None)
+    dimensions = LearnerProfileDimensions(
+        knowledgeFoundation="BASIC",
+        learningGoal="掌握并发编程",
+        learningHabits={"noteTaking": True, "selfTesting": True},
+        skillMastery={"deadlock": 0.91},
+        weakPoints=["deadlock"],
+        inferredRecommendations=["隔天复测死锁四条件"],
+    )
+
+    features = store._extract_features(dimensions)
+    by_dimension = {feature["dimension"]: feature for feature in features}
+
+    for dimension in ("learning_habits", "skill_mastery", "weak_points", "inferred_recommendation"):
+        spec = get_feature_dimension_spec(dimension)
+        feature = by_dimension[dimension]
+        assert feature["stability_period_days"] == spec.stability_period_days
+        assert feature["decay_rate"] == spec.decay_rate
 
 
 def test_postgres_profile_store_regresses_resolved_weak_point_on_reobserve() -> None:

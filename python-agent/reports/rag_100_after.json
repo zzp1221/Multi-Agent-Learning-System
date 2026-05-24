@@ -1,0 +1,6976 @@
+{
+  "questionSet": {
+    "path": "reports\\rag_100_questions.json",
+    "seed": 20260524,
+    "count": 100,
+    "hash": "7aa7829694d4de1b9dd02870cf0a1d9e1aa998d1617685af72c3b4433580aeb0"
+  },
+  "settings": {
+    "domain": "COMPUTER_SCIENCE",
+    "topK": 5,
+    "judgeCacheVersion": "rag-judge-v1"
+  },
+  "summary": {
+    "total": 100,
+    "success": 99,
+    "successRatePct": 99.0,
+    "hitAt1": 73,
+    "hitAt3": 98,
+    "hitAt1Pct": 73.0,
+    "hitAt3Pct": 98.0,
+    "avgRelevanceScore": 0.897,
+    "avgLatencyMs": 1664.57,
+    "medianLatencyMs": 735.24,
+    "p95LatencyMs": 4218.16,
+    "maxLatencyMs": 16176.58,
+    "channels": {
+      "fusion_ms": {
+        "avgMs": 0.16,
+        "p95Ms": 0.33,
+        "maxMs": 0.48
+      },
+      "graph_ms": {
+        "avgMs": 8.54,
+        "p95Ms": 10.98,
+        "maxMs": 15.37
+      },
+      "grep_ms": {
+        "avgMs": 143.96,
+        "p95Ms": 171.7,
+        "maxMs": 216.95
+      },
+      "init_ms": {
+        "avgMs": 29.99,
+        "p95Ms": 32.5,
+        "maxMs": 334.06
+      },
+      "vector_ms": {
+        "avgMs": 1429.88,
+        "p95Ms": 3997.97,
+        "maxMs": 15945.68
+      },
+      "web_ms": {
+        "avgMs": 0.0,
+        "p95Ms": 0.0,
+        "maxMs": 0.0
+      }
+    }
+  },
+  "records": [
+    {
+      "id": "q001",
+      "question": "请解释“安全策略与等保”的核心概念、典型场景和常见误区。（参考方向：安全策略、等级保护、等保2.0、合规）",
+      "expectedTitle": "安全策略与等保",
+      "expectedSlug": "信息安全/安全策略与等保",
+      "expectedTags": [
+        "安全策略",
+        "等级保护",
+        "等保2.0",
+        "合规",
+        "信息安全管理体系"
+      ],
+      "latencyMs": 3561.28,
+      "channelLatencyMs": {
+        "init_ms": 21.57,
+        "grep_ms": 160.55,
+        "vector_ms": 3321.04,
+        "graph_ms": 15.27,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/安全策略与等保",
+          "title": "安全策略与等保",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "信息安全/零信任安全架构",
+          "title": "零信任安全架构",
+          "score": 0.1386,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "wiki://信息安全/安全治理",
+          "title": "信息安全-安全治理知识图谱",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "信息安全/安全审计与日志分析",
+          "title": "安全审计与日志分析",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "信息安全/会话安全与Cookie安全",
+          "title": "会话安全与Cookie安全",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“安全策略与等保”这一核心主题，能够直接回答关于核心概念、典型场景和常见误区的问题。候选文档2和3虽然相关，但不如候选1直接。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q002",
+      "question": "请解释“\"NP完全性与归约\"”的核心概念、典型场景和常见误区。（参考方向：算法、NP、P vs NP、归约）",
+      "expectedTitle": "\"NP完全性与归约\"",
+      "expectedSlug": "算法设计与分析/NP完全理论",
+      "expectedTags": [
+        "算法",
+        "NP",
+        "P vs NP",
+        "归约",
+        "计算复杂性"
+      ],
+      "latencyMs": 1865.65,
+      "channelLatencyMs": {
+        "init_ms": 32.5,
+        "grep_ms": 149.67,
+        "vector_ms": 1631.22,
+        "graph_ms": 9.21,
+        "web_ms": 0.0,
+        "fusion_ms": 0.27
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Algorithm",
+          "title": "算法设计与分析-高级思维导图",
+          "score": 0.155,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "算法设计与分析/NP完全性概述",
+          "title": "NP完全性概述",
+          "score": 0.1532,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "算法设计与分析/NP完全理论",
+          "title": "\"NP完全性与归约\"",
+          "score": 0.1501,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/推导与归约与语法树",
+          "title": "推导与归约与语法树",
+          "score": 0.1446,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0738,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 3,
+        "relevanceScore": 0.8,
+        "reason": "候选文档3的标题和slug与用户问题的预期标题和slug完全匹配，直接对应'NP完全性与归约'的核心概念，因此高度相关。候选文档2也涉及NP完全性，但未明确提及归约，相关性稍弱。候选文档1、4、5与问题主题关联度低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q003",
+      "question": "请解释“代码优化综合”的核心概念、典型场景和常见误区。（参考方向：代码优化、优化Pass、优化级别、LLVM）",
+      "expectedTitle": "代码优化综合",
+      "expectedSlug": "编译原理/代码优化综合",
+      "expectedTags": [
+        "代码优化",
+        "优化Pass",
+        "优化级别",
+        "LLVM",
+        "O2",
+        "O3",
+        "内联",
+        "过程间优化"
+      ],
+      "latencyMs": 2592.44,
+      "channelLatencyMs": {
+        "init_ms": 16.46,
+        "grep_ms": 131.94,
+        "vector_ms": 2370.93,
+        "graph_ms": 7.59,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/代码优化综合",
+          "title": "代码优化综合",
+          "score": 0.1544,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/编译器优化Pass设计",
+          "title": "编译器优化Pass设计",
+          "score": 0.1512,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "编译原理/代码优化技术综述",
+          "title": "\"代码优化技术综述\"",
+          "score": 0.1472,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/LLVM-IR与优化Pass",
+          "title": "\"LLVM IR与优化Pass\"",
+          "score": 0.1463,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://编译原理/代码优化",
+          "title": "编译原理-LLVM Pass开发",
+          "score": 0.0794,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题中的'代码优化综合'完全匹配，且问题明确要求解释其核心概念、典型场景和常见误区，参考方向也包含'代码优化'、'优化Pass'、'优化级别'、'LLVM'等关键词，该文档很可能直接涵盖这些内容。候选文档2和3也高度相关，分别涉及'优化Pass设计'和'代码优化技术综述'，能提供补充信息。整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q004",
+      "question": "请解释“802.1X与网络准入控制”的核心概念、典型场景和常见误区。（参考方向：802.1X、NAC、网络准入、RADIUS）",
+      "expectedTitle": "802.1X与网络准入控制",
+      "expectedSlug": "信息安全/802.1X与网络准入控制",
+      "expectedTags": [
+        "802.1X",
+        "NAC",
+        "网络准入",
+        "RADIUS",
+        "端口安全"
+      ],
+      "latencyMs": 3138.44,
+      "channelLatencyMs": {
+        "init_ms": 15.66,
+        "grep_ms": 147.68,
+        "vector_ms": 2904.35,
+        "graph_ms": 8.28,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/802.1X与网络准入控制",
+          "title": "802.1X与网络准入控制",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/交换机与VLAN",
+          "title": "交换机与VLAN",
+          "score": 0.1441,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "信息安全/访问控制模型RBAC与ABAC",
+          "title": "访问控制模型RBAC与ABAC",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机网络/VLAN与网络虚拟化",
+          "title": "\"VLAN与802.1Q\"",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "计算机网络/网络层-NAT",
+          "title": "NAT网络地址转换",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应'802.1X与网络准入控制'的核心概念、场景和误区，且标签包含所有参考方向（802.1X、NAC、网络准入、RADIUS）。候选文档2和3虽涉及网络或访问控制，但未直接聚焦802.1X与NAC，相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q005",
+      "question": "请解释“\"同余与模运算\"”的核心概念、典型场景和常见误区。（参考方向：离散数学、同余、模运算、数论）",
+      "expectedTitle": "\"同余与模运算\"",
+      "expectedSlug": "离散数学/同余与模运算",
+      "expectedTags": [
+        "离散数学",
+        "同余",
+        "模运算",
+        "数论",
+        "中国剩余定理"
+      ],
+      "latencyMs": 551.63,
+      "channelLatencyMs": {
+        "init_ms": 29.75,
+        "grep_ms": 157.38,
+        "vector_ms": 318.92,
+        "graph_ms": 7.85,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/同余与模运算",
+          "title": "\"同余与模运算\"",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "离散数学/等价关系",
+          "title": "等价关系",
+          "score": 0.1475,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据库原理/关系代数-除",
+          "title": "关系代数-除运算",
+          "score": 0.1406,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/陪集与正规子群与商群",
+          "title": "陪集与正规子群与商群",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/关系的性质与闭包",
+          "title": "\"关系的性质与闭包运算\"",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“同余与模运算”的核心概念、典型场景和常见误区，且属于离散数学和数论范畴，与参考方向高度一致。候选文档2（等价关系）与同余有间接联系，但不够直接。候选文档3（关系代数-除）与问题无关。因此，最佳相关候选为排名1，整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q006",
+      "question": "请解释“关系模型”的核心概念、典型场景和常见误区。（参考方向：关系模型、关系、元组、属性）",
+      "expectedTitle": "关系模型",
+      "expectedSlug": "数据库原理/关系模型",
+      "expectedTags": [
+        "关系模型",
+        "关系",
+        "元组",
+        "属性",
+        "域",
+        "笛卡尔积",
+        "关系模式",
+        "关系实例"
+      ],
+      "latencyMs": 537.0,
+      "channelLatencyMs": {
+        "init_ms": 15.08,
+        "grep_ms": 137.12,
+        "vector_ms": 327.89,
+        "graph_ms": 8.53,
+        "web_ms": 0.0,
+        "fusion_ms": 0.19
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据库原理/关系模型",
+          "title": "关系模型",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据库原理/码",
+          "title": "关系中的码",
+          "score": 0.1443,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/关系的性质与闭包",
+          "title": "\"关系的性质与闭包运算\"",
+          "score": 0.1354,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据库原理/数据模型",
+          "title": "数据模型",
+          "score": 0.1269,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据库原理/ER模型",
+          "title": "ER实体-联系模型",
+          "score": 0.121,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（关系模型）的标题和slug与用户问题完全匹配，直接对应问题核心概念（关系模型、关系、元组、属性），能提供核心解释。候选文档2（关系中的码）和候选文档3（关系的性质与闭包运算）也与关系模型相关，但更侧重于具体方面（如码、闭包），而非全面解释核心概念、典型场景和常见误区。整体上，候选文档1高度相关，其他文档部分相关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q007",
+      "question": "请解释“\"DFA最小化（Hopcroft算法）\"”的核心概念、典型场景和常见误区。（参考方向：编译原理、DFA、最小化、Hopcroft）",
+      "expectedTitle": "\"DFA最小化（Hopcroft算法）\"",
+      "expectedSlug": "编译原理/DFA最小化算法",
+      "expectedTags": [
+        "编译原理",
+        "DFA",
+        "最小化",
+        "Hopcroft",
+        "等价类"
+      ],
+      "latencyMs": 540.99,
+      "channelLatencyMs": {
+        "init_ms": 16.59,
+        "grep_ms": 131.39,
+        "vector_ms": 327.64,
+        "graph_ms": 9.46,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/DFA最小化",
+          "title": "DFA最小化",
+          "score": 0.1544,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/DFA最小化算法",
+          "title": "\"DFA最小化（Hopcroft算法）\"",
+          "score": 0.1523,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "编译原理/NFA转DFA",
+          "title": "NFA转DFA",
+          "score": 0.1504,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/DFA",
+          "title": "DFA",
+          "score": 0.149,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://www.bilibili.com/video/BV1KW411j7GV",
+          "title": "编译原理-词法分析与有限自动机（视频）",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（DFA最小化）和候选文档2（DFA最小化（Hopcroft算法））的标题和slug都直接匹配用户问题的核心主题，即DFA最小化和Hopcroft算法。候选文档1虽然标题未明确提及Hopcroft，但slug为'编译原理/DFA最小化'，很可能涵盖Hopcroft算法作为主要方法。候选文档2完全匹配预期标题。因此，前三个候选中至少有一个（实际上两个）与问题直接相关，最佳排名为1。整体相关性高，因为文档直接针对DFA最小化算法，但未明确提及Hopcroft算法可能略微降低精确度。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q008",
+      "question": "请解释“\"C语言-内存对齐与位域详解\"”的核心概念、典型场景和常见误区。（参考方向：C语言、内存对齐、位域、struct布局）",
+      "expectedTitle": "\"C语言-内存对齐与位域详解\"",
+      "expectedSlug": "C语言深入/内存对齐与位域",
+      "expectedTags": [
+        "C语言",
+        "内存对齐",
+        "位域",
+        "struct布局",
+        "pragma pack"
+      ],
+      "latencyMs": 600.01,
+      "channelLatencyMs": {
+        "init_ms": 27.81,
+        "grep_ms": 164.89,
+        "vector_ms": 344.35,
+        "graph_ms": 7.6,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "C语言深入/内存对齐与位域",
+          "title": "\"C语言-内存对齐与位域详解\"",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "C语言深入/指针算术与内存模型",
+          "title": "\"C语言-指针算术与内存模型\"",
+          "score": 0.1499,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/语言特性对比-C",
+          "title": "语言特性对比-C语言",
+          "score": 0.1472,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "C语言深入/链接器与ABI",
+          "title": "\"C语言-链接器与ABI详解\"",
+          "score": 0.1463,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "C语言深入/联合体与类型双关",
+          "title": "\"C语言-联合体与类型双关\"",
+          "score": 0.1336,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 1.0,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“C语言-内存对齐与位域详解”，能直接回答核心概念、典型场景和常见误区。候选文档2和3虽涉及C语言内存或语言特性，但未专门针对内存对齐与位域，相关性较低。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q009",
+      "question": "请解释“信息论基础”的核心概念、典型场景和常见误区。（参考方向：离散数学、信息论、熵、信道容量）",
+      "expectedTitle": "信息论基础",
+      "expectedSlug": "离散数学/信息论基础",
+      "expectedTags": [
+        "离散数学",
+        "信息论",
+        "熵",
+        "信道容量",
+        "编码"
+      ],
+      "latencyMs": 521.19,
+      "channelLatencyMs": {
+        "init_ms": 14.06,
+        "grep_ms": 119.01,
+        "vector_ms": 341.7,
+        "graph_ms": 7.85,
+        "web_ms": 0.0,
+        "fusion_ms": 0.16
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/信息论基础",
+          "title": "信息论基础",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/奈氏准则与香农定理",
+          "title": "奈氏准则与香农定理",
+          "score": 0.1484,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "wiki://离散数学/信息论",
+          "title": "离散数学-信息熵计算器",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "wiki://信息安全/密码学基础",
+          "title": "信息安全-密码学基础精讲",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/范畴论基础",
+          "title": "范畴论基础",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（信息论基础）的标题和slug与用户问题完全匹配，直接涵盖核心概念、典型场景和常见误区，且参考方向（离散数学、信息论、熵、信道容量）高度一致。候选文档2（奈氏准则与香农定理）涉及信道容量，部分相关。候选文档3（离散数学-信息熵计算器）聚焦熵的计算，相关但不够全面。整体相关性高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q010",
+      "question": "请解释“环境映射与反射”的核心概念、典型场景和常见误区。（参考方向：环境映射、立方体贴图、球面映射、反射）",
+      "expectedTitle": "环境映射与反射",
+      "expectedSlug": "计算机图形学/环境映射与反射",
+      "expectedTags": [
+        "环境映射",
+        "立方体贴图",
+        "球面映射",
+        "反射",
+        "IBL"
+      ],
+      "latencyMs": 569.51,
+      "channelLatencyMs": {
+        "init_ms": 17.0,
+        "grep_ms": 153.16,
+        "vector_ms": 333.15,
+        "graph_ms": 10.45,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "计算机图形学/环境映射与反射",
+          "title": "环境映射与反射",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机图形学/阴影映射Shadow Map",
+          "title": "阴影映射Shadow Map",
+          "score": 0.1433,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机图形学/环境光遮蔽AO",
+          "title": "环境光遮蔽AO",
+          "score": 0.1049,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机图形学/纹理映射与Mipmap",
+          "title": "纹理映射与Mipmap",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://en.wikipedia.org/wiki/Computer_graphics",
+          "title": "计算机图形学-着色思维导图",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“环境映射与反射”这一主题，能够提供核心概念、典型场景和常见误区的详细解释。候选文档2和3虽然属于计算机图形学领域，但主题（阴影映射、环境光遮蔽）与用户问题不直接相关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q011",
+      "question": "请解释“\"鸽巢原理及其推广\"”的核心概念、典型场景和常见误区。（参考方向：离散数学、鸽巢原理、组合数学、Ramsey）",
+      "expectedTitle": "\"鸽巢原理及其推广\"",
+      "expectedSlug": "离散数学/鸽巢原理及其推广",
+      "expectedTags": [
+        "离散数学",
+        "鸽巢原理",
+        "组合数学",
+        "Ramsey"
+      ],
+      "latencyMs": 574.87,
+      "channelLatencyMs": {
+        "init_ms": 25.42,
+        "grep_ms": 136.61,
+        "vector_ms": 347.58,
+        "graph_ms": 8.46,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/鸽巢原理及其推广",
+          "title": "\"鸽巢原理及其推广\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "离散数学/排列组合计数",
+          "title": "\"排列组合与计数原理\"",
+          "score": 0.1366,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/拉姆齐理论",
+          "title": "\"拉姆齐理论\"",
+          "score": 0.1059,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/容斥原理",
+          "title": "\"容斥原理（Inclusion-Exclusion）\"",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/握手定理",
+          "title": "握手定理",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“鸽巢原理及其推广”，是回答核心概念、典型场景和常见误区的最直接来源。候选文档3（拉姆齐理论）是鸽巢原理的重要推广，也与问题高度相关。候选文档2（排列组合）和4（容斥原理）虽属离散数学，但相关性较弱。整体上，前三个候选中至少两个直接相关，因此hitAt3为true，最佳排名为1，整体相关性评分高。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q012",
+      "question": "请解释“磁盘调度-FCFS与SSTF”的核心概念、典型场景和常见误区。（参考方向：操作系统、磁盘调度、FCFS、SSTF）",
+      "expectedTitle": "磁盘调度-FCFS与SSTF",
+      "expectedSlug": "操作系统/磁盘调度-FCFS与SSTF",
+      "expectedTags": [
+        "操作系统",
+        "磁盘调度",
+        "FCFS",
+        "SSTF",
+        "寻道时间"
+      ],
+      "latencyMs": 745.48,
+      "channelLatencyMs": {
+        "init_ms": 17.38,
+        "grep_ms": 167.97,
+        "vector_ms": 486.27,
+        "graph_ms": 9.1,
+        "web_ms": 0.0,
+        "fusion_ms": 0.13
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "操作系统/磁盘调度-FCFS与SSTF",
+          "title": "磁盘调度-FCFS与SSTF",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "操作系统/磁盘调度-SCAN与C-SCAN",
+          "title": "磁盘调度-SCAN与C-SCAN算法",
+          "score": 0.1508,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "操作系统/磁盘调度算法",
+          "title": "\"磁盘调度算法详解\"",
+          "score": 0.1431,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "操作系统/先来先服务FCFS",
+          "title": "先来先服务FCFS",
+          "score": 0.1415,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "操作系统/CFS调度器实现细节",
+          "title": "\"CFS调度器实现细节\"",
+          "score": 0.0958,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对“磁盘调度-FCFS与SSTF”的核心概念、典型场景和常见误区进行解释，是高度相关的文档。候选文档2和3虽然也涉及磁盘调度算法，但主题不完全聚焦于FCFS与SSTF，相关性稍弱。候选文档4仅涉及FCFS，未涵盖SSTF。候选文档5与磁盘调度无关。因此，最佳相关候选为排名第1的文档，整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q013",
+      "question": "请解释“\"Python深入-数据类与attrs对比\"”的核心概念、典型场景和常见误区。（参考方向：Python、dataclass、attrs、数据建模）",
+      "expectedTitle": "\"Python深入-数据类与attrs对比\"",
+      "expectedSlug": "Python深入/dataclass与attrs",
+      "expectedTags": [
+        "Python",
+        "dataclass",
+        "attrs",
+        "数据建模",
+        "PEP 557"
+      ],
+      "latencyMs": 3398.28,
+      "channelLatencyMs": {
+        "init_ms": 28.34,
+        "grep_ms": 147.19,
+        "vector_ms": 3161.94,
+        "graph_ms": 8.71,
+        "web_ms": 0.0,
+        "fusion_ms": 0.27
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "程序设计/语言特性对比-Python",
+          "title": "语言特性对比-Python",
+          "score": 0.1394,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "Python深入/dataclass与attrs",
+          "title": "\"Python深入-数据类与attrs对比\"",
+          "score": 0.1343,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/声明式vs命令式深度对比",
+          "title": "\"声明式vs命令式深度对比\"",
+          "score": 0.1287,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "Python深入/CPython对象模型",
+          "title": "\"Python深入-CPython对象模型\"",
+          "score": 0.1243,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://wiki.python.org/moin/TimeComplexity",
+          "title": "Python常见数据结构与内置函数性能对比",
+          "score": 0.0806,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.9,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接对应'Python深入-数据类与attrs对比'，能提供核心概念、典型场景和常见误区的详细解释。候选文档1和3虽然与Python或编程范式相关，但未直接聚焦于dataclass与attrs的对比，因此相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q014",
+      "question": "请解释“OAuth2与OpenID Connect”的核心概念、典型场景和常见误区。（参考方向：OAuth、OpenID Connect、身份认证、授权）",
+      "expectedTitle": "OAuth2与OpenID Connect",
+      "expectedSlug": "信息安全/OAuth2与OpenID Connect",
+      "expectedTags": [
+        "OAuth",
+        "OpenID Connect",
+        "身份认证",
+        "授权",
+        "SSO"
+      ],
+      "latencyMs": 5205.84,
+      "channelLatencyMs": {
+        "init_ms": 16.08,
+        "grep_ms": 154.42,
+        "vector_ms": 4981.16,
+        "graph_ms": 8.38,
+        "web_ms": 0.0,
+        "fusion_ms": 0.37
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/OAuth2与OpenID Connect",
+          "title": "OAuth2与OpenID Connect",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "信息安全/身份认证技术",
+          "title": "身份认证技术",
+          "score": 0.1508,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "软件工程/OAuth2与认证协议",
+          "title": "\"OAuth 2.0与OpenID Connect\"",
+          "score": 0.1431,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "信息安全/Kerberos认证协议",
+          "title": "Kerberos认证协议",
+          "score": 0.0869,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "计算机组成原理/IO系统概述",
+          "title": "IO系统概述",
+          "score": 0.0849,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1（标题：OAuth2与OpenID Connect）与用户问题完全匹配，直接涵盖OAuth2和OpenID Connect的核心概念、典型场景和常见误区。候选文档2（身份认证技术）和候选文档3（OAuth 2.0与OpenID Connect）也高度相关，分别从身份认证和协议角度提供补充信息。整体相关性极高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q015",
+      "question": "请解释“Peterson算法”的核心概念、典型场景和常见误区。（参考方向：操作系统、Peterson算法、临界区、互斥）",
+      "expectedTitle": "Peterson算法",
+      "expectedSlug": "操作系统/Peterson算法",
+      "expectedTags": [
+        "操作系统",
+        "Peterson算法",
+        "临界区",
+        "互斥",
+        "软件方法"
+      ],
+      "latencyMs": 2264.14,
+      "channelLatencyMs": {
+        "init_ms": 16.11,
+        "grep_ms": 136.09,
+        "vector_ms": 2041.08,
+        "graph_ms": 9.05,
+        "web_ms": 0.0,
+        "fusion_ms": 0.16
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "操作系统/Peterson算法",
+          "title": "Peterson算法",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "视频资源/操作系统-进程同步与PV操作",
+          "title": "操作系统-进程同步与PV操作（视频）",
+          "score": 0.1421,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "操作系统/银行家算法",
+          "title": "\"银行家算法（Banker's Algorithm）\"",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/算法概述",
+          "title": "算法概述",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "操作系统/互斥与同步机制",
+          "title": "互斥与同步机制",
+          "score": 0.0782,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1（Peterson算法）的标题和slug与用户问题完全匹配，直接对应问题核心概念。候选文档2（进程同步与PV操作）涉及操作系统同步机制，与Peterson算法相关但不够直接。候选文档3（银行家算法）是资源分配算法，与Peterson算法无直接关联。整体上，最佳候选（排名1）高度相关，能直接回答问题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q016",
+      "question": "请解释“ZooKeeper原理与应用”的核心概念、典型场景和常见误区。（参考方向：ZooKeeper、分布式协调、ZNode、Watch）",
+      "expectedTitle": "ZooKeeper原理与应用",
+      "expectedSlug": "分布式系统/ZooKeeper原理与应用",
+      "expectedTags": [
+        "ZooKeeper",
+        "分布式协调",
+        "ZNode",
+        "Watch",
+        "Leader选举",
+        "分布式锁"
+      ],
+      "latencyMs": 540.54,
+      "channelLatencyMs": {
+        "init_ms": 26.54,
+        "grep_ms": 133.48,
+        "vector_ms": 327.58,
+        "graph_ms": 8.05,
+        "web_ms": 0.0,
+        "fusion_ms": 0.14
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "分布式系统/ZooKeeper原理与应用",
+          "title": "ZooKeeper原理与应用",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "分布式系统/ZAB协议（ZooKeeper）",
+          "title": "ZAB协议（ZooKeeper）",
+          "score": 0.151,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "分布式系统/分布式锁实现",
+          "title": "分布式锁实现",
+          "score": 0.1029,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "wiki://分布式系统/协调服务",
+          "title": "分布式系统-ZooKeeper分布式锁实验",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://分布式系统/消息系统与协调",
+          "title": "分布式系统-消息与协调题库",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应'ZooKeeper原理与应用'，且问题要求解释其核心概念、典型场景和常见误区，该文档应能提供全面覆盖。候选文档2（ZAB协议）和候选文档3（分布式锁实现）也与ZooKeeper的分布式协调、ZNode、Watch等参考方向高度相关，能补充典型场景和应用。整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q017",
+      "question": "请解释“置换群”的核心概念、典型场景和常见误区。（参考方向：置换群、对称群、交代群、轮换）",
+      "expectedTitle": "置换群",
+      "expectedSlug": "离散数学/置换群",
+      "expectedTags": [
+        "置换群",
+        "对称群",
+        "交代群",
+        "轮换",
+        "对换",
+        "Cayley定理",
+        "排列的奇偶性"
+      ],
+      "latencyMs": 542.39,
+      "channelLatencyMs": {
+        "init_ms": 17.0,
+        "grep_ms": 141.6,
+        "vector_ms": 324.33,
+        "graph_ms": 8.35,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/置换群",
+          "title": "置换群",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "离散数学/子群",
+          "title": "子群",
+          "score": 0.1474,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/陪集与正规子群与商群",
+          "title": "陪集与正规子群与商群",
+          "score": 0.1468,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/群论基础",
+          "title": "\"群论基础与子群\"",
+          "score": 0.1465,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/等价关系",
+          "title": "等价关系",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“置换群”这一核心概念，能够提供核心定义、典型场景（如对称群、交代群、轮换）和常见误区。候选文档2和3涉及群论的子群、陪集等基础概念，与置换群相关但非直接核心，因此整体相关性高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q018",
+      "question": "请解释“恶意软件分类与防护”的核心概念、典型场景和常见误区。（参考方向：恶意软件、病毒、木马、勒索软件）",
+      "expectedTitle": "恶意软件分类与防护",
+      "expectedSlug": "信息安全/恶意软件分类与防护",
+      "expectedTags": [
+        "恶意软件",
+        "病毒",
+        "木马",
+        "勒索软件",
+        "蠕虫"
+      ],
+      "latencyMs": 556.11,
+      "channelLatencyMs": {
+        "init_ms": 18.83,
+        "grep_ms": 149.58,
+        "vector_ms": 333.52,
+        "graph_ms": 8.51,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/恶意软件分类与防护",
+          "title": "恶意软件分类与防护",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "操作系统/操作系统分类",
+          "title": "操作系统分类",
+          "score": 0.1508,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "软件工程/软件测试分类与策略",
+          "title": "\"软件测试分类与策略\"",
+          "score": 0.1453,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "软件工程/软件安全",
+          "title": "软件安全",
+          "score": 0.1275,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://信息安全/网络安全",
+          "title": "信息安全-网络安全攻防大纲",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“恶意软件分类与防护”这一主题，能够提供核心概念、典型场景和常见误区的详细解释。其他候选文档（如操作系统分类、软件测试、软件安全）与问题相关性较低，但候选文档1已足够直接回答问题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q019",
+      "question": "请解释“\"Rust语言-智能指针与内部可变性\"”的核心概念、典型场景和常见误区。（参考方向：Rust、Box、Rc、Arc）",
+      "expectedTitle": "\"Rust语言-智能指针与内部可变性\"",
+      "expectedSlug": "Rust语言/智能指针与内部可变性",
+      "expectedTags": [
+        "Rust",
+        "Box",
+        "Rc",
+        "Arc",
+        "Cell",
+        "RefCell",
+        "Mutex"
+      ],
+      "latencyMs": 569.73,
+      "channelLatencyMs": {
+        "init_ms": 26.22,
+        "grep_ms": 153.06,
+        "vector_ms": 344.84,
+        "graph_ms": 7.92,
+        "web_ms": 0.0,
+        "fusion_ms": 0.27
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "程序设计/Rust生命周期与借用检查",
+          "title": "Rust生命周期与借用检查",
+          "score": 0.1507,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "Rust语言/智能指针与内部可变性",
+          "title": "\"Rust语言-智能指针与内部可变性\"",
+          "score": 0.1481,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/RAII与资源管理",
+          "title": "\"RAII与智能指针\"",
+          "score": 0.1465,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "程序设计/Rust所有权与借用",
+          "title": "\"Rust所有权与借用系统\"",
+          "score": 0.1421,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "None",
+          "title": "程序设计-Rust所有权与借用系统（视频）",
+          "score": 0.0806,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.9,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接对应“Rust语言-智能指针与内部可变性”这一主题，能够提供核心概念、典型场景和常见误区的详细解释。候选文档3（RAII与智能指针）部分相关，但不够直接。候选文档1、4、5与问题相关性较低，主要涉及Rust的其他方面。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q020",
+      "question": "请解释“First与Follow集”的核心概念、典型场景和常见误区。（参考方向：First集、Follow集、预测分析、LL1）",
+      "expectedTitle": "First与Follow集",
+      "expectedSlug": "编译原理/First-Follow",
+      "expectedTags": [
+        "First集",
+        "Follow集",
+        "预测分析",
+        "LL1",
+        "语法分析",
+        "首符号集",
+        "后继符号集"
+      ],
+      "latencyMs": 507.44,
+      "channelLatencyMs": {
+        "init_ms": 14.47,
+        "grep_ms": 134.41,
+        "vector_ms": 310.57,
+        "graph_ms": 7.92,
+        "web_ms": 0.0,
+        "fusion_ms": 0.24
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/First-Follow",
+          "title": "First与Follow集",
+          "score": 0.1523,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/自底向上LR0与SLR1",
+          "title": "LR(0)与SLR(1)分析",
+          "score": 0.1063,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "编译原理/LR1与LALR1",
+          "title": "LR(1)与LALR(1)分析",
+          "score": 0.0991,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/自顶向下LL1",
+          "title": "自顶向下LL(1)分析",
+          "score": 0.0957,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "None",
+          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“First与Follow集”的核心概念，且预期标签高度重合，能直接回答问题。候选文档4（自顶向下LL(1)分析）也与问题相关，因为LL(1)分析依赖First和Follow集，但相关性略低于文档1。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q021",
+      "question": "请解释“着色频率（Flat/Gouraud/Phong Shading）”的核心概念、典型场景和常见误区。（参考方向：着色频率、Flat Shading、Gouraud Shading、Phong Shading）",
+      "expectedTitle": "着色频率（Flat/Gouraud/Phong Shading）",
+      "expectedSlug": "计算机图形学/着色频率（Flat/Gouraud/Phong Shading）",
+      "expectedTags": [
+        "着色频率",
+        "Flat Shading",
+        "Gouraud Shading",
+        "Phong Shading",
+        "插值着色"
+      ],
+      "latencyMs": 618.24,
+      "channelLatencyMs": {
+        "init_ms": 28.23,
+        "grep_ms": 209.13,
+        "vector_ms": 321.72,
+        "graph_ms": 7.42,
+        "web_ms": 0.0,
+        "fusion_ms": 0.47
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Computer_graphics",
+          "title": "计算机图形学-着色思维导图",
+          "score": 0.1575,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机图形学/着色频率（Flat/Gouraud/Phong Shading）",
+          "title": "着色频率（Flat/Gouraud/Phong Shading）",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "wiki://计算机图形学/光照与着色",
+          "title": "计算机图形学-光照着色题库",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "wiki://计算机图形学/着色",
+          "title": "计算机图形学-Shader编程实验",
+          "score": 0.0769,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0738,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.9,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接对应'着色频率（Flat/Gouraud/Phong Shading）'，能提供核心概念、典型场景和常见误区的详细解释。候选文档1和3虽然相关，但不够直接或具体。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q022",
+      "question": "请解释“操作系统安全机制”的核心概念、典型场景和常见误区。（参考方向：操作系统安全、内核安全、权限管理、安全内核）",
+      "expectedTitle": "操作系统安全机制",
+      "expectedSlug": "信息安全/操作系统安全机制",
+      "expectedTags": [
+        "操作系统安全",
+        "内核安全",
+        "权限管理",
+        "安全内核"
+      ],
+      "latencyMs": 560.51,
+      "channelLatencyMs": {
+        "init_ms": 14.84,
+        "grep_ms": 137.63,
+        "vector_ms": 351.31,
+        "graph_ms": 8.03,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/操作系统安全机制",
+          "title": "操作系统安全机制",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "操作系统/操作系统定义与功能",
+          "title": "操作系统定义与功能",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "操作系统/系统调用机制",
+          "title": "系统调用机制",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "操作系统/操作系统基本特征",
+          "title": "操作系统基本特征",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://pages.cs.wisc.edu/~remzi/OSTEP/",
+          "title": "操作系统知识体系思维导图",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应'操作系统安全机制'这一核心主题，能够提供核心概念、典型场景和常见误区的详细解释。候选文档2和3虽然与操作系统相关，但分别侧重于定义和系统调用，与安全机制的直接相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q023",
+      "question": "请解释“\"写时复制（Copy-on-Write）\"”的核心概念、典型场景和常见误区。（参考方向：操作系统、COW、写时复制、fork）",
+      "expectedTitle": "\"写时复制（Copy-on-Write）\"",
+      "expectedSlug": "操作系统/写时复制COW",
+      "expectedTags": [
+        "操作系统",
+        "COW",
+        "写时复制",
+        "fork",
+        "内存管理"
+      ],
+      "latencyMs": 1936.78,
+      "channelLatencyMs": {
+        "init_ms": 16.01,
+        "grep_ms": 151.8,
+        "vector_ms": 1703.07,
+        "graph_ms": 9.02,
+        "web_ms": 0.0,
+        "fusion_ms": 0.21
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "操作系统/写时复制COW",
+          "title": "\"写时复制（Copy-on-Write）\"",
+          "score": 0.1481,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "分布式系统/数据复制策略",
+          "title": "数据复制策略",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机组成原理/Cache写策略",
+          "title": "Cache写策略",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "操作系统/操作系统基本特征",
+          "title": "操作系统基本特征",
+          "score": 0.0784,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据库原理/WAL预写日志",
+          "title": "\"WAL（Write-Ahead Log）原理\"",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 1.0,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“写时复制（Copy-on-Write）”的核心概念、典型场景和常见误区，且参考方向（操作系统、COW、写时复制、fork）高度一致。其他候选文档（如数据复制策略、Cache写策略）与问题主题无关或相关性较低。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q024",
+      "question": "请解释“半群”的核心概念、典型场景和常见误区。（参考方向：半群、代数系统、结合律、二元运算）",
+      "expectedTitle": "半群",
+      "expectedSlug": "离散数学/半群",
+      "expectedTags": [
+        "半群",
+        "代数系统",
+        "结合律",
+        "二元运算",
+        "子半群",
+        "幺半群"
+      ],
+      "latencyMs": 1890.21,
+      "channelLatencyMs": {
+        "init_ms": 25.38,
+        "grep_ms": 138.42,
+        "vector_ms": 1670.93,
+        "graph_ms": 7.74,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/半群",
+          "title": "半群",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "离散数学/群论基础",
+          "title": "\"群论基础与子群\"",
+          "score": 0.1057,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/陪集与正规子群与商群",
+          "title": "陪集与正规子群与商群",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/关系的性质与闭包",
+          "title": "\"关系的性质与闭包运算\"",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/独异点",
+          "title": "独异点",
+          "score": 0.0773,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（标题：半群，slug：离散数学/半群）与用户问题直接相关，其标题和slug完全匹配问题核心概念“半群”，且预期标签（半群、代数系统、结合律、二元运算）高度重合，能直接解释半群的核心概念、典型场景和常见误区。候选文档2（群论基础）和候选文档5（独异点）也与半群相关，但相关性较低。整体上，最佳候选（排名1）直接命中问题，因此hitAt1和hitAt3均为true，bestRank为1，relevanceScore较高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q025",
+      "question": "请解释“边缘计算架构”的核心概念、典型场景和常见误区。（参考方向：边缘计算、Edge Computing、CDN、IoT）",
+      "expectedTitle": "边缘计算架构",
+      "expectedSlug": "分布式系统/边缘计算架构",
+      "expectedTags": [
+        "边缘计算",
+        "Edge Computing",
+        "CDN",
+        "IoT",
+        "边缘节点",
+        "低延迟"
+      ],
+      "latencyMs": 2783.3,
+      "channelLatencyMs": {
+        "init_ms": 13.89,
+        "grep_ms": 142.24,
+        "vector_ms": 2559.21,
+        "graph_ms": 8.75,
+        "web_ms": 0.0,
+        "fusion_ms": 0.48
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "分布式系统/边缘计算架构",
+          "title": "边缘计算架构",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "软件工程/云原生架构",
+          "title": "云原生架构",
+          "score": 0.0873,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "分布式系统/云原生架构",
+          "title": "云原生架构",
+          "score": 0.0869,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机网络/CDN内容分发网络",
+          "title": "CDN内容分发网络",
+          "score": 0.0865,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "信息安全/云安全架构",
+          "title": "云安全架构",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“边缘计算架构”这一核心主题，能够直接回答关于核心概念、典型场景和常见误区的问题。候选文档4（CDN）与问题参考方向相关，但相关性次于文档1。其他候选文档（云原生架构、云安全架构）与问题直接相关性较低。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q026",
+      "question": "请解释“关键路径-AOE网”的核心概念、典型场景和常见误区。（参考方向：图、关键路径、AOE网、最早开始时间）",
+      "expectedTitle": "关键路径-AOE网",
+      "expectedSlug": "数据结构/关键路径",
+      "expectedTags": [
+        "图",
+        "关键路径",
+        "AOE网",
+        "最早开始时间",
+        "最晚开始时间",
+        "项目管理"
+      ],
+      "latencyMs": 697.45,
+      "channelLatencyMs": {
+        "init_ms": 27.05,
+        "grep_ms": 122.58,
+        "vector_ms": 480.64,
+        "graph_ms": 7.86,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/关键路径",
+          "title": "关键路径-AOE网",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "软件工程/项目管理",
+          "title": "项目管理-甘特图与关键路径",
+          "score": 0.1499,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "软件工程/软件项目进度管理-甘特图与关键路径",
+          "title": "软件项目进度管理-甘特图与关键路径",
+          "score": 0.1484,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据结构/拓扑排序",
+          "title": "拓扑排序-AOV网",
+          "score": 0.1363,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "算法设计与分析/AC自动机",
+          "title": "\"Aho-Corasick自动机\"",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应'关键路径-AOE网'的核心概念、典型场景和常见误区，且参考方向中的图、关键路径、AOE网、最早开始时间等关键词均高度相关。候选文档2和3也涉及关键路径和项目管理，但更偏向应用而非核心概念解释，因此相关性略低。候选文档4和5与问题无关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q027",
+      "question": "请解释“\"C语言-多线程pthread\"”的核心概念、典型场景和常见误区。（参考方向：C语言、pthread、POSIX、多线程）",
+      "expectedTitle": "\"C语言-多线程pthread\"",
+      "expectedSlug": "C语言深入/多线程pthread",
+      "expectedTags": [
+        "C语言",
+        "pthread",
+        "POSIX",
+        "多线程"
+      ],
+      "latencyMs": 644.77,
+      "channelLatencyMs": {
+        "init_ms": 13.97,
+        "grep_ms": 138.57,
+        "vector_ms": 430.34,
+        "graph_ms": 7.81,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "C语言深入/多线程pthread",
+          "title": "\"C语言-多线程pthread\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "程序设计/语言特性对比-C",
+          "title": "语言特性对比-C语言",
+          "score": 0.1474,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "C语言深入/跨平台移植要点",
+          "title": "\"C语言-跨平台移植要点\"",
+          "score": 0.1323,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "C语言深入/错误处理errno",
+          "title": "\"C语言-错误处理errno\"",
+          "score": 0.1286,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "操作系统/线程的概念与属性",
+          "title": "线程的概念与属性",
+          "score": 0.1121,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对'C语言-多线程pthread'的核心概念、典型场景和常见误区，是高度相关的文档。候选文档5（线程的概念与属性）也与多线程主题相关，但不如文档1直接。其他候选文档（如语言特性对比、跨平台移植、错误处理）与pthread多线程主题关联较弱。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q028",
+      "question": "请解释“\"PBR材质系统\"”的核心概念、典型场景和常见误区。（参考方向：图形学、PBR、材质、BSDF）",
+      "expectedTitle": "\"PBR材质系统\"",
+      "expectedSlug": "计算机图形学/PBR材质系统",
+      "expectedTags": [
+        "图形学",
+        "PBR",
+        "材质",
+        "BSDF",
+        "渲染"
+      ],
+      "latencyMs": 677.94,
+      "channelLatencyMs": {
+        "init_ms": 16.1,
+        "grep_ms": 132.96,
+        "vector_ms": 468.07,
+        "graph_ms": 9.01,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "wiki://计算机图形学/光照与着色",
+          "title": "计算机图形学-光照与材质图谱",
+          "score": 0.1575,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机图形学/PBR材质系统",
+          "title": "\"PBR材质系统\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机图形学/PBR物理渲染原理",
+          "title": "PBR物理渲染原理",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://en.wikipedia.org/wiki/Computer_graphics",
+          "title": "实操案例-着色实践",
+          "score": 0.0769,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0726,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2的标题和slug与用户问题的预期标题和slug完全匹配，直接针对“PBR材质系统”这一核心主题，能够提供核心概念、典型场景和常见误区的解释。候选文档3（PBR物理渲染原理）也高度相关，可能涵盖PBR的原理和应用。候选文档1（光照与材质图谱）可能提供相关背景，但相关性稍弱。整体上，前三个候选中至少有一个（文档2）直接相关，因此hitAt3为true，最佳排名为2，整体相关性评分较高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q029",
+      "question": "请解释“\"Python深入-上下文管理器协议\"”的核心概念、典型场景和常见误区。（参考方向：Python、上下文管理器、with、__enter__）",
+      "expectedTitle": "\"Python深入-上下文管理器协议\"",
+      "expectedSlug": "Python深入/上下文管理器",
+      "expectedTags": [
+        "Python",
+        "上下文管理器",
+        "with",
+        "__enter__",
+        "__exit__",
+        "contextlib"
+      ],
+      "latencyMs": 551.58,
+      "channelLatencyMs": {
+        "init_ms": 25.61,
+        "grep_ms": 134.26,
+        "vector_ms": 330.81,
+        "graph_ms": 7.96,
+        "web_ms": 0.0,
+        "fusion_ms": 0.21
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Computer_programming",
+          "title": "实操案例-Python实践",
+          "score": 0.3151,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "Python深入/上下文管理器",
+          "title": "\"Python深入-上下文管理器协议\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0726,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "程序设计/编译型vs解释型语言",
+          "title": "编译型vs解释型语言",
+          "score": 0.0714,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "程序设计/Python GIL与并发",
+          "title": "\"Python GIL与并发模型\"",
+          "score": 0.0703,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.9,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接对应'Python深入-上下文管理器协议'，是回答该问题的核心资源。候选文档1虽然标题包含'Python实践'，但内容不明确，相关性较低。候选文档3、4、5与问题无关。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q030",
+      "question": "请解释“\"Python深入-生成器与协程底层\"”的核心概念、典型场景和常见误区。（参考方向：Python、生成器、yield、协程）",
+      "expectedTitle": "\"Python深入-生成器与协程底层\"",
+      "expectedSlug": "Python深入/生成器与协程",
+      "expectedTags": [
+        "Python",
+        "生成器",
+        "yield",
+        "协程",
+        "yield from",
+        "iterator"
+      ],
+      "latencyMs": 688.13,
+      "channelLatencyMs": {
+        "init_ms": 17.95,
+        "grep_ms": 153.3,
+        "vector_ms": 444.28,
+        "graph_ms": 9.53,
+        "web_ms": 0.0,
+        "fusion_ms": 0.23
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "Python深入/生成器与协程",
+          "title": "\"Python深入-生成器与协程底层\"",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "JavaScript/TypeScript/async-await原理",
+          "title": "\"JavaScript-async/await与生成器\"",
+          "score": 0.1507,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/协程原理与实现",
+          "title": "\"协程原理与底层实现\"",
+          "score": 0.1499,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://www.bilibili.com/video/BV1hp4y1k7SV",
+          "title": "Python异步编程与协程深度解析（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://en.wikipedia.org/wiki/Computer_programming",
+          "title": "程序设计-Python思维导图",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对Python生成器与协程的底层概念，是预期的参考文档。候选文档2和3虽然涉及生成器或协程，但分别侧重JavaScript和通用原理，相关性较低。整体上，最佳候选（排名1）高度相关，能直接回答问题。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q031",
+      "question": "请解释“量子密码学”的核心概念、典型场景和常见误区。（参考方向：量子密码、量子计算、后量子密码、QKD）",
+      "expectedTitle": "量子密码学",
+      "expectedSlug": "信息安全/量子密码学",
+      "expectedTags": [
+        "量子密码",
+        "量子计算",
+        "后量子密码",
+        "QKD"
+      ],
+      "latencyMs": 744.76,
+      "channelLatencyMs": {
+        "init_ms": 20.3,
+        "grep_ms": 136.07,
+        "vector_ms": 528.84,
+        "graph_ms": 7.94,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/量子密码学",
+          "title": "量子密码学",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "信息安全/区块链密码学基础",
+          "title": "区块链密码学基础",
+          "score": 0.1091,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "https://en.wikipedia.org/wiki/Information_security",
+          "title": "信息安全-密码学题库",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "信息安全/密码学应用实践",
+          "title": "密码学应用实践",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://信息安全/密码学基础",
+          "title": "信息安全-密码学知识图谱",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "排名第一的候选文档标题为“量子密码学”，与用户问题主题完全一致，slug也匹配预期，能直接提供核心概念、典型场景和常见误区的解释。其他候选文档（如区块链密码学、密码学基础）与量子密码学关联较弱，但前三个中至少有一个直接相关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q032",
+      "question": "请解释“Multi-Paxos与日志复制”的核心概念、典型场景和常见误区。（参考方向：Multi-Paxos、日志复制、Leader、共识）",
+      "expectedTitle": "Multi-Paxos与日志复制",
+      "expectedSlug": "分布式系统/Multi-Paxos与日志复制",
+      "expectedTags": [
+        "Multi-Paxos",
+        "日志复制",
+        "Leader",
+        "共识",
+        "状态机复制"
+      ],
+      "latencyMs": 707.6,
+      "channelLatencyMs": {
+        "init_ms": 25.37,
+        "grep_ms": 150.13,
+        "vector_ms": 485.27,
+        "graph_ms": 9.0,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "分布式系统/Multi-Paxos与日志复制",
+          "title": "Multi-Paxos与日志复制",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "分布式系统/分布式共识深度Paxos-Raft对比",
+          "title": "\"分布式共识深度(Paxos/Raft对比)\"",
+          "score": 0.1472,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据库原理/分布式一致性协议",
+          "title": "\"Raft/Paxos一致性协议\"",
+          "score": 0.1366,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "分布式系统/Paxos协议详解",
+          "title": "Paxos协议详解",
+          "score": 0.1164,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://分布式系统/一致性协议",
+          "title": "分布式系统-Paxos与Raft详解",
+          "score": 0.0806,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应Multi-Paxos与日志复制的核心概念、典型场景和常见误区，且包含预期标签中的所有关键词。候选文档2和3也涉及Paxos/Raft对比和一致性协议，与问题相关但不如文档1直接。整体相关性很高。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q033",
+      "question": "请解释“敏捷开发”的核心概念、典型场景和常见误区。（参考方向：敏捷开发、Scrum、XP、Kanban）",
+      "expectedTitle": "敏捷开发",
+      "expectedSlug": "软件工程/敏捷开发",
+      "expectedTags": [
+        "敏捷开发",
+        "Scrum",
+        "XP",
+        "Kanban",
+        "持续集成",
+        "CI/CD",
+        "DevOps",
+        "敏捷宣言"
+      ],
+      "latencyMs": 575.62,
+      "channelLatencyMs": {
+        "init_ms": 14.33,
+        "grep_ms": 134.36,
+        "vector_ms": 367.89,
+        "graph_ms": 9.77,
+        "web_ms": 0.0,
+        "fusion_ms": 0.13
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Software_engineering",
+          "title": "软件工程-开发流程思维导图",
+          "score": 0.155,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "软件工程/敏捷开发",
+          "title": "敏捷开发",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "软件工程/敏捷Scrum与Kanban",
+          "title": "\"敏捷开发方法论（Scrum与Kanban）\"",
+          "score": 0.1499,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://www.bilibili.com/video/BV1G4411c7N4",
+          "title": "软件工程-敏捷开发与Scrum实战（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0738,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2（标题：敏捷开发，slug：软件工程/敏捷开发）与用户问题直接相关，其标题和slug完全匹配问题主题，能直接提供敏捷开发的核心概念、典型场景和常见误区。候选文档3（标题：\"敏捷开发方法论（Scrum与Kanban）\"）也高度相关，覆盖了Scrum和Kanban等具体方法。候选文档1（软件工程-开发流程思维导图）可能涉及敏捷开发但不够直接。候选文档4是视频，可能包含相关内容但非文本直接回答。候选文档5无关。因此，前三个候选中至少一个直接相关，最佳排名为2。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q034",
+      "question": "请解释“\"敏捷开发方法论（Scrum与Kanban）\"”的核心概念、典型场景和常见误区。（参考方向：软件工程、敏捷开发、Scrum、Kanban）",
+      "expectedTitle": "\"敏捷开发方法论（Scrum与Kanban）\"",
+      "expectedSlug": "软件工程/敏捷Scrum与Kanban",
+      "expectedTags": [
+        "软件工程",
+        "敏捷开发",
+        "Scrum",
+        "Kanban"
+      ],
+      "latencyMs": 632.03,
+      "channelLatencyMs": {
+        "init_ms": 30.61,
+        "grep_ms": 167.67,
+        "vector_ms": 369.46,
+        "graph_ms": 8.1,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Software_engineering",
+          "title": "软件工程-开发流程思维导图",
+          "score": 0.155,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "软件工程/敏捷开发",
+          "title": "敏捷开发",
+          "score": 0.1519,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "软件工程/敏捷Scrum与Kanban",
+          "title": "\"敏捷开发方法论（Scrum与Kanban）\"",
+          "score": 0.1491,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://www.bilibili.com/video/BV1G4411c7N4",
+          "title": "软件工程-敏捷开发与Scrum实战（视频）",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "软件工程/软件工程概述",
+          "title": "软件工程概述",
+          "score": 0.078,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 3,
+        "relevanceScore": 0.85,
+        "reason": "候选文档3的标题和slug与用户问题完全匹配，直接对应“敏捷开发方法论（Scrum与Kanban）”，能提供核心概念、典型场景和常见误区的详细解释。候选文档2（敏捷开发）和候选文档4（敏捷开发与Scrum实战）也与问题相关，但候选文档3是最佳匹配。候选文档1和5过于宽泛，相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q035",
+      "question": "请解释“经典同步问题-生产者消费者”的核心概念、典型场景和常见误区。（参考方向：操作系统、同步、生产者消费者、有界缓冲）",
+      "expectedTitle": "经典同步问题-生产者消费者",
+      "expectedSlug": "操作系统/经典同步问题-生产者消费者",
+      "expectedTags": [
+        "操作系统",
+        "同步",
+        "生产者消费者",
+        "有界缓冲",
+        "信号量"
+      ],
+      "latencyMs": 725.71,
+      "channelLatencyMs": {
+        "init_ms": 14.66,
+        "grep_ms": 136.26,
+        "vector_ms": 527.63,
+        "graph_ms": 8.71,
+        "web_ms": 0.0,
+        "fusion_ms": 0.3
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "操作系统/经典同步问题-生产者消费者",
+          "title": "经典同步问题-生产者消费者",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "视频资源/操作系统-进程同步与PV操作",
+          "title": "操作系统-进程同步与PV操作（视频）",
+          "score": 0.1441,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "操作系统/经典同步问题-读者写者与哲学家进餐",
+          "title": "经典同步问题-读者写者与哲学家进餐",
+          "score": 0.1415,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "None",
+          "title": "操作系统-进程同步与PV操作（视频）",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://pages.cs.wisc.edu/~remzi/OSTEP/",
+          "title": "操作系统-进程同步PV操作题库",
+          "score": 0.0794,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“经典同步问题-生产者消费者”，且预期标签（操作系统、同步、生产者消费者、有界缓冲）高度相关，能直接提供核心概念、典型场景和常见误区的解释。候选文档2和3也涉及操作系统同步主题，但相关性稍弱。整体检索质量高，最佳文档排名靠前。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q036",
+      "question": "请解释“最长公共子序列 LCS”的核心概念、典型场景和常见误区。（参考方向：最长公共子序列、动态规划、LCS、字符串）",
+      "expectedTitle": "最长公共子序列 LCS",
+      "expectedSlug": "算法设计与分析/最长公共子序列",
+      "expectedTags": [
+        "最长公共子序列",
+        "动态规划",
+        "LCS",
+        "字符串",
+        "序列比对"
+      ],
+      "latencyMs": 676.0,
+      "channelLatencyMs": {
+        "init_ms": 17.27,
+        "grep_ms": 157.7,
+        "vector_ms": 425.14,
+        "graph_ms": 7.04,
+        "web_ms": 0.0,
+        "fusion_ms": 0.15
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "算法设计与分析/最长公共子序列",
+          "title": "最长公共子序列 LCS",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "算法设计与分析/最长递增子序列",
+          "title": "最长递增子序列 LIS",
+          "score": 0.1406,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "None",
+          "title": "算法-动态规划从入门到精通（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/动态规划概述",
+          "title": "动态规划概述",
+          "score": 0.0784,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://en.wikipedia.org/wiki/Algorithm",
+          "title": "算法设计与分析-动态规划思维导图",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“最长公共子序列 LCS”的核心概念、典型场景和常见误区，是高度相关的直接答案。候选文档2（最长递增子序列）和候选文档3（动态规划视频）虽然相关，但并非直接针对LCS，因此最佳相关候选为排名1。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q037",
+      "question": "请解释“\"词法分析与自动机\"”的核心概念、典型场景和常见误区。（参考方向：编译原理、词法分析、DFA、NFA）",
+      "expectedTitle": "\"词法分析与自动机\"",
+      "expectedSlug": "编译原理/词法分析与DFA",
+      "expectedTags": [
+        "编译原理",
+        "词法分析",
+        "DFA",
+        "NFA",
+        "正则"
+      ],
+      "latencyMs": 762.77,
+      "channelLatencyMs": {
+        "init_ms": 17.56,
+        "grep_ms": 147.68,
+        "vector_ms": 538.25,
+        "graph_ms": 7.82,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Compiler",
+          "title": "编译原理-词法分析思维导图",
+          "score": 0.1576,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/词法分析",
+          "title": "词法分析",
+          "score": 0.1507,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/自动机基础",
+          "title": "自动机基础",
+          "score": 0.1486,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/词法分析与DFA",
+          "title": "\"词法分析与自动机\"",
+          "score": 0.1453,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "编译原理/DFA",
+          "title": "DFA",
+          "score": 0.078,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": false,
+        "bestRank": 4,
+        "relevanceScore": 0.6,
+        "reason": "候选文档中，排名第4的文档标题与问题主题完全匹配，且slug包含'词法分析与DFA'，直接对应问题中的核心概念（词法分析、DFA、NFA）。但该文档未进入前三名，因此hitAt1和hitAt3均为false。其他候选文档（如排名第1的'编译原理-词法分析思维导图'、排名第2的'词法分析'、排名第3的'自动机基础'）虽与问题相关，但未直接聚焦于'词法分析与自动机'的综合解释，相关性较弱。整体相关性评分为0.6，因为最佳候选能直接回答问题，但排名不够靠前。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q038",
+      "question": "请解释“BCD码与ASCII编码”的核心概念、典型场景和常见误区。（参考方向：BCD码、ASCII、字符编码、8421码）",
+      "expectedTitle": "BCD码与ASCII编码",
+      "expectedSlug": "计算机组成原理/BCD码与ASCII",
+      "expectedTags": [
+        "BCD码",
+        "ASCII",
+        "字符编码",
+        "8421码",
+        "十进制编码"
+      ],
+      "latencyMs": 2525.07,
+      "channelLatencyMs": {
+        "init_ms": 26.61,
+        "grep_ms": 161.84,
+        "vector_ms": 2260.23,
+        "graph_ms": 8.01,
+        "web_ms": 0.0,
+        "fusion_ms": 0.13
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Computer_architecture",
+          "title": "编程挑战-数据表示实现",
+          "score": 0.1575,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机组成原理/BCD码与ASCII",
+          "title": "BCD码与ASCII编码",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/Unicode与编码深度",
+          "title": "\"Unicode与编码深度\"",
+          "score": 0.1431,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机组成原理/原码反码补码移码",
+          "title": "原码、反码、补码与移码",
+          "score": 0.1038,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0738,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接对应'BCD码与ASCII编码'的核心概念、典型场景和常见误区，是高度相关的文档。候选文档3涉及编码主题，但更侧重于Unicode，相关性次之。候选文档1、4、5与问题直接相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q039",
+      "question": "请解释“\"最小生成树（Prim与Kruskal）\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、最小生成树、Prim、Kruskal）",
+      "expectedTitle": "\"最小生成树（Prim与Kruskal）\"",
+      "expectedSlug": "数据结构/最小生成树MST",
+      "expectedTags": [
+        "数据结构",
+        "最小生成树",
+        "Prim",
+        "Kruskal",
+        "MST"
+      ],
+      "latencyMs": 1809.53,
+      "channelLatencyMs": {
+        "init_ms": 16.07,
+        "grep_ms": 160.82,
+        "vector_ms": 1561.62,
+        "graph_ms": 9.79,
+        "web_ms": 0.0,
+        "fusion_ms": 0.15
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/生成树与最小生成树",
+          "title": "生成树与最小生成树",
+          "score": 0.1523,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/最小生成树-Prim",
+          "title": "最小生成树-Prim算法",
+          "score": 0.151,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据结构/最小生成树-Kruskal",
+          "title": "最小生成树-Kruskal算法",
+          "score": 0.1496,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/最小生成树",
+          "title": "最小生成树",
+          "score": 0.1495,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/最小生成树MST",
+          "title": "\"最小生成树（Prim与Kruskal）\"",
+          "score": 0.1481,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 5,
+        "relevanceScore": 0.85,
+        "reason": "候选文档中，排名第5的文档标题与用户问题完全一致，slug也匹配预期，直接覆盖了最小生成树的核心概念、Prim与Kruskal算法，因此是最佳相关文档。排名第2和第3的文档分别针对Prim和Kruskal算法，与问题部分相关，但未完整涵盖两者对比和常见误区。排名第1和第4的文档涉及生成树或最小生成树的一般概念，相关性较低。整体上，前三个候选中至少有一个（排名第2或第3）与问题直接相关，但最佳匹配在第5位。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q040",
+      "question": "请解释“独异点”的核心概念、典型场景和常见误区。（参考方向：独异点、幺半群、单位元、代数系统）",
+      "expectedTitle": "独异点",
+      "expectedSlug": "离散数学/独异点",
+      "expectedTags": [
+        "独异点",
+        "幺半群",
+        "单位元",
+        "代数系统",
+        "子独异点",
+        "自由独异点"
+      ],
+      "latencyMs": 16176.58,
+      "channelLatencyMs": {
+        "init_ms": 27.64,
+        "grep_ms": 139.83,
+        "vector_ms": 15945.68,
+        "graph_ms": 0.0,
+        "web_ms": 0.0,
+        "fusion_ms": 0.0
+      },
+      "success": false,
+      "error": "SSLError: HTTPSConnectionPool(host='dashscope.aliyuncs.com', port=443): Max retries exceeded with url: /api/v1/services/embeddings/multimodal-embedding/multimodal-embedding (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1081)')))",
+      "top": [],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": false,
+        "bestRank": null,
+        "relevanceScore": 0.0,
+        "reason": "候选文档列表为空，没有任何文档可供评估，因此无法提供任何相关信息来回答用户关于“独异点”的问题。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q041",
+      "question": "请解释“最短路径-Bellman-Ford算法”的核心概念、典型场景和常见误区。（参考方向：图、最短路径、Bellman-Ford、负权边）",
+      "expectedTitle": "最短路径-Bellman-Ford算法",
+      "expectedSlug": "数据结构/最短路径-BellmanFord",
+      "expectedTags": [
+        "图",
+        "最短路径",
+        "Bellman-Ford",
+        "负权边",
+        "负权环",
+        "松弛操作"
+      ],
+      "latencyMs": 2110.85,
+      "channelLatencyMs": {
+        "init_ms": 327.95,
+        "grep_ms": 121.94,
+        "vector_ms": 1584.11,
+        "graph_ms": 13.8,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/最短路径-BellmanFord",
+          "title": "最短路径-Bellman-Ford算法",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "算法设计与分析/Bellman-Ford算法",
+          "title": "Bellman-Ford算法",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据结构/最短路径-Floyd",
+          "title": "最短路径-Floyd算法",
+          "score": 0.1486,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据结构/最短路径-Dijkstra",
+          "title": "最短路径-Dijkstra算法",
+          "score": 0.1472,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/最短路径Dijkstra",
+          "title": "\"最短路径算法（Dijkstra）\"",
+          "score": 0.1453,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对Bellman-Ford算法的核心概念、典型场景和常见误区，且包含负权边等关键标签。候选文档2也高度相关，但排名稍后。候选文档3、4、5涉及其他最短路径算法，与问题直接相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q042",
+      "question": "请解释“\"MVCC多版本并发控制详解\"”的核心概念、典型场景和常见误区。（参考方向：数据库、MVCC、事务、并发控制）",
+      "expectedTitle": "\"MVCC多版本并发控制详解\"",
+      "expectedSlug": "数据库原理/MVCC多版本并发控制",
+      "expectedTags": [
+        "数据库",
+        "MVCC",
+        "事务",
+        "并发控制",
+        "PostgreSQL",
+        "MySQL"
+      ],
+      "latencyMs": 3051.36,
+      "channelLatencyMs": {
+        "init_ms": 17.79,
+        "grep_ms": 132.79,
+        "vector_ms": 2811.11,
+        "graph_ms": 8.37,
+        "web_ms": 0.0,
+        "fusion_ms": 0.18
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据库原理/MVCC多版本并发控制",
+          "title": "\"MVCC多版本并发控制详解\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "https://en.wikipedia.org/wiki/Database",
+          "title": "数据库原理-事务思维导图",
+          "score": 0.155,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据库原理/MVCC",
+          "title": "多版本并发控制MVCC",
+          "score": 0.153,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://www.bilibili.com/video/BV1Vt4y1S7jW",
+          "title": "数据库-事务隔离级别与MVCC（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0726,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对MVCC多版本并发控制的核心概念、典型场景和常见误区进行详解，是高度相关的文档。候选文档3也直接相关，但排名稍后。候选文档2和4涉及数据库和MVCC，但不够直接或具体。候选文档5完全不相关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q043",
+      "question": "请解释“\"图着色与色多项式\"”的核心概念、典型场景和常见误区。（参考方向：离散数学、图着色、色数、色多项式）",
+      "expectedTitle": "\"图着色与色多项式\"",
+      "expectedSlug": "离散数学/图着色与多项式",
+      "expectedTags": [
+        "离散数学",
+        "图着色",
+        "色数",
+        "色多项式",
+        "四色定理"
+      ],
+      "latencyMs": 3122.75,
+      "channelLatencyMs": {
+        "init_ms": 27.99,
+        "grep_ms": 155.47,
+        "vector_ms": 2896.4,
+        "graph_ms": 7.55,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/图着色与多项式",
+          "title": "\"图着色与色多项式\"",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/寄存器分配与图着色",
+          "title": "\"寄存器分配与图着色算法\"",
+          "score": 0.1484,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "算法设计与分析/图的着色",
+          "title": "图的着色问题",
+          "score": 0.1081,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://www.bilibili.com/video/BV1jE411W7wH",
+          "title": "离散数学-图论基础与算法（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/图论基础概念",
+          "title": "\"图论基础概念与性质\"",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“图着色与色多项式”这一主题，能够提供核心概念、典型场景和常见误区的解释。候选文档2和3虽然也涉及图着色，但更偏向算法应用（如寄存器分配）或一般性问题，相关性稍弱。整体上，最佳候选（排名1）高度相关，能直接满足用户需求。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q044",
+      "question": "请解释“\"并发编程-线程池原理\"”的核心概念、典型场景和常见误区。（参考方向：并发编程、线程池、ThreadPool、Executor）",
+      "expectedTitle": "\"并发编程-线程池原理\"",
+      "expectedSlug": "程序设计/线程池原理",
+      "expectedTags": [
+        "并发编程",
+        "线程池",
+        "ThreadPool",
+        "Executor",
+        "并发"
+      ],
+      "latencyMs": 2803.01,
+      "channelLatencyMs": {
+        "init_ms": 15.51,
+        "grep_ms": 136.71,
+        "vector_ms": 2604.01,
+        "graph_ms": 7.85,
+        "web_ms": 0.0,
+        "fusion_ms": 0.26
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Computer_programming",
+          "title": "实操案例-并发编程实践",
+          "score": 0.2344,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "程序设计/线程池原理",
+          "title": "\"并发编程-线程池原理\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/并发编程",
+          "title": "并发编程",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0726,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "程序设计/编译型vs解释型语言",
+          "title": "编译型vs解释型语言",
+          "score": 0.0703,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.8,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接对应'并发编程-线程池原理'，能提供核心概念、典型场景和常见误区的详细解释。候选文档3（并发编程）也相关，但更宽泛。候选文档1（实操案例-并发编程实践）可能涉及实践，但相关性较低。整体上，最佳候选（排名2）高度相关，因此relevanceScore为0.8。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q045",
+      "question": "请解释“云原生架构”的核心概念、典型场景和常见误区。（参考方向：软件工程、云原生、Kubernetes、微服务）",
+      "expectedTitle": "云原生架构",
+      "expectedSlug": "软件工程/云原生架构",
+      "expectedTags": [
+        "软件工程",
+        "云原生",
+        "Kubernetes",
+        "微服务",
+        "DevOps"
+      ],
+      "latencyMs": 4218.16,
+      "channelLatencyMs": {
+        "init_ms": 17.59,
+        "grep_ms": 134.53,
+        "vector_ms": 3997.97,
+        "graph_ms": 9.47,
+        "web_ms": 0.0,
+        "fusion_ms": 0.14
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "软件工程/云原生架构",
+          "title": "云原生架构",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "分布式系统/云原生架构",
+          "title": "云原生架构",
+          "score": 0.1532,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "分布式系统/Serverless架构",
+          "title": "Serverless架构",
+          "score": 0.1063,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "wiki://软件工程/架构设计",
+          "title": "软件工程-云原生技术栈",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "信息安全/云安全架构",
+          "title": "云安全架构",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（软件工程/云原生架构）与用户问题高度匹配，直接对应“云原生架构”的核心概念、典型场景和常见误区，且标签与参考方向一致。候选文档2（分布式系统/云原生架构）也相关，但排名稍低。候选文档3（Serverless架构）部分相关，但非核心。整体相关性高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q046",
+      "question": "请解释“进程状态转换”的核心概念、典型场景和常见误区。（参考方向：操作系统、进程、状态转换、三态模型）",
+      "expectedTitle": "进程状态转换",
+      "expectedSlug": "操作系统/进程状态转换",
+      "expectedTags": [
+        "操作系统",
+        "进程",
+        "状态转换",
+        "三态模型",
+        "五态模型"
+      ],
+      "latencyMs": 2184.12,
+      "channelLatencyMs": {
+        "init_ms": 17.24,
+        "grep_ms": 126.49,
+        "vector_ms": 1972.75,
+        "graph_ms": 8.26,
+        "web_ms": 0.0,
+        "fusion_ms": 0.14
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "操作系统/进程状态转换",
+          "title": "进程状态转换",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "https://en.wikipedia.org/wiki/Operating_system",
+          "title": "进程管理深度解析",
+          "score": 0.155,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "操作系统/进程的定义与特征",
+          "title": "进程的定义与特征",
+          "score": 0.1497,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "操作系统/进程上下文切换",
+          "title": "进程上下文切换",
+          "score": 0.1419,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "操作系统/操作系统发展历史",
+          "title": "操作系统发展历史",
+          "score": 0.078,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“进程状态转换”这一核心概念，能够提供关于核心概念、典型场景和常见误区的详细解释。候选文档2和3虽然与进程相关，但未直接聚焦于状态转换，因此相关性较低。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q047",
+      "question": "请解释“\"IPv4与IPv6全面对比\"”的核心概念、典型场景和常见误区。（参考方向：计算机网络、IPv4、IPv6、网络层）",
+      "expectedTitle": "\"IPv4与IPv6全面对比\"",
+      "expectedSlug": "计算机网络/IPv4与IPv6对比",
+      "expectedTags": [
+        "计算机网络",
+        "IPv4",
+        "IPv6",
+        "网络层",
+        "地址空间"
+      ],
+      "latencyMs": 2331.65,
+      "channelLatencyMs": {
+        "init_ms": 27.66,
+        "grep_ms": 160.88,
+        "vector_ms": 2072.63,
+        "graph_ms": 8.47,
+        "web_ms": 0.0,
+        "fusion_ms": 0.28
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "计算机网络/网络层-IPv6",
+          "title": "IPv6协议详解",
+          "score": 0.1532,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/IPv4地址分类",
+          "title": "IPv4地址分类与特殊地址",
+          "score": 0.1508,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机网络/IPv4与IPv6对比",
+          "title": "\"IPv4与IPv6全面对比\"",
+          "score": 0.1337,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机网络/网络层-IP协议",
+          "title": "IP协议详解",
+          "score": 0.1005,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://www.bilibili.com/video/BV1Hx411m7RH",
+          "title": "计算机网络-IP地址与子网划分完全解析（视频）",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 3,
+        "relevanceScore": 0.8,
+        "reason": "候选文档3的标题和slug与用户问题完全匹配，直接对应“IPv4与IPv6全面对比”，能提供核心概念、典型场景和常见误区的详细解释。候选文档1和2分别聚焦IPv6和IPv4的特定方面，相关性较高但不如文档3直接。整体相关性较强，但未在排名前两位命中，因此relevanceScore为0.8。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q048",
+      "question": "请解释“页表与TLB”的核心概念、典型场景和常见误区。（参考方向：页表、TLB、快表、MMU）",
+      "expectedTitle": "页表与TLB",
+      "expectedSlug": "计算机组成原理/页表与TLB",
+      "expectedTags": [
+        "页表",
+        "TLB",
+        "快表",
+        "MMU",
+        "地址转换",
+        "多级页表"
+      ],
+      "latencyMs": 4246.01,
+      "channelLatencyMs": {
+        "init_ms": 18.16,
+        "grep_ms": 154.0,
+        "vector_ms": 4003.59,
+        "graph_ms": 10.0,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Operating_system",
+          "title": "操作系统-内存管理思维导图",
+          "score": 0.155,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机组成原理/页表与TLB",
+          "title": "页表与TLB",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机组成原理/虚拟内存与TLB",
+          "title": "\"虚拟内存与TLB机制\"",
+          "score": 0.151,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "None",
+          "title": "操作系统-内存管理完全指南（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0738,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2（标题：页表与TLB，slug：计算机组成原理/页表与TLB）与用户问题直接相关，其标题和slug完全匹配问题主题，能直接解释页表与TLB的核心概念、典型场景和常见误区。候选文档3（标题：虚拟内存与TLB机制）也相关，但更侧重于虚拟内存与TLB的结合，相关性略低于文档2。候选文档1（操作系统-内存管理思维导图）可能涉及内存管理，但未明确聚焦页表与TLB，相关性较低。其他候选文档不相关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q049",
+      "question": "请解释“后缀数组与后缀树”的核心概念、典型场景和常见误区。（参考方向：数据结构、后缀数组、后缀树、字符串）",
+      "expectedTitle": "后缀数组与后缀树",
+      "expectedSlug": "数据结构/后缀数组与后缀树",
+      "expectedTags": [
+        "数据结构",
+        "后缀数组",
+        "后缀树",
+        "字符串",
+        "SA"
+      ],
+      "latencyMs": 4345.6,
+      "channelLatencyMs": {
+        "init_ms": 19.56,
+        "grep_ms": 152.61,
+        "vector_ms": 4112.26,
+        "graph_ms": 8.69,
+        "web_ms": 0.0,
+        "fusion_ms": 0.16
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/后缀数组与后缀树",
+          "title": "后缀数组与后缀树",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "算法设计与分析/后缀数组算法",
+          "title": "后缀数组算法",
+          "score": 0.1508,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据结构/后缀自动机与后缀数组",
+          "title": "\"后缀自动机与后缀数组\"",
+          "score": 0.1478,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据结构/字典树Trie",
+          "title": "\"字典树（Trie）\"",
+          "score": 0.1035,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/树状数组Fenwick",
+          "title": "\"树状数组（Fenwick Tree）\"",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“后缀数组与后缀树”的核心概念、典型场景和常见误区，且属于数据结构领域，与参考方向一致。候选文档2和3也高度相关，分别聚焦后缀数组算法和后缀自动机与后缀数组的对比，能补充回答。整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q050",
+      "question": "请解释“\"零拷贝技术与sendfile\"”的核心概念、典型场景和常见误区。（参考方向：计算机网络、零拷贝、sendfile、DMA）",
+      "expectedTitle": "\"零拷贝技术与sendfile\"",
+      "expectedSlug": "计算机网络/零拷贝与sendfile",
+      "expectedTags": [
+        "计算机网络",
+        "零拷贝",
+        "sendfile",
+        "DMA",
+        "高性能"
+      ],
+      "latencyMs": 599.59,
+      "channelLatencyMs": {
+        "init_ms": 23.01,
+        "grep_ms": 153.7,
+        "vector_ms": 358.97,
+        "graph_ms": 7.75,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "计算机网络/零拷贝与sendfile",
+          "title": "\"零拷贝技术与sendfile\"",
+          "score": 0.1481,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "程序设计/零拷贝网络编程",
+          "title": "\"高性能网络编程（零拷贝）\"",
+          "score": 0.1459,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "Java深入/NIO与零拷贝",
+          "title": "\"Java深入-NIO与零拷贝\"",
+          "score": 0.1437,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "操作系统/写时复制COW",
+          "title": "\"写时复制（Copy-on-Write）\"",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "操作系统/SPOOLing技术",
+          "title": "SPOOLing技术",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对“零拷贝技术与sendfile”的核心概念、典型场景和常见误区进行解释，且参考方向（计算机网络、零拷贝、sendfile、DMA）高度一致。候选文档2和3也涉及零拷贝主题，但更侧重于网络编程或Java实现，相关性稍弱。候选文档4和5与问题无关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q051",
+      "question": "请解释“ZAB协议（ZooKeeper）”的核心概念、典型场景和常见误区。（参考方向：ZAB、ZooKeeper、崩溃恢复、消息广播）",
+      "expectedTitle": "ZAB协议（ZooKeeper）",
+      "expectedSlug": "分布式系统/ZAB协议（ZooKeeper）",
+      "expectedTags": [
+        "ZAB",
+        "ZooKeeper",
+        "崩溃恢复",
+        "消息广播",
+        "Leader选举"
+      ],
+      "latencyMs": 691.43,
+      "channelLatencyMs": {
+        "init_ms": 17.12,
+        "grep_ms": 149.41,
+        "vector_ms": 462.02,
+        "graph_ms": 7.42,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "分布式系统/ZAB协议（ZooKeeper）",
+          "title": "ZAB协议（ZooKeeper）",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "分布式系统/ZooKeeper原理与应用",
+          "title": "ZooKeeper原理与应用",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "分布式系统/Raft协议详解",
+          "title": "Raft协议详解",
+          "score": 0.1474,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "分布式系统/Paxos协议详解",
+          "title": "Paxos协议详解",
+          "score": 0.1389,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://分布式系统/一致性协议",
+          "title": "分布式系统-共识算法大纲",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应ZAB协议（ZooKeeper）的核心概念、典型场景和常见误区。候选文档2（ZooKeeper原理与应用）也高度相关，可能涵盖ZAB协议的应用场景。候选文档3（Raft协议详解）虽然相关但非直接目标。整体相关性很高，因为最佳候选直接命中问题主题。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q052",
+      "question": "请解释“欧拉图与哈密顿图”的核心概念、典型场景和常见误区。（参考方向：欧拉图、哈密顿图、欧拉回路、哈密顿回路）",
+      "expectedTitle": "欧拉图与哈密顿图",
+      "expectedSlug": "离散数学/欧拉图与哈密顿图",
+      "expectedTags": [
+        "欧拉图",
+        "哈密顿图",
+        "欧拉回路",
+        "哈密顿回路",
+        "图论",
+        "中国邮递员问题",
+        "旅行商问题"
+      ],
+      "latencyMs": 585.88,
+      "channelLatencyMs": {
+        "init_ms": 25.52,
+        "grep_ms": 157.99,
+        "vector_ms": 332.85,
+        "graph_ms": 9.47,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
+          "title": "离散数学-图论思维导图",
+          "score": 0.2369,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "离散数学/欧拉图与哈密顿图",
+          "title": "欧拉图与哈密顿图",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "算法设计与分析/哈密顿回路",
+          "title": "哈密顿回路问题",
+          "score": 0.1496,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/图类型",
+          "title": "图类型",
+          "score": 0.0769,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0738,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2（标题：欧拉图与哈密顿图）与用户问题直接相关，其标题和slug完全匹配问题主题，能提供核心概念、典型场景和常见误区的解释。候选文档3（标题：哈密顿回路问题）部分相关，但仅聚焦哈密顿回路，未全面覆盖欧拉图。候选文档1、4、5相关性较低，仅涉及离散数学或图类型的泛泛内容。整体上，前三个候选中有一个直接相关文档，因此hitAt3为true，最佳排名为2，整体相关性评分较高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q053",
+      "question": "请解释“管程”的核心概念、典型场景和常见误区。（参考方向：操作系统、管程、条件变量、同步）",
+      "expectedTitle": "管程",
+      "expectedSlug": "操作系统/管程",
+      "expectedTags": [
+        "操作系统",
+        "管程",
+        "条件变量",
+        "同步",
+        "互斥",
+        "Monitor"
+      ],
+      "latencyMs": 541.22,
+      "channelLatencyMs": {
+        "init_ms": 17.4,
+        "grep_ms": 139.12,
+        "vector_ms": 327.77,
+        "graph_ms": 8.4,
+        "web_ms": 0.0,
+        "fusion_ms": 0.21
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "操作系统/管程",
+          "title": "管程",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "视频资源/操作系统-进程同步与PV操作",
+          "title": "操作系统-进程同步与PV操作（视频）",
+          "score": 0.1478,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "操作系统/互斥与同步机制",
+          "title": "互斥与同步机制",
+          "score": 0.1412,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "操作系统/进程的定义与特征",
+          "title": "进程的定义与特征",
+          "score": 0.0952,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "None",
+          "title": "操作系统-进程同步与PV操作（视频）",
+          "score": 0.0794,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（标题：管程，slug：操作系统/管程）与用户问题直接相关，完全匹配问题主题“管程”，并涵盖核心概念、典型场景和常见误区。候选文档2和3也与进程同步相关，但不如文档1直接。整体相关性高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q054",
+      "question": "请解释“区块链密码学基础”的核心概念、典型场景和常见误区。（参考方向：区块链、哈希链、默克尔树、数字签名）",
+      "expectedTitle": "区块链密码学基础",
+      "expectedSlug": "信息安全/区块链密码学基础",
+      "expectedTags": [
+        "区块链",
+        "哈希链",
+        "默克尔树",
+        "数字签名",
+        "共识机制"
+      ],
+      "latencyMs": 567.14,
+      "channelLatencyMs": {
+        "init_ms": 30.06,
+        "grep_ms": 135.3,
+        "vector_ms": 348.41,
+        "graph_ms": 7.34,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "wiki://信息安全/密码学基础",
+          "title": "信息安全-密码学知识图谱",
+          "score": 0.2381,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "信息安全/区块链密码学基础",
+          "title": "区块链密码学基础",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "信息安全/哈希函数与SHA系列",
+          "title": "哈希函数与SHA系列",
+          "score": 0.1441,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "信息安全/数字签名原理",
+          "title": "数字签名原理",
+          "score": 0.0784,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0726,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2（区块链密码学基础）的标题和slug与用户问题的预期标题和slug完全匹配，直接覆盖了区块链、哈希链、默克尔树、数字签名等核心概念，因此高度相关。候选文档1（密码学基础）和候选文档3（哈希函数与SHA系列）分别涉及密码学通用知识和哈希函数，与问题部分相关，但不如候选文档2直接。候选文档4（数字签名原理）也相关，但排名较低。整体上，前三个候选中至少有一个（候选文档2）直接相关，因此hitAt3为true。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q055",
+      "question": "请解释“环与域”的核心概念、典型场景和常见误区。（参考方向：环、域、交换环、含幺环）",
+      "expectedTitle": "环与域",
+      "expectedSlug": "离散数学/环与域",
+      "expectedTags": [
+        "环",
+        "域",
+        "交换环",
+        "含幺环",
+        "整环",
+        "除环",
+        "有限域",
+        "Galois域"
+      ],
+      "latencyMs": 516.34,
+      "channelLatencyMs": {
+        "init_ms": 14.55,
+        "grep_ms": 102.34,
+        "vector_ms": 344.77,
+        "graph_ms": 14.94,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
+          "title": "离散数学-代数思维导图",
+          "score": 0.2344,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "离散数学/环与域",
+          "title": "环与域",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "软件工程/领域驱动设计DDD",
+          "title": "\"领域驱动设计（DDD）核心\"",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0738,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "程序设计/编译型vs解释型语言",
+          "title": "编译型vs解释型语言",
+          "score": 0.0726,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.8,
+        "reason": "候选文档2的标题和slug与用户问题直接匹配，明确指向'环与域'这一主题，能够直接回答用户关于核心概念、典型场景和常见误区的问题。候选文档1虽然相关但范围更广，候选文档3、4、5与问题无关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q056",
+      "question": "请解释“\"最短路径算法（Dijkstra）\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、Dijkstra、最短路径、贪心）",
+      "expectedTitle": "\"最短路径算法（Dijkstra）\"",
+      "expectedSlug": "数据结构/最短路径Dijkstra",
+      "expectedTags": [
+        "数据结构",
+        "Dijkstra",
+        "最短路径",
+        "贪心",
+        "优先队列"
+      ],
+      "latencyMs": 584.64,
+      "channelLatencyMs": {
+        "init_ms": 15.44,
+        "grep_ms": 156.36,
+        "vector_ms": 350.45,
+        "graph_ms": 9.06,
+        "web_ms": 0.0,
+        "fusion_ms": 0.33
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "算法设计与分析/Dijkstra算法",
+          "title": "Dijkstra最短路径算法",
+          "score": 0.151,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/最短路径-Dijkstra",
+          "title": "最短路径-Dijkstra算法",
+          "score": 0.1501,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据结构/最短路径-BellmanFord",
+          "title": "最短路径-Bellman-Ford算法",
+          "score": 0.1474,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据结构/最短路径Dijkstra",
+          "title": "\"最短路径算法（Dijkstra）\"",
+          "score": 0.1386,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "算法设计与分析/Johnson算法",
+          "title": "Johnson全源最短路径算法",
+          "score": 0.1354,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（rank 1）的标题为'Dijkstra最短路径算法'，slug为'算法设计与分析/Dijkstra算法'，与用户问题'最短路径算法（Dijkstra）'的核心概念、典型场景和常见误区直接相关，且参考方向（数据结构、Dijkstra、最短路径、贪心）高度匹配。候选文档2（rank 2）也直接相关，但rank 1更优。候选文档3（rank 3）涉及Bellman-Ford算法，与Dijkstra不完全一致，但前三个中至少有一个直接相关。整体相关性高，因为最佳候选直接覆盖问题主题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q057",
+      "question": "请解释“类型系统”的核心概念、典型场景和常见误区。（参考方向：类型系统、静态类型、动态类型、类型推断）",
+      "expectedTitle": "类型系统",
+      "expectedSlug": "程序设计/类型系统",
+      "expectedTags": [
+        "类型系统",
+        "静态类型",
+        "动态类型",
+        "类型推断",
+        "多态",
+        "类型安全",
+        "强类型",
+        "弱类型"
+      ],
+      "latencyMs": 556.01,
+      "channelLatencyMs": {
+        "init_ms": 17.33,
+        "grep_ms": 136.22,
+        "vector_ms": 335.47,
+        "graph_ms": 8.18,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "程序设计/类型系统",
+          "title": "类型系统",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/类型检查与类型推导",
+          "title": "\"类型系统与类型推导\"",
+          "score": 0.1499,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/静态类型vs动态类型",
+          "title": "静态类型vs动态类型",
+          "score": 0.1496,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "JavaScript/TypeScript/TypeScript类型系统",
+          "title": "\"TypeScript-类型系统\"",
+          "score": 0.1475,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "程序设计语言原理/类型系统总览",
+          "title": "\"程序设计语言-类型系统总览\"",
+          "score": 0.1441,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（类型系统）与用户问题直接相关，标题和slug完全匹配，且问题要求解释类型系统的核心概念、典型场景和常见误区，该文档很可能涵盖这些内容。候选文档2（类型系统与类型推导）和候选文档3（静态类型vs动态类型）也与问题高度相关，分别涉及类型推导和静态/动态类型对比，这些是问题参考方向的一部分。因此，前三个候选均直接相关，整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q058",
+      "question": "请解释“主定理”的核心概念、典型场景和常见误区。（参考方向：主定理、Master Theorem、递归式、分治法）",
+      "expectedTitle": "主定理",
+      "expectedSlug": "算法设计与分析/主定理",
+      "expectedTags": [
+        "主定理",
+        "Master Theorem",
+        "递归式",
+        "分治法",
+        "渐近分析"
+      ],
+      "latencyMs": 572.47,
+      "channelLatencyMs": {
+        "init_ms": 25.44,
+        "grep_ms": 138.28,
+        "vector_ms": 343.28,
+        "graph_ms": 8.44,
+        "web_ms": 0.0,
+        "fusion_ms": 0.2
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "算法设计与分析/主定理",
+          "title": "主定理",
+          "score": 0.1532,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "算法设计与分析/主定理MasterTheorem",
+          "title": "\"主定理（Master Theorem）\"",
+          "score": 0.1512,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "https://www.bilibili.com/video/BV1YJ41197hM",
+          "title": "算法-分治法与主定理（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/递归式求解",
+          "title": "递归式求解",
+          "score": 0.0784,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "None",
+          "title": "算法复杂度速查表",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1（主定理）和候选文档2（主定理（Master Theorem））的标题和slug与用户问题的核心主题“主定理”完全匹配，且问题明确要求解释其核心概念、典型场景和常见误区，这些文档很可能直接涵盖这些内容。候选文档3（算法-分治法与主定理（视频））也直接相关，涉及主定理和分治法。因此，前三个候选中至少有一个与问题直接相关，最佳相关候选排名为1，整体相关性评分很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q059",
+      "question": "请解释“集合运算”的核心概念、典型场景和常见误区。（参考方向：集合运算、并集、交集、差集）",
+      "expectedTitle": "集合运算",
+      "expectedSlug": "离散数学/集合运算",
+      "expectedTags": [
+        "集合运算",
+        "并集",
+        "交集",
+        "差集",
+        "补集",
+        "对称差",
+        "集合代数"
+      ],
+      "latencyMs": 523.37,
+      "channelLatencyMs": {
+        "init_ms": 18.31,
+        "grep_ms": 134.25,
+        "vector_ms": 308.88,
+        "graph_ms": 7.4,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/集合运算",
+          "title": "集合运算",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据库原理/SQL-UNION",
+          "title": "SQL集合操作-UNION",
+          "score": 0.1499,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/子集与幂集",
+          "title": "子集与幂集",
+          "score": 0.1487,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据库原理/关系代数-运算规则",
+          "title": "关系代数运算规则",
+          "score": 0.1451,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/并查集UnionFind",
+          "title": "\"并查集（Disjoint Set Union）\"",
+          "score": 0.1433,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（集合运算）的标题和slug与用户问题完全匹配，直接涵盖集合运算的核心概念、典型场景和常见误区，是高度相关的文档。候选文档2（SQL集合操作-UNION）涉及数据库中的集合操作，与问题相关但更偏向应用层面。候选文档3（子集与幂集）是集合论的子主题，相关性较弱。整体上，前三个候选中至少有一个直接相关，且最佳文档排名为1。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q060",
+      "question": "请解释“\"GCC与LLVM编译器架构对比\"”的核心概念、典型场景和常见误区。（参考方向：编译原理、GCC、LLVM、编译器架构）",
+      "expectedTitle": "\"GCC与LLVM编译器架构对比\"",
+      "expectedSlug": "编译原理/GCC与LLVM架构对比",
+      "expectedTags": [
+        "编译原理",
+        "GCC",
+        "LLVM",
+        "编译器架构"
+      ],
+      "latencyMs": 598.29,
+      "channelLatencyMs": {
+        "init_ms": 29.34,
+        "grep_ms": 176.78,
+        "vector_ms": 325.97,
+        "graph_ms": 7.62,
+        "web_ms": 0.0,
+        "fusion_ms": 0.18
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/GCC与LLVM架构对比",
+          "title": "\"GCC与LLVM编译器架构对比\"",
+          "score": 0.1389,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/LL与LR语法分析对比",
+          "title": "\"LL与LR分析算法对比\"",
+          "score": 0.1332,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "编译原理/编译概述",
+          "title": "编译概述",
+          "score": 0.1008,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/编译实践与工具链",
+          "title": "编译实践与工具链",
+          "score": 0.0953,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://编译原理/代码优化",
+          "title": "编译原理-LLVM Pass开发",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对“GCC与LLVM编译器架构对比”这一主题，能够提供核心概念、典型场景和常见误区的详细解释。候选文档2和3虽然与编译原理相关，但主题不直接匹配，相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q061",
+      "question": "请解释“活动选择问题”的核心概念、典型场景和常见误区。（参考方向：活动选择、贪心算法、区间调度、贪心选择性质）",
+      "expectedTitle": "活动选择问题",
+      "expectedSlug": "算法设计与分析/活动选择问题",
+      "expectedTags": [
+        "活动选择",
+        "贪心算法",
+        "区间调度",
+        "贪心选择性质",
+        "最优子结构"
+      ],
+      "latencyMs": 544.72,
+      "channelLatencyMs": {
+        "init_ms": 14.69,
+        "grep_ms": 137.02,
+        "vector_ms": 319.52,
+        "graph_ms": 8.66,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "算法设计与分析/贪心算法概述",
+          "title": "贪心算法概述",
+          "score": 0.1592,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "算法设计与分析/活动选择问题",
+          "title": "活动选择问题",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/贪心算法",
+          "title": "贪心算法",
+          "score": 0.1496,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/指令选择与调度",
+          "title": "指令选择与调度",
+          "score": 0.1178,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://www.bilibili.com/video/BV1X741127ZM",
+          "title": "算法-贪心算法与拟阵理论（视频）",
+          "score": 0.0794,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.8,
+        "reason": "候选文档2（活动选择问题）的标题和slug与用户问题完全匹配，直接对应问题核心概念（活动选择、贪心算法、区间调度、贪心选择性质），能提供详细解释。候选文档1（贪心算法概述）和候选文档3（贪心算法）与问题相关，但不够具体。候选文档4和5与问题无关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q062",
+      "question": "请解释“\"C语言-链接器与ABI详解\"”的核心概念、典型场景和常见误区。（参考方向：C语言、链接器、ABI、ELF）",
+      "expectedTitle": "\"C语言-链接器与ABI详解\"",
+      "expectedSlug": "C语言深入/链接器与ABI",
+      "expectedTags": [
+        "C语言",
+        "链接器",
+        "ABI",
+        "ELF",
+        "符号表",
+        "动态链接"
+      ],
+      "latencyMs": 544.38,
+      "channelLatencyMs": {
+        "init_ms": 14.43,
+        "grep_ms": 165.14,
+        "vector_ms": 320.13,
+        "graph_ms": 7.46,
+        "web_ms": 0.0,
+        "fusion_ms": 0.15
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "C语言深入/链接器与ABI",
+          "title": "\"C语言-链接器与ABI详解\"",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "程序设计/语言特性对比-C",
+          "title": "语言特性对比-C语言",
+          "score": 0.1451,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "C语言深入/C与汇编混合编程",
+          "title": "\"C语言-C与汇编混合编程\"",
+          "score": 0.1419,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "C语言深入/sanitizer工具链",
+          "title": "\"C语言-sanitizer工具链\"",
+          "score": 0.1389,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "编译原理/链接与装载过程",
+          "title": "\"链接与装载（Linker & Loader）\"",
+          "score": 0.1065,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 1.0,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“C语言-链接器与ABI详解”，且问题要求解释其核心概念、典型场景和常见误区，该文档是预期的直接来源。候选文档5（链接与装载）也相关，但排名较低。整体相关性极高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q063",
+      "question": "请解释“\"Go语言-错误处理哲学\"”的核心概念、典型场景和常见误区。（参考方向：Go语言、error、panic、defer）",
+      "expectedTitle": "\"Go语言-错误处理哲学\"",
+      "expectedSlug": "Go语言/错误处理哲学",
+      "expectedTags": [
+        "Go语言",
+        "error",
+        "panic",
+        "defer",
+        "错误处理"
+      ],
+      "latencyMs": 556.39,
+      "channelLatencyMs": {
+        "init_ms": 25.61,
+        "grep_ms": 132.68,
+        "vector_ms": 332.1,
+        "graph_ms": 9.13,
+        "web_ms": 0.0,
+        "fusion_ms": 0.14
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "Go语言/错误处理哲学",
+          "title": "\"Go语言-错误处理哲学\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "Go语言/defer与调用栈",
+          "title": "\"Go语言-defer与调用栈\"",
+          "score": 0.151,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/错误处理策略",
+          "title": "错误处理策略",
+          "score": 0.1305,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "程序设计/语言特性对比-Go",
+          "title": "语言特性对比-Go",
+          "score": 0.1107,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "程序设计/Go并发模型",
+          "title": "Go并发模型",
+          "score": 0.0977,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“Go语言-错误处理哲学”，且问题明确要求解释其核心概念、典型场景和常见误区，参考方向也包含Go语言、error、panic、defer，因此高度相关。候选文档2涉及defer，是错误处理的一部分，但不够全面；候选文档3是通用错误处理策略，相关性较低。整体上，最佳候选（排名1）直接命中问题核心。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q064",
+      "question": "请解释“归并排序”的核心概念、典型场景和常见误区。（参考方向：归并排序、分治法、排序算法、稳定排序）",
+      "expectedTitle": "归并排序",
+      "expectedSlug": "算法设计与分析/归并排序",
+      "expectedTags": [
+        "归并排序",
+        "分治法",
+        "排序算法",
+        "稳定排序",
+        "外部排序"
+      ],
+      "latencyMs": 566.45,
+      "channelLatencyMs": {
+        "init_ms": 15.68,
+        "grep_ms": 134.34,
+        "vector_ms": 353.61,
+        "graph_ms": 8.15,
+        "web_ms": 0.0,
+        "fusion_ms": 0.16
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "算法设计与分析/归并排序",
+          "title": "归并排序",
+          "score": 0.1523,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/归并排序",
+          "title": "归并排序",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "程序设计/排序算法",
+          "title": "排序算法",
+          "score": 0.1519,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/排序算法大全",
+          "title": "\"排序算法大全与可视化\"",
+          "score": 0.1453,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/外部排序与排序复杂度对比",
+          "title": "外部排序与排序复杂度对比",
+          "score": 0.1022,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1（归并排序）与用户问题直接相关，标题和slug完全匹配，且问题明确要求解释归并排序的核心概念、典型场景和常见误区，该文档应能提供全面解答。候选文档2（归并排序）也高度相关，但排名稍后。候选文档3（排序算法）可能包含归并排序内容，但不够具体。整体相关性高，因为前三个候选中至少有一个直接针对归并排序。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q065",
+      "question": "请解释“顺序查找”的核心概念、典型场景和常见误区。（参考方向：查找、顺序查找、线性查找、哨兵）",
+      "expectedTitle": "顺序查找",
+      "expectedSlug": "数据结构/顺序查找",
+      "expectedTags": [
+        "查找",
+        "顺序查找",
+        "线性查找",
+        "哨兵"
+      ],
+      "latencyMs": 562.11,
+      "channelLatencyMs": {
+        "init_ms": 19.76,
+        "grep_ms": 134.72,
+        "vector_ms": 352.1,
+        "graph_ms": 10.98,
+        "web_ms": 0.0,
+        "fusion_ms": 0.15
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/顺序查找",
+          "title": "顺序查找",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/二分查找",
+          "title": "二分查找",
+          "score": 0.1486,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据库原理/索引-顺序索引与B+树",
+          "title": "顺序索引与B+树索引",
+          "score": 0.1332,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据结构/顺序表",
+          "title": "顺序表",
+          "score": 0.104,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/顺序队列",
+          "title": "顺序队列",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（顺序查找）的标题和slug与用户问题完全匹配，直接对应“顺序查找”的核心概念、典型场景和常见误区，是高度相关的文档。候选文档2（二分查找）和3（顺序索引与B+树）虽然涉及查找或顺序相关主题，但并非直接针对顺序查找，相关性较低。整体上，最佳候选（排名1）能直接帮助回答问题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q066",
+      "question": "请解释“群”的核心概念、典型场景和常见误区。（参考方向：群、群论、代数系统、逆元）",
+      "expectedTitle": "群",
+      "expectedSlug": "离散数学/群论",
+      "expectedTags": [
+        "群",
+        "群论",
+        "代数系统",
+        "逆元",
+        "单位元",
+        "结合律",
+        "阿贝尔群"
+      ],
+      "latencyMs": 840.66,
+      "channelLatencyMs": {
+        "init_ms": 334.06,
+        "grep_ms": 109.05,
+        "vector_ms": 333.75,
+        "graph_ms": 13.58,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/群论基础",
+          "title": "\"群论基础与子群\"",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "离散数学/子群",
+          "title": "子群",
+          "score": 0.1337,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/群论",
+          "title": "群",
+          "score": 0.1324,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/陪集与正规子群与商群",
+          "title": "陪集与正规子群与商群",
+          "score": 0.1294,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/置换群",
+          "title": "置换群",
+          "score": 0.1292,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（'群论基础与子群'）直接涉及群的核心概念、定义和基础理论，与用户问题高度相关。候选文档3（'群'）也直接匹配问题主题。候选文档2（'子群'）是群的子概念，相关性稍弱但仍在前三。整体上，前三个候选文档均能有效支持回答用户关于群的核心概念、典型场景和常见误区的问题。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q067",
+      "question": "请解释“链栈”的核心概念、典型场景和常见误区。（参考方向：栈、链式存储、LIFO、链表）",
+      "expectedTitle": "链栈",
+      "expectedSlug": "数据结构/链栈",
+      "expectedTags": [
+        "栈",
+        "链式存储",
+        "LIFO",
+        "链表"
+      ],
+      "latencyMs": 614.68,
+      "channelLatencyMs": {
+        "init_ms": 17.03,
+        "grep_ms": 116.79,
+        "vector_ms": 420.58,
+        "graph_ms": 8.78,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/链栈",
+          "title": "链栈",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/链队列",
+          "title": "链队列",
+          "score": 0.1536,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据结构/顺序栈",
+          "title": "顺序栈",
+          "score": 0.1491,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据结构/栈-括号匹配",
+          "title": "栈的应用-括号匹配",
+          "score": 0.1465,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "程序设计/内存模型-栈与堆",
+          "title": "内存模型-栈与堆",
+          "score": 0.1305,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（链栈）的标题和slug与用户问题完全匹配，直接对应问题核心概念。候选文档2（链队列）和3（顺序栈）虽相关但非直接目标，候选文档4和5相关性较低。整体上，最佳候选（rank 1）高度相关，能直接帮助回答问题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q068",
+      "question": "请解释“多版本并发控制MVCC”的核心概念、典型场景和常见误区。（参考方向：MVCC、多版本并发控制、ReadView、快照读）",
+      "expectedTitle": "多版本并发控制MVCC",
+      "expectedSlug": "数据库原理/MVCC",
+      "expectedTags": [
+        "MVCC",
+        "多版本并发控制",
+        "ReadView",
+        "快照读",
+        "当前读",
+        "版本链",
+        "undo日志"
+      ],
+      "latencyMs": 876.9,
+      "channelLatencyMs": {
+        "init_ms": 25.07,
+        "grep_ms": 135.44,
+        "vector_ms": 656.09,
+        "graph_ms": 7.79,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Database",
+          "title": "数据库原理-事务思维导图",
+          "score": 0.155,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据库原理/MVCC",
+          "title": "多版本并发控制MVCC",
+          "score": 0.1544,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据库原理/MVCC多版本并发控制",
+          "title": "\"MVCC多版本并发控制详解\"",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://www.bilibili.com/video/BV1Vt4y1S7jW",
+          "title": "数据库-事务隔离级别与MVCC（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据库原理/两段锁协议",
+          "title": "两段锁协议",
+          "score": 0.073,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2（标题：多版本并发控制MVCC，slug：数据库原理/MVCC）与用户问题直接相关，其标题和slug完全匹配问题主题，能直接解释MVCC的核心概念、典型场景和常见误区。候选文档3（标题：\"MVCC多版本并发控制详解\"）也高度相关，进一步支持回答。候选文档1（数据库原理-事务思维导图）可能涉及MVCC但不够直接，候选文档4（视频）和候选文档5（两段锁协议）相关性较低。整体上，前三个候选中至少有一个（文档2）直接相关，因此hitAt3为true，最佳排名为2，整体相关性评分较高。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q069",
+      "question": "请解释“语言特性对比-Go”的核心概念、典型场景和常见误区。（参考方向：Go、Golang、并发、goroutine）",
+      "expectedTitle": "语言特性对比-Go",
+      "expectedSlug": "程序设计/语言特性对比-Go",
+      "expectedTags": [
+        "Go",
+        "Golang",
+        "并发",
+        "goroutine",
+        "channel",
+        "接口",
+        "垃圾回收",
+        "CSP",
+        "静态编译"
+      ],
+      "latencyMs": 634.59,
+      "channelLatencyMs": {
+        "init_ms": 18.33,
+        "grep_ms": 132.19,
+        "vector_ms": 428.48,
+        "graph_ms": 8.26,
+        "web_ms": 0.0,
+        "fusion_ms": 0.24
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "程序设计/语言特性对比-Go",
+          "title": "语言特性对比-Go",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "程序设计/Go并发模型",
+          "title": "Go并发模型",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "Go语言/GMP调度器与goroutine",
+          "title": "\"Go语言-GMP调度器与goroutine\"",
+          "score": 0.1455,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "Go语言/测试与基准测试",
+          "title": "\"Go语言-测试与基准测试\"",
+          "score": 0.1281,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "Go语言/错误处理哲学",
+          "title": "\"Go语言-错误处理哲学\"",
+          "score": 0.1276,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“语言特性对比-Go”这一主题，能够提供核心概念、典型场景和常见误区的解释。候选文档2和3也与Go并发、goroutine等参考方向高度相关，进一步支持回答。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q070",
+      "question": "请解释“光照模型（Lambert/Phong/Blinn-Phong）”的核心概念、典型场景和常见误区。（参考方向：光照模型、Lambert、Phong、Blinn-Phong）",
+      "expectedTitle": "光照模型（Lambert/Phong/Blinn-Phong）",
+      "expectedSlug": "计算机图形学/光照模型（Lambert/Phong/Blinn-Phong）",
+      "expectedTags": [
+        "光照模型",
+        "Lambert",
+        "Phong",
+        "Blinn-Phong",
+        "镜面反射",
+        "漫反射"
+      ],
+      "latencyMs": 641.72,
+      "channelLatencyMs": {
+        "init_ms": 32.23,
+        "grep_ms": 179.76,
+        "vector_ms": 361.55,
+        "graph_ms": 9.33,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "wiki://计算机图形学/光照与着色",
+          "title": "计算机图形学-光照模型大纲",
+          "score": 0.2381,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机图形学/光照模型（Lambert/Phong/Blinn-Phong）",
+          "title": "光照模型（Lambert/Phong/Blinn-Phong）",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "https://en.wikipedia.org/wiki/Computer_graphics",
+          "title": "实操案例-着色实践",
+          "score": 0.0769,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机图形学/法线贴图与凹凸贴图",
+          "title": "法线贴图与凹凸贴图",
+          "score": 0.0764,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "计算机图形学/PBR物理渲染原理",
+          "title": "PBR物理渲染原理",
+          "score": 0.0742,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接针对Lambert/Phong/Blinn-Phong光照模型的核心概念、场景和误区进行解释，是高度相关的文档。候选文档1虽然相关但更宽泛，候选文档3、4、5相关性较低。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q071",
+      "question": "请解释“\"浮点加法器设计流程\"”的核心概念、典型场景和常见误区。（参考方向：计算机组成原理、浮点加法器、IEEE754、ALU）",
+      "expectedTitle": "\"浮点加法器设计流程\"",
+      "expectedSlug": "计算机组成原理/浮点加法器设计",
+      "expectedTags": [
+        "计算机组成原理",
+        "浮点加法器",
+        "IEEE754",
+        "ALU"
+      ],
+      "latencyMs": 3321.73,
+      "channelLatencyMs": {
+        "init_ms": 15.92,
+        "grep_ms": 137.27,
+        "vector_ms": 3119.6,
+        "graph_ms": 8.89,
+        "web_ms": 0.0,
+        "fusion_ms": 0.16
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "计算机组成原理/浮点加法器设计",
+          "title": "\"浮点加法器设计流程\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机组成原理/全加器与超前进位",
+          "title": "\"加法器设计（CLA与Prefix）\"",
+          "score": 0.1478,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机组成原理/浮点运算",
+          "title": "浮点运算",
+          "score": 0.1247,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机组成原理/乘法器Booth算法",
+          "title": "\"乘法器设计（Booth算法）\"",
+          "score": 0.1167,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "计算机组成原理/加法器",
+          "title": "加法器",
+          "score": 0.1009,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“浮点加法器设计流程”，且标签包含计算机组成原理、浮点加法器、IEEE754、ALU，能直接回答核心概念、典型场景和常见误区。候选文档2和3虽相关但不够直接，文档2聚焦整数加法器设计，文档3是浮点运算概述，而文档4和5与问题无关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q072",
+      "question": "请解释“语法制导定义SDD”的核心概念、典型场景和常见误区。（参考方向：语法制导定义、SDD、属性文法、综合属性）",
+      "expectedTitle": "语法制导定义SDD",
+      "expectedSlug": "编译原理/语法制导定义SDD",
+      "expectedTags": [
+        "语法制导定义",
+        "SDD",
+        "属性文法",
+        "综合属性",
+        "继承属性",
+        "依赖图"
+      ],
+      "latencyMs": 1613.14,
+      "channelLatencyMs": {
+        "init_ms": 16.41,
+        "grep_ms": 122.59,
+        "vector_ms": 1419.49,
+        "graph_ms": 7.83,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "https://en.wikipedia.org/wiki/Compiler",
+          "title": "编译原理-语义分析思维导图",
+          "score": 0.2344,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/语法制导定义SDD",
+          "title": "语法制导定义SDD",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "编译原理/语法制导翻译SDT",
+          "title": "语法制导翻译SDT",
+          "score": 0.1478,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/类型检查",
+          "title": "类型检查",
+          "score": 0.0761,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0726,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2（语法制导定义SDD）的标题和slug与用户问题完全匹配，直接对应问题核心概念。候选文档3（语法制导翻译SDT）是相关主题，但更侧重于翻译而非定义本身。候选文档1（编译原理-语义分析思维导图）可能包含相关内容，但标题未直接指向SDD。整体上，候选文档2是最佳匹配，能直接回答问题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q073",
+      "question": "请解释“\"数据库安全与SQL注入防御\"”的核心概念、典型场景和常见误区。（参考方向：数据库、安全、SQL注入、访问控制）",
+      "expectedTitle": "\"数据库安全与SQL注入防御\"",
+      "expectedSlug": "数据库原理/数据库安全与SQL注入防御",
+      "expectedTags": [
+        "数据库",
+        "安全",
+        "SQL注入",
+        "访问控制",
+        "加密"
+      ],
+      "latencyMs": 3732.53,
+      "channelLatencyMs": {
+        "init_ms": 30.73,
+        "grep_ms": 152.11,
+        "vector_ms": 3503.48,
+        "graph_ms": 7.83,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/SQL注入攻击与防御",
+          "title": "SQL注入攻击与防御",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据库原理/安全性",
+          "title": "数据库安全性",
+          "score": 0.1519,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据库原理/数据库安全与SQL注入防御",
+          "title": "\"数据库安全与SQL注入防御\"",
+          "score": 0.1491,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "wiki://信息安全/Web应用安全",
+          "title": "信息安全-SQL注入检测工具",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://owasp.org/www-project-top-ten/",
+          "title": "实操案例-SQL注入攻击与防御实验",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 3,
+        "relevanceScore": 0.85,
+        "reason": "候选文档3的标题和slug与用户问题完全匹配，直接覆盖了数据库安全、SQL注入防御等核心概念。候选文档1和2也高度相关，分别聚焦SQL注入攻击防御和数据库安全性，共同构成了问题所需的典型场景和常见误区。整体相关性高，但最佳匹配是候选3。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q074",
+      "question": "请解释“顺序栈”的核心概念、典型场景和常见误区。（参考方向：栈、顺序存储、LIFO、后进先出）",
+      "expectedTitle": "顺序栈",
+      "expectedSlug": "数据结构/顺序栈",
+      "expectedTags": [
+        "栈",
+        "顺序存储",
+        "LIFO",
+        "后进先出"
+      ],
+      "latencyMs": 2697.83,
+      "channelLatencyMs": {
+        "init_ms": 13.69,
+        "grep_ms": 119.62,
+        "vector_ms": 2498.99,
+        "graph_ms": 7.5,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/顺序栈",
+          "title": "顺序栈",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/栈-括号匹配",
+          "title": "栈的应用-括号匹配",
+          "score": 0.1453,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据结构/顺序队列",
+          "title": "顺序队列",
+          "score": 0.1449,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "程序设计/内存模型-栈与堆",
+          "title": "内存模型-栈与堆",
+          "score": 0.1299,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/顺序表",
+          "title": "顺序表",
+          "score": 0.1019,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（顺序栈）的标题和slug与用户问题的预期完全匹配，直接对应“顺序栈”的核心概念、典型场景和常见误区。候选文档2（栈的应用-括号匹配）是栈的典型应用场景，与问题相关但非核心概念解释。候选文档3（顺序队列）是相关数据结构但非栈。因此，前三个候选中至少有一个直接相关，最佳相关候选为排名第1的文档。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q075",
+      "question": "请解释“\"TCP三次握手详解\"”的核心概念、典型场景和常见误区。（参考方向：计算机网络、TCP、三次握手、连接建立）",
+      "expectedTitle": "\"TCP三次握手详解\"",
+      "expectedSlug": "计算机网络/TCP三次握手详解",
+      "expectedTags": [
+        "计算机网络",
+        "TCP",
+        "三次握手",
+        "连接建立"
+      ],
+      "latencyMs": 2016.59,
+      "channelLatencyMs": {
+        "init_ms": 14.56,
+        "grep_ms": 120.7,
+        "vector_ms": 1819.92,
+        "graph_ms": 8.36,
+        "web_ms": 0.0,
+        "fusion_ms": 0.2
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "计算机网络/TCP三次握手详解",
+          "title": "\"TCP三次握手详解\"",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/TCP三次握手",
+          "title": "TCP三次握手",
+          "score": 0.1544,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机网络/TCP四次挥手",
+          "title": "TCP四次挥手",
+          "score": 0.1526,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机网络/TCP四次挥手与TIME_WAIT",
+          "title": "\"TCP四次挥手与TIME_WAIT\"",
+          "score": 0.1424,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://en.wikipedia.org/wiki/Computer_network",
+          "title": "计算机网络-传输层思维导图",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“TCP三次握手详解”，能提供核心概念、典型场景和常见误区的详细解释。候选文档2也高度相关，但标题更简洁。候选文档3和4涉及TCP连接关闭，与问题直接相关性较低。整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q076",
+      "question": "请解释“HTTP协议详解”的核心概念、典型场景和常见误区。（参考方向：HTTP、超文本传输协议、请求方法、状态码）",
+      "expectedTitle": "HTTP协议详解",
+      "expectedSlug": "计算机网络/应用层-HTTP",
+      "expectedTags": [
+        "HTTP",
+        "超文本传输协议",
+        "请求方法",
+        "状态码",
+        "请求头",
+        "响应头",
+        "Cookie",
+        "缓存"
+      ],
+      "latencyMs": 1936.2,
+      "channelLatencyMs": {
+        "init_ms": 30.69,
+        "grep_ms": 118.66,
+        "vector_ms": 1717.99,
+        "graph_ms": 8.24,
+        "web_ms": 0.0,
+        "fusion_ms": 0.13
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "计算机网络/应用层-HTTP",
+          "title": "HTTP协议详解",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/应用层-HTTP各版本对比",
+          "title": "HTTP各版本对比",
+          "score": 0.151,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机网络/HTTP状态码全览",
+          "title": "\"HTTP状态码全览\"",
+          "score": 0.1475,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机网络/网络层-IP协议",
+          "title": "IP协议详解",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "None",
+          "title": "计算机网络-HTTP协议完全解读（视频）",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题的预期标题和slug完全一致，直接覆盖了HTTP协议的核心概念、典型场景和常见误区，且参考方向中的关键词（HTTP、超文本传输协议、请求方法、状态码）均在预期标签中明确列出。候选文档2和3也与HTTP协议相关，但文档1是最佳匹配。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q077",
+      "question": "请解释“SQL SELECT查询基础”的核心概念、典型场景和常见误区。（参考方向：SQL、SELECT、WHERE、ORDER BY）",
+      "expectedTitle": "SQL SELECT查询基础",
+      "expectedSlug": "数据库原理/SQL-SELECT基础",
+      "expectedTags": [
+        "SQL",
+        "SELECT",
+        "WHERE",
+        "ORDER BY",
+        "LIMIT",
+        "DISTINCT",
+        "别名"
+      ],
+      "latencyMs": 1764.02,
+      "channelLatencyMs": {
+        "init_ms": 14.78,
+        "grep_ms": 124.75,
+        "vector_ms": 1567.57,
+        "graph_ms": 8.51,
+        "web_ms": 0.0,
+        "fusion_ms": 0.18
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据库原理/SQL-SELECT基础",
+          "title": "SQL SELECT查询基础",
+          "score": 0.1491,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据库原理/SQL-子查询",
+          "title": "SQL子查询与相关子查询",
+          "score": 0.1459,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据库原理/关系代数-选择投影",
+          "title": "关系代数-选择与投影",
+          "score": 0.0987,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://www.postgresql.org/docs/current/performance-tips.html",
+          "title": "SQL查询优化实战指南",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据库原理/SQL-DML",
+          "title": "SQL数据操纵语言DML",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应'SQL SELECT查询基础'，且预期标签（SQL、SELECT、WHERE、ORDER BY等）高度相关，能直接回答核心概念、典型场景和常见误区。候选文档2和3虽涉及SQL相关主题，但不够直接。整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q078",
+      "question": "请解释“二义性”的核心概念、典型场景和常见误区。（参考方向：二义性、歧义文法、悬空else、消歧）",
+      "expectedTitle": "二义性",
+      "expectedSlug": "编译原理/二义性",
+      "expectedTags": [
+        "二义性",
+        "歧义文法",
+        "悬空else",
+        "消歧",
+        "算符优先",
+        "结合性"
+      ],
+      "latencyMs": 847.21,
+      "channelLatencyMs": {
+        "init_ms": 326.58,
+        "grep_ms": 135.09,
+        "vector_ms": 319.56,
+        "graph_ms": 7.57,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/二义性",
+          "title": "二义性",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/文法设计与二义性消除",
+          "title": "\"文法设计与二义性消除\"",
+          "score": 0.151,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.1507,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/二元关系",
+          "title": "二元关系",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "算法设计与分析/二分查找与变形",
+          "title": "\"二分查找及其变形\"",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（标题：二义性，slug：编译原理/二义性）与用户问题直接相关，其标题和slug完全匹配问题核心概念“二义性”，且问题参考方向（二义性、歧义文法、悬空else、消歧）均属于编译原理中二义性的典型内容。候选文档2（标题：文法设计与二义性消除）也高度相关，涉及二义性消除，是问题的一部分。候选文档3（标题：解释）可能涉及解释概念，但相关性较低。整体上，前三个候选中至少两个直接相关，因此hitAt1和hitAt3均为true，最佳排名为1，整体相关性评分高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q079",
+      "question": "请解释“\"Rust语言-迭代器与组合器\"”的核心概念、典型场景和常见误区。（参考方向：Rust、Iterator、组合器、惰性求值）",
+      "expectedTitle": "\"Rust语言-迭代器与组合器\"",
+      "expectedSlug": "Rust语言/迭代器与组合器",
+      "expectedTags": [
+        "Rust",
+        "Iterator",
+        "组合器",
+        "惰性求值",
+        "适配器"
+      ],
+      "latencyMs": 746.83,
+      "channelLatencyMs": {
+        "init_ms": 34.69,
+        "grep_ms": 150.44,
+        "vector_ms": 496.58,
+        "graph_ms": 7.99,
+        "web_ms": 0.0,
+        "fusion_ms": 0.13
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "程序设计/语言特性对比-Rust",
+          "title": "语言特性对比-Rust",
+          "score": 0.1555,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "Rust语言/迭代器与组合器",
+          "title": "\"Rust语言-迭代器与组合器\"",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "Rust语言/const泛型与编译期计算",
+          "title": "\"Rust语言-const泛型与编译期计算\"",
+          "score": 0.1377,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "Rust语言/模式匹配与枚举",
+          "title": "\"Rust语言-模式匹配与枚举\"",
+          "score": 0.1329,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "Rust语言/错误处理与Result",
+          "title": "\"Rust语言-错误处理与Result\"",
+          "score": 0.1298,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.9,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接对应“Rust语言-迭代器与组合器”这一主题，能够直接回答关于核心概念、典型场景和常见误区的问题。其他候选文档（如语言特性对比、const泛型、模式匹配、错误处理）与问题主题不直接相关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q080",
+      "question": "请解释“物联网协议MQTT与CoAP”的核心概念、典型场景和常见误区。（参考方向：计算机网络、MQTT、CoAP、IoT）",
+      "expectedTitle": "物联网协议MQTT与CoAP",
+      "expectedSlug": "计算机网络/物联网协议MQTT与CoAP",
+      "expectedTags": [
+        "计算机网络",
+        "MQTT",
+        "CoAP",
+        "IoT",
+        "物联网"
+      ],
+      "latencyMs": 592.43,
+      "channelLatencyMs": {
+        "init_ms": 15.06,
+        "grep_ms": 166.51,
+        "vector_ms": 357.84,
+        "graph_ms": 8.65,
+        "web_ms": 0.0,
+        "fusion_ms": 0.12
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "wiki://计算机网络/应用层",
+          "title": "计算机网络-IoT协议题库",
+          "score": 0.16,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/物联网协议MQTT与CoAP",
+          "title": "物联网协议MQTT与CoAP",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "信息安全/物联网安全",
+          "title": "物联网安全",
+          "score": 0.1507,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "分布式系统/RabbitMQ与AMQP",
+          "title": "RabbitMQ与AMQP",
+          "score": 0.0769,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0738,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接针对MQTT与CoAP的核心概念、场景和误区进行解释，是高度相关的文档。候选文档1虽然涉及IoT协议，但标题为题库，可能不够直接；候选文档3聚焦安全，相关性较低。因此，最佳相关候选排名第2，前三个候选中至少有一个直接相关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q081",
+      "question": "请解释“\"欧拉函数与RSA密码原理\"”的核心概念、典型场景和常见误区。（参考方向：离散数学、欧拉函数、RSA、密码学）",
+      "expectedTitle": "\"欧拉函数与RSA密码原理\"",
+      "expectedSlug": "离散数学/欧拉函数与RSA",
+      "expectedTags": [
+        "离散数学",
+        "欧拉函数",
+        "RSA",
+        "密码学"
+      ],
+      "latencyMs": 540.97,
+      "channelLatencyMs": {
+        "init_ms": 14.98,
+        "grep_ms": 149.03,
+        "vector_ms": 302.96,
+        "graph_ms": 7.62,
+        "web_ms": 0.0,
+        "fusion_ms": 0.13
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/欧拉函数与RSA",
+          "title": "\"欧拉函数与RSA密码原理\"",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/网络安全-非对称加密-RSA",
+          "title": "非对称加密与RSA算法",
+          "score": 0.1455,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "信息安全/椭圆曲线密码学ECC",
+          "title": "椭圆曲线密码学ECC",
+          "score": 0.1451,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/质数测试与RSA",
+          "title": "\"质数测试与RSA\"",
+          "score": 0.1449,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "信息安全/非对称加密RSA",
+          "title": "非对称加密RSA",
+          "score": 0.1433,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接涵盖欧拉函数与RSA密码原理的核心概念、典型场景和常见误区，且参考方向一致。候选文档2和4也与RSA相关，但未明确提及欧拉函数，相关性稍弱。候选文档3和5与问题关联度较低。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q082",
+      "question": "请解释“软件定义安全SDS”的核心概念、典型场景和常见误区。（参考方向：软件定义安全、SDS、SDN安全、微分段）",
+      "expectedTitle": "软件定义安全SDS",
+      "expectedSlug": "信息安全/软件定义安全SDS",
+      "expectedTags": [
+        "软件定义安全",
+        "SDS",
+        "SDN安全",
+        "微分段",
+        "安全自动化"
+      ],
+      "latencyMs": 575.32,
+      "channelLatencyMs": {
+        "init_ms": 30.74,
+        "grep_ms": 115.91,
+        "vector_ms": 362.66,
+        "graph_ms": 7.82,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/软件定义安全SDS",
+          "title": "软件定义安全SDS",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/软件定义网络SDN",
+          "title": "\"软件定义网络SDN\"",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机网络/SDN与网络功能虚拟化",
+          "title": "SDN与网络功能虚拟化",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "信息安全/零信任安全架构",
+          "title": "零信任安全架构",
+          "score": 0.0784,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "软件工程/软件安全",
+          "title": "软件安全",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题中的核心主题“软件定义安全SDS”完全匹配，且问题明确要求解释其核心概念、典型场景和常见误区，该文档应直接提供相关信息。候选文档2和3涉及SDN，与SDS相关但非直接核心，候选文档4和5相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q083",
+      "question": "请解释“IEEE754浮点数标准”的核心概念、典型场景和常见误区。（参考方向：IEEE754、浮点数、单精度、双精度）",
+      "expectedTitle": "IEEE754浮点数标准",
+      "expectedSlug": "计算机组成原理/IEEE754浮点数",
+      "expectedTags": [
+        "IEEE754",
+        "浮点数",
+        "单精度",
+        "双精度",
+        "阶码",
+        "尾数",
+        "NaN",
+        "非规格化数"
+      ],
+      "latencyMs": 522.48,
+      "channelLatencyMs": {
+        "init_ms": 15.34,
+        "grep_ms": 138.16,
+        "vector_ms": 312.7,
+        "graph_ms": 7.57,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "计算机组成原理/定点数与浮点数",
+          "title": "定点数与浮点数",
+          "score": 0.1589,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机组成原理/IEEE754浮点数",
+          "title": "IEEE754浮点数标准",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机组成原理/浮点运算",
+          "title": "浮点运算",
+          "score": 0.1154,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://en.wikipedia.org/wiki/IEEE_754",
+          "title": "计算机组成原理-数据表示与运算器设计",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://en.wikipedia.org/wiki/Computer_architecture",
+          "title": "实操案例-数据表示实践",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2的标题和slug与用户问题完全匹配，直接对应IEEE754浮点数标准，能够提供核心概念、典型场景和常见误区的详细解释。候选文档1和3虽然相关，但不够直接。候选文档4和5相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q084",
+      "question": "请解释“推理规则”的核心概念、典型场景和常见误区。（参考方向：推理规则、自然演绎、假言推理、归结）",
+      "expectedTitle": "推理规则",
+      "expectedSlug": "离散数学/推理规则",
+      "expectedTags": [
+        "推理规则",
+        "自然演绎",
+        "假言推理",
+        "归结",
+        "形式证明",
+        "逻辑推理"
+      ],
+      "latencyMs": 524.87,
+      "channelLatencyMs": {
+        "init_ms": 14.09,
+        "grep_ms": 135.57,
+        "vector_ms": 328.47,
+        "graph_ms": 7.34,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "离散数学/推理规则",
+          "title": "推理规则",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "https://en.wikipedia.org/wiki/Artificial_intelligence",
+          "title": "实操案例-推理实践",
+          "score": 0.155,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/一阶逻辑推理",
+          "title": "一阶逻辑推理",
+          "score": 0.1371,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/自然推理系统",
+          "title": "\"自然推理系统与证明策略\"",
+          "score": 0.1355,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.0726,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（离散数学/推理规则）的标题和slug与用户问题的核心主题“推理规则”完全匹配，且问题明确要求解释其核心概念、典型场景和常见误区，该文档很可能直接涵盖这些内容。候选文档3（一阶逻辑推理）和4（自然推理系统）也与推理规则相关，但文档1是最佳匹配。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q085",
+      "question": "请解释“递归下降分析”的核心概念、典型场景和常见误区。（参考方向：递归下降、自顶向下、语法分析器、手工编写）",
+      "expectedTitle": "递归下降分析",
+      "expectedSlug": "编译原理/递归下降",
+      "expectedTags": [
+        "递归下降",
+        "自顶向下",
+        "语法分析器",
+        "手工编写",
+        "相互递归",
+        "Parser"
+      ],
+      "latencyMs": 551.76,
+      "channelLatencyMs": {
+        "init_ms": 31.53,
+        "grep_ms": 136.03,
+        "vector_ms": 314.51,
+        "graph_ms": 8.95,
+        "web_ms": 0.0,
+        "fusion_ms": 0.1
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/递归下降",
+          "title": "递归下降分析",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/自顶向下LL1",
+          "title": "自顶向下LL(1)分析",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "None",
+          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "C语言深入/递归与尾递归",
+          "title": "\"C语言-递归与尾递归\"",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "编译原理/LR1与LALR1",
+          "title": "LR(1)与LALR(1)分析",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“递归下降分析”这一核心概念，能够提供核心概念、典型场景和常见误区的解释。候选文档2（自顶向下LL(1)分析）也与问题高度相关，因为递归下降是自顶向下分析的一种实现方式。候选文档3（LL(1)与LR(1)语法分析）部分相关，但更偏向理论对比。整体上，前三个候选中至少两个直接相关，因此hitAt3为true，最佳排名为1，整体相关性评分较高。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q086",
+      "question": "请解释“后缀数组算法”的核心概念、典型场景和常见误区。（参考方向：算法、后缀数组、倍增、SA-IS）",
+      "expectedTitle": "后缀数组算法",
+      "expectedSlug": "算法设计与分析/后缀数组算法",
+      "expectedTags": [
+        "算法",
+        "后缀数组",
+        "倍增",
+        "SA-IS",
+        "字符串"
+      ],
+      "latencyMs": 509.49,
+      "channelLatencyMs": {
+        "init_ms": 14.11,
+        "grep_ms": 131.23,
+        "vector_ms": 316.64,
+        "graph_ms": 7.91,
+        "web_ms": 0.0,
+        "fusion_ms": 0.46
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "算法设计与分析/后缀数组算法",
+          "title": "后缀数组算法",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/后缀数组与后缀树",
+          "title": "后缀数组与后缀树",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "算法设计与分析/算法概述",
+          "title": "算法概述",
+          "score": 0.1474,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据结构/后缀自动机与后缀数组",
+          "title": "\"后缀自动机与后缀数组\"",
+          "score": 0.1455,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "None",
+          "title": "算法-字符串匹配算法全集（视频）",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对“后缀数组算法”进行解释，符合问题要求的核心概念、典型场景和常见误区。候选文档2和4也与后缀数组相关，但文档1是最佳匹配。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q087",
+      "question": "请解释“编辑距离”的核心概念、典型场景和常见误区。（参考方向：编辑距离、动态规划、Levenshtein距离、字符串比较）",
+      "expectedTitle": "编辑距离",
+      "expectedSlug": "算法设计与分析/编辑距离",
+      "expectedTags": [
+        "编辑距离",
+        "动态规划",
+        "Levenshtein距离",
+        "字符串比较",
+        "序列比对"
+      ],
+      "latencyMs": 1727.29,
+      "channelLatencyMs": {
+        "init_ms": 15.38,
+        "grep_ms": 136.58,
+        "vector_ms": 1521.52,
+        "graph_ms": 7.62,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "算法设计与分析/动态规划概述",
+          "title": "动态规划概述",
+          "score": 0.1577,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "算法设计与分析/编辑距离",
+          "title": "编辑距离",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "离散数学/解释",
+          "title": "解释",
+          "score": 0.1544,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/最长公共子序列",
+          "title": "最长公共子序列 LCS",
+          "score": 0.1198,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "算法设计与分析/最近点对问题",
+          "title": "最近点对问题",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": false,
+        "hitAt3": true,
+        "bestRank": 2,
+        "relevanceScore": 0.8,
+        "reason": "候选文档2（编辑距离）与用户问题直接相关，标题和slug完全匹配预期主题，能直接解释核心概念、典型场景和常见误区。候选文档1（动态规划概述）部分相关，因为编辑距离是动态规划的典型应用，但不够直接。候选文档3（解释）标题模糊，相关性低。整体上，最佳候选排名第2，且前三个候选中至少有一个直接相关。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q088",
+      "question": "请解释“\"C语言-指针算术与内存模型\"”的核心概念、典型场景和常见误区。（参考方向：C语言、指针、内存模型、undefined behavior）",
+      "expectedTitle": "\"C语言-指针算术与内存模型\"",
+      "expectedSlug": "C语言深入/指针算术与内存模型",
+      "expectedTags": [
+        "C语言",
+        "指针",
+        "内存模型",
+        "undefined behavior"
+      ],
+      "latencyMs": 1926.72,
+      "channelLatencyMs": {
+        "init_ms": 29.6,
+        "grep_ms": 216.95,
+        "vector_ms": 1634.88,
+        "graph_ms": 7.24,
+        "web_ms": 0.0,
+        "fusion_ms": 0.43
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "C语言深入/指针算术与内存模型",
+          "title": "\"C语言-指针算术与内存模型\"",
+          "score": 0.1501,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "程序设计/指针与引用",
+          "title": "指针与引用",
+          "score": 0.1499,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "C语言深入/内存对齐与位域",
+          "title": "\"C语言-内存对齐与位域详解\"",
+          "score": 0.1336,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "C语言深入/restrict限定符",
+          "title": "\"C语言-restrict限定符\"",
+          "score": 0.1287,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "C语言深入/安全编码规范",
+          "title": "\"C语言-安全编码规范\"",
+          "score": 0.1238,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“C语言-指针算术与内存模型”这一主题，能够直接回答核心概念、典型场景和常见误区。候选文档2（指针与引用）和候选文档3（内存对齐与位域）与问题部分相关，但不如候选文档1直接。整体相关性很高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q089",
+      "question": "请解释“\"JavaScript-Promise与微任务队列\"”的核心概念、典型场景和常见误区。（参考方向：JavaScript、Promise、microtask、then）",
+      "expectedTitle": "\"JavaScript-Promise与微任务队列\"",
+      "expectedSlug": "JavaScript/TypeScript/Promise与微任务",
+      "expectedTags": [
+        "JavaScript",
+        "Promise",
+        "microtask",
+        "then",
+        "catch",
+        "allSettled"
+      ],
+      "latencyMs": 2151.56,
+      "channelLatencyMs": {
+        "init_ms": 14.24,
+        "grep_ms": 170.54,
+        "vector_ms": 1903.6,
+        "graph_ms": 9.68,
+        "web_ms": 0.0,
+        "fusion_ms": 0.19
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "JavaScript/TypeScript/Promise与微任务",
+          "title": "\"JavaScript-Promise与微任务队列\"",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "JavaScript/TypeScript/async-await原理",
+          "title": "\"JavaScript-async/await与生成器\"",
+          "score": 0.1394,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "JavaScript/TypeScript/事件循环与任务队列",
+          "title": "\"JavaScript-事件循环与Job Queue\"",
+          "score": 0.1369,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "JavaScript/TypeScript/WebWorkers",
+          "title": "\"JavaScript-Web Workers与并行\"",
+          "score": 0.1351,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "程序设计/异步编程",
+          "title": "异步编程",
+          "score": 0.1157,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对“JavaScript-Promise与微任务队列”的核心概念、典型场景和常见误区进行解释，是高度相关的文档。候选文档2和3虽然涉及相关主题（async/await、事件循环），但并非直接聚焦于Promise与微任务队列，因此相关性较低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q090",
+      "question": "请解释“二叉排序树”的核心概念、典型场景和常见误区。（参考方向：树、二叉排序树、BST、查找）",
+      "expectedTitle": "二叉排序树",
+      "expectedSlug": "数据结构/二叉排序树",
+      "expectedTags": [
+        "树",
+        "二叉排序树",
+        "BST",
+        "查找",
+        "插入",
+        "删除"
+      ],
+      "latencyMs": 2016.03,
+      "channelLatencyMs": {
+        "init_ms": 14.47,
+        "grep_ms": 121.94,
+        "vector_ms": 1810.33,
+        "graph_ms": 9.07,
+        "web_ms": 0.0,
+        "fusion_ms": 0.16
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/二叉排序树",
+          "title": "二叉排序树",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/二叉树",
+          "title": "二叉树",
+          "score": 0.1509,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据结构/平衡二叉树-AVL",
+          "title": "平衡二叉树-AVL",
+          "score": 0.1504,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/最优二叉搜索树",
+          "title": "最优二叉搜索树",
+          "score": 0.1132,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/B树与B+树",
+          "title": "\"B树与B+树全面对比\"",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（二叉排序树）的标题和slug与用户问题完全匹配，直接对应问题核心概念。候选文档2（二叉树）和3（平衡二叉树-AVL）也与二叉排序树相关，但不如文档1直接。整体相关性高，但需注意文档1的score较低（0.1557），可能内容深度有限。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q091",
+      "question": "请解释“消息认证码MAC与HMAC”的核心概念、典型场景和常见误区。（参考方向：MAC、HMAC、消息认证、完整性）",
+      "expectedTitle": "消息认证码MAC与HMAC",
+      "expectedSlug": "信息安全/消息认证码MAC与HMAC",
+      "expectedTags": [
+        "MAC",
+        "HMAC",
+        "消息认证",
+        "完整性"
+      ],
+      "latencyMs": 2565.74,
+      "channelLatencyMs": {
+        "init_ms": 27.27,
+        "grep_ms": 167.5,
+        "vector_ms": 2322.08,
+        "graph_ms": 7.51,
+        "web_ms": 0.0,
+        "fusion_ms": 0.13
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "信息安全/消息认证码MAC与HMAC",
+          "title": "消息认证码MAC与HMAC",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机网络/MAC地址",
+          "title": "MAC地址详解",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "信息安全/哈希函数与SHA系列",
+          "title": "哈希函数与SHA系列",
+          "score": 0.141,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "信息安全/硬件安全模块HSM",
+          "title": "\"硬件安全模块HSM\"",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://信息安全/密码学基础",
+          "title": "信息安全-密码学知识图谱",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“消息认证码MAC与HMAC”的核心概念、场景和误区，是高度相关的文档。候选文档2（MAC地址）与问题无关，候选文档3（哈希函数）仅部分相关但未直接覆盖MAC/HMAC。整体上，最佳候选（排名1）能直接帮助回答问题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q092",
+      "question": "请解释“寄存器分配”的核心概念、典型场景和常见误区。（参考方向：寄存器分配、图着色、冲突图、活跃区间）",
+      "expectedTitle": "寄存器分配",
+      "expectedSlug": "编译原理/寄存器分配",
+      "expectedTags": [
+        "寄存器分配",
+        "图着色",
+        "冲突图",
+        "活跃区间",
+        "Chaitin算法",
+        "寄存器溢出"
+      ],
+      "latencyMs": 4231.87,
+      "channelLatencyMs": {
+        "init_ms": 15.67,
+        "grep_ms": 143.5,
+        "vector_ms": 4018.41,
+        "graph_ms": 7.53,
+        "web_ms": 0.0,
+        "fusion_ms": 0.09
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/寄存器分配",
+          "title": "寄存器分配",
+          "score": 0.1532,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/寄存器分配与图着色",
+          "title": "\"寄存器分配与图着色算法\"",
+          "score": 0.1523,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "算法设计与分析/图的着色",
+          "title": "图的着色问题",
+          "score": 0.1218,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "编译原理/垃圾回收算法详解",
+          "title": "垃圾回收算法详解",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://编译原理/运行时",
+          "title": "编译原理-GC算法题库",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（'寄存器分配'）与用户问题直接相关，标题和slug完全匹配预期主题，能直接解释核心概念、典型场景和常见误区。候选文档2（'寄存器分配与图着色算法'）也高度相关，涉及图着色等参考方向。候选文档3（'图的着色问题'）部分相关，但更偏向通用图着色而非寄存器分配的具体应用。整体上，前三个候选中至少两个直接相关，因此hitAt3为true，最佳排名为1，整体相关性评分较高。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q093",
+      "question": "请解释“SQL触发器”的核心概念、典型场景和常见误区。（参考方向：SQL、触发器、TRIGGER、BEFORE）",
+      "expectedTitle": "SQL触发器",
+      "expectedSlug": "数据库原理/SQL-触发器",
+      "expectedTags": [
+        "SQL",
+        "触发器",
+        "TRIGGER",
+        "BEFORE",
+        "AFTER",
+        "INSTEAD OF",
+        "审计日志"
+      ],
+      "latencyMs": 1964.84,
+      "channelLatencyMs": {
+        "init_ms": 16.45,
+        "grep_ms": 115.27,
+        "vector_ms": 1770.4,
+        "graph_ms": 7.71,
+        "web_ms": 0.0,
+        "fusion_ms": 0.14
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据库原理/SQL-触发器",
+          "title": "SQL触发器",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据库原理/SQL-子查询",
+          "title": "SQL子查询与相关子查询",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "https://www.postgresql.org/docs/current/performance-tips.html",
+          "title": "SQL查询优化实战指南",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "数据库原理/SQL执行计划分析",
+          "title": "\"SQL执行计划分析（EXPLAIN）\"",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "信息安全/SQL注入攻击与防御",
+          "title": "SQL注入攻击与防御",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对“SQL触发器”这一核心主题，能够提供核心概念、典型场景和常见误区的解释。其他候选文档（如子查询、查询优化、执行计划、SQL注入）与触发器主题无关或关联度很低。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q094",
+      "question": "请解释“NFA”的核心概念、典型场景和常见误区。（参考方向：NFA、非确定性有限自动机、有限自动机、状态转移）",
+      "expectedTitle": "NFA",
+      "expectedSlug": "编译原理/NFA",
+      "expectedTags": [
+        "NFA",
+        "非确定性有限自动机",
+        "有限自动机",
+        "状态转移",
+        "Thompson构造法"
+      ],
+      "latencyMs": 4165.24,
+      "channelLatencyMs": {
+        "init_ms": 25.91,
+        "grep_ms": 136.09,
+        "vector_ms": 3938.93,
+        "graph_ms": 8.09,
+        "web_ms": 0.0,
+        "fusion_ms": 0.13
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/NFA",
+          "title": "NFA",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/NFA转DFA",
+          "title": "NFA转DFA",
+          "score": 0.1521,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "编译原理/DFA",
+          "title": "DFA",
+          "score": 0.1131,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "离散数学/自动机基础",
+          "title": "自动机基础",
+          "score": 0.1052,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://en.wikipedia.org/wiki/Compiler",
+          "title": "实操案例-词法分析实践",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（slug: '编译原理/NFA', title: 'NFA'）与用户问题直接相关，其标题和slug完全匹配问题核心主题'NFA'，且预期标签（NFA、非确定性有限自动机、有限自动机、状态转移）高度吻合，能直接提供NFA的核心概念、典型场景和常见误区的解释。候选文档2（NFA转DFA）和候选文档3（DFA）也与NFA相关，但更侧重于转换或对比，相关性稍弱。整体上，前三个候选中至少有一个（文档1）直接相关，因此hitAt3为true。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q095",
+      "question": "请解释“\"一致性哈希（Consistent Hashing）\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、一致性哈希、分布式、负载均衡）",
+      "expectedTitle": "\"一致性哈希（Consistent Hashing）\"",
+      "expectedSlug": "数据结构/哈希一致性哈希",
+      "expectedTags": [
+        "数据结构",
+        "一致性哈希",
+        "分布式",
+        "负载均衡",
+        "哈希环"
+      ],
+      "latencyMs": 1927.17,
+      "channelLatencyMs": {
+        "init_ms": 17.17,
+        "grep_ms": 149.78,
+        "vector_ms": 1713.99,
+        "graph_ms": 7.19,
+        "web_ms": 0.0,
+        "fusion_ms": 0.17
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "分布式系统/一致性哈希",
+          "title": "一致性哈希",
+          "score": 0.1532,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/哈希一致性哈希",
+          "title": "\"一致性哈希（Consistent Hashing）\"",
+          "score": 0.1436,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "分布式系统/数据一致性实战",
+          "title": "数据一致性实战",
+          "score": 0.0975,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "wiki://分布式系统/分布式存储",
+          "title": "分布式系统-一致性哈希实现",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://en.wikipedia.org/wiki/Data_structure",
+          "title": "数据结构-哈希结构思维导图",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.9,
+        "reason": "候选文档1（一致性哈希）和候选文档2（一致性哈希（Consistent Hashing））的标题和slug与用户问题高度匹配，直接涉及一致性哈希的核心概念、典型场景和常见误区，且属于数据结构、分布式、负载均衡等参考方向。候选文档3（数据一致性实战）可能部分相关，但不如前两者直接。整体相关性高。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q096",
+      "question": "请解释“LR(0)与SLR(1)分析”的核心概念、典型场景和常见误区。（参考方向：LR(0)、SLR(1)、自底向上、移进-归约）",
+      "expectedTitle": "LR(0)与SLR(1)分析",
+      "expectedSlug": "编译原理/自底向上LR0与SLR1",
+      "expectedTags": [
+        "LR(0)",
+        "SLR(1)",
+        "自底向上",
+        "移进-归约",
+        "LR项",
+        "项目集规范族",
+        "分析表"
+      ],
+      "latencyMs": 3924.7,
+      "channelLatencyMs": {
+        "init_ms": 30.09,
+        "grep_ms": 150.97,
+        "vector_ms": 3682.87,
+        "graph_ms": 8.06,
+        "web_ms": 0.0,
+        "fusion_ms": 0.11
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "编译原理/自底向上LR0与SLR1",
+          "title": "LR(0)与SLR(1)分析",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "编译原理/LR1与LALR1",
+          "title": "LR(1)与LALR(1)分析",
+          "score": 0.1431,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "视频资源/离散数学-图论基础与应用",
+          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
+          "score": 0.1356,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "None",
+          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
+          "score": 0.0781,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://en.wikipedia.org/wiki/Compiler",
+          "title": "编译原理-语法分析课件",
+          "score": 0.0769,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对LR(0)与SLR(1)分析的核心概念、典型场景和常见误区，且参考方向一致。候选文档2和3虽然涉及LR分析，但主题不完全匹配（LR(1)/LALR(1)或视频资源），相关性较低。整体上，最佳候选（排名1）高度相关，能直接帮助回答问题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q097",
+      "question": "请解释“OpenGL与Vulkan架构对比”的核心概念、典型场景和常见误区。（参考方向：OpenGL、Vulkan、图形API、驱动模型）",
+      "expectedTitle": "OpenGL与Vulkan架构对比",
+      "expectedSlug": "计算机图形学/OpenGL与Vulkan架构对比",
+      "expectedTags": [
+        "OpenGL",
+        "Vulkan",
+        "图形API",
+        "驱动模型",
+        "渲染架构"
+      ],
+      "latencyMs": 1846.97,
+      "channelLatencyMs": {
+        "init_ms": 34.84,
+        "grep_ms": 171.7,
+        "vector_ms": 1580.65,
+        "graph_ms": 7.2,
+        "web_ms": 0.0,
+        "fusion_ms": 0.22
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "计算机图形学/OpenGL与Vulkan架构对比",
+          "title": "OpenGL与Vulkan架构对比",
+          "score": 0.1545,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "计算机组成原理/GPU与CUDA基础",
+          "title": "\"GPU架构与CUDA编程模型\"",
+          "score": 0.127,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "计算机图形学/图形渲染管线概述",
+          "title": "图形渲染管线概述",
+          "score": 0.1126,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "计算机组成原理/GPU渲染管线与GPGPU",
+          "title": "\"GPU渲染管线与GPGPU\"",
+          "score": 0.0884,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "wiki://计算机图形学/渲染管线",
+          "title": "计算机图形学-OpenGL入门实验",
+          "score": 0.0806,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接针对'OpenGL与Vulkan架构对比'这一核心主题，能够提供核心概念、典型场景和常见误区的详细解释。候选文档2和3虽然涉及GPU和图形渲染管线，但并非直接对比OpenGL与Vulkan，相关性较低。"
+      },
+      "judgeFromCache": false
+    },
+    {
+      "id": "q098",
+      "question": "请解释“经典同步问题-读者写者与哲学家进餐”的核心概念、典型场景和常见误区。（参考方向：操作系统、同步、读者写者、哲学家进餐）",
+      "expectedTitle": "经典同步问题-读者写者与哲学家进餐",
+      "expectedSlug": "操作系统/经典同步问题-读者写者与哲学家进餐",
+      "expectedTags": [
+        "操作系统",
+        "同步",
+        "读者写者",
+        "哲学家进餐",
+        "读写锁",
+        "死锁"
+      ],
+      "latencyMs": 2996.42,
+      "channelLatencyMs": {
+        "init_ms": 19.59,
+        "grep_ms": 177.03,
+        "vector_ms": 2724.84,
+        "graph_ms": 15.37,
+        "web_ms": 0.0,
+        "fusion_ms": 0.19
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "操作系统/经典同步问题-读者写者与哲学家进餐",
+          "title": "经典同步问题-读者写者与哲学家进餐",
+          "score": 0.1534,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "操作系统/经典同步问题-生产者消费者",
+          "title": "经典同步问题-生产者消费者",
+          "score": 0.1532,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "操作系统/互斥与同步机制",
+          "title": "互斥与同步机制",
+          "score": 0.1403,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "None",
+          "title": "操作系统-进程同步与PV操作（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "https://pages.cs.wisc.edu/~remzi/OSTEP/",
+          "title": "操作系统-进程同步PV操作题库",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 1.0,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应'经典同步问题-读者写者与哲学家进餐'，能够直接回答核心概念、典型场景和常见误区。候选文档2和3虽然相关（生产者消费者、互斥与同步机制），但并非直接针对读者写者与哲学家进餐问题。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q099",
+      "question": "请解释“\"KMP字符串匹配算法\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、KMP、字符串匹配、next数组）",
+      "expectedTitle": "\"KMP字符串匹配算法\"",
+      "expectedSlug": "数据结构/KMP字符串匹配",
+      "expectedTags": [
+        "数据结构",
+        "KMP",
+        "字符串匹配",
+        "next数组"
+      ],
+      "latencyMs": 2286.75,
+      "channelLatencyMs": {
+        "init_ms": 16.76,
+        "grep_ms": 131.29,
+        "vector_ms": 2083.97,
+        "graph_ms": 8.22,
+        "web_ms": 0.0,
+        "fusion_ms": 0.21
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/KMP字符串匹配",
+          "title": "\"KMP字符串匹配算法\"",
+          "score": 0.1557,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "算法设计与分析/KMP算法",
+          "title": "KMP字符串匹配算法",
+          "score": 0.151,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "数据结构/KMP算法",
+          "title": "KMP算法",
+          "score": 0.1508,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "算法设计与分析/Rabin-Karp算法",
+          "title": "Rabin-Karp字符串匹配算法",
+          "score": 0.1498,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "None",
+          "title": "算法-字符串匹配算法全集（视频）",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 0.95,
+        "reason": "排名前3的候选文档（rank 1, 2, 3）的标题和slug均直接包含'KMP字符串匹配算法'或'KMP算法'，与用户问题的核心主题完全匹配，能够直接提供关于KMP算法的核心概念、典型场景和常见误区的解释。"
+      },
+      "judgeFromCache": true
+    },
+    {
+      "id": "q100",
+      "question": "请解释“\"布隆过滤器（Bloom Filter）\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、布隆过滤器、哈希、概率数据结构）",
+      "expectedTitle": "\"布隆过滤器（Bloom Filter）\"",
+      "expectedSlug": "数据结构/布隆过滤器",
+      "expectedTags": [
+        "数据结构",
+        "布隆过滤器",
+        "哈希",
+        "概率数据结构"
+      ],
+      "latencyMs": 3331.88,
+      "channelLatencyMs": {
+        "init_ms": 25.09,
+        "grep_ms": 159.96,
+        "vector_ms": 3100.42,
+        "graph_ms": 8.66,
+        "web_ms": 0.0,
+        "fusion_ms": 0.21
+      },
+      "success": true,
+      "error": null,
+      "top": [
+        {
+          "rank": 1,
+          "slug": "数据结构/布隆过滤器",
+          "title": "\"布隆过滤器（Bloom Filter）\"",
+          "score": 0.1472,
+          "extra": null
+        },
+        {
+          "rank": 2,
+          "slug": "数据结构/哈希一致性哈希",
+          "title": "\"一致性哈希（Consistent Hashing）\"",
+          "score": 0.1412,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "None",
+          "title": "数据库-Redis核心数据结构与实战（视频）",
+          "score": 0.0806,
+          "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "https://www.bilibili.com/video/BV1uZ4y1P7ji",
+          "title": "数据结构-哈希表与冲突解决（视频）",
+          "score": 0.0794,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "数据结构/哈希表-开放定址",
+          "title": "哈希表-开放定址法",
+          "score": 0.0781,
+          "extra": null
+        }
+      ],
+      "judge": {
+        "hitAt1": true,
+        "hitAt3": true,
+        "bestRank": 1,
+        "relevanceScore": 1.0,
+        "reason": "候选文档1的标题和slug与用户问题完全匹配，直接对应“布隆过滤器（Bloom Filter）”的核心概念、典型场景和常见误区，且属于指定的数据结构、哈希、概率数据结构参考方向。其他候选文档（如一致性哈希、哈希表）虽相关但非直接针对布隆过滤器，因此最佳相关候选为排名第1的文档。"
+      },
+      "judgeFromCache": true
+    }
+  ],
+  "elapsedSeconds": 217.54
+}

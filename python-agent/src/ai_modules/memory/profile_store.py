@@ -14,6 +14,12 @@ from typing import Any, Protocol
 from src.ai_modules.config import get_settings
 from src.ai_modules.models import LearnerProfileDimensions, LearnerProfileSnapshot
 from src.ai_modules.models.profile import ErrorPattern, WeakPointDetail
+from src.ai_modules.memory.profile_feature_registry import (
+    canonical_match_dimensions,
+    exclusive_dimensions,
+    get_feature_dimension_spec,
+    resolved_by_skill_mastery_dimensions,
+)
 from src.ai_modules.runtime.topic_canonicalizer import canonicalize_topic
 
 
@@ -340,20 +346,10 @@ class PostgresProfileStore:
             )
 
     def _singleton_dimensions(self) -> set[str]:
-        return {
-            "knowledge_foundation",
-            "professional_background",
-            "learning_preference",
-            "cognitive_style",
-            "learning_pace",
-            "confidence_level",
-            "current_goal",
-            "learning_habits",
-            "explanation_preference",
-        }
+        return exclusive_dimensions()
 
     def _canonical_match_dimensions(self) -> set[str]:
-        return {"weak_points", "skill_mastery", "error_patterns"}
+        return canonical_match_dimensions()
 
     def _extract_features(self, dimensions: LearnerProfileDimensions) -> list[dict[str, Any]]:
         base_confidence = max(0.35, min(0.95, float(dimensions.confidence_score or 0.65)))
@@ -365,8 +361,6 @@ class PostgresProfileStore:
                 confidence=base_confidence,
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=45,
-                decay_rate=0.02,
             ),
             self._feature_record(
                 dimension="professional_background",
@@ -375,8 +369,6 @@ class PostgresProfileStore:
                 confidence=max(0.45, base_confidence - 0.05),
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=90,
-                decay_rate=0.01,
             ),
             self._feature_record(
                 dimension="learning_preference",
@@ -388,8 +380,6 @@ class PostgresProfileStore:
                 confidence=base_confidence,
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=35,
-                decay_rate=0.03,
             ),
             self._feature_record(
                 dimension="cognitive_style",
@@ -398,8 +388,6 @@ class PostgresProfileStore:
                 confidence=base_confidence,
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=45,
-                decay_rate=0.03,
             ),
             self._feature_record(
                 dimension="learning_pace",
@@ -408,8 +396,6 @@ class PostgresProfileStore:
                 confidence=max(0.4, base_confidence - 0.05),
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=20,
-                decay_rate=0.05,
             ),
             self._feature_record(
                 dimension="confidence_level",
@@ -421,8 +407,6 @@ class PostgresProfileStore:
                 confidence=base_confidence,
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=20,
-                decay_rate=0.05,
             ),
             self._feature_record(
                 dimension="current_goal",
@@ -431,8 +415,6 @@ class PostgresProfileStore:
                 confidence=max(0.5, base_confidence),
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=18,
-                decay_rate=0.06,
             ),
             self._feature_record(
                 dimension="learning_habits",
@@ -441,8 +423,6 @@ class PostgresProfileStore:
                 confidence=max(0.4, base_confidence - 0.08),
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=14,
-                decay_rate=0.07,
             ),
             self._feature_record(
                 dimension="explanation_preference",
@@ -451,8 +431,6 @@ class PostgresProfileStore:
                 confidence=max(0.45, base_confidence - 0.04),
                 source_type=dimensions.source,
                 evidence=dimensions.evidence,
-                stability_period_days=30,
-                decay_rate=0.03,
             ),
         ]
 
@@ -468,8 +446,6 @@ class PostgresProfileStore:
                     confidence=max(0.45, base_confidence - 0.03),
                     source_type=dimensions.source,
                     evidence=dimensions.evidence,
-                    stability_period_days=21,
-                    decay_rate=0.04,
                 )
             )
 
@@ -487,8 +463,6 @@ class PostgresProfileStore:
                     confidence=max(0.55, min(0.95, item.severity * 0.75 + 0.2)),
                     source_type=dimensions.source,
                     evidence=[*dimensions.evidence, item.last_error] if item.last_error else dimensions.evidence,
-                    stability_period_days=20,
-                    decay_rate=0.05,
                 )
             )
 
@@ -503,8 +477,6 @@ class PostgresProfileStore:
                     confidence=max(0.45, min(0.92, float(item.frequency) * 0.7 + 0.2)),
                     source_type=dimensions.source,
                     evidence=[*dimensions.evidence, *item.examples],
-                    stability_period_days=18,
-                    decay_rate=0.06,
                 )
             )
 
@@ -520,8 +492,6 @@ class PostgresProfileStore:
                     confidence=max(0.45, base_confidence - 0.04),
                     source_type=dimensions.source,
                     evidence=dimensions.evidence,
-                    stability_period_days=35,
-                    decay_rate=0.03,
                 )
             )
 
@@ -537,8 +507,6 @@ class PostgresProfileStore:
                     confidence=max(0.4, base_confidence - 0.12),
                     source_type="INFERRED",
                     evidence=dimensions.evidence,
-                    stability_period_days=10,
-                    decay_rate=0.08,
                     inferred=True,
                 )
             )
@@ -554,10 +522,11 @@ class PostgresProfileStore:
         confidence: float,
         source_type: str,
         evidence: list[str] | None = None,
-        stability_period_days: int = 30,
-        decay_rate: float = 0.05,
+        stability_period_days: int | None = None,
+        decay_rate: float | None = None,
         inferred: bool = False,
     ) -> dict[str, Any]:
+        spec = get_feature_dimension_spec(dimension)
         canonical_topic = canonicalize_topic(feature_key)
         return {
             "dimension": dimension,
@@ -572,8 +541,8 @@ class PostgresProfileStore:
             "evidence": list(dict.fromkeys(filter(None, evidence or [])))[:6],
             "verification_count": 1,
             "decay_enabled": True,
-            "stability_period_days": stability_period_days,
-            "decay_rate": decay_rate,
+            "stability_period_days": stability_period_days if stability_period_days is not None else spec.stability_period_days,
+            "decay_rate": decay_rate if decay_rate is not None else spec.decay_rate,
             "is_active": True,
             "status": "ACTIVE",
             "resolved_at": None,
@@ -783,6 +752,9 @@ class PostgresProfileStore:
             )
 
     def _resolve_mastered_weak_points(self, cur: Any, *, user_id: str, threshold: float = 0.85) -> None:
+        resolvable_dimensions = resolved_by_skill_mastery_dimensions()
+        if "weak_points" not in resolvable_dimensions:
+            return
         cur.execute(
             """
             SELECT feature_key, canonical_key, feature_value

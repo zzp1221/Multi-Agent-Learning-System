@@ -1,0 +1,1458 @@
+{
+  "seed": 20260524,
+  "count": 100,
+  "domain": "COMPUTER_SCIENCE",
+  "questionSetHash": "7aa7829694d4de1b9dd02870cf0a1d9e1aa998d1617685af72c3b4433580aeb0",
+  "questions": [
+    {
+      "id": "q001",
+      "documentId": "740d23ee-41e7-4f03-a942-2d360d1ce2ec",
+      "expectedTitle": "安全策略与等保",
+      "expectedSlug": "信息安全/安全策略与等保",
+      "expectedTags": [
+        "安全策略",
+        "等级保护",
+        "等保2.0",
+        "合规",
+        "信息安全管理体系"
+      ],
+      "question": "请解释“安全策略与等保”的核心概念、典型场景和常见误区。（参考方向：安全策略、等级保护、等保2.0、合规）"
+    },
+    {
+      "id": "q002",
+      "documentId": "f375a970-d7f2-4ec6-adcf-ff8175f89257",
+      "expectedTitle": "\"NP完全性与归约\"",
+      "expectedSlug": "算法设计与分析/NP完全理论",
+      "expectedTags": [
+        "算法",
+        "NP",
+        "P vs NP",
+        "归约",
+        "计算复杂性"
+      ],
+      "question": "请解释“\"NP完全性与归约\"”的核心概念、典型场景和常见误区。（参考方向：算法、NP、P vs NP、归约）"
+    },
+    {
+      "id": "q003",
+      "documentId": "3803572a-1323-4222-a38a-af2d76e9fedf",
+      "expectedTitle": "代码优化综合",
+      "expectedSlug": "编译原理/代码优化综合",
+      "expectedTags": [
+        "代码优化",
+        "优化Pass",
+        "优化级别",
+        "LLVM",
+        "O2",
+        "O3",
+        "内联",
+        "过程间优化"
+      ],
+      "question": "请解释“代码优化综合”的核心概念、典型场景和常见误区。（参考方向：代码优化、优化Pass、优化级别、LLVM）"
+    },
+    {
+      "id": "q004",
+      "documentId": "fda29097-a55d-43fd-9523-3b445b4b4761",
+      "expectedTitle": "802.1X与网络准入控制",
+      "expectedSlug": "信息安全/802.1X与网络准入控制",
+      "expectedTags": [
+        "802.1X",
+        "NAC",
+        "网络准入",
+        "RADIUS",
+        "端口安全"
+      ],
+      "question": "请解释“802.1X与网络准入控制”的核心概念、典型场景和常见误区。（参考方向：802.1X、NAC、网络准入、RADIUS）"
+    },
+    {
+      "id": "q005",
+      "documentId": "d7e831dc-3685-4207-9b2a-2dc0aed0718e",
+      "expectedTitle": "\"同余与模运算\"",
+      "expectedSlug": "离散数学/同余与模运算",
+      "expectedTags": [
+        "离散数学",
+        "同余",
+        "模运算",
+        "数论",
+        "中国剩余定理"
+      ],
+      "question": "请解释“\"同余与模运算\"”的核心概念、典型场景和常见误区。（参考方向：离散数学、同余、模运算、数论）"
+    },
+    {
+      "id": "q006",
+      "documentId": "447d2d40-d0eb-4dd4-91b7-da1aa0f945af",
+      "expectedTitle": "关系模型",
+      "expectedSlug": "数据库原理/关系模型",
+      "expectedTags": [
+        "关系模型",
+        "关系",
+        "元组",
+        "属性",
+        "域",
+        "笛卡尔积",
+        "关系模式",
+        "关系实例"
+      ],
+      "question": "请解释“关系模型”的核心概念、典型场景和常见误区。（参考方向：关系模型、关系、元组、属性）"
+    },
+    {
+      "id": "q007",
+      "documentId": "9396b077-ada4-49c9-979e-cf2c849c69d1",
+      "expectedTitle": "\"DFA最小化（Hopcroft算法）\"",
+      "expectedSlug": "编译原理/DFA最小化算法",
+      "expectedTags": [
+        "编译原理",
+        "DFA",
+        "最小化",
+        "Hopcroft",
+        "等价类"
+      ],
+      "question": "请解释“\"DFA最小化（Hopcroft算法）\"”的核心概念、典型场景和常见误区。（参考方向：编译原理、DFA、最小化、Hopcroft）"
+    },
+    {
+      "id": "q008",
+      "documentId": "d53d9704-a5cf-40df-9691-ca4287e44374",
+      "expectedTitle": "\"C语言-内存对齐与位域详解\"",
+      "expectedSlug": "C语言深入/内存对齐与位域",
+      "expectedTags": [
+        "C语言",
+        "内存对齐",
+        "位域",
+        "struct布局",
+        "pragma pack"
+      ],
+      "question": "请解释“\"C语言-内存对齐与位域详解\"”的核心概念、典型场景和常见误区。（参考方向：C语言、内存对齐、位域、struct布局）"
+    },
+    {
+      "id": "q009",
+      "documentId": "aa88a0e6-bb82-44c4-8bf8-3f5d28cf1c0f",
+      "expectedTitle": "信息论基础",
+      "expectedSlug": "离散数学/信息论基础",
+      "expectedTags": [
+        "离散数学",
+        "信息论",
+        "熵",
+        "信道容量",
+        "编码"
+      ],
+      "question": "请解释“信息论基础”的核心概念、典型场景和常见误区。（参考方向：离散数学、信息论、熵、信道容量）"
+    },
+    {
+      "id": "q010",
+      "documentId": "a399ccd9-310b-4867-90e6-4d8afc75c0ca",
+      "expectedTitle": "环境映射与反射",
+      "expectedSlug": "计算机图形学/环境映射与反射",
+      "expectedTags": [
+        "环境映射",
+        "立方体贴图",
+        "球面映射",
+        "反射",
+        "IBL"
+      ],
+      "question": "请解释“环境映射与反射”的核心概念、典型场景和常见误区。（参考方向：环境映射、立方体贴图、球面映射、反射）"
+    },
+    {
+      "id": "q011",
+      "documentId": "620d75d4-e0f2-4f7a-85b5-7c199ef38089",
+      "expectedTitle": "\"鸽巢原理及其推广\"",
+      "expectedSlug": "离散数学/鸽巢原理及其推广",
+      "expectedTags": [
+        "离散数学",
+        "鸽巢原理",
+        "组合数学",
+        "Ramsey"
+      ],
+      "question": "请解释“\"鸽巢原理及其推广\"”的核心概念、典型场景和常见误区。（参考方向：离散数学、鸽巢原理、组合数学、Ramsey）"
+    },
+    {
+      "id": "q012",
+      "documentId": "5c44c458-d8de-47a5-b124-66452680cecc",
+      "expectedTitle": "磁盘调度-FCFS与SSTF",
+      "expectedSlug": "操作系统/磁盘调度-FCFS与SSTF",
+      "expectedTags": [
+        "操作系统",
+        "磁盘调度",
+        "FCFS",
+        "SSTF",
+        "寻道时间"
+      ],
+      "question": "请解释“磁盘调度-FCFS与SSTF”的核心概念、典型场景和常见误区。（参考方向：操作系统、磁盘调度、FCFS、SSTF）"
+    },
+    {
+      "id": "q013",
+      "documentId": "e929f003-9e3e-4395-935f-b0bcdd5eb361",
+      "expectedTitle": "\"Python深入-数据类与attrs对比\"",
+      "expectedSlug": "Python深入/dataclass与attrs",
+      "expectedTags": [
+        "Python",
+        "dataclass",
+        "attrs",
+        "数据建模",
+        "PEP 557"
+      ],
+      "question": "请解释“\"Python深入-数据类与attrs对比\"”的核心概念、典型场景和常见误区。（参考方向：Python、dataclass、attrs、数据建模）"
+    },
+    {
+      "id": "q014",
+      "documentId": "72ef967b-7068-473c-8fd5-12a3fdf75456",
+      "expectedTitle": "OAuth2与OpenID Connect",
+      "expectedSlug": "信息安全/OAuth2与OpenID Connect",
+      "expectedTags": [
+        "OAuth",
+        "OpenID Connect",
+        "身份认证",
+        "授权",
+        "SSO"
+      ],
+      "question": "请解释“OAuth2与OpenID Connect”的核心概念、典型场景和常见误区。（参考方向：OAuth、OpenID Connect、身份认证、授权）"
+    },
+    {
+      "id": "q015",
+      "documentId": "6fd42ec6-2c14-4e4b-b310-5dbd342c6d35",
+      "expectedTitle": "Peterson算法",
+      "expectedSlug": "操作系统/Peterson算法",
+      "expectedTags": [
+        "操作系统",
+        "Peterson算法",
+        "临界区",
+        "互斥",
+        "软件方法"
+      ],
+      "question": "请解释“Peterson算法”的核心概念、典型场景和常见误区。（参考方向：操作系统、Peterson算法、临界区、互斥）"
+    },
+    {
+      "id": "q016",
+      "documentId": "9ef4fff7-7d9b-430f-a15b-0fb413fd6b14",
+      "expectedTitle": "ZooKeeper原理与应用",
+      "expectedSlug": "分布式系统/ZooKeeper原理与应用",
+      "expectedTags": [
+        "ZooKeeper",
+        "分布式协调",
+        "ZNode",
+        "Watch",
+        "Leader选举",
+        "分布式锁"
+      ],
+      "question": "请解释“ZooKeeper原理与应用”的核心概念、典型场景和常见误区。（参考方向：ZooKeeper、分布式协调、ZNode、Watch）"
+    },
+    {
+      "id": "q017",
+      "documentId": "2e5c57ad-459c-47f2-bb5f-526412f7c25c",
+      "expectedTitle": "置换群",
+      "expectedSlug": "离散数学/置换群",
+      "expectedTags": [
+        "置换群",
+        "对称群",
+        "交代群",
+        "轮换",
+        "对换",
+        "Cayley定理",
+        "排列的奇偶性"
+      ],
+      "question": "请解释“置换群”的核心概念、典型场景和常见误区。（参考方向：置换群、对称群、交代群、轮换）"
+    },
+    {
+      "id": "q018",
+      "documentId": "8d7bb090-9153-43d3-8b3b-778e033faaa3",
+      "expectedTitle": "恶意软件分类与防护",
+      "expectedSlug": "信息安全/恶意软件分类与防护",
+      "expectedTags": [
+        "恶意软件",
+        "病毒",
+        "木马",
+        "勒索软件",
+        "蠕虫"
+      ],
+      "question": "请解释“恶意软件分类与防护”的核心概念、典型场景和常见误区。（参考方向：恶意软件、病毒、木马、勒索软件）"
+    },
+    {
+      "id": "q019",
+      "documentId": "ed4ab3ec-7d75-4fa6-9f61-c334a6661504",
+      "expectedTitle": "\"Rust语言-智能指针与内部可变性\"",
+      "expectedSlug": "Rust语言/智能指针与内部可变性",
+      "expectedTags": [
+        "Rust",
+        "Box",
+        "Rc",
+        "Arc",
+        "Cell",
+        "RefCell",
+        "Mutex"
+      ],
+      "question": "请解释“\"Rust语言-智能指针与内部可变性\"”的核心概念、典型场景和常见误区。（参考方向：Rust、Box、Rc、Arc）"
+    },
+    {
+      "id": "q020",
+      "documentId": "c0433f5f-5791-4fd1-94d5-1c2519e53432",
+      "expectedTitle": "First与Follow集",
+      "expectedSlug": "编译原理/First-Follow",
+      "expectedTags": [
+        "First集",
+        "Follow集",
+        "预测分析",
+        "LL1",
+        "语法分析",
+        "首符号集",
+        "后继符号集"
+      ],
+      "question": "请解释“First与Follow集”的核心概念、典型场景和常见误区。（参考方向：First集、Follow集、预测分析、LL1）"
+    },
+    {
+      "id": "q021",
+      "documentId": "0244bce9-c020-42c9-bbb5-208bca595ba6",
+      "expectedTitle": "着色频率（Flat/Gouraud/Phong Shading）",
+      "expectedSlug": "计算机图形学/着色频率（Flat/Gouraud/Phong Shading）",
+      "expectedTags": [
+        "着色频率",
+        "Flat Shading",
+        "Gouraud Shading",
+        "Phong Shading",
+        "插值着色"
+      ],
+      "question": "请解释“着色频率（Flat/Gouraud/Phong Shading）”的核心概念、典型场景和常见误区。（参考方向：着色频率、Flat Shading、Gouraud Shading、Phong Shading）"
+    },
+    {
+      "id": "q022",
+      "documentId": "306b4e3f-3d77-4d75-827d-143ee1fdaedd",
+      "expectedTitle": "操作系统安全机制",
+      "expectedSlug": "信息安全/操作系统安全机制",
+      "expectedTags": [
+        "操作系统安全",
+        "内核安全",
+        "权限管理",
+        "安全内核"
+      ],
+      "question": "请解释“操作系统安全机制”的核心概念、典型场景和常见误区。（参考方向：操作系统安全、内核安全、权限管理、安全内核）"
+    },
+    {
+      "id": "q023",
+      "documentId": "3e4b8dad-52eb-491d-bb49-96312b3ee40a",
+      "expectedTitle": "\"写时复制（Copy-on-Write）\"",
+      "expectedSlug": "操作系统/写时复制COW",
+      "expectedTags": [
+        "操作系统",
+        "COW",
+        "写时复制",
+        "fork",
+        "内存管理"
+      ],
+      "question": "请解释“\"写时复制（Copy-on-Write）\"”的核心概念、典型场景和常见误区。（参考方向：操作系统、COW、写时复制、fork）"
+    },
+    {
+      "id": "q024",
+      "documentId": "14685bfb-030d-46f5-a214-0ec931299db9",
+      "expectedTitle": "半群",
+      "expectedSlug": "离散数学/半群",
+      "expectedTags": [
+        "半群",
+        "代数系统",
+        "结合律",
+        "二元运算",
+        "子半群",
+        "幺半群"
+      ],
+      "question": "请解释“半群”的核心概念、典型场景和常见误区。（参考方向：半群、代数系统、结合律、二元运算）"
+    },
+    {
+      "id": "q025",
+      "documentId": "b334c7da-8922-4807-9277-97bff2d58d16",
+      "expectedTitle": "边缘计算架构",
+      "expectedSlug": "分布式系统/边缘计算架构",
+      "expectedTags": [
+        "边缘计算",
+        "Edge Computing",
+        "CDN",
+        "IoT",
+        "边缘节点",
+        "低延迟"
+      ],
+      "question": "请解释“边缘计算架构”的核心概念、典型场景和常见误区。（参考方向：边缘计算、Edge Computing、CDN、IoT）"
+    },
+    {
+      "id": "q026",
+      "documentId": "0b807817-f1e7-42ed-b6c0-427513662320",
+      "expectedTitle": "关键路径-AOE网",
+      "expectedSlug": "数据结构/关键路径",
+      "expectedTags": [
+        "图",
+        "关键路径",
+        "AOE网",
+        "最早开始时间",
+        "最晚开始时间",
+        "项目管理"
+      ],
+      "question": "请解释“关键路径-AOE网”的核心概念、典型场景和常见误区。（参考方向：图、关键路径、AOE网、最早开始时间）"
+    },
+    {
+      "id": "q027",
+      "documentId": "fa5b4a8f-f24d-42ba-9a28-38f2c04185b9",
+      "expectedTitle": "\"C语言-多线程pthread\"",
+      "expectedSlug": "C语言深入/多线程pthread",
+      "expectedTags": [
+        "C语言",
+        "pthread",
+        "POSIX",
+        "多线程"
+      ],
+      "question": "请解释“\"C语言-多线程pthread\"”的核心概念、典型场景和常见误区。（参考方向：C语言、pthread、POSIX、多线程）"
+    },
+    {
+      "id": "q028",
+      "documentId": "10e37270-b868-428e-9551-d2c44f83df01",
+      "expectedTitle": "\"PBR材质系统\"",
+      "expectedSlug": "计算机图形学/PBR材质系统",
+      "expectedTags": [
+        "图形学",
+        "PBR",
+        "材质",
+        "BSDF",
+        "渲染"
+      ],
+      "question": "请解释“\"PBR材质系统\"”的核心概念、典型场景和常见误区。（参考方向：图形学、PBR、材质、BSDF）"
+    },
+    {
+      "id": "q029",
+      "documentId": "74b7a6e9-6f56-4777-9409-d84e34cf593e",
+      "expectedTitle": "\"Python深入-上下文管理器协议\"",
+      "expectedSlug": "Python深入/上下文管理器",
+      "expectedTags": [
+        "Python",
+        "上下文管理器",
+        "with",
+        "__enter__",
+        "__exit__",
+        "contextlib"
+      ],
+      "question": "请解释“\"Python深入-上下文管理器协议\"”的核心概念、典型场景和常见误区。（参考方向：Python、上下文管理器、with、__enter__）"
+    },
+    {
+      "id": "q030",
+      "documentId": "60e2ffde-b7f1-4ca0-a7a8-665997331dd0",
+      "expectedTitle": "\"Python深入-生成器与协程底层\"",
+      "expectedSlug": "Python深入/生成器与协程",
+      "expectedTags": [
+        "Python",
+        "生成器",
+        "yield",
+        "协程",
+        "yield from",
+        "iterator"
+      ],
+      "question": "请解释“\"Python深入-生成器与协程底层\"”的核心概念、典型场景和常见误区。（参考方向：Python、生成器、yield、协程）"
+    },
+    {
+      "id": "q031",
+      "documentId": "75d2ea46-b5f8-4a74-975a-97c05fc17aec",
+      "expectedTitle": "量子密码学",
+      "expectedSlug": "信息安全/量子密码学",
+      "expectedTags": [
+        "量子密码",
+        "量子计算",
+        "后量子密码",
+        "QKD"
+      ],
+      "question": "请解释“量子密码学”的核心概念、典型场景和常见误区。（参考方向：量子密码、量子计算、后量子密码、QKD）"
+    },
+    {
+      "id": "q032",
+      "documentId": "1376b971-78f3-4ef2-b61b-fdd62411ed14",
+      "expectedTitle": "Multi-Paxos与日志复制",
+      "expectedSlug": "分布式系统/Multi-Paxos与日志复制",
+      "expectedTags": [
+        "Multi-Paxos",
+        "日志复制",
+        "Leader",
+        "共识",
+        "状态机复制"
+      ],
+      "question": "请解释“Multi-Paxos与日志复制”的核心概念、典型场景和常见误区。（参考方向：Multi-Paxos、日志复制、Leader、共识）"
+    },
+    {
+      "id": "q033",
+      "documentId": "0a7debcf-aebe-4969-8f29-dbcd2a4eac43",
+      "expectedTitle": "敏捷开发",
+      "expectedSlug": "软件工程/敏捷开发",
+      "expectedTags": [
+        "敏捷开发",
+        "Scrum",
+        "XP",
+        "Kanban",
+        "持续集成",
+        "CI/CD",
+        "DevOps",
+        "敏捷宣言"
+      ],
+      "question": "请解释“敏捷开发”的核心概念、典型场景和常见误区。（参考方向：敏捷开发、Scrum、XP、Kanban）"
+    },
+    {
+      "id": "q034",
+      "documentId": "cb6c9d64-9b52-424a-8810-1a19979f20e6",
+      "expectedTitle": "\"敏捷开发方法论（Scrum与Kanban）\"",
+      "expectedSlug": "软件工程/敏捷Scrum与Kanban",
+      "expectedTags": [
+        "软件工程",
+        "敏捷开发",
+        "Scrum",
+        "Kanban"
+      ],
+      "question": "请解释“\"敏捷开发方法论（Scrum与Kanban）\"”的核心概念、典型场景和常见误区。（参考方向：软件工程、敏捷开发、Scrum、Kanban）"
+    },
+    {
+      "id": "q035",
+      "documentId": "96da24d7-abed-46b2-9dd9-ddd0eea3d073",
+      "expectedTitle": "经典同步问题-生产者消费者",
+      "expectedSlug": "操作系统/经典同步问题-生产者消费者",
+      "expectedTags": [
+        "操作系统",
+        "同步",
+        "生产者消费者",
+        "有界缓冲",
+        "信号量"
+      ],
+      "question": "请解释“经典同步问题-生产者消费者”的核心概念、典型场景和常见误区。（参考方向：操作系统、同步、生产者消费者、有界缓冲）"
+    },
+    {
+      "id": "q036",
+      "documentId": "9906a010-eb91-4bf4-ab9b-880f99201975",
+      "expectedTitle": "最长公共子序列 LCS",
+      "expectedSlug": "算法设计与分析/最长公共子序列",
+      "expectedTags": [
+        "最长公共子序列",
+        "动态规划",
+        "LCS",
+        "字符串",
+        "序列比对"
+      ],
+      "question": "请解释“最长公共子序列 LCS”的核心概念、典型场景和常见误区。（参考方向：最长公共子序列、动态规划、LCS、字符串）"
+    },
+    {
+      "id": "q037",
+      "documentId": "d324a4ad-f7e5-4e5c-88bf-a70274a8b9b7",
+      "expectedTitle": "\"词法分析与自动机\"",
+      "expectedSlug": "编译原理/词法分析与DFA",
+      "expectedTags": [
+        "编译原理",
+        "词法分析",
+        "DFA",
+        "NFA",
+        "正则"
+      ],
+      "question": "请解释“\"词法分析与自动机\"”的核心概念、典型场景和常见误区。（参考方向：编译原理、词法分析、DFA、NFA）"
+    },
+    {
+      "id": "q038",
+      "documentId": "16ae9b83-91a8-42f8-a3ff-ab25bd15a1b3",
+      "expectedTitle": "BCD码与ASCII编码",
+      "expectedSlug": "计算机组成原理/BCD码与ASCII",
+      "expectedTags": [
+        "BCD码",
+        "ASCII",
+        "字符编码",
+        "8421码",
+        "十进制编码"
+      ],
+      "question": "请解释“BCD码与ASCII编码”的核心概念、典型场景和常见误区。（参考方向：BCD码、ASCII、字符编码、8421码）"
+    },
+    {
+      "id": "q039",
+      "documentId": "fa245943-e3e9-4080-ba9f-75c61c983bc8",
+      "expectedTitle": "\"最小生成树（Prim与Kruskal）\"",
+      "expectedSlug": "数据结构/最小生成树MST",
+      "expectedTags": [
+        "数据结构",
+        "最小生成树",
+        "Prim",
+        "Kruskal",
+        "MST"
+      ],
+      "question": "请解释“\"最小生成树（Prim与Kruskal）\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、最小生成树、Prim、Kruskal）"
+    },
+    {
+      "id": "q040",
+      "documentId": "b8f9cc3a-89dd-403a-a906-b69f7aab2fbc",
+      "expectedTitle": "独异点",
+      "expectedSlug": "离散数学/独异点",
+      "expectedTags": [
+        "独异点",
+        "幺半群",
+        "单位元",
+        "代数系统",
+        "子独异点",
+        "自由独异点"
+      ],
+      "question": "请解释“独异点”的核心概念、典型场景和常见误区。（参考方向：独异点、幺半群、单位元、代数系统）"
+    },
+    {
+      "id": "q041",
+      "documentId": "04166e76-fd2f-45ec-850a-f0e0b012f802",
+      "expectedTitle": "最短路径-Bellman-Ford算法",
+      "expectedSlug": "数据结构/最短路径-BellmanFord",
+      "expectedTags": [
+        "图",
+        "最短路径",
+        "Bellman-Ford",
+        "负权边",
+        "负权环",
+        "松弛操作"
+      ],
+      "question": "请解释“最短路径-Bellman-Ford算法”的核心概念、典型场景和常见误区。（参考方向：图、最短路径、Bellman-Ford、负权边）"
+    },
+    {
+      "id": "q042",
+      "documentId": "5ed70672-68d6-4823-8c97-591e6ac49fcf",
+      "expectedTitle": "\"MVCC多版本并发控制详解\"",
+      "expectedSlug": "数据库原理/MVCC多版本并发控制",
+      "expectedTags": [
+        "数据库",
+        "MVCC",
+        "事务",
+        "并发控制",
+        "PostgreSQL",
+        "MySQL"
+      ],
+      "question": "请解释“\"MVCC多版本并发控制详解\"”的核心概念、典型场景和常见误区。（参考方向：数据库、MVCC、事务、并发控制）"
+    },
+    {
+      "id": "q043",
+      "documentId": "16fb4e91-3750-46f0-81a9-32b0f57074f7",
+      "expectedTitle": "\"图着色与色多项式\"",
+      "expectedSlug": "离散数学/图着色与多项式",
+      "expectedTags": [
+        "离散数学",
+        "图着色",
+        "色数",
+        "色多项式",
+        "四色定理"
+      ],
+      "question": "请解释“\"图着色与色多项式\"”的核心概念、典型场景和常见误区。（参考方向：离散数学、图着色、色数、色多项式）"
+    },
+    {
+      "id": "q044",
+      "documentId": "7a44fa8a-d95a-492f-8484-e0732ada0570",
+      "expectedTitle": "\"并发编程-线程池原理\"",
+      "expectedSlug": "程序设计/线程池原理",
+      "expectedTags": [
+        "并发编程",
+        "线程池",
+        "ThreadPool",
+        "Executor",
+        "并发"
+      ],
+      "question": "请解释“\"并发编程-线程池原理\"”的核心概念、典型场景和常见误区。（参考方向：并发编程、线程池、ThreadPool、Executor）"
+    },
+    {
+      "id": "q045",
+      "documentId": "b82a62b7-3e62-4e4f-be4e-f1b693a730db",
+      "expectedTitle": "云原生架构",
+      "expectedSlug": "软件工程/云原生架构",
+      "expectedTags": [
+        "软件工程",
+        "云原生",
+        "Kubernetes",
+        "微服务",
+        "DevOps"
+      ],
+      "question": "请解释“云原生架构”的核心概念、典型场景和常见误区。（参考方向：软件工程、云原生、Kubernetes、微服务）"
+    },
+    {
+      "id": "q046",
+      "documentId": "2e1490d2-55ca-409b-8761-01df4bb6acd4",
+      "expectedTitle": "进程状态转换",
+      "expectedSlug": "操作系统/进程状态转换",
+      "expectedTags": [
+        "操作系统",
+        "进程",
+        "状态转换",
+        "三态模型",
+        "五态模型"
+      ],
+      "question": "请解释“进程状态转换”的核心概念、典型场景和常见误区。（参考方向：操作系统、进程、状态转换、三态模型）"
+    },
+    {
+      "id": "q047",
+      "documentId": "7d8590f5-856c-4bdf-8036-4983b397f3a4",
+      "expectedTitle": "\"IPv4与IPv6全面对比\"",
+      "expectedSlug": "计算机网络/IPv4与IPv6对比",
+      "expectedTags": [
+        "计算机网络",
+        "IPv4",
+        "IPv6",
+        "网络层",
+        "地址空间"
+      ],
+      "question": "请解释“\"IPv4与IPv6全面对比\"”的核心概念、典型场景和常见误区。（参考方向：计算机网络、IPv4、IPv6、网络层）"
+    },
+    {
+      "id": "q048",
+      "documentId": "b7f19cbe-efcb-4615-8d30-c3afabb8af1b",
+      "expectedTitle": "页表与TLB",
+      "expectedSlug": "计算机组成原理/页表与TLB",
+      "expectedTags": [
+        "页表",
+        "TLB",
+        "快表",
+        "MMU",
+        "地址转换",
+        "多级页表"
+      ],
+      "question": "请解释“页表与TLB”的核心概念、典型场景和常见误区。（参考方向：页表、TLB、快表、MMU）"
+    },
+    {
+      "id": "q049",
+      "documentId": "65c46123-6bef-4c09-bd63-c5224bd0bf59",
+      "expectedTitle": "后缀数组与后缀树",
+      "expectedSlug": "数据结构/后缀数组与后缀树",
+      "expectedTags": [
+        "数据结构",
+        "后缀数组",
+        "后缀树",
+        "字符串",
+        "SA"
+      ],
+      "question": "请解释“后缀数组与后缀树”的核心概念、典型场景和常见误区。（参考方向：数据结构、后缀数组、后缀树、字符串）"
+    },
+    {
+      "id": "q050",
+      "documentId": "06b5aad4-278c-4334-8eb3-5e97a28a6d89",
+      "expectedTitle": "\"零拷贝技术与sendfile\"",
+      "expectedSlug": "计算机网络/零拷贝与sendfile",
+      "expectedTags": [
+        "计算机网络",
+        "零拷贝",
+        "sendfile",
+        "DMA",
+        "高性能"
+      ],
+      "question": "请解释“\"零拷贝技术与sendfile\"”的核心概念、典型场景和常见误区。（参考方向：计算机网络、零拷贝、sendfile、DMA）"
+    },
+    {
+      "id": "q051",
+      "documentId": "588083be-79dc-4245-b5f8-6f0767f0df37",
+      "expectedTitle": "ZAB协议（ZooKeeper）",
+      "expectedSlug": "分布式系统/ZAB协议（ZooKeeper）",
+      "expectedTags": [
+        "ZAB",
+        "ZooKeeper",
+        "崩溃恢复",
+        "消息广播",
+        "Leader选举"
+      ],
+      "question": "请解释“ZAB协议（ZooKeeper）”的核心概念、典型场景和常见误区。（参考方向：ZAB、ZooKeeper、崩溃恢复、消息广播）"
+    },
+    {
+      "id": "q052",
+      "documentId": "7e2ba6be-1fc5-47aa-9c85-570cfd776a1b",
+      "expectedTitle": "欧拉图与哈密顿图",
+      "expectedSlug": "离散数学/欧拉图与哈密顿图",
+      "expectedTags": [
+        "欧拉图",
+        "哈密顿图",
+        "欧拉回路",
+        "哈密顿回路",
+        "图论",
+        "中国邮递员问题",
+        "旅行商问题"
+      ],
+      "question": "请解释“欧拉图与哈密顿图”的核心概念、典型场景和常见误区。（参考方向：欧拉图、哈密顿图、欧拉回路、哈密顿回路）"
+    },
+    {
+      "id": "q053",
+      "documentId": "7452c12f-021a-4adb-b16f-5e30e5749b7e",
+      "expectedTitle": "管程",
+      "expectedSlug": "操作系统/管程",
+      "expectedTags": [
+        "操作系统",
+        "管程",
+        "条件变量",
+        "同步",
+        "互斥",
+        "Monitor"
+      ],
+      "question": "请解释“管程”的核心概念、典型场景和常见误区。（参考方向：操作系统、管程、条件变量、同步）"
+    },
+    {
+      "id": "q054",
+      "documentId": "5e944ba4-e4f7-449b-b2c9-2ed0afc5c3c7",
+      "expectedTitle": "区块链密码学基础",
+      "expectedSlug": "信息安全/区块链密码学基础",
+      "expectedTags": [
+        "区块链",
+        "哈希链",
+        "默克尔树",
+        "数字签名",
+        "共识机制"
+      ],
+      "question": "请解释“区块链密码学基础”的核心概念、典型场景和常见误区。（参考方向：区块链、哈希链、默克尔树、数字签名）"
+    },
+    {
+      "id": "q055",
+      "documentId": "78e067b4-f0b7-4290-982a-6f8447c7558a",
+      "expectedTitle": "环与域",
+      "expectedSlug": "离散数学/环与域",
+      "expectedTags": [
+        "环",
+        "域",
+        "交换环",
+        "含幺环",
+        "整环",
+        "除环",
+        "有限域",
+        "Galois域"
+      ],
+      "question": "请解释“环与域”的核心概念、典型场景和常见误区。（参考方向：环、域、交换环、含幺环）"
+    },
+    {
+      "id": "q056",
+      "documentId": "65d45aff-e1c0-40c7-9bd7-441acfb2ae2c",
+      "expectedTitle": "\"最短路径算法（Dijkstra）\"",
+      "expectedSlug": "数据结构/最短路径Dijkstra",
+      "expectedTags": [
+        "数据结构",
+        "Dijkstra",
+        "最短路径",
+        "贪心",
+        "优先队列"
+      ],
+      "question": "请解释“\"最短路径算法（Dijkstra）\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、Dijkstra、最短路径、贪心）"
+    },
+    {
+      "id": "q057",
+      "documentId": "9260d13f-0c81-4ef9-b61b-9ee93bacf104",
+      "expectedTitle": "类型系统",
+      "expectedSlug": "程序设计/类型系统",
+      "expectedTags": [
+        "类型系统",
+        "静态类型",
+        "动态类型",
+        "类型推断",
+        "多态",
+        "类型安全",
+        "强类型",
+        "弱类型"
+      ],
+      "question": "请解释“类型系统”的核心概念、典型场景和常见误区。（参考方向：类型系统、静态类型、动态类型、类型推断）"
+    },
+    {
+      "id": "q058",
+      "documentId": "8f2fbd84-5ae2-4ba2-80c9-f7e7431137b4",
+      "expectedTitle": "主定理",
+      "expectedSlug": "算法设计与分析/主定理",
+      "expectedTags": [
+        "主定理",
+        "Master Theorem",
+        "递归式",
+        "分治法",
+        "渐近分析"
+      ],
+      "question": "请解释“主定理”的核心概念、典型场景和常见误区。（参考方向：主定理、Master Theorem、递归式、分治法）"
+    },
+    {
+      "id": "q059",
+      "documentId": "8b0546ba-166c-4193-9657-9f96059de9ae",
+      "expectedTitle": "集合运算",
+      "expectedSlug": "离散数学/集合运算",
+      "expectedTags": [
+        "集合运算",
+        "并集",
+        "交集",
+        "差集",
+        "补集",
+        "对称差",
+        "集合代数"
+      ],
+      "question": "请解释“集合运算”的核心概念、典型场景和常见误区。（参考方向：集合运算、并集、交集、差集）"
+    },
+    {
+      "id": "q060",
+      "documentId": "f5c92a42-7323-4ed7-a4fa-333a2310fc4c",
+      "expectedTitle": "\"GCC与LLVM编译器架构对比\"",
+      "expectedSlug": "编译原理/GCC与LLVM架构对比",
+      "expectedTags": [
+        "编译原理",
+        "GCC",
+        "LLVM",
+        "编译器架构"
+      ],
+      "question": "请解释“\"GCC与LLVM编译器架构对比\"”的核心概念、典型场景和常见误区。（参考方向：编译原理、GCC、LLVM、编译器架构）"
+    },
+    {
+      "id": "q061",
+      "documentId": "a526b023-78b6-4761-b315-69e75c587c58",
+      "expectedTitle": "活动选择问题",
+      "expectedSlug": "算法设计与分析/活动选择问题",
+      "expectedTags": [
+        "活动选择",
+        "贪心算法",
+        "区间调度",
+        "贪心选择性质",
+        "最优子结构"
+      ],
+      "question": "请解释“活动选择问题”的核心概念、典型场景和常见误区。（参考方向：活动选择、贪心算法、区间调度、贪心选择性质）"
+    },
+    {
+      "id": "q062",
+      "documentId": "f0fe3034-4fdf-49fa-b7af-d6c3da873b99",
+      "expectedTitle": "\"C语言-链接器与ABI详解\"",
+      "expectedSlug": "C语言深入/链接器与ABI",
+      "expectedTags": [
+        "C语言",
+        "链接器",
+        "ABI",
+        "ELF",
+        "符号表",
+        "动态链接"
+      ],
+      "question": "请解释“\"C语言-链接器与ABI详解\"”的核心概念、典型场景和常见误区。（参考方向：C语言、链接器、ABI、ELF）"
+    },
+    {
+      "id": "q063",
+      "documentId": "2573192d-836b-4801-98fd-1a0ed56e8c79",
+      "expectedTitle": "\"Go语言-错误处理哲学\"",
+      "expectedSlug": "Go语言/错误处理哲学",
+      "expectedTags": [
+        "Go语言",
+        "error",
+        "panic",
+        "defer",
+        "错误处理"
+      ],
+      "question": "请解释“\"Go语言-错误处理哲学\"”的核心概念、典型场景和常见误区。（参考方向：Go语言、error、panic、defer）"
+    },
+    {
+      "id": "q064",
+      "documentId": "1820f8de-34fc-4f2f-aec5-0fe61c3e6856",
+      "expectedTitle": "归并排序",
+      "expectedSlug": "算法设计与分析/归并排序",
+      "expectedTags": [
+        "归并排序",
+        "分治法",
+        "排序算法",
+        "稳定排序",
+        "外部排序"
+      ],
+      "question": "请解释“归并排序”的核心概念、典型场景和常见误区。（参考方向：归并排序、分治法、排序算法、稳定排序）"
+    },
+    {
+      "id": "q065",
+      "documentId": "f542872e-f4f3-4760-8f11-ff3b17b62b7e",
+      "expectedTitle": "顺序查找",
+      "expectedSlug": "数据结构/顺序查找",
+      "expectedTags": [
+        "查找",
+        "顺序查找",
+        "线性查找",
+        "哨兵"
+      ],
+      "question": "请解释“顺序查找”的核心概念、典型场景和常见误区。（参考方向：查找、顺序查找、线性查找、哨兵）"
+    },
+    {
+      "id": "q066",
+      "documentId": "9f6e03c6-2cec-4d24-9020-f0da5bd8886f",
+      "expectedTitle": "群",
+      "expectedSlug": "离散数学/群论",
+      "expectedTags": [
+        "群",
+        "群论",
+        "代数系统",
+        "逆元",
+        "单位元",
+        "结合律",
+        "阿贝尔群"
+      ],
+      "question": "请解释“群”的核心概念、典型场景和常见误区。（参考方向：群、群论、代数系统、逆元）"
+    },
+    {
+      "id": "q067",
+      "documentId": "5dd01de4-5afb-4ab0-bcd3-1390f67aafca",
+      "expectedTitle": "链栈",
+      "expectedSlug": "数据结构/链栈",
+      "expectedTags": [
+        "栈",
+        "链式存储",
+        "LIFO",
+        "链表"
+      ],
+      "question": "请解释“链栈”的核心概念、典型场景和常见误区。（参考方向：栈、链式存储、LIFO、链表）"
+    },
+    {
+      "id": "q068",
+      "documentId": "5374e979-6368-44a1-b812-ef06221cc879",
+      "expectedTitle": "多版本并发控制MVCC",
+      "expectedSlug": "数据库原理/MVCC",
+      "expectedTags": [
+        "MVCC",
+        "多版本并发控制",
+        "ReadView",
+        "快照读",
+        "当前读",
+        "版本链",
+        "undo日志"
+      ],
+      "question": "请解释“多版本并发控制MVCC”的核心概念、典型场景和常见误区。（参考方向：MVCC、多版本并发控制、ReadView、快照读）"
+    },
+    {
+      "id": "q069",
+      "documentId": "b48c9932-a981-4301-bc76-ed49a4a9d5fc",
+      "expectedTitle": "语言特性对比-Go",
+      "expectedSlug": "程序设计/语言特性对比-Go",
+      "expectedTags": [
+        "Go",
+        "Golang",
+        "并发",
+        "goroutine",
+        "channel",
+        "接口",
+        "垃圾回收",
+        "CSP",
+        "静态编译"
+      ],
+      "question": "请解释“语言特性对比-Go”的核心概念、典型场景和常见误区。（参考方向：Go、Golang、并发、goroutine）"
+    },
+    {
+      "id": "q070",
+      "documentId": "8748caff-2a1c-4802-b39d-7083b7be3a80",
+      "expectedTitle": "光照模型（Lambert/Phong/Blinn-Phong）",
+      "expectedSlug": "计算机图形学/光照模型（Lambert/Phong/Blinn-Phong）",
+      "expectedTags": [
+        "光照模型",
+        "Lambert",
+        "Phong",
+        "Blinn-Phong",
+        "镜面反射",
+        "漫反射"
+      ],
+      "question": "请解释“光照模型（Lambert/Phong/Blinn-Phong）”的核心概念、典型场景和常见误区。（参考方向：光照模型、Lambert、Phong、Blinn-Phong）"
+    },
+    {
+      "id": "q071",
+      "documentId": "87df4286-ca8f-4036-b43d-883f237a4643",
+      "expectedTitle": "\"浮点加法器设计流程\"",
+      "expectedSlug": "计算机组成原理/浮点加法器设计",
+      "expectedTags": [
+        "计算机组成原理",
+        "浮点加法器",
+        "IEEE754",
+        "ALU"
+      ],
+      "question": "请解释“\"浮点加法器设计流程\"”的核心概念、典型场景和常见误区。（参考方向：计算机组成原理、浮点加法器、IEEE754、ALU）"
+    },
+    {
+      "id": "q072",
+      "documentId": "f77c8666-7cda-4679-a1b6-f10b0e3676cf",
+      "expectedTitle": "语法制导定义SDD",
+      "expectedSlug": "编译原理/语法制导定义SDD",
+      "expectedTags": [
+        "语法制导定义",
+        "SDD",
+        "属性文法",
+        "综合属性",
+        "继承属性",
+        "依赖图"
+      ],
+      "question": "请解释“语法制导定义SDD”的核心概念、典型场景和常见误区。（参考方向：语法制导定义、SDD、属性文法、综合属性）"
+    },
+    {
+      "id": "q073",
+      "documentId": "fa7d7271-f712-42ab-86e3-bfb70f75cbab",
+      "expectedTitle": "\"数据库安全与SQL注入防御\"",
+      "expectedSlug": "数据库原理/数据库安全与SQL注入防御",
+      "expectedTags": [
+        "数据库",
+        "安全",
+        "SQL注入",
+        "访问控制",
+        "加密"
+      ],
+      "question": "请解释“\"数据库安全与SQL注入防御\"”的核心概念、典型场景和常见误区。（参考方向：数据库、安全、SQL注入、访问控制）"
+    },
+    {
+      "id": "q074",
+      "documentId": "5b28905b-5db4-4508-b723-b133ef7c65f8",
+      "expectedTitle": "顺序栈",
+      "expectedSlug": "数据结构/顺序栈",
+      "expectedTags": [
+        "栈",
+        "顺序存储",
+        "LIFO",
+        "后进先出"
+      ],
+      "question": "请解释“顺序栈”的核心概念、典型场景和常见误区。（参考方向：栈、顺序存储、LIFO、后进先出）"
+    },
+    {
+      "id": "q075",
+      "documentId": "d8a0485e-10d4-45b5-84a7-ffd672e9fa80",
+      "expectedTitle": "\"TCP三次握手详解\"",
+      "expectedSlug": "计算机网络/TCP三次握手详解",
+      "expectedTags": [
+        "计算机网络",
+        "TCP",
+        "三次握手",
+        "连接建立"
+      ],
+      "question": "请解释“\"TCP三次握手详解\"”的核心概念、典型场景和常见误区。（参考方向：计算机网络、TCP、三次握手、连接建立）"
+    },
+    {
+      "id": "q076",
+      "documentId": "2a0f691b-6fe8-49e0-9e99-4a14e78b4b11",
+      "expectedTitle": "HTTP协议详解",
+      "expectedSlug": "计算机网络/应用层-HTTP",
+      "expectedTags": [
+        "HTTP",
+        "超文本传输协议",
+        "请求方法",
+        "状态码",
+        "请求头",
+        "响应头",
+        "Cookie",
+        "缓存"
+      ],
+      "question": "请解释“HTTP协议详解”的核心概念、典型场景和常见误区。（参考方向：HTTP、超文本传输协议、请求方法、状态码）"
+    },
+    {
+      "id": "q077",
+      "documentId": "02d1d5c5-e410-4bd8-81a3-df09b0b0d555",
+      "expectedTitle": "SQL SELECT查询基础",
+      "expectedSlug": "数据库原理/SQL-SELECT基础",
+      "expectedTags": [
+        "SQL",
+        "SELECT",
+        "WHERE",
+        "ORDER BY",
+        "LIMIT",
+        "DISTINCT",
+        "别名"
+      ],
+      "question": "请解释“SQL SELECT查询基础”的核心概念、典型场景和常见误区。（参考方向：SQL、SELECT、WHERE、ORDER BY）"
+    },
+    {
+      "id": "q078",
+      "documentId": "4ba600e0-cfd5-4910-a26d-43949b72d81d",
+      "expectedTitle": "二义性",
+      "expectedSlug": "编译原理/二义性",
+      "expectedTags": [
+        "二义性",
+        "歧义文法",
+        "悬空else",
+        "消歧",
+        "算符优先",
+        "结合性"
+      ],
+      "question": "请解释“二义性”的核心概念、典型场景和常见误区。（参考方向：二义性、歧义文法、悬空else、消歧）"
+    },
+    {
+      "id": "q079",
+      "documentId": "e61317a1-0b57-442f-b576-31e0c40bae3a",
+      "expectedTitle": "\"Rust语言-迭代器与组合器\"",
+      "expectedSlug": "Rust语言/迭代器与组合器",
+      "expectedTags": [
+        "Rust",
+        "Iterator",
+        "组合器",
+        "惰性求值",
+        "适配器"
+      ],
+      "question": "请解释“\"Rust语言-迭代器与组合器\"”的核心概念、典型场景和常见误区。（参考方向：Rust、Iterator、组合器、惰性求值）"
+    },
+    {
+      "id": "q080",
+      "documentId": "c619c359-9c4c-4dfc-aeea-da8cd63eae22",
+      "expectedTitle": "物联网协议MQTT与CoAP",
+      "expectedSlug": "计算机网络/物联网协议MQTT与CoAP",
+      "expectedTags": [
+        "计算机网络",
+        "MQTT",
+        "CoAP",
+        "IoT",
+        "物联网"
+      ],
+      "question": "请解释“物联网协议MQTT与CoAP”的核心概念、典型场景和常见误区。（参考方向：计算机网络、MQTT、CoAP、IoT）"
+    },
+    {
+      "id": "q081",
+      "documentId": "0305ef68-df84-4f93-b40a-a86eae68d5cd",
+      "expectedTitle": "\"欧拉函数与RSA密码原理\"",
+      "expectedSlug": "离散数学/欧拉函数与RSA",
+      "expectedTags": [
+        "离散数学",
+        "欧拉函数",
+        "RSA",
+        "密码学"
+      ],
+      "question": "请解释“\"欧拉函数与RSA密码原理\"”的核心概念、典型场景和常见误区。（参考方向：离散数学、欧拉函数、RSA、密码学）"
+    },
+    {
+      "id": "q082",
+      "documentId": "91727418-0448-47dd-bc30-01c60cb62992",
+      "expectedTitle": "软件定义安全SDS",
+      "expectedSlug": "信息安全/软件定义安全SDS",
+      "expectedTags": [
+        "软件定义安全",
+        "SDS",
+        "SDN安全",
+        "微分段",
+        "安全自动化"
+      ],
+      "question": "请解释“软件定义安全SDS”的核心概念、典型场景和常见误区。（参考方向：软件定义安全、SDS、SDN安全、微分段）"
+    },
+    {
+      "id": "q083",
+      "documentId": "1e08c16e-381b-41e8-a261-7f90447ba6ad",
+      "expectedTitle": "IEEE754浮点数标准",
+      "expectedSlug": "计算机组成原理/IEEE754浮点数",
+      "expectedTags": [
+        "IEEE754",
+        "浮点数",
+        "单精度",
+        "双精度",
+        "阶码",
+        "尾数",
+        "NaN",
+        "非规格化数"
+      ],
+      "question": "请解释“IEEE754浮点数标准”的核心概念、典型场景和常见误区。（参考方向：IEEE754、浮点数、单精度、双精度）"
+    },
+    {
+      "id": "q084",
+      "documentId": "cd0305bf-a658-4aa6-b4e5-59287a19d40f",
+      "expectedTitle": "推理规则",
+      "expectedSlug": "离散数学/推理规则",
+      "expectedTags": [
+        "推理规则",
+        "自然演绎",
+        "假言推理",
+        "归结",
+        "形式证明",
+        "逻辑推理"
+      ],
+      "question": "请解释“推理规则”的核心概念、典型场景和常见误区。（参考方向：推理规则、自然演绎、假言推理、归结）"
+    },
+    {
+      "id": "q085",
+      "documentId": "9152c0d9-ea73-4d55-abf9-0b49a2d1fc46",
+      "expectedTitle": "递归下降分析",
+      "expectedSlug": "编译原理/递归下降",
+      "expectedTags": [
+        "递归下降",
+        "自顶向下",
+        "语法分析器",
+        "手工编写",
+        "相互递归",
+        "Parser"
+      ],
+      "question": "请解释“递归下降分析”的核心概念、典型场景和常见误区。（参考方向：递归下降、自顶向下、语法分析器、手工编写）"
+    },
+    {
+      "id": "q086",
+      "documentId": "99507afe-159d-4e1e-8976-cd0b48d7de2d",
+      "expectedTitle": "后缀数组算法",
+      "expectedSlug": "算法设计与分析/后缀数组算法",
+      "expectedTags": [
+        "算法",
+        "后缀数组",
+        "倍增",
+        "SA-IS",
+        "字符串"
+      ],
+      "question": "请解释“后缀数组算法”的核心概念、典型场景和常见误区。（参考方向：算法、后缀数组、倍增、SA-IS）"
+    },
+    {
+      "id": "q087",
+      "documentId": "30f769e1-6b59-4df7-88b4-969c59597a87",
+      "expectedTitle": "编辑距离",
+      "expectedSlug": "算法设计与分析/编辑距离",
+      "expectedTags": [
+        "编辑距离",
+        "动态规划",
+        "Levenshtein距离",
+        "字符串比较",
+        "序列比对"
+      ],
+      "question": "请解释“编辑距离”的核心概念、典型场景和常见误区。（参考方向：编辑距离、动态规划、Levenshtein距离、字符串比较）"
+    },
+    {
+      "id": "q088",
+      "documentId": "85b71b1e-0358-400f-9d50-c348e1cd1562",
+      "expectedTitle": "\"C语言-指针算术与内存模型\"",
+      "expectedSlug": "C语言深入/指针算术与内存模型",
+      "expectedTags": [
+        "C语言",
+        "指针",
+        "内存模型",
+        "undefined behavior"
+      ],
+      "question": "请解释“\"C语言-指针算术与内存模型\"”的核心概念、典型场景和常见误区。（参考方向：C语言、指针、内存模型、undefined behavior）"
+    },
+    {
+      "id": "q089",
+      "documentId": "cb1ff4d9-3096-466b-975b-14e3a61c5eeb",
+      "expectedTitle": "\"JavaScript-Promise与微任务队列\"",
+      "expectedSlug": "JavaScript/TypeScript/Promise与微任务",
+      "expectedTags": [
+        "JavaScript",
+        "Promise",
+        "microtask",
+        "then",
+        "catch",
+        "allSettled"
+      ],
+      "question": "请解释“\"JavaScript-Promise与微任务队列\"”的核心概念、典型场景和常见误区。（参考方向：JavaScript、Promise、microtask、then）"
+    },
+    {
+      "id": "q090",
+      "documentId": "370b2454-dea1-4bee-ad44-2742e23c165e",
+      "expectedTitle": "二叉排序树",
+      "expectedSlug": "数据结构/二叉排序树",
+      "expectedTags": [
+        "树",
+        "二叉排序树",
+        "BST",
+        "查找",
+        "插入",
+        "删除"
+      ],
+      "question": "请解释“二叉排序树”的核心概念、典型场景和常见误区。（参考方向：树、二叉排序树、BST、查找）"
+    },
+    {
+      "id": "q091",
+      "documentId": "c769c07a-b266-44e5-9e7e-1563f9ef6b20",
+      "expectedTitle": "消息认证码MAC与HMAC",
+      "expectedSlug": "信息安全/消息认证码MAC与HMAC",
+      "expectedTags": [
+        "MAC",
+        "HMAC",
+        "消息认证",
+        "完整性"
+      ],
+      "question": "请解释“消息认证码MAC与HMAC”的核心概念、典型场景和常见误区。（参考方向：MAC、HMAC、消息认证、完整性）"
+    },
+    {
+      "id": "q092",
+      "documentId": "68a66828-cf82-4d51-8846-a6f760445359",
+      "expectedTitle": "寄存器分配",
+      "expectedSlug": "编译原理/寄存器分配",
+      "expectedTags": [
+        "寄存器分配",
+        "图着色",
+        "冲突图",
+        "活跃区间",
+        "Chaitin算法",
+        "寄存器溢出"
+      ],
+      "question": "请解释“寄存器分配”的核心概念、典型场景和常见误区。（参考方向：寄存器分配、图着色、冲突图、活跃区间）"
+    },
+    {
+      "id": "q093",
+      "documentId": "ba84631c-c9f5-4ed9-9fdc-b7bd591612b5",
+      "expectedTitle": "SQL触发器",
+      "expectedSlug": "数据库原理/SQL-触发器",
+      "expectedTags": [
+        "SQL",
+        "触发器",
+        "TRIGGER",
+        "BEFORE",
+        "AFTER",
+        "INSTEAD OF",
+        "审计日志"
+      ],
+      "question": "请解释“SQL触发器”的核心概念、典型场景和常见误区。（参考方向：SQL、触发器、TRIGGER、BEFORE）"
+    },
+    {
+      "id": "q094",
+      "documentId": "1f8b6c94-00a3-412e-86b4-6f87b7521a4b",
+      "expectedTitle": "NFA",
+      "expectedSlug": "编译原理/NFA",
+      "expectedTags": [
+        "NFA",
+        "非确定性有限自动机",
+        "有限自动机",
+        "状态转移",
+        "Thompson构造法"
+      ],
+      "question": "请解释“NFA”的核心概念、典型场景和常见误区。（参考方向：NFA、非确定性有限自动机、有限自动机、状态转移）"
+    },
+    {
+      "id": "q095",
+      "documentId": "03da4907-9a79-4e9b-ac50-f3f695fdd447",
+      "expectedTitle": "\"一致性哈希（Consistent Hashing）\"",
+      "expectedSlug": "数据结构/哈希一致性哈希",
+      "expectedTags": [
+        "数据结构",
+        "一致性哈希",
+        "分布式",
+        "负载均衡",
+        "哈希环"
+      ],
+      "question": "请解释“\"一致性哈希（Consistent Hashing）\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、一致性哈希、分布式、负载均衡）"
+    },
+    {
+      "id": "q096",
+      "documentId": "f47de3a7-0f33-4cde-b88d-549907927548",
+      "expectedTitle": "LR(0)与SLR(1)分析",
+      "expectedSlug": "编译原理/自底向上LR0与SLR1",
+      "expectedTags": [
+        "LR(0)",
+        "SLR(1)",
+        "自底向上",
+        "移进-归约",
+        "LR项",
+        "项目集规范族",
+        "分析表"
+      ],
+      "question": "请解释“LR(0)与SLR(1)分析”的核心概念、典型场景和常见误区。（参考方向：LR(0)、SLR(1)、自底向上、移进-归约）"
+    },
+    {
+      "id": "q097",
+      "documentId": "fb467fbe-bdc7-4aac-a1af-0d51f189fe2a",
+      "expectedTitle": "OpenGL与Vulkan架构对比",
+      "expectedSlug": "计算机图形学/OpenGL与Vulkan架构对比",
+      "expectedTags": [
+        "OpenGL",
+        "Vulkan",
+        "图形API",
+        "驱动模型",
+        "渲染架构"
+      ],
+      "question": "请解释“OpenGL与Vulkan架构对比”的核心概念、典型场景和常见误区。（参考方向：OpenGL、Vulkan、图形API、驱动模型）"
+    },
+    {
+      "id": "q098",
+      "documentId": "fab93999-9451-4b39-8ea4-85192fe54e4e",
+      "expectedTitle": "经典同步问题-读者写者与哲学家进餐",
+      "expectedSlug": "操作系统/经典同步问题-读者写者与哲学家进餐",
+      "expectedTags": [
+        "操作系统",
+        "同步",
+        "读者写者",
+        "哲学家进餐",
+        "读写锁",
+        "死锁"
+      ],
+      "question": "请解释“经典同步问题-读者写者与哲学家进餐”的核心概念、典型场景和常见误区。（参考方向：操作系统、同步、读者写者、哲学家进餐）"
+    },
+    {
+      "id": "q099",
+      "documentId": "b7c0573c-a6b1-4e32-9983-d33e5a0c416b",
+      "expectedTitle": "\"KMP字符串匹配算法\"",
+      "expectedSlug": "数据结构/KMP字符串匹配",
+      "expectedTags": [
+        "数据结构",
+        "KMP",
+        "字符串匹配",
+        "next数组"
+      ],
+      "question": "请解释“\"KMP字符串匹配算法\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、KMP、字符串匹配、next数组）"
+    },
+    {
+      "id": "q100",
+      "documentId": "39d268fb-42a2-4539-bea1-90dda8ac9df2",
+      "expectedTitle": "\"布隆过滤器（Bloom Filter）\"",
+      "expectedSlug": "数据结构/布隆过滤器",
+      "expectedTags": [
+        "数据结构",
+        "布隆过滤器",
+        "哈希",
+        "概率数据结构"
+      ],
+      "question": "请解释“\"布隆过滤器（Bloom Filter）\"”的核心概念、典型场景和常见误区。（参考方向：数据结构、布隆过滤器、哈希、概率数据结构）"
+    }
+  ]
+}
