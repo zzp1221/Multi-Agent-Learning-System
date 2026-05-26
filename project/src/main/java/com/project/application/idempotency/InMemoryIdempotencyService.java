@@ -36,7 +36,7 @@ public class InMemoryIdempotencyService implements IdempotencyService {
             return Optional.empty();
         }
         if (entry.isExpired()) {
-            taskIdsByKey.remove(key);
+            taskIdsByKey.remove(key, entry);
             return Optional.empty();
         }
         return Optional.of(entry.taskId());

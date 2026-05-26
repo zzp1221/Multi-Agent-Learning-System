@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -178,8 +179,8 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
     }
 
     private String readBodySafely(HttpResponse<java.io.InputStream> response) {
-        try {
-            return new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+        try (InputStream body = response.body()) {
+            return new String(body.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             return "";
         }

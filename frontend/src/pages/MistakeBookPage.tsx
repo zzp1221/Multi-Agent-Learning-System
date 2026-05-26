@@ -549,19 +549,11 @@ function MistakeCard(props: {
         </div>
       </div>
       <div className="space-y-4 p-4 md:p-5">
-        {item.options.length > 0 ? (
-          <div className="space-y-2">
-            {item.options.map((option, index) => (
-              <div key={`${item.id}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
-                {String.fromCharCode(65 + index)}. {option}
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <OptionList itemId={item.id} options={item.options} />
 
         <div className="grid gap-3 md:grid-cols-2">
-          <AnswerBlock label="你的答案" value={item.learnerAnswer || '未作答'} tone="danger" />
-          <AnswerBlock label="参考答案" value={formatAnswer(item.standardAnswer)} tone="success" />
+          <AnswerBlock label="你的答案" value={formatChoiceAnswer(item.learnerAnswer, item.options) || '未作答'} tone="danger" />
+          <AnswerBlock label="参考答案" value={formatChoiceAnswer(formatAnswer(item.standardAnswer), item.options)} tone="success" />
         </div>
 
         {feedback ? (
@@ -664,9 +656,10 @@ function ReviewPanel(props: {
               <span>{props.qualities[currentItem.id] !== undefined ? '已选择' : '还没判断'}</span>
             </div>
             <div className="text-base font-semibold leading-7 text-slate-800 dark:text-slate-100">{currentItem.stem}</div>
+            <OptionList itemId={currentItem.id} options={currentItem.options} className="mt-4" />
             <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <AnswerBlock label="你的错答" value={currentItem.learnerAnswer || '未作答'} tone="danger" />
-              <AnswerBlock label="参考答案" value={formatAnswer(currentItem.standardAnswer)} tone="success" />
+              <AnswerBlock label="你的错答" value={formatChoiceAnswer(currentItem.learnerAnswer, currentItem.options) || '未作答'} tone="danger" />
+              <AnswerBlock label="参考答案" value={formatChoiceAnswer(formatAnswer(currentItem.standardAnswer), currentItem.options)} tone="success" />
             </div>
             {!done ? (
               <div className="mt-5">
@@ -729,6 +722,21 @@ function ReviewPanel(props: {
         ) : null}
       </div>
     </section>
+  );
+}
+
+function OptionList(props: { itemId: string; options: string[]; className?: string }) {
+  if (props.options.length === 0) {
+    return null;
+  }
+  return (
+    <div className={`space-y-2 ${props.className ?? ''}`.trim()}>
+      {props.options.map((option, index) => (
+        <div key={`${props.itemId}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+          {optionLabel(index)}. {option}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -796,6 +804,31 @@ function formatAnswer(value: Record<string, unknown>): string {
     return answer;
   }
   return JSON.stringify(answer, null, 2);
+}
+
+function formatChoiceAnswer(value: string, options: string[]): string {
+  const answer = value.trim();
+  if (!answer || options.length === 0) {
+    return answer;
+  }
+  const labels = answer
+    .toUpperCase()
+    .replace(/[，、；;|/]/g, ',')
+    .split(/[\s,]+/)
+    .flatMap((part) => (/^[A-Z]+$/.test(part) && part.length > 1 ? [...part] : [part]))
+    .filter(Boolean);
+  if (labels.length === 0) {
+    return answer;
+  }
+  const displayValues = labels.map((label) => {
+    const index = label.charCodeAt(0) - 65;
+    return /^[A-Z]$/.test(label) && options[index] ? `${label}. ${options[index]}` : '';
+  });
+  return displayValues.every(Boolean) ? displayValues.join('\n') : answer;
+}
+
+function optionLabel(index: number): string {
+  return String.fromCharCode(65 + index);
 }
 
 function asText(value: unknown): string {

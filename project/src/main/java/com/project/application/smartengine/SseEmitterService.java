@@ -43,7 +43,12 @@ public class SseEmitterService {
 
         SubscriberGroup group = emitters.computeIfAbsent(task.getId(), ignored -> new SubscriberGroup());
         synchronized (group) {
-            replayEvents(task, subscriber);
+            if (!replayEvents(task, subscriber)) {
+                if (group.subscribers.isEmpty()) {
+                    emitters.remove(task.getId(), group);
+                }
+                return emitter;
+            }
             SmartEngineTask latestTask = taskRepository.findById(task.getId()).orElse(task);
 
             if (!latestTask.isTerminal()) {
@@ -87,7 +92,7 @@ public class SseEmitterService {
         }
     }
 
-    private void replayEvents(SmartEngineTask task, Subscriber subscriber) {
+    private boolean replayEvents(SmartEngineTask task, Subscriber subscriber) {
         List<SmartEngineTaskEvent> events = taskEventRepository.findByTaskIdOrderByEventSeqAsc(task.getId());
         for (SmartEngineTaskEvent event : events) {
             try {
@@ -101,9 +106,10 @@ public class SseEmitterService {
                 ));
             } catch (IOException ex) {
                 subscriber.emitter.completeWithError(ex);
-                return;
+                return false;
             }
         }
+        return true;
     }
 
     private void send(Subscriber subscriber, TaskStreamEventPayload payload) throws IOException {

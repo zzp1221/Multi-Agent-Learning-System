@@ -54,32 +54,41 @@ export async function streamSse(url: string, options: StreamSseOptions): Promise
         throw new Error(options.missingBodyMessage);
       }
 
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          buffer += decoder.decode();
-          const trailingEvent = parseSseEventBlock(buffer, options.defaultEvent);
-          if (trailingEvent && options.onEvent(trailingEvent)) {
-            return;
+      let shouldCancelReader = true;
+      try {
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            shouldCancelReader = false;
+            buffer += decoder.decode();
+            const trailingEvent = parseSseEventBlock(buffer, options.defaultEvent);
+            if (trailingEvent && options.onEvent(trailingEvent)) {
+              return;
+            }
+            break;
           }
-          break;
-        }
 
-        buffer += decoder.decode(value, { stream: true });
-        const eventBlocks = buffer.split(/\r?\n\r?\n/);
-        buffer = eventBlocks.pop() ?? '';
+          buffer += decoder.decode(value, { stream: true });
+          const eventBlocks = buffer.split(/\r?\n\r?\n/);
+          buffer = eventBlocks.pop() ?? '';
 
-        for (const block of eventBlocks) {
-          const parsed = parseSseEventBlock(block, options.defaultEvent);
-          if (!parsed) {
-            continue;
-          }
-          if (options.onEvent(parsed)) {
-            return;
+          for (const block of eventBlocks) {
+            const parsed = parseSseEventBlock(block, options.defaultEvent);
+            if (!parsed) {
+              continue;
+            }
+            if (options.onEvent(parsed)) {
+              return;
+            }
           }
         }
+      } finally {
+        if (shouldCancelReader) {
+          await reader.cancel().catch(() => undefined);
+        }
+        reader.releaseLock();
       }
 
       safeDone();
