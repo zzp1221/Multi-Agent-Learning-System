@@ -64,7 +64,13 @@ class HybridRetriever:
             return str(provider_api_key() or "").strip()
         return str(getattr(settings, "openai_compatible_api_key", "") or "").strip()
 
-    def retrieve(self, cur, query: str, web_search_enabled: bool = False) -> dict:
+    def retrieve(
+        self,
+        cur,
+        query: str,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict:
         """Run all 3 channels and fuse. Returns structured results."""
         try:
             self._init(cur)
@@ -79,6 +85,7 @@ class HybridRetriever:
             )
             return {
                 "query": query,
+                "graphIntent": graph_intent,
                 "webSearchEnabled": web_search_enabled,
                 "channels": {
                     "grep": {"priority": [], "normal_count": 0},
@@ -124,6 +131,7 @@ class HybridRetriever:
 
         return {
             "query": query,
+            "graphIntent": graph_intent,
             "webSearchEnabled": web_search_enabled,
             "channels": {
                 "grep": {
@@ -138,13 +146,24 @@ class HybridRetriever:
             "top": fused[:5],
         }
 
-    def retrieve_grep_first(self, cur, query: str, web_search_enabled: bool = False) -> dict:
+    def retrieve_grep_first(
+        self,
+        cur,
+        query: str,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict:
         """Run grep first and skip vector/graph when phrase confidence is strong."""
         try:
             self._init(cur)
         except Exception as exc:
             LOGGER.warning("Grep-first init failed for query %r: %s", query, exc)
-            return self.retrieve(cur, query, web_search_enabled=web_search_enabled)
+            return self.retrieve(
+                cur,
+                query,
+                web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
+            )
 
         try:
             grep_results = self._grep.search(cur, query, self.domain)
@@ -153,7 +172,12 @@ class HybridRetriever:
             grep_results = {"priority": [], "normal": []}
 
         if not self._has_strong_grep_hit(grep_results):
-            raw_result = self.retrieve(cur, query, web_search_enabled=web_search_enabled)
+            raw_result = self.retrieve(
+                cur,
+                query,
+                web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
+            )
             raw_result["retrievalStrategy"] = "LOCAL_GREP_FIRST"
             raw_result["grepFirstPromoted"] = True
             return raw_result
@@ -162,6 +186,7 @@ class HybridRetriever:
         fused = self._rrf.fuse(grep_results, [], [], web_results)
         return {
             "query": query,
+            "graphIntent": graph_intent,
             "retrievalStrategy": "LOCAL_GREP_FIRST",
             "grepFirstPromoted": False,
             "webSearchEnabled": web_search_enabled,

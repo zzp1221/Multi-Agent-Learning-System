@@ -53,6 +53,7 @@ class RoutePlan(BaseModel):
     agent_names: list[str] = Field(alias="agentNames")
     query_type: str | None = Field(default=None, alias="queryType")
     retrieval_strategy: str | None = Field(default=None, alias="retrievalStrategy")
+    graph_intent: str | None = Field(default=None, alias="graphIntent")
     classification_confidence: float | None = Field(default=None, alias="classificationConfidence")
     classification_reason: str | None = Field(default=None, alias="classificationReason")
 
@@ -93,12 +94,14 @@ class PythonAgentSupervisor:
             raise ValueError(f"Unsupported serviceType: {service_type}")
         query_type = None
         retrieval_strategy = None
+        graph_intent = None
         classification_confidence = None
         classification_reason = None
         if service_type == "TUTORING":
             classification = self.query_classifier.classify(params)
             query_type = classification.query_type
             retrieval_strategy = classification.retrieval_strategy
+            graph_intent = classification.graph_intent
             classification_confidence = classification.confidence
             classification_reason = classification.reason
             route_template = self._resolve_tutoring_route(classification)
@@ -112,6 +115,7 @@ class PythonAgentSupervisor:
             agentNames=resolved_route,
             queryType=query_type,
             retrievalStrategy=retrieval_strategy,
+            graphIntent=graph_intent,
             classificationConfidence=classification_confidence,
             classificationReason=classification_reason,
         )
@@ -433,10 +437,13 @@ class PythonAgentSupervisor:
             params["queryType"] = route_plan.query_type
         if route_plan.retrieval_strategy:
             params["retrievalStrategy"] = route_plan.retrieval_strategy
-        if route_plan.query_type or route_plan.retrieval_strategy:
+        if route_plan.graph_intent:
+            params["graphIntent"] = route_plan.graph_intent
+        if route_plan.query_type or route_plan.retrieval_strategy or route_plan.graph_intent:
             params["queryClassification"] = {
                 "queryType": route_plan.query_type,
                 "retrievalStrategy": route_plan.retrieval_strategy,
+                "graphIntent": route_plan.graph_intent,
                 "confidence": route_plan.classification_confidence,
                 "reason": route_plan.classification_reason,
             }

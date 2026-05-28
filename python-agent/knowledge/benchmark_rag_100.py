@@ -126,12 +126,16 @@ def channel_timer(timings: dict[str, float], channel_name: str):
         timings[channel_name] += (time.perf_counter() - started) * 1000
 
 
-def run_retrieval(question: str) -> tuple[dict[str, Any], dict[str, float], float, str | None]:
+def run_retrieval(
+    question: str,
+    *,
+    graph_intent: str | None = None,
+) -> tuple[dict[str, Any], dict[str, float], float, str | None]:
     retriever = HybridRetriever(DB_CONFIG, top_k=TOP_K)
     timings = {"init_ms": 0.0, "grep_ms": 0.0, "vector_ms": 0.0, "graph_ms": 0.0, "web_ms": 0.0, "fusion_ms": 0.0}
     error: str | None = None
     started = time.perf_counter()
-    result: dict[str, Any] = {"query": question, "channels": {}, "top": []}
+    result: dict[str, Any] = {"query": question, "graphIntent": graph_intent, "channels": {}, "top": []}
 
     with psycopg2.connect(**DB_CONFIG) as conn:
         with conn.cursor() as cur:
@@ -158,6 +162,7 @@ def run_retrieval(question: str) -> tuple[dict[str, Any], dict[str, float], floa
 
                 result = {
                     "query": question,
+                    "graphIntent": graph_intent,
                     "webSearchEnabled": False,
                     "channels": {
                         "grep": {

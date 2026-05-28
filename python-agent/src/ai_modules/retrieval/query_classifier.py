@@ -29,6 +29,15 @@ RETRIEVAL_LOCAL_HYBRID = "LOCAL_HYBRID"
 RETRIEVAL_WEB_AUGMENTED = "WEB_AUGMENTED"
 RETRIEVAL_DEEP_EVIDENCE = "DEEP_EVIDENCE"
 
+GRAPH_INTENT_NONE = None
+GRAPH_INTENT_CROSS_LAYER_RELATION = "CROSS_LAYER_RELATION"
+GRAPH_INTENT_MULTI_HOP_RELATION = "MULTI_HOP_RELATION"
+GRAPH_INTENT_COMPARISON = "COMPARISON"
+GRAPH_INTENT_PREREQUISITE_PATH = "PREREQUISITE_PATH"
+GRAPH_INTENT_COMMUNITY_SUMMARY = "COMMUNITY_SUMMARY"
+GRAPH_INTENT_MECHANISM_APPLICATION = "MECHANISM_APPLICATION"
+GRAPH_INTENT_COMMON_MISTAKE = "COMMON_MISTAKE"
+
 
 @dataclass(frozen=True)
 class QueryClassification:
@@ -38,6 +47,7 @@ class QueryClassification:
     retrieval_strategy: str
     confidence: float
     reason: str
+    graph_intent: str | None = None
 
 
 class QueryClassifier:
@@ -101,6 +111,7 @@ class QueryClassifier:
                 RETRIEVAL_LOCAL_HYBRID,
                 0.82,
                 "comparison_signal",
+                graph_intent=GRAPH_INTENT_COMPARISON,
             )
         if self._contains_any(lowered, "proceduralTerms"):
             return self._decision(
@@ -108,6 +119,16 @@ class QueryClassifier:
                 RETRIEVAL_LOCAL_GREP_FIRST,
                 0.8,
                 "procedural_signal",
+                graph_intent=self._detect_graph_intent(lowered),
+            )
+        graph_intent = self._detect_graph_intent(lowered)
+        if graph_intent:
+            return self._decision(
+                QUERY_TYPE_NEW_CONCEPT,
+                RETRIEVAL_LOCAL_HYBRID,
+                0.74,
+                f"graph_{graph_intent.lower()}_signal",
+                graph_intent=graph_intent,
             )
         if self._is_follow_up(lowered, normalized):
             return self._decision(
@@ -143,12 +164,14 @@ class QueryClassifier:
         retrieval_strategy: str,
         confidence: float,
         reason: str,
+        graph_intent: str | None = None,
     ) -> QueryClassification:
         return QueryClassification(
             query_type=query_type,
             retrieval_strategy=retrieval_strategy,
             confidence=round(float(confidence), 4),
             reason=reason,
+            graph_intent=graph_intent,
         )
 
     def _load_rules(self) -> dict[str, Any]:
@@ -171,6 +194,14 @@ class QueryClassifier:
             "errorTerms": ["error", "exception"],
             "currentInfoTerms": ["today", "current", "latest", "now"],
             "deepReasoningTerms": [],
+            "graphStrongTerms": ["图谱", "多跳", "跨层", "串联", "知识链", "链路"],
+            "graphRelationTerms": ["关系", "联系", "关联", "图谱", "多跳", "串联", "脉络"],
+            "graphMultiHopTerms": ["多跳", "多步", "跨层", "跨领域", "跨课程", "multi-hop"],
+            "graphComparisonTerms": ["对比", "比较", "区别", "差异", "vs", "versus"],
+            "graphPrerequisiteTerms": ["前置", "前提", "基础", "先学", "依赖", "学习路径", "路径", "顺序"],
+            "graphSummaryTerms": ["总结", "概括", "梳理", "综述", "归纳", "总览"],
+            "graphMechanismTerms": ["机制", "落地", "应用到", "如何串联", "怎么串", "实现到"],
+            "graphCommonMistakeTerms": ["常见错误", "误区", "容易混淆", "混淆", "坑点"],
         }
 
     def _extract_query(self, params: dict[str, Any]) -> str:
@@ -263,3 +294,27 @@ class QueryClassifier:
             or params.get("enableWebSearch") is True
             or params.get("tavilySearchEnabled") is True
         )
+
+    def _detect_graph_intent(self, lowered_text: str) -> str | None:
+        if self._contains_any(lowered_text, "graphComparisonTerms"):
+            return GRAPH_INTENT_COMPARISON
+        if self._contains_any(lowered_text, "graphPrerequisiteTerms"):
+            return GRAPH_INTENT_PREREQUISITE_PATH
+        if self._contains_any(lowered_text, "graphSummaryTerms"):
+            return GRAPH_INTENT_COMMUNITY_SUMMARY
+        if self._contains_any(lowered_text, "graphMultiHopTerms"):
+            return GRAPH_INTENT_MULTI_HOP_RELATION
+        if self._looks_like_graph_relation_query(lowered_text):
+            return GRAPH_INTENT_CROSS_LAYER_RELATION
+        if self._contains_any(lowered_text, "graphMechanismTerms"):
+            return GRAPH_INTENT_MECHANISM_APPLICATION
+        if self._contains_any(lowered_text, "graphCommonMistakeTerms"):
+            return GRAPH_INTENT_COMMON_MISTAKE
+        return GRAPH_INTENT_NONE
+
+    def _looks_like_graph_relation_query(self, lowered_text: str) -> bool:
+        if not self._contains_any(lowered_text, "graphRelationTerms"):
+            return False
+        if self._contains_any(lowered_text, "graphStrongTerms"):
+            return True
+        return bool(re.search(r"(与|和|跟|同).{1,80}(之间)?(关系|联系|关联)", lowered_text))
