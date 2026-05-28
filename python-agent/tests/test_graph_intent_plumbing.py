@@ -1,6 +1,9 @@
 import pytest
 
 from knowledge.benchmark_graph_rag_100 import evaluate_graph_evidence, summarize_graph_records
+from retrieval.hybrid_retriever import HybridRetriever
+from retrieval.graph_expander import GraphExpander
+from retrieval.rrf_fusion import RRFFusion
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.models import (
     EngineStreamRequest,
@@ -29,6 +32,56 @@ class GraphIntentRetriever:
             },
             "top": [("doc-a", "Doc A", 1.0), ("doc-b", "Doc B", 0.9)],
         }
+
+
+class FakeGraphCursor:
+    def __init__(self) -> None:
+        self._rows = []
+        self._pages = {
+            "incoming-id": ("incoming-id", "incoming-doc", "Incoming Doc"),
+            "weak-tag-id": ("weak-tag-id", "weak-tag-doc", "Weak Tag Doc"),
+            "strong-tag-id": ("strong-tag-id", "strong-tag-doc", "Strong Tag Doc"),
+        }
+
+    def execute(self, sql, params):
+        if "FROM rag.wiki_page" in sql and "slug = ANY" in sql and "LEFT JOIN rag.wiki_page_graph_features" not in sql:
+            self._rows = [("seed-id", "seed-doc", "Seed Doc")]
+            return
+        if "FROM rag.wiki_link l" in sql and "GROUP BY neighbor_id" in sql:
+            self._rows = [
+                ("incoming-id", "WIKILINK", 1),
+                ("weak-tag-id", "SHARED_TAG", 2),
+                ("strong-tag-id", "SHARED_TAG", 3),
+                ("seed-id", "WIKILINK", 1),
+            ]
+            return
+        if "LEFT JOIN rag.wiki_page_graph_features" in sql:
+            candidate_ids = set(params[0])
+            self._rows = [
+                (*row, 1 if row[0] == "strong-tag-id" else 2, 0.9 if row[0] == "strong-tag-id" else 0.2, '["alias"]', '["tag"]')
+                for page_id, row in self._pages.items()
+                if page_id in candidate_ids
+            ]
+            self._rows = [row for row in self._rows if row[0] in candidate_ids]
+            return
+        if "FROM rag.wiki_page_graph_features" in sql:
+            self._rows = [(1,)]
+            return
+        if "WHERE id::text = ANY" in sql:
+            candidate_ids = set(params[0])
+            self._rows = [row for page_id, row in self._pages.items() if page_id in candidate_ids]
+            return
+        raise AssertionError(f"unexpected SQL: {sql}")
+
+    def fetchall(self):
+        return self._rows
+
+
+def test_graph_expander_uses_undirected_edges_and_filters_weak_shared_tags() -> None:
+    results = GraphExpander().expand(FakeGraphCursor(), ["seed-doc"], top_n=5, min_shared_tags=3)
+
+    assert [item[0] for item in results] == ["strong-tag-doc", "incoming-doc"]
+    assert all(item[0] != "weak-tag-doc" for item in results)
 
 
 def test_query_classifier_marks_graph_relation_intent() -> None:
@@ -69,6 +122,112 @@ def test_hybrid_retrieval_service_passes_graph_intent_to_retriever() -> None:
     assert raw["graphIntent"] == "PREREQUISITE_PATH"
 
 
+def test_rrf_graph_weight_override_remains_opt_in() -> None:
+    fusion = RRFFusion()
+    grep_results = {"priority": [("knowledge-a", "Knowledge A", 1.0, ["a"])], "normal": []}
+    vector_results = [("knowledge-a", "Knowledge A", 0.9)]
+    graph_results = [("graph-b", "Graph B", 8.0)]
+
+    default_top = fusion.fuse(grep_results, vector_results, graph_results, [])
+    graph_top = fusion.fuse(
+        grep_results,
+        vector_results,
+        graph_results,
+        [("https://example.com/video", "Video", 0.9)],
+        graph_weight=12.0,
+        slug_penalty=lambda slug: 0.2 if slug.startswith("http") else 1.0,
+    )
+
+    assert default_top[0][0] == "knowledge-a"
+    assert graph_top[0][0] == "graph-b"
+    assert graph_top[-1][0] == "https://example.com/video"
+
+
+def test_graph_intent_keeps_top3_and_fills_low_trust_tail() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("None", "Video", 0.17),
+        ("https://example.com/ref", "External", 0.16),
+    ]
+    graph_results = [
+        ("doc-b", "Doc B", 4),
+        ("graph-d", "Graph D", 3),
+        ("graph-e", "Graph E", 2),
+    ]
+
+    result = retriever._stabilize_graph_top5(fused, graph_results, "PREREQUISITE_PATH")
+
+    assert [item[0] for item in result[:3]] == ["doc-a", "doc-b", "doc-c"]
+    assert [item[0] for item in result[3:5]] == ["graph-d", "graph-e"]
+
+
+def test_non_prerequisite_graph_intent_does_not_fill_tail() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("None", "Video", 0.17),
+        ("https://example.com/ref", "External", 0.16),
+    ]
+    graph_results = [("graph-d", "Graph D", 3)]
+
+    result = retriever._stabilize_graph_top5(fused, graph_results, "COMPARISON")
+
+    assert result == fused
+
+
+def test_graph_intent_forces_grep_first_to_keep_graph_channel() -> None:
+    class FakeGrep:
+        def search(self, cur, query, domain):
+            del cur, query, domain
+            return {"priority": [("seed-doc", "Seed Doc", 0.95, ["seed"])], "normal": []}
+
+    class FakeVector:
+        def search_all(self, cur, query, top_k, domain):
+            del cur, query, top_k, domain
+            return [("vector-doc", "Vector Doc", 0.9, "knowledge")]
+
+    class FakeGraph:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def expand(self, cur, seed_slugs, top_n, query=None, graph_intent=None):
+            del cur
+            self.calls.append({"seed_slugs": list(seed_slugs), "top_n": top_n, "query": query, "graph_intent": graph_intent})
+            return [("graph-doc", "Graph Doc", 10)]
+
+    class FakeWeb:
+        def search(self, query, top_k):
+            del query, top_k
+            return []
+
+    fake_graph = FakeGraph()
+    retriever = HybridRetriever({}, top_k=3, graph_seed_n=1)
+    retriever._initialized = True
+    retriever._grep = FakeGrep()
+    retriever._vector = FakeVector()
+    retriever._graph = fake_graph
+    retriever._web = FakeWeb()
+    retriever._rrf = RRFFusion()
+
+    plain_result = retriever.retrieve_grep_first(object(), "seed query")
+    graph_result = retriever.retrieve_grep_first(
+        object(),
+        "seed query",
+        graph_intent="PREREQUISITE_PATH",
+    )
+
+    assert plain_result["channels"]["graph"] == []
+    assert graph_result["channels"]["graph"] == [("graph-doc", "Graph Doc", 10)]
+    assert graph_result["grepFirstPromoted"] is True
+    assert fake_graph.calls[0]["top_n"] == 8
+    assert graph_result["top"][:2] == [("vector-doc", "Vector Doc", 0.082), ("seed-doc", "Seed Doc", 0.0738)]
+
+
 def test_graph_benchmark_metrics_cover_primary_and_related_nodes() -> None:
     question = {
         "graphIntent": "PREREQUISITE_PATH",
@@ -88,6 +247,7 @@ def test_graph_benchmark_metrics_cover_primary_and_related_nodes() -> None:
     assert metrics["partialEvidenceTop5"] is True
     assert metrics["completeEvidenceTop5"] is True
     assert metrics["evidenceNodeRecallTop5"] == 1.0
+    assert metrics["missingEvidenceSlugsTop5"] == []
 
 
 def test_graph_benchmark_summary_groups_evidence_metrics() -> None:

@@ -16,40 +16,40 @@
     "total": 100,
     "success": 100,
     "successRatePct": 100.0,
-    "hitAt1": 40,
+    "hitAt1": 43,
     "hitAt3": 94,
-    "hitAt1Pct": 40.0,
+    "hitAt1Pct": 43.0,
     "hitAt3Pct": 94.0,
-    "avgRelevanceScore": 0.7885,
-    "avgLatencyMs": 1580.34,
-    "medianLatencyMs": 1082.62,
-    "p95LatencyMs": 3178.18,
-    "maxLatencyMs": 4705.87,
+    "avgRelevanceScore": 0.797,
+    "avgLatencyMs": 1684.43,
+    "medianLatencyMs": 1041.83,
+    "p95LatencyMs": 3441.29,
+    "maxLatencyMs": 5525.73,
     "channels": {
       "fusion_ms": {
         "avgMs": 0.59,
-        "p95Ms": 0.8,
-        "maxMs": 1.16
+        "p95Ms": 0.95,
+        "maxMs": 1.01
       },
       "graph_ms": {
-        "avgMs": 8.58,
-        "p95Ms": 10.36,
-        "maxMs": 20.67
+        "avgMs": 17.06,
+        "p95Ms": 23.37,
+        "maxMs": 28.69
       },
       "grep_ms": {
-        "avgMs": 468.71,
-        "p95Ms": 572.28,
-        "maxMs": 679.83
+        "avgMs": 471.77,
+        "p95Ms": 572.7,
+        "maxMs": 709.24
       },
       "init_ms": {
-        "avgMs": 24.11,
-        "p95Ms": 35.42,
-        "maxMs": 53.95
+        "avgMs": 22.48,
+        "p95Ms": 34.26,
+        "maxMs": 38.05
       },
       "vector_ms": {
-        "avgMs": 1028.37,
-        "p95Ms": 2602.49,
-        "maxMs": 4129.73
+        "avgMs": 1118.35,
+        "p95Ms": 2933.3,
+        "maxMs": 5029.09
       },
       "web_ms": {
         "avgMs": 0.0,
@@ -59,19 +59,19 @@
     }
   },
   "graphSummary": {
-    "primaryTop5Pct": 93.0,
+    "primaryTop5Pct": 94.0,
     "anyRelatedTop5Pct": 95.0,
     "partialEvidenceTop5Pct": 99.0,
-    "completeEvidenceTop5Pct": 40.0,
-    "evidenceNodeRecallTop5Pct": 78.0,
-    "avgEvidenceNodeRecallTop5": 0.78,
+    "completeEvidenceTop5Pct": 43.0,
+    "evidenceNodeRecallTop5Pct": 79.0,
+    "avgEvidenceNodeRecallTop5": 0.79,
     "counts": {
       "total": 100,
-      "primaryTop5": 93,
+      "primaryTop5": 94,
       "anyRelatedTop5": 95,
       "partialEvidenceTop5": 99,
-      "completeEvidenceTop5": 40,
-      "presentEvidenceNodesTop5": 234,
+      "completeEvidenceTop5": 43,
+      "presentEvidenceNodesTop5": 237,
       "expectedEvidenceNodes": 300
     }
   },
@@ -128,19 +128,19 @@
       }
     },
     "CROSS_LAYER_RELATION": {
-      "primaryTop5Pct": 93.1,
+      "primaryTop5Pct": 96.55,
       "anyRelatedTop5Pct": 100.0,
       "partialEvidenceTop5Pct": 100.0,
-      "completeEvidenceTop5Pct": 55.17,
-      "evidenceNodeRecallTop5Pct": 85.06,
-      "avgEvidenceNodeRecallTop5": 0.8506,
+      "completeEvidenceTop5Pct": 58.62,
+      "evidenceNodeRecallTop5Pct": 86.21,
+      "avgEvidenceNodeRecallTop5": 0.8621,
       "counts": {
         "total": 29,
-        "primaryTop5": 27,
+        "primaryTop5": 28,
         "anyRelatedTop5": 29,
         "partialEvidenceTop5": 29,
-        "completeEvidenceTop5": 16,
-        "presentEvidenceNodesTop5": 74,
+        "completeEvidenceTop5": 17,
+        "presentEvidenceNodesTop5": 75,
         "expectedEvidenceNodes": 87
       }
     },
@@ -182,20 +182,348 @@
       "primaryTop5Pct": 90.48,
       "anyRelatedTop5Pct": 80.95,
       "partialEvidenceTop5Pct": 95.24,
-      "completeEvidenceTop5Pct": 14.29,
-      "evidenceNodeRecallTop5Pct": 63.49,
-      "avgEvidenceNodeRecallTop5": 0.6349,
+      "completeEvidenceTop5Pct": 23.81,
+      "evidenceNodeRecallTop5Pct": 66.67,
+      "avgEvidenceNodeRecallTop5": 0.6667,
       "counts": {
         "total": 21,
         "primaryTop5": 19,
         "anyRelatedTop5": 17,
         "partialEvidenceTop5": 20,
-        "completeEvidenceTop5": 3,
-        "presentEvidenceNodesTop5": 40,
+        "completeEvidenceTop5": 5,
+        "presentEvidenceNodesTop5": 42,
         "expectedEvidenceNodes": 63
       }
     }
   },
+  "lowEvidenceRecords": [
+    {
+      "id": "grq094",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.0,
+      "missingEvidenceSlugsTop5": [
+        "编译原理/dfa最小化算法",
+        "编译原理/nfa",
+        "编译原理/词法分析与dfa"
+      ],
+      "topSlugs": [
+        "编译原理/NFA转DFA",
+        "编译原理/DFA",
+        "编译原理/DFA最小化",
+        "编译原理/词法分析",
+        "视频资源/离散数学-图论基础与应用"
+      ]
+    },
+    {
+      "id": "grq007",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.3333,
+      "missingEvidenceSlugsTop5": [
+        "编译原理/nfa",
+        "编译原理/词法分析与dfa"
+      ],
+      "topSlugs": [
+        "编译原理/NFA转DFA",
+        "编译原理/DFA最小化算法",
+        "编译原理/DFA最小化",
+        "编译原理/词法分析",
+        "视频资源/离散数学-图论基础与应用"
+      ]
+    },
+    {
+      "id": "grq024",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.3333,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/独异点",
+        "离散数学/群论"
+      ],
+      "topSlugs": [
+        "离散数学/半群",
+        "离散数学/偏序关系与Hasse图",
+        "离散数学/关系的性质与闭包",
+        "离散数学/群论基础",
+        "离散数学/子群"
+      ]
+    },
+    {
+      "id": "grq037",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.3333,
+      "missingEvidenceSlugsTop5": [
+        "编译原理/dfa最小化算法",
+        "编译原理/nfa"
+      ],
+      "topSlugs": [
+        "编译原理/词法分析与DFA",
+        "编译原理/DFA",
+        "编译原理/DFA最小化",
+        "编译原理/词法分析",
+        "视频资源/离散数学-图论基础与应用"
+      ]
+    },
+    {
+      "id": "grq039",
+      "graphIntent": "COMPARISON",
+      "classifierGraphIntent": "COMPARISON",
+      "evidenceNodeRecallTop5": 0.3333,
+      "missingEvidenceSlugsTop5": [
+        "数据结构/最短路径-bellmanford",
+        "数据结构/最短路径dijkstra"
+      ],
+      "topSlugs": [
+        "算法设计与分析/最小生成树",
+        "数据结构/最小生成树-Prim",
+        "数据结构/最小生成树-Kruskal",
+        "数据结构/最小生成树MST",
+        "离散数学/生成树与最小生成树"
+      ]
+    },
+    {
+      "id": "grq002",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "算法设计与分析/主定理"
+      ],
+      "topSlugs": [
+        "算法设计与分析/NP完全性概述",
+        "算法设计与分析/NP完全理论",
+        "离散数学/图着色与多项式",
+        "算法设计与分析/图的着色",
+        "算法设计与分析/Strassen矩阵乘法"
+      ]
+    },
+    {
+      "id": "grq005",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/环与域"
+      ],
+      "topSlugs": [
+        "离散数学/同余与模运算",
+        "离散数学/欧拉函数与RSA",
+        "计算机网络/网络安全-非对称加密-RSA",
+        "算法设计与分析/质数测试与RSA",
+        "离散数学/偏序关系与Hasse图"
+      ]
+    },
+    {
+      "id": "grq015",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "操作系统/管程"
+      ],
+      "topSlugs": [
+        "操作系统/Peterson算法",
+        "操作系统/经典同步问题-生产者消费者",
+        "操作系统/互斥与同步机制",
+        "视频资源/操作系统-进程同步与PV操作",
+        "操作系统/调度层次与基本概念"
+      ]
+    },
+    {
+      "id": "grq017",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/群论"
+      ],
+      "topSlugs": [
+        "离散数学/置换群",
+        "离散数学/环与域",
+        "https://en.wikipedia.org/wiki/Discrete_mathematics",
+        "数据库原理/关系代数-运算规则",
+        "离散数学/组合数学"
+      ]
+    },
+    {
+      "id": "grq040",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/群论"
+      ],
+      "topSlugs": [
+        "离散数学/半群",
+        "离散数学/独异点",
+        "离散数学/偏序关系与Hasse图",
+        "离散数学/群论基础",
+        "离散数学/子群"
+      ]
+    },
+    {
+      "id": "grq055",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/群论"
+      ],
+      "topSlugs": [
+        "离散数学/同余与模运算",
+        "离散数学/环与域",
+        "https://en.wikipedia.org/wiki/Discrete_mathematics",
+        "数据库原理/关系模型",
+        "离散数学/偏序关系与Hasse图"
+      ]
+    },
+    {
+      "id": "grq059",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/推理规则"
+      ],
+      "topSlugs": [
+        "数据库原理/关系代数-运算规则",
+        "离散数学/集合运算",
+        "数据库原理/关系代数-连接",
+        "数据库原理/关系模型",
+        "离散数学/基数"
+      ]
+    },
+    {
+      "id": "grq066",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/群论"
+      ],
+      "topSlugs": [
+        "离散数学/置换群",
+        "https://en.wikipedia.org/wiki/Discrete_mathematics",
+        "离散数学/环与域",
+        "离散数学/解释",
+        "离散数学/函数-单射-满射-双射"
+      ]
+    },
+    {
+      "id": "grq071",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "编译原理/代码优化综合"
+      ],
+      "topSlugs": [
+        "计算机组成原理/IEEE754浮点数",
+        "编译原理/编译器优化Pass设计",
+        "计算机组成原理/浮点加法器设计",
+        "计算机组成原理/全加器与超前进位",
+        "软件工程/面向对象设计-类图-顺序图-状态图"
+      ]
+    },
+    {
+      "id": "grq081",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "COMPARISON",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/同余与模运算"
+      ],
+      "topSlugs": [
+        "信息安全/消息认证码MAC与HMAC",
+        "离散数学/欧拉函数与RSA",
+        "信息安全/非对称加密RSA",
+        "计算机网络/网络安全-非对称加密-RSA",
+        "信息安全/安全开发生命周期SDL"
+      ]
+    },
+    {
+      "id": "grq084",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "离散数学/集合运算"
+      ],
+      "topSlugs": [
+        "离散数学/推理规则",
+        "算法设计与分析/NP完全性概述",
+        "数据库原理/关系代数-运算规则",
+        "算法设计与分析/NP完全理论",
+        "离散数学/真值表"
+      ]
+    },
+    {
+      "id": "grq085",
+      "graphIntent": "PREREQUISITE_PATH",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "编译原理/二义性"
+      ],
+      "topSlugs": [
+        "编译原理/递归下降",
+        "编译原理/自顶向下LL1",
+        "编译原理/First-Follow",
+        "编译原理/LR1与LALR1",
+        "编译原理/YACC"
+      ]
+    },
+    {
+      "id": "grq001",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "classifierGraphIntent": "PREREQUISITE_PATH",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "信息安全/操作系统安全机制"
+      ],
+      "topSlugs": [
+        "信息安全/安全策略与等保",
+        "信息安全/SQL注入攻击与防御",
+        "数据库原理/安全性",
+        "数据库原理/数据库安全与SQL注入防御",
+        "信息安全/安全审计与日志分析"
+      ]
+    },
+    {
+      "id": "grq012",
+      "graphIntent": "COMPARISON",
+      "classifierGraphIntent": "COMPARISON",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "数据结构/最短路径-bellmanford"
+      ],
+      "topSlugs": [
+        "操作系统/磁盘调度-FCFS与SSTF",
+        "操作系统/磁盘调度-SCAN与C-SCAN",
+        "数据结构/最短路径Dijkstra",
+        "操作系统/磁盘调度算法",
+        "操作系统/进程调度算法全景对比"
+      ]
+    },
+    {
+      "id": "grq013",
+      "graphIntent": "COMPARISON",
+      "classifierGraphIntent": "COMPARISON",
+      "evidenceNodeRecallTop5": 0.6667,
+      "missingEvidenceSlugsTop5": [
+        "程序设计/类型系统"
+      ],
+      "topSlugs": [
+        "程序设计/语言特性对比-Go",
+        "Python深入/dataclass与attrs",
+        "程序设计/语言特性对比-Python",
+        "程序设计/语言特性对比-TypeScript",
+        "程序设计/静态类型vs动态类型"
+      ]
+    }
+  ],
   "records": [
     {
       "id": "grq001",
@@ -227,14 +555,14 @@
         "操作系统安全机制",
         "\"数据库安全与SQL注入防御\""
       ],
-      "latencyMs": 1050.26,
+      "latencyMs": 2210.42,
       "channelLatencyMs": {
-        "init_ms": 26.29,
-        "grep_ms": 546.75,
-        "vector_ms": 419.8,
-        "graph_ms": 9.4,
+        "init_ms": 24.76,
+        "grep_ms": 562.62,
+        "vector_ms": 1547.26,
+        "graph_ms": 28.69,
         "web_ms": 0.0,
-        "fusion_ms": 0.49
+        "fusion_ms": 0.34
       },
       "success": true,
       "error": null,
@@ -271,7 +599,7 @@
           "rank": 5,
           "slug": "信息安全/安全审计与日志分析",
           "title": "安全审计与日志分析",
-          "score": 0.0774,
+          "score": 0.0773,
           "extra": null
         }
       ],
@@ -293,7 +621,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "信息安全/操作系统安全机制"
+        ]
       }
     },
     {
@@ -326,14 +657,14 @@
         "\"图着色与色多项式\"",
         "主定理"
       ],
-      "latencyMs": 948.91,
+      "latencyMs": 2056.6,
       "channelLatencyMs": {
-        "init_ms": 30.6,
-        "grep_ms": 442.99,
-        "vector_ms": 407.71,
-        "graph_ms": 7.23,
+        "init_ms": 31.3,
+        "grep_ms": 464.3,
+        "vector_ms": 1493.51,
+        "graph_ms": 20.14,
         "web_ms": 0.0,
-        "fusion_ms": 0.31
+        "fusion_ms": 1.01
       },
       "success": true,
       "error": null,
@@ -368,9 +699,9 @@
         },
         {
           "rank": 5,
-          "slug": "https://www.bilibili.com/video/BV1BW411n7Jb",
-          "title": "北大离散数学——数理逻辑与图论",
-          "score": 0.0769,
+          "slug": "算法设计与分析/Strassen矩阵乘法",
+          "title": "Strassen矩阵乘法",
+          "score": 0.0104,
           "extra": null
         }
       ],
@@ -379,9 +710,9 @@
         "hitAt3": true,
         "bestRank": 2,
         "relevanceScore": 0.85,
-        "reason": "候选文档2（\"NP完全性与归约\"）与用户问题直接相关，因为它明确覆盖了NP完全性、归约以及它们与图着色等具体问题的联系，符合问题要求的主概念、角色和关系路径。候选文档3（\"图着色与色多项式\"）也相关，提供了图着色的具体内容，但未直接整合NP完全性视角。候选文档1（\"NP完全性概述\"）可能涉及基础但不够聚焦于归约和图着色的依赖关系。整体上，前三个候选中至少一个（文档2）直接帮助回答问题，因此hitAt3为true。最佳相关候选排名为2，整体相关性评分较高，因为文档2和3共同覆盖了问题核心，但文档2更贴合关系焦点。"
+        "reason": "候选文档2（NP完全性与归约）直接对应用户问题的核心主题，提供了NP完全性、归约及其与图着色问题关系的理论基础。候选文档3（图着色与色多项式）补充了图着色问题的具体内容，与NP完全性中的归约视角形成关联。候选文档1（NP完全性概述）也相关，但排名稍后。整体上，前三个候选文档共同覆盖了用户要求的NP完全性、归约、图着色等关键概念，能有效构建学习路径。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -392,7 +723,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "算法设计与分析/主定理"
+        ]
       }
     },
     {
@@ -427,14 +761,14 @@
         "\"GCC与LLVM编译器架构对比\"",
         "寄存器分配"
       ],
-      "latencyMs": 1087.75,
+      "latencyMs": 2149.6,
       "channelLatencyMs": {
-        "init_ms": 15.34,
-        "grep_ms": 443.21,
-        "vector_ms": 560.75,
-        "graph_ms": 8.24,
+        "init_ms": 17.52,
+        "grep_ms": 458.11,
+        "vector_ms": 1614.86,
+        "graph_ms": 15.78,
         "web_ms": 0.0,
-        "fusion_ms": 0.66
+        "fusion_ms": 0.34
       },
       "success": true,
       "error": null,
@@ -493,7 +827,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -526,14 +861,14 @@
         "OAuth2与OpenID Connect",
         "安全策略与等保"
       ],
-      "latencyMs": 1005.64,
+      "latencyMs": 1058.18,
       "channelLatencyMs": {
-        "init_ms": 17.65,
-        "grep_ms": 529.4,
-        "vector_ms": 404.45,
-        "graph_ms": 9.1,
+        "init_ms": 17.51,
+        "grep_ms": 522.28,
+        "vector_ms": 442.81,
+        "graph_ms": 23.87,
         "web_ms": 0.0,
-        "fusion_ms": 0.39
+        "fusion_ms": 0.63
       },
       "success": true,
       "error": null,
@@ -570,7 +905,7 @@
           "rank": 5,
           "slug": "信息安全/访问控制模型RBAC与ABAC",
           "title": "访问控制模型RBAC与ABAC",
-          "score": 0.084,
+          "score": 0.0919,
           "extra": null
         }
       ],
@@ -592,7 +927,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -624,14 +960,14 @@
         "\"欧拉函数与RSA密码原理\"",
         "环与域"
       ],
-      "latencyMs": 1073.32,
+      "latencyMs": 963.62,
       "channelLatencyMs": {
-        "init_ms": 32.12,
-        "grep_ms": 438.82,
-        "vector_ms": 534.73,
-        "graph_ms": 10.06,
+        "init_ms": 36.11,
+        "grep_ms": 451.35,
+        "vector_ms": 404.64,
+        "graph_ms": 15.33,
         "web_ms": 0.0,
-        "fusion_ms": 0.53
+        "fusion_ms": 1.01
       },
       "success": true,
       "error": null,
@@ -666,9 +1002,9 @@
         },
         {
           "rank": 5,
-          "slug": "信息安全/非对称加密RSA",
-          "title": "非对称加密RSA",
-          "score": 0.1264,
+          "slug": "离散数学/偏序关系与Hasse图",
+          "title": "偏序关系与Hasse图",
+          "score": 0.0103,
           "extra": null
         }
       ],
@@ -677,7 +1013,7 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.9,
-        "reason": "候选文档1（同余与模运算）直接对应用户问题的核心起点，提供了构建学习路径的基础概念。候选文档2（欧拉函数与RSA）和候选文档3（非对称加密与RSA算法）覆盖了问题中要求的RSA密码原理部分，与同余模运算有直接依赖关系。这些文档共同支持从同余模运算过渡到RSA，并联系环与域的代数结构，但环与域的具体内容在候选文档中未明确体现，因此整体相关性高但非完全覆盖。"
+        "reason": "候选文档1（同余与模运算）直接对应用户问题的核心起点，是构建学习路径的基础。候选文档2（欧拉函数与RSA）和候选文档3（非对称加密与RSA）紧密衔接了从模运算到RSA的过渡，并涉及欧拉函数的关键角色。这些文档共同覆盖了问题要求的从同余到RSA再到代数结构（环与域）的路径，尽管环与域的直接文档未在前三名中，但整体相关性高。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -690,7 +1026,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/环与域"
+        ]
       }
     },
     {
@@ -725,14 +1064,14 @@
         "SQL SELECT查询基础",
         "SQL触发器"
       ],
-      "latencyMs": 1009.27,
+      "latencyMs": 882.77,
       "channelLatencyMs": {
-        "init_ms": 19.59,
-        "grep_ms": 399.34,
-        "vector_ms": 515.03,
-        "graph_ms": 8.89,
+        "init_ms": 16.13,
+        "grep_ms": 405.87,
+        "vector_ms": 403.97,
+        "graph_ms": 14.67,
         "web_ms": 0.0,
-        "fusion_ms": 0.6
+        "fusion_ms": 0.54
       },
       "success": true,
       "error": null,
@@ -791,7 +1130,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -822,14 +1162,14 @@
         "NFA",
         "\"词法分析与自动机\""
       ],
-      "latencyMs": 967.53,
+      "latencyMs": 992.52,
       "channelLatencyMs": {
-        "init_ms": 18.39,
-        "grep_ms": 459.66,
-        "vector_ms": 422.49,
-        "graph_ms": 9.35,
+        "init_ms": 19.69,
+        "grep_ms": 473.36,
+        "vector_ms": 423.06,
+        "graph_ms": 14.97,
         "web_ms": 0.0,
-        "fusion_ms": 0.39
+        "fusion_ms": 0.71
       },
       "success": true,
       "error": null,
@@ -838,7 +1178,7 @@
           "rank": 1,
           "slug": "编译原理/NFA转DFA",
           "title": "NFA转DFA",
-          "score": 0.1504,
+          "score": 0.1505,
           "extra": null
         },
         {
@@ -850,23 +1190,23 @@
         },
         {
           "rank": 3,
-          "slug": "https://www.bilibili.com/video/BV1KW411j7GV",
-          "title": "编译原理-词法分析与有限自动机（视频）",
-          "score": 0.082,
+          "slug": "编译原理/DFA最小化",
+          "title": "DFA最小化",
+          "score": 0.0738,
           "extra": null
         },
         {
           "rank": 4,
-          "slug": "https://en.wikipedia.org/wiki/Lexical_analysis",
-          "title": "编译原理-词法分析器实现指南",
-          "score": 0.0781,
+          "slug": "编译原理/词法分析",
+          "title": "词法分析",
+          "score": 0.0726,
           "extra": null
         },
         {
           "rank": 5,
-          "slug": "离散数学/自动机基础",
-          "title": "自动机基础",
-          "score": 0.078,
+          "slug": "视频资源/离散数学-图论基础与应用",
+          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -875,7 +1215,7 @@
         "hitAt3": true,
         "bestRank": 2,
         "relevanceScore": 0.85,
-        "reason": "候选文档2（DFA最小化算法）直接对应用户问题的核心主题，提供了DFA最小化的具体算法（Hopcroft算法），是构建学习路径的关键节点。候选文档1（NFA转DFA）和候选文档3（词法分析与自动机视频）分别覆盖了NFA到DFA的转换以及词法分析与自动机的关系，共同构成了从NFA、词法分析到DFA最小化的完整自动机转换路径。这些文档能直接帮助回答用户关于概念依赖、角色和串联学习路径的问题。"
+        "reason": "候选文档2（DFA最小化（Hopcroft算法））直接对应用户问题的核心主题，提供了DFA最小化的具体算法和概念。候选文档1（NFA转DFA）和候选文档3（DFA最小化）也与问题高度相关，分别覆盖了NFA到DFA的转换和DFA最小化的基础，共同构成了从NFA、词法分析到DFA最小化的自动机转换路径。候选文档4（词法分析）提供了词法分析的背景，但相关性稍弱。整体上，前三个候选文档能有效支持构建学习路径，覆盖主概念、相关角色和关系。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -888,7 +1228,11 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 1,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/nfa",
+          "编译原理/词法分析与dfa"
+        ]
       }
     },
     {
@@ -919,14 +1263,14 @@
         "\"C语言-指针算术与内存模型\"",
         "\"C语言-链接器与ABI详解\""
       ],
-      "latencyMs": 1237.54,
+      "latencyMs": 1105.7,
       "channelLatencyMs": {
-        "init_ms": 28.05,
-        "grep_ms": 601.69,
-        "vector_ms": 540.62,
-        "graph_ms": 8.01,
+        "init_ms": 32.14,
+        "grep_ms": 623.44,
+        "vector_ms": 380.31,
+        "graph_ms": 18.33,
         "web_ms": 0.0,
-        "fusion_ms": 0.57
+        "fusion_ms": 0.42
       },
       "success": true,
       "error": null,
@@ -985,7 +1329,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -1018,14 +1363,14 @@
         "消息认证码MAC与HMAC",
         "区块链密码学基础"
       ],
-      "latencyMs": 1055.28,
+      "latencyMs": 1005.67,
       "channelLatencyMs": {
-        "init_ms": 19.7,
-        "grep_ms": 485.14,
-        "vector_ms": 503.53,
-        "graph_ms": 7.77,
+        "init_ms": 17.71,
+        "grep_ms": 494.17,
+        "vector_ms": 429.48,
+        "graph_ms": 17.53,
         "web_ms": 0.0,
-        "fusion_ms": 0.65
+        "fusion_ms": 0.45
       },
       "success": true,
       "error": null,
@@ -1084,7 +1429,8 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -1117,14 +1463,14 @@
         "\"PBR材质系统\"",
         "光照模型（Lambert/Phong/Blinn-Phong）"
       ],
-      "latencyMs": 1117.83,
+      "latencyMs": 1052.02,
       "channelLatencyMs": {
-        "init_ms": 30.29,
-        "grep_ms": 529.97,
-        "vector_ms": 507.07,
-        "graph_ms": 8.98,
+        "init_ms": 29.81,
+        "grep_ms": 539.72,
+        "vector_ms": 411.48,
+        "graph_ms": 18.09,
         "web_ms": 0.0,
-        "fusion_ms": 0.69
+        "fusion_ms": 0.44
       },
       "success": true,
       "error": null,
@@ -1183,7 +1529,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -1214,14 +1561,14 @@
         "\"图着色与色多项式\"",
         "欧拉图与哈密顿图"
       ],
-      "latencyMs": 1036.39,
+      "latencyMs": 941.64,
       "channelLatencyMs": {
-        "init_ms": 20.12,
-        "grep_ms": 473.14,
-        "vector_ms": 492.63,
-        "graph_ms": 7.94,
+        "init_ms": 16.98,
+        "grep_ms": 484.98,
+        "vector_ms": 383.33,
+        "graph_ms": 13.78,
         "web_ms": 0.0,
-        "fusion_ms": 0.7
+        "fusion_ms": 0.45
       },
       "success": true,
       "error": null,
@@ -1280,7 +1627,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -1312,14 +1660,14 @@
         "最短路径-Bellman-Ford算法",
         "\"最短路径算法（Dijkstra）\""
       ],
-      "latencyMs": 1019.77,
+      "latencyMs": 985.8,
       "channelLatencyMs": {
-        "init_ms": 33.67,
-        "grep_ms": 466.79,
-        "vector_ms": 458.26,
-        "graph_ms": 20.67,
+        "init_ms": 28.89,
+        "grep_ms": 484.99,
+        "vector_ms": 397.4,
+        "graph_ms": 14.74,
         "web_ms": 0.0,
-        "fusion_ms": 0.51
+        "fusion_ms": 0.65
       },
       "success": true,
       "error": null,
@@ -1378,7 +1726,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据结构/最短路径-bellmanford"
+        ]
       }
     },
     {
@@ -1411,14 +1762,14 @@
         "类型系统",
         "语言特性对比-Go"
       ],
-      "latencyMs": 966.83,
+      "latencyMs": 874.85,
       "channelLatencyMs": {
-        "init_ms": 18.17,
-        "grep_ms": 414.83,
-        "vector_ms": 483.75,
-        "graph_ms": 9.31,
+        "init_ms": 15.85,
+        "grep_ms": 424.92,
+        "vector_ms": 356.66,
+        "graph_ms": 19.0,
         "web_ms": 0.0,
-        "fusion_ms": 0.49
+        "fusion_ms": 0.48
       },
       "success": true,
       "error": null,
@@ -1477,7 +1828,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "程序设计/类型系统"
+        ]
       }
     },
     {
@@ -1510,14 +1864,14 @@
         "HTTP协议详解",
         "消息认证码MAC与HMAC"
       ],
-      "latencyMs": 1057.49,
+      "latencyMs": 988.32,
       "channelLatencyMs": {
-        "init_ms": 18.44,
-        "grep_ms": 489.39,
-        "vector_ms": 499.77,
-        "graph_ms": 10.36,
+        "init_ms": 19.65,
+        "grep_ms": 500.11,
+        "vector_ms": 413.95,
+        "graph_ms": 14.45,
         "web_ms": 0.0,
-        "fusion_ms": 0.55
+        "fusion_ms": 0.77
       },
       "success": true,
       "error": null,
@@ -1576,7 +1930,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "计算机网络/应用层-http"
+        ]
       }
     },
     {
@@ -1607,14 +1964,14 @@
         "经典同步问题-生产者消费者",
         "管程"
       ],
-      "latencyMs": 1039.35,
+      "latencyMs": 930.92,
       "channelLatencyMs": {
-        "init_ms": 35.11,
-        "grep_ms": 458.43,
-        "vector_ms": 489.97,
-        "graph_ms": 8.47,
+        "init_ms": 30.02,
+        "grep_ms": 452.24,
+        "vector_ms": 383.94,
+        "graph_ms": 23.53,
         "web_ms": 0.0,
-        "fusion_ms": 0.74
+        "fusion_ms": 0.83
       },
       "success": true,
       "error": null,
@@ -1649,9 +2006,9 @@
         },
         {
           "rank": 5,
-          "slug": "None",
-          "title": "操作系统-进程同步与PV操作（视频）",
-          "score": 0.0806,
+          "slug": "操作系统/调度层次与基本概念",
+          "title": "调度层次与基本概念",
+          "score": 0.0104,
           "extra": null
         }
       ],
@@ -1660,9 +2017,9 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.9,
-        "reason": "候选文档1（Peterson算法）直接对应用户问题的核心概念，是构建学习路径的起点。候选文档2（经典同步问题-生产者消费者）是路径中的关键应用环节，与Peterson算法有直接的过渡关系。候选文档3（互斥与同步机制）提供了更广泛的同步机制背景，有助于理解从软件方法到抽象升级的过渡。这三个文档共同覆盖了用户要求的主概念、相关角色、前置/实现/应用关系以及学习路径串联，因此整体相关性很高。"
+        "reason": "候选文档1（Peterson算法）直接对应问题核心概念，候选文档2（经典同步问题-生产者消费者）覆盖了问题要求的另一关键部分，候选文档3（互斥与同步机制）提供了必要的背景知识。这三个文档共同构成了从Peterson算法到生产者消费者问题再到管程（作为同步机制抽象）的完整学习路径，能够直接帮助回答用户关于概念依赖、角色分工和关系串联的问题。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -1673,7 +2030,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "操作系统/管程"
+        ]
       }
     },
     {
@@ -1706,14 +2066,14 @@
         "ZAB协议（ZooKeeper）",
         "Multi-Paxos与日志复制"
       ],
-      "latencyMs": 1065.13,
+      "latencyMs": 931.45,
       "channelLatencyMs": {
-        "init_ms": 21.89,
-        "grep_ms": 484.19,
-        "vector_ms": 493.53,
-        "graph_ms": 7.26,
+        "init_ms": 16.6,
+        "grep_ms": 461.3,
+        "vector_ms": 374.01,
+        "graph_ms": 15.49,
         "web_ms": 0.0,
-        "fusion_ms": 0.44
+        "fusion_ms": 0.47
       },
       "success": true,
       "error": null,
@@ -1743,7 +2103,7 @@
           "rank": 4,
           "slug": "分布式系统/Paxos协议详解",
           "title": "Paxos协议详解",
-          "score": 0.0926,
+          "score": 0.0927,
           "extra": null
         },
         {
@@ -1772,7 +2132,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -1807,37 +2168,37 @@
         "群",
         "环与域"
       ],
-      "latencyMs": 887.32,
+      "latencyMs": 743.46,
       "channelLatencyMs": {
-        "init_ms": 35.21,
-        "grep_ms": 323.69,
-        "vector_ms": 468.74,
-        "graph_ms": 8.8,
+        "init_ms": 28.65,
+        "grep_ms": 310.28,
+        "vector_ms": 345.15,
+        "graph_ms": 15.58,
         "web_ms": 0.0,
-        "fusion_ms": 0.63
+        "fusion_ms": 0.8
       },
       "success": true,
       "error": null,
       "top": [
         {
           "rank": 1,
-          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
-          "title": "实操案例-代数实践",
-          "score": 0.2344,
-          "extra": null
-        },
-        {
-          "rank": 2,
           "slug": "离散数学/置换群",
           "title": "置换群",
           "score": 0.1557,
           "extra": null
         },
         {
-          "rank": 3,
+          "rank": 2,
           "slug": "离散数学/环与域",
           "title": "环与域",
           "score": 0.0892,
+          "extra": null
+        },
+        {
+          "rank": 3,
+          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
+          "title": "实操案例-代数实践",
+          "score": 0.082,
           "extra": null
         },
         {
@@ -1849,18 +2210,18 @@
         },
         {
           "rank": 5,
-          "slug": "离散数学/关系矩阵",
-          "title": "关系矩阵",
-          "score": 0.0714,
+          "slug": "离散数学/组合数学",
+          "title": "组合数学",
+          "score": 0.0102,
           "extra": null
         }
       ],
       "judge": {
-        "hitAt1": false,
+        "hitAt1": true,
         "hitAt3": true,
-        "bestRank": 2,
-        "relevanceScore": 0.7,
-        "reason": "候选文档2（置换群）直接对应问题核心概念，能提供置换群的定义、性质及其在群论中的角色，是构建学习路径的关键起点。候选文档3（环与域）提供了相关代数结构的背景，有助于理解置换群在更广泛代数谱系中的位置。但两者均未直接阐述它们之间的依赖、通向关系或具体学习路径串联，因此整体相关性中等。"
+        "bestRank": 1,
+        "relevanceScore": 0.85,
+        "reason": "候选文档1（置换群）直接对应用户问题的核心主题，提供了置换群的定义、性质及其在群论中的基础地位，是构建学习路径的起点。候选文档2（环与域）提供了代数结构谱系中更高层次的结构信息，有助于理解置换群如何通向环与域。两者结合可以覆盖用户要求的主概念、角色、关系及学习路径。候选文档3（实操案例-代数实践）可能提供应用示例，但相关性较弱。整体上，前两个候选文档能有效支撑回答。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -1873,7 +2234,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/群论"
+        ]
       }
     },
     {
@@ -1906,14 +2270,14 @@
         "操作系统安全机制",
         "安全策略与等保"
       ],
-      "latencyMs": 990.04,
+      "latencyMs": 863.88,
       "channelLatencyMs": {
-        "init_ms": 18.34,
-        "grep_ms": 384.27,
-        "vector_ms": 519.26,
-        "graph_ms": 7.91,
+        "init_ms": 18.29,
+        "grep_ms": 396.45,
+        "vector_ms": 375.82,
+        "graph_ms": 16.16,
         "web_ms": 0.0,
-        "fusion_ms": 0.4
+        "fusion_ms": 0.41
       },
       "success": true,
       "error": null,
@@ -1972,7 +2336,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -2006,14 +2371,14 @@
         "类型系统",
         "\"Rust语言-迭代器与组合器\""
       ],
-      "latencyMs": 1038.38,
+      "latencyMs": 1010.38,
       "channelLatencyMs": {
-        "init_ms": 18.22,
-        "grep_ms": 487.1,
-        "vector_ms": 471.91,
-        "graph_ms": 8.02,
+        "init_ms": 19.92,
+        "grep_ms": 507.17,
+        "vector_ms": 406.53,
+        "graph_ms": 20.21,
         "web_ms": 0.0,
-        "fusion_ms": 0.7
+        "fusion_ms": 0.49
       },
       "success": true,
       "error": null,
@@ -2072,7 +2437,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -2107,14 +2473,14 @@
         "递归下降分析",
         "LR(0)与SLR(1)分析"
       ],
-      "latencyMs": 1078.47,
+      "latencyMs": 1245.36,
       "channelLatencyMs": {
-        "init_ms": 33.91,
-        "grep_ms": 524.11,
-        "vector_ms": 472.11,
-        "graph_ms": 8.64,
+        "init_ms": 29.36,
+        "grep_ms": 510.59,
+        "vector_ms": 622.51,
+        "graph_ms": 13.61,
         "web_ms": 0.0,
-        "fusion_ms": 0.55
+        "fusion_ms": 0.89
       },
       "success": true,
       "error": null,
@@ -2149,9 +2515,9 @@
         },
         {
           "rank": 5,
-          "slug": "None",
-          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
-          "score": 0.0781,
+          "slug": "编译原理/二义性",
+          "title": "二义性",
+          "score": 0.0103,
           "extra": null
         }
       ],
@@ -2159,10 +2525,10 @@
         "hitAt1": false,
         "hitAt3": false,
         "bestRank": 4,
-        "relevanceScore": 0.3,
-        "reason": "候选文档中，排名第四的「First与Follow集」直接对应用户问题的核心概念，但排名前三的文档（LR(0)与SLR(1)分析、LR(1)与LALR(1)分析、递归下降分析）虽然与问题相关，但未直接聚焦于构建First/Follow集与递归下降、LR分析之间的学习路径关系。因此，前三个候选中没有直接相关的文档，最佳相关候选排名为4，整体相关性较低，因为文档未明确覆盖用户要求的路径构建、角色分工和串联逻辑。"
+        "relevanceScore": 0.4,
+        "reason": "候选文档中，排名第四的「First与Follow集」直接对应用户问题的核心概念，但排名前三的文档（LR(0)与SLR(1)分析、LR(1)与LALR(1)分析、递归下降分析）虽然与问题相关，但未直接聚焦于构建First/Follow集与递归下降、LR分析之间的学习路径关系。因此，前三个候选中没有直接相关的文档，最佳相关候选为第四名。整体相关性评分较低，因为候选文档未能全面覆盖问题要求的路径构建、角色分析和串联方法。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -2173,7 +2539,8 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -2206,14 +2573,14 @@
         "光照模型（Lambert/Phong/Blinn-Phong）",
         "\"PBR材质系统\""
       ],
-      "latencyMs": 1103.93,
+      "latencyMs": 1046.15,
       "channelLatencyMs": {
-        "init_ms": 16.05,
-        "grep_ms": 567.64,
-        "vector_ms": 463.04,
-        "graph_ms": 8.15,
+        "init_ms": 16.17,
+        "grep_ms": 559.07,
+        "vector_ms": 387.18,
+        "graph_ms": 17.33,
         "web_ms": 0.0,
-        "fusion_ms": 1.16
+        "fusion_ms": 0.59
       },
       "success": true,
       "error": null,
@@ -2272,7 +2639,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "计算机图形学/pbr材质系统"
+        ]
       }
     },
     {
@@ -2304,14 +2674,14 @@
         "安全策略与等保",
         "\"数据库安全与SQL注入防御\""
       ],
-      "latencyMs": 1142.46,
+      "latencyMs": 1039.19,
       "channelLatencyMs": {
-        "init_ms": 23.21,
-        "grep_ms": 528.6,
-        "vector_ms": 514.34,
-        "graph_ms": 10.1,
+        "init_ms": 33.66,
+        "grep_ms": 536.19,
+        "vector_ms": 401.23,
+        "graph_ms": 16.74,
         "web_ms": 0.0,
-        "fusion_ms": 0.54
+        "fusion_ms": 0.51
       },
       "success": true,
       "error": null,
@@ -2370,7 +2740,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -2403,14 +2774,14 @@
         "页表与TLB",
         "\"零拷贝技术与sendfile\""
       ],
-      "latencyMs": 1167.83,
+      "latencyMs": 1030.67,
       "channelLatencyMs": {
-        "init_ms": 36.59,
-        "grep_ms": 530.49,
-        "vector_ms": 531.11,
-        "graph_ms": 11.31,
+        "init_ms": 17.4,
+        "grep_ms": 515.45,
+        "vector_ms": 439.46,
+        "graph_ms": 10.78,
         "web_ms": 0.0,
-        "fusion_ms": 0.62
+        "fusion_ms": 0.42
       },
       "success": true,
       "error": null,
@@ -2469,7 +2840,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -2501,14 +2873,14 @@
         "独异点",
         "群"
       ],
-      "latencyMs": 1002.9,
+      "latencyMs": 856.07,
       "channelLatencyMs": {
-        "init_ms": 20.78,
-        "grep_ms": 389.75,
-        "vector_ms": 517.54,
-        "graph_ms": 9.13,
+        "init_ms": 16.38,
+        "grep_ms": 417.74,
+        "vector_ms": 354.78,
+        "graph_ms": 15.54,
         "web_ms": 0.0,
-        "fusion_ms": 0.58
+        "fusion_ms": 0.83
       },
       "success": true,
       "error": null,
@@ -2543,9 +2915,9 @@
         },
         {
           "rank": 5,
-          "slug": "离散数学/陪集与正规子群与商群",
-          "title": "陪集与正规子群与商群",
-          "score": 0.0855,
+          "slug": "离散数学/子群",
+          "title": "子群",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -2554,9 +2926,9 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.9,
-        "reason": "候选文档1（半群）直接对应用户问题的核心概念，是构建学习路径的起点。候选文档4（群论基础）和5（陪集与正规子群与商群）与群相关，能补充路径的后续部分。但候选文档2和3与问题无关。整体上，候选文档1和4能有效覆盖从半群到群的层级关系，但缺少对独异点（幺半群）的专门文档，因此相关性未达满分。"
+        "reason": "候选文档1（半群）直接对应用户问题的核心概念，标题和标签完全匹配，内容应能详细解释半群的定义、性质及其在代数结构层级中的位置，为构建从半群到独异点再到群的学习路径提供基础。候选文档4（群论基础）也相关，但排名较低。整体相关性高，因为问题焦点是半群及其与独异点、群的关系，而候选1是直接主题。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -2567,7 +2939,11 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 1,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/独异点",
+          "离散数学/群论"
+        ]
       }
     },
     {
@@ -2601,14 +2977,14 @@
         "物联网协议MQTT与CoAP",
         "云原生架构"
       ],
-      "latencyMs": 1058.36,
+      "latencyMs": 936.89,
       "channelLatencyMs": {
-        "init_ms": 19.65,
-        "grep_ms": 443.19,
-        "vector_ms": 528.71,
-        "graph_ms": 8.62,
+        "init_ms": 31.62,
+        "grep_ms": 443.3,
+        "vector_ms": 384.69,
+        "graph_ms": 14.76,
         "web_ms": 0.0,
-        "fusion_ms": 0.46
+        "fusion_ms": 0.43
       },
       "success": true,
       "error": null,
@@ -2617,7 +2993,7 @@
           "rank": 1,
           "slug": "软件工程/云原生架构",
           "title": "云原生架构",
-          "score": 0.1576,
+          "score": 0.1575,
           "extra": null
         },
         {
@@ -2667,7 +3043,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -2701,14 +3078,14 @@
         "活动选择问题",
         "\"最小生成树（Prim与Kruskal）\""
       ],
-      "latencyMs": 1038.37,
+      "latencyMs": 967.28,
       "channelLatencyMs": {
-        "init_ms": 39.1,
-        "grep_ms": 482.09,
-        "vector_ms": 464.76,
-        "graph_ms": 7.74,
+        "init_ms": 16.49,
+        "grep_ms": 480.6,
+        "vector_ms": 391.14,
+        "graph_ms": 16.15,
         "web_ms": 0.0,
-        "fusion_ms": 0.68
+        "fusion_ms": 0.47
       },
       "success": true,
       "error": null,
@@ -2767,7 +3144,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "算法设计与分析/活动选择问题"
+        ]
       }
     },
     {
@@ -2799,14 +3179,14 @@
         "\"并发编程-线程池原理\"",
         "Peterson算法"
       ],
-      "latencyMs": 1028.34,
+      "latencyMs": 912.01,
       "channelLatencyMs": {
-        "init_ms": 18.42,
-        "grep_ms": 469.02,
-        "vector_ms": 475.45,
-        "graph_ms": 7.67,
+        "init_ms": 35.58,
+        "grep_ms": 460.83,
+        "vector_ms": 349.87,
+        "graph_ms": 17.98,
         "web_ms": 0.0,
-        "fusion_ms": 0.46
+        "fusion_ms": 0.47
       },
       "success": true,
       "error": null,
@@ -2865,7 +3245,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -2898,14 +3279,14 @@
         "光照模型（Lambert/Phong/Blinn-Phong）",
         "环境映射与反射"
       ],
-      "latencyMs": 1129.89,
+      "latencyMs": 1075.2,
       "channelLatencyMs": {
-        "init_ms": 17.38,
-        "grep_ms": 554.61,
-        "vector_ms": 489.57,
-        "graph_ms": 7.79,
+        "init_ms": 16.62,
+        "grep_ms": 539.07,
+        "vector_ms": 438.62,
+        "graph_ms": 19.21,
         "web_ms": 0.0,
-        "fusion_ms": 0.36
+        "fusion_ms": 0.6
       },
       "success": true,
       "error": null,
@@ -2964,7 +3345,8 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -2996,14 +3378,14 @@
         "\"Python深入-生成器与协程底层\"",
         "\"Python深入-数据类与attrs对比\""
       ],
-      "latencyMs": 1099.49,
+      "latencyMs": 1077.22,
       "channelLatencyMs": {
-        "init_ms": 27.83,
-        "grep_ms": 510.17,
-        "vector_ms": 501.88,
-        "graph_ms": 7.75,
+        "init_ms": 18.46,
+        "grep_ms": 529.57,
+        "vector_ms": 429.77,
+        "graph_ms": 16.9,
         "web_ms": 0.0,
-        "fusion_ms": 0.55
+        "fusion_ms": 0.48
       },
       "success": true,
       "error": null,
@@ -3038,9 +3420,9 @@
         },
         {
           "rank": 5,
-          "slug": "离散数学/关系矩阵",
-          "title": "关系矩阵",
-          "score": 0.0738,
+          "slug": "数据库原理/关系代数-选择投影",
+          "title": "关系代数-选择与投影",
+          "score": 0.077,
           "extra": null
         }
       ],
@@ -3049,7 +3431,7 @@
         "hitAt3": true,
         "bestRank": 2,
         "relevanceScore": 0.85,
-        "reason": "候选文档中排名第2、3、4的文档分别直接对应用户问题中提到的三个核心主题（上下文管理器、数据类与attrs、生成器与协程），且标题与预期高度匹配。这些文档能直接提供各主题的详细内容，为比较区别、联系、角色分工和学习路径提供基础。但问题要求综合比较三者，而单个文档无法覆盖全部，因此整体相关性高但非完全直接回答。"
+        "reason": "候选文档2（上下文管理器协议）直接对应问题核心主题，候选文档3（数据类与attrs对比）和候选文档4（生成器与协程底层）也直接覆盖问题要求比较的三个概念。虽然候选文档1和5不相关，但前三个候选中至少有两个（文档2和3）与问题直接相关，且文档4也高度相关，因此hitAt3为true。最佳相关候选排名为2（上下文管理器协议），因为它是问题指定的预期标题，且直接对应比较的焦点之一。整体相关性评分较高，因为候选文档集完整覆盖了问题要求比较的所有概念，但未提供直接的比较分析，因此评分为0.85。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -3062,7 +3444,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -3095,14 +3478,14 @@
         "\"JavaScript-Promise与微任务队列\"",
         "\"Python深入-上下文管理器协议\""
       ],
-      "latencyMs": 2417.82,
+      "latencyMs": 2212.57,
       "channelLatencyMs": {
-        "init_ms": 18.2,
-        "grep_ms": 679.83,
-        "vector_ms": 1661.95,
-        "graph_ms": 8.61,
+        "init_ms": 32.9,
+        "grep_ms": 675.31,
+        "vector_ms": 1422.13,
+        "graph_ms": 15.17,
         "web_ms": 0.0,
-        "fusion_ms": 0.5
+        "fusion_ms": 0.47
       },
       "success": true,
       "error": null,
@@ -3161,7 +3544,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "python深入/上下文管理器"
+        ]
       }
     },
     {
@@ -3193,14 +3579,14 @@
         "\"欧拉函数与RSA密码原理\"",
         "区块链密码学基础"
       ],
-      "latencyMs": 2195.92,
+      "latencyMs": 925.32,
       "channelLatencyMs": {
-        "init_ms": 17.63,
-        "grep_ms": 420.52,
-        "vector_ms": 1707.68,
-        "graph_ms": 7.89,
+        "init_ms": 17.69,
+        "grep_ms": 431.4,
+        "vector_ms": 411.17,
+        "graph_ms": 18.35,
         "web_ms": 0.0,
-        "fusion_ms": 0.68
+        "fusion_ms": 0.67
       },
       "success": true,
       "error": null,
@@ -3259,7 +3645,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -3291,14 +3678,14 @@
         "ZAB协议（ZooKeeper）",
         "ZooKeeper原理与应用"
       ],
-      "latencyMs": 2105.06,
+      "latencyMs": 883.92,
       "channelLatencyMs": {
-        "init_ms": 27.9,
-        "grep_ms": 463.35,
-        "vector_ms": 1553.48,
-        "graph_ms": 8.71,
+        "init_ms": 16.8,
+        "grep_ms": 434.02,
+        "vector_ms": 359.65,
+        "graph_ms": 15.9,
         "web_ms": 0.0,
-        "fusion_ms": 0.73
+        "fusion_ms": 0.44
       },
       "success": true,
       "error": null,
@@ -3328,7 +3715,7 @@
           "rank": 4,
           "slug": "分布式系统/Paxos协议详解",
           "title": "Paxos协议详解",
-          "score": 0.0941,
+          "score": 0.0942,
           "extra": null
         },
         {
@@ -3357,7 +3744,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -3390,14 +3778,14 @@
         "\"敏捷开发方法论（Scrum与Kanban）\"",
         "云原生架构"
       ],
-      "latencyMs": 2708.61,
+      "latencyMs": 1032.25,
       "channelLatencyMs": {
-        "init_ms": 19.67,
-        "grep_ms": 523.61,
-        "vector_ms": 2117.16,
-        "graph_ms": 8.15,
+        "init_ms": 32.8,
+        "grep_ms": 533.45,
+        "vector_ms": 388.25,
+        "graph_ms": 15.91,
         "web_ms": 0.0,
-        "fusion_ms": 0.63
+        "fusion_ms": 0.48
       },
       "success": true,
       "error": null,
@@ -3456,7 +3844,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -3485,14 +3874,14 @@
         "敏捷开发",
         "云原生架构"
       ],
-      "latencyMs": 2094.73,
+      "latencyMs": 883.08,
       "channelLatencyMs": {
-        "init_ms": 32.62,
-        "grep_ms": 436.96,
-        "vector_ms": 1558.31,
-        "graph_ms": 10.26,
+        "init_ms": 17.03,
+        "grep_ms": 418.4,
+        "vector_ms": 368.67,
+        "graph_ms": 17.92,
         "web_ms": 0.0,
-        "fusion_ms": 0.42
+        "fusion_ms": 0.49
       },
       "success": true,
       "error": null,
@@ -3551,7 +3940,8 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -3581,14 +3971,14 @@
         "管程",
         "经典同步问题-读者写者与哲学家进餐"
       ],
-      "latencyMs": 2181.9,
+      "latencyMs": 906.4,
       "channelLatencyMs": {
-        "init_ms": 20.14,
-        "grep_ms": 467.7,
-        "vector_ms": 1648.44,
-        "graph_ms": 8.33,
+        "init_ms": 17.27,
+        "grep_ms": 444.89,
+        "vector_ms": 374.29,
+        "graph_ms": 26.69,
         "web_ms": 0.0,
-        "fusion_ms": 0.73
+        "fusion_ms": 0.86
       },
       "success": true,
       "error": null,
@@ -3611,21 +4001,21 @@
           "rank": 3,
           "slug": "操作系统/互斥与同步机制",
           "title": "互斥与同步机制",
-          "score": 0.1248,
+          "score": 0.1329,
           "extra": null
         },
         {
           "rank": 4,
-          "slug": "None",
-          "title": "操作系统-进程同步与PV操作（视频）",
-          "score": 0.0794,
+          "slug": "操作系统/管程",
+          "title": "管程",
+          "score": 0.0726,
           "extra": null
         },
         {
           "rank": 5,
-          "slug": "https://pages.cs.wisc.edu/~remzi/OSTEP/",
-          "title": "操作系统-进程同步PV操作题库",
-          "score": 0.0781,
+          "slug": "操作系统/调度层次与基本概念",
+          "title": "调度层次与基本概念",
+          "score": 0.0104,
           "extra": null
         }
       ],
@@ -3634,7 +4024,7 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.9,
-        "reason": "候选文档1（经典同步问题-生产者消费者）直接对应用户问题的核心主题，提供了生产者消费者问题的详细解释，包括其解决的问题、使用信号量等同步机制的实现，以及它作为经典同步问题的基础地位。候选文档2（经典同步问题-读者写者与哲学家进餐）直接覆盖了用户问题中提到的后续概念（读者写者问题），并可能涉及管程等高级同步机制，有助于构建从生产者消费者到读者写者问题的学习路径。候选文档3（互斥与同步机制）提供了更广泛的同步机制背景，可能包含管程等概念，支持理解概念间的依赖关系。这些文档共同覆盖了用户问题要求的主概念、相关角色、前置/实现/应用关系，以及学习路径的串联，因此整体相关性高。"
+        "reason": "候选文档1（经典同步问题-生产者消费者）直接对应用户问题的核心主题，提供了生产者消费者问题的详细解释，包括其解决的问题、使用信号量等机制的实现，以及与其他同步问题的关联。候选文档2（经典同步问题-读者写者与哲学家进餐）也直接相关，覆盖了用户要求的读者写者问题，并可能涉及哲学家进餐问题，有助于构建从生产者消费者到读者写者的学习路径。候选文档3（互斥与同步机制）提供了同步机制的基础知识，支持理解管程和条件变量等概念。这些文档共同覆盖了用户问题要求的主概念、相关角色、前置/实现/应用关系，以及学习路径的串联。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -3642,12 +4032,13 @@
         "primaryTop5": true,
         "anyRelatedTop5": true,
         "partialEvidenceTop5": true,
-        "completeEvidenceTop5": false,
-        "evidenceNodeRecallTop5": 0.6667,
+        "completeEvidenceTop5": true,
+        "evidenceNodeRecallTop5": 1.0,
         "primaryTop3": true,
         "anyRelatedTop3": true,
-        "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "presentEvidenceNodesTop5": 3,
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -3679,14 +4070,14 @@
         "编辑距离",
         "归并排序"
       ],
-      "latencyMs": 2407.2,
+      "latencyMs": 855.04,
       "channelLatencyMs": {
-        "init_ms": 19.82,
-        "grep_ms": 397.95,
-        "vector_ms": 1931.32,
-        "graph_ms": 8.58,
+        "init_ms": 27.96,
+        "grep_ms": 381.58,
+        "vector_ms": 372.49,
+        "graph_ms": 17.13,
         "web_ms": 0.0,
-        "fusion_ms": 0.47
+        "fusion_ms": 0.5
       },
       "success": true,
       "error": null,
@@ -3745,7 +4136,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "算法设计与分析/归并排序"
+        ]
       }
     },
     {
@@ -3775,14 +4169,14 @@
         "NFA",
         "\"DFA最小化（Hopcroft算法）\""
       ],
-      "latencyMs": 1038.63,
+      "latencyMs": 4459.32,
       "channelLatencyMs": {
-        "init_ms": 19.26,
-        "grep_ms": 499.51,
-        "vector_ms": 470.79,
-        "graph_ms": 8.03,
+        "init_ms": 27.75,
+        "grep_ms": 504.31,
+        "vector_ms": 3849.36,
+        "graph_ms": 16.9,
         "web_ms": 0.0,
-        "fusion_ms": 0.68
+        "fusion_ms": 0.79
       },
       "success": true,
       "error": null,
@@ -3796,30 +4190,30 @@
         },
         {
           "rank": 2,
-          "slug": "https://www.bilibili.com/video/BV1KW411j7GV",
-          "title": "编译原理-词法分析与有限自动机（视频）",
-          "score": 0.082,
+          "slug": "编译原理/DFA",
+          "title": "DFA",
+          "score": 0.0784,
           "extra": null
         },
         {
           "rank": 3,
-          "slug": "https://en.wikipedia.org/wiki/Lexical_analysis",
-          "title": "编译原理-词法分析器实现指南",
-          "score": 0.0806,
+          "slug": "编译原理/DFA最小化",
+          "title": "DFA最小化",
+          "score": 0.0738,
           "extra": null
         },
         {
           "rank": 4,
-          "slug": "https://en.wikipedia.org/wiki/Compiler",
-          "title": "编译原理-词法分析思维导图",
-          "score": 0.0794,
+          "slug": "编译原理/词法分析",
+          "title": "词法分析",
+          "score": 0.0726,
           "extra": null
         },
         {
           "rank": 5,
-          "slug": "编译原理/DFA",
-          "title": "DFA",
-          "score": 0.0782,
+          "slug": "视频资源/离散数学-图论基础与应用",
+          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -3828,7 +4222,7 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.95,
-        "reason": "候选文档1（\"词法分析与自动机\"）的标题和slug与用户问题的预期标题和slug完全匹配，且问题明确要求构建从词法分析到NFA、DFA再到最小化的学习路径。该文档很可能直接覆盖了词法分析中自动机的构造、NFA到DFA的转换、DFA最小化（如Hopcroft算法）等核心概念及其关系，因此能直接帮助回答用户问题。候选文档2（视频）和候选文档5（DFA）也相关，但候选文档1是最佳匹配。"
+        "reason": "候选文档1（词法分析与自动机）的标题和slug与用户问题的预期完全匹配，直接覆盖了词法分析、自动机、NFA、DFA等核心概念，能够提供从NFA到DFA再到DFA最小化的完整学习路径。候选文档2（DFA）和候选文档3（DFA最小化）也直接相关，分别聚焦于DFA本身和最小化算法，共同支撑了问题要求的依赖关系和串联逻辑。整体上，前三个候选文档共同构成了一个连贯的知识体系，能够有效回答用户关于学习路径构建的问题。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -3841,7 +4235,11 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 1,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/dfa最小化算法",
+          "编译原理/nfa"
+        ]
       }
     },
     {
@@ -3874,14 +4272,14 @@
         "IEEE754浮点数标准",
         "信息论基础"
       ],
-      "latencyMs": 987.5,
+      "latencyMs": 2205.87,
       "channelLatencyMs": {
-        "init_ms": 25.73,
-        "grep_ms": 417.56,
-        "vector_ms": 499.74,
-        "graph_ms": 7.89,
+        "init_ms": 34.43,
+        "grep_ms": 439.84,
+        "vector_ms": 1657.29,
+        "graph_ms": 14.85,
         "web_ms": 0.0,
-        "fusion_ms": 0.39
+        "fusion_ms": 0.42
       },
       "success": true,
       "error": null,
@@ -3940,7 +4338,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -3971,14 +4370,14 @@
         "\"最短路径算法（Dijkstra）\"",
         "最短路径-Bellman-Ford算法"
       ],
-      "latencyMs": 1020.75,
+      "latencyMs": 3057.97,
       "channelLatencyMs": {
-        "init_ms": 16.51,
-        "grep_ms": 458.78,
-        "vector_ms": 483.63,
-        "graph_ms": 8.54,
+        "init_ms": 16.72,
+        "grep_ms": 478.49,
+        "vector_ms": 2500.04,
+        "graph_ms": 13.75,
         "web_ms": 0.0,
-        "fusion_ms": 0.52
+        "fusion_ms": 0.49
       },
       "success": true,
       "error": null,
@@ -4037,7 +4436,11 @@
         "primaryTop3": false,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 1,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据结构/最短路径-bellmanford",
+          "数据结构/最短路径dijkstra"
+        ]
       }
     },
     {
@@ -4069,14 +4472,14 @@
         "半群",
         "群"
       ],
-      "latencyMs": 1002.11,
+      "latencyMs": 2007.42,
       "channelLatencyMs": {
-        "init_ms": 28.75,
-        "grep_ms": 355.2,
-        "vector_ms": 563.56,
-        "graph_ms": 7.8,
+        "init_ms": 17.67,
+        "grep_ms": 354.61,
+        "vector_ms": 1552.74,
+        "graph_ms": 14.8,
         "web_ms": 0.0,
-        "fusion_ms": 0.39
+        "fusion_ms": 0.89
       },
       "success": true,
       "error": null,
@@ -4111,9 +4514,9 @@
         },
         {
           "rank": 5,
-          "slug": "离散数学/陪集与正规子群与商群",
-          "title": "陪集与正规子群与商群",
-          "score": 0.0842,
+          "slug": "离散数学/子群",
+          "title": "子群",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -4121,10 +4524,10 @@
         "hitAt1": false,
         "hitAt3": true,
         "bestRank": 2,
-        "relevanceScore": 0.85,
-        "reason": "候选文档2（独异点）直接对应用户问题的核心概念，能详细解释独异点的定义、性质及其在代数结构中的位置。候选文档1（半群）和候选文档4（群论基础）也与问题高度相关，分别提供了半群和群的背景知识，有助于构建从半群到独异点再到群的学习路径。候选文档3（偏序关系与Hasse图）和候选文档5（陪集与正规子群与商群）相关性较低，但偏序关系可能间接帮助理解结构层级。整体上，前三个候选中至少两个（独异点、半群）直接相关，能有效支持回答。"
+        "relevanceScore": 0.7,
+        "reason": "候选文档2（独异点）直接对应问题核心概念，能提供独异点的定义、性质及其在代数结构中的位置，是构建学习路径的关键。候选文档1（半群）和候选文档4（群论基础）分别涉及半群和群，与问题要求的层级关系直接相关，共同覆盖了问题要求的全部概念。候选文档3（偏序关系与Hasse图）和候选文档5（子群）相关性较低，但候选文档3可能间接帮助理解结构层级。整体上，前三个候选中至少两个（独异点、半群）与问题直接相关，能有效支持构建学习路径。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -4135,7 +4538,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/群论"
+        ]
       }
     },
     {
@@ -4167,14 +4573,14 @@
         "\"最短路径算法（Dijkstra）\"",
         "\"最小生成树（Prim与Kruskal）\""
       ],
-      "latencyMs": 1060.48,
+      "latencyMs": 2134.01,
       "channelLatencyMs": {
-        "init_ms": 14.84,
-        "grep_ms": 480.88,
-        "vector_ms": 521.9,
-        "graph_ms": 7.74,
+        "init_ms": 32.59,
+        "grep_ms": 482.96,
+        "vector_ms": 1539.41,
+        "graph_ms": 17.89,
         "web_ms": 0.0,
-        "fusion_ms": 0.69
+        "fusion_ms": 0.53
       },
       "success": true,
       "error": null,
@@ -4188,9 +4594,9 @@
         },
         {
           "rank": 2,
-          "slug": "数据结构/最短路径-Dijkstra",
-          "title": "最短路径-Dijkstra算法",
-          "score": 0.1436,
+          "slug": "算法设计与分析/Dijkstra算法",
+          "title": "Dijkstra最短路径算法",
+          "score": 0.1447,
           "extra": null
         },
         {
@@ -4202,9 +4608,9 @@
         },
         {
           "rank": 4,
-          "slug": "算法设计与分析/Dijkstra算法",
-          "title": "Dijkstra最短路径算法",
-          "score": 0.1369,
+          "slug": "数据结构/最短路径-Dijkstra",
+          "title": "最短路径-Dijkstra算法",
+          "score": 0.1358,
           "extra": null
         },
         {
@@ -4220,7 +4626,7 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.9,
-        "reason": "候选文档1（最短路径-Bellman-Ford算法）直接对应用户问题的核心主题，提供了Bellman-Ford算法的详细信息，包括其解决负权边问题的能力、松弛操作等，这与问题要求的比较焦点（边权约束和目标函数差异）高度相关。候选文档2（最短路径-Dijkstra算法）和候选文档3（最小生成树-Prim算法）也直接覆盖了问题中提到的其他算法，共同支持了比较分析。整体上，这些候选文档能有效帮助回答用户关于算法区别、联系和学习路径的问题。"
+        "reason": "候选文档1（最短路径-Bellman-Ford算法）直接对应用户问题的核心主题，提供了Bellman-Ford算法的详细解释，包括其解决的问题（支持负权边的最短路径）、实现细节（松弛操作）和应用场景，这与用户要求的比较焦点（边权约束和目标函数差异）高度相关。候选文档2（Dijkstra算法）和候选文档3（最小生成树-Prim算法）也直接相关，分别覆盖了Dijkstra算法和最小生成树的Prim算法，有助于用户理解不同算法的区别和联系。整体上，前三个候选文档共同覆盖了用户问题的所有关键方面，因此hitAt3为true，最佳排名为1，整体相关性评分较高。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -4233,7 +4639,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据结构/最短路径dijkstra"
+        ]
       }
     },
     {
@@ -4266,12 +4675,12 @@
         "多版本并发控制MVCC",
         "SQL SELECT查询基础"
       ],
-      "latencyMs": 1002.87,
+      "latencyMs": 5186.02,
       "channelLatencyMs": {
-        "init_ms": 22.78,
-        "grep_ms": 420.87,
-        "vector_ms": 487.43,
-        "graph_ms": 8.79,
+        "init_ms": 16.36,
+        "grep_ms": 412.96,
+        "vector_ms": 4702.11,
+        "graph_ms": 13.86,
         "web_ms": 0.0,
         "fusion_ms": 0.46
       },
@@ -4296,7 +4705,7 @@
           "rank": 3,
           "slug": "数据库原理/MVCC多版本并发控制",
           "title": "\"MVCC多版本并发控制详解\"",
-          "score": 0.1349,
+          "score": 0.1431,
           "extra": null
         },
         {
@@ -4308,9 +4717,9 @@
         },
         {
           "rank": 5,
-          "slug": "数据库原理/关系代数-除",
-          "title": "关系代数-除运算",
-          "score": 0.0782,
+          "slug": "数据库原理/关系模型",
+          "title": "关系模型",
+          "score": 0.076,
           "extra": null
         }
       ],
@@ -4319,7 +4728,7 @@
         "hitAt3": true,
         "bestRank": 3,
         "relevanceScore": 0.85,
-        "reason": "候选文档3（MVCC多版本并发控制详解）与用户问题高度相关，其标题和slug与预期完全匹配，内容应直接覆盖MVCC机制、与SQL SELECT查询的连接、可见性影响及学习路径。候选文档2（多版本并发控制MVCC）也相关，但可能更侧重概念而非详解。候选文档1（数据库原理-事务思维导图）可能涉及事务但不够具体。整体上，前三个候选中至少一个（文档3）直接相关，能有效回答问题。"
+        "reason": "候选文档3（rank 3）的标题和slug与用户问题中的预期标题完全匹配，直接对应「MVCC多版本并发控制详解」，该文档应详细阐述MVCC机制、其与SQL SELECT查询的连接（如可见性、并发读写行为），以及相关概念（如ReadView）的角色和关系路径。候选文档2（rank 2）也直接相关，但标题更泛化。候选文档1（rank 1）和4（rank 4）部分相关但不够直接。整体上，前三个候选中至少有一个（rank 3）与问题直接相关，因此hitAt3为true。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -4332,7 +4741,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据库原理/sql-select基础"
+        ]
       }
     },
     {
@@ -4365,14 +4777,14 @@
         "欧拉图与哈密顿图",
         "\"NP完全性与归约\""
       ],
-      "latencyMs": 1102.6,
+      "latencyMs": 2537.47,
       "channelLatencyMs": {
-        "init_ms": 18.65,
-        "grep_ms": 525.01,
-        "vector_ms": 491.05,
-        "graph_ms": 8.74,
+        "init_ms": 16.77,
+        "grep_ms": 513.29,
+        "vector_ms": 1916.03,
+        "graph_ms": 18.28,
         "web_ms": 0.0,
-        "fusion_ms": 0.56
+        "fusion_ms": 0.45
       },
       "success": true,
       "error": null,
@@ -4431,7 +4843,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -4464,14 +4877,14 @@
         "\"C语言-多线程pthread\"",
         "经典同步问题-生产者消费者"
       ],
-      "latencyMs": 1055.1,
+      "latencyMs": 2050.81,
       "channelLatencyMs": {
-        "init_ms": 25.99,
-        "grep_ms": 503.96,
-        "vector_ms": 474.91,
-        "graph_ms": 8.09,
+        "init_ms": 32.08,
+        "grep_ms": 490.03,
+        "vector_ms": 1446.27,
+        "graph_ms": 18.51,
         "web_ms": 0.0,
-        "fusion_ms": 0.6
+        "fusion_ms": 0.52
       },
       "success": true,
       "error": null,
@@ -4530,7 +4943,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "c语言深入/多线程pthread"
+        ]
       }
     },
     {
@@ -4563,14 +4979,14 @@
         "边缘计算架构",
         "ZooKeeper原理与应用"
       ],
-      "latencyMs": 1027.38,
+      "latencyMs": 2600.81,
       "channelLatencyMs": {
-        "init_ms": 20.13,
-        "grep_ms": 413.58,
-        "vector_ms": 544.69,
-        "graph_ms": 7.48,
+        "init_ms": 14.85,
+        "grep_ms": 417.28,
+        "vector_ms": 2088.77,
+        "graph_ms": 13.34,
         "web_ms": 0.0,
-        "fusion_ms": 0.5
+        "fusion_ms": 0.46
       },
       "success": true,
       "error": null,
@@ -4629,7 +5045,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -4661,62 +5078,62 @@
         "\"并发编程-线程池原理\"",
         "Peterson算法"
       ],
-      "latencyMs": 1078.66,
+      "latencyMs": 989.33,
       "channelLatencyMs": {
-        "init_ms": 35.06,
-        "grep_ms": 482.17,
-        "vector_ms": 504.22,
-        "graph_ms": 8.65,
+        "init_ms": 17.6,
+        "grep_ms": 487.28,
+        "vector_ms": 394.75,
+        "graph_ms": 23.32,
         "web_ms": 0.0,
-        "fusion_ms": 0.68
+        "fusion_ms": 0.86
       },
       "success": true,
       "error": null,
       "top": [
         {
           "rank": 1,
-          "slug": "https://en.wikipedia.org/wiki/Computer_programming",
-          "title": "程序设计-并发编程思维导图",
-          "score": 0.1575,
-          "extra": null
-        },
-        {
-          "rank": 2,
           "slug": "操作系统/进程状态转换",
           "title": "进程状态转换",
           "score": 0.1557,
           "extra": null
         },
         {
-          "rank": 3,
+          "rank": 2,
           "slug": "程序设计/线程池原理",
           "title": "\"并发编程-线程池原理\"",
           "score": 0.128,
           "extra": null
         },
         {
-          "rank": 4,
-          "slug": "https://en.wikipedia.org/wiki/Operating_system",
-          "title": "实操案例-进程管理实践",
-          "score": 0.0769,
-          "extra": null
-        },
-        {
-          "rank": 5,
+          "rank": 3,
           "slug": "操作系统/Peterson算法",
           "title": "Peterson算法",
           "score": 0.0726,
           "extra": null
+        },
+        {
+          "rank": 4,
+          "slug": "程序设计/并发编程",
+          "title": "并发编程",
+          "score": 0.0714,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "程序设计/内存管理",
+          "title": "内存管理",
+          "score": 0.0105,
+          "extra": null
         }
       ],
       "judge": {
-        "hitAt1": false,
+        "hitAt1": true,
         "hitAt3": true,
-        "bestRank": 2,
-        "relevanceScore": 0.7,
-        "reason": "候选文档2（进程状态转换）直接对应问题核心概念，是构建学习路径的起点。候选文档3（线程池原理）和候选文档5（Peterson算法）分别覆盖了问题中要求的并发编程关键部分，三者共同构成了从进程状态到线程池调度和互斥算法的完整路径。但候选文档1和4相关性较低，且文档2、3、5之间缺乏明确的串联说明，因此整体相关性评分为0.7。"
+        "bestRank": 1,
+        "relevanceScore": 0.85,
+        "reason": "候选文档1（进程状态转换）直接对应用户问题的核心起点，是构建学习路径的基础概念。候选文档2（线程池原理）和候选文档3（Peterson算法）分别对应路径中的线程池调度和互斥算法，三者共同覆盖了用户要求的从进程状态转换到并发编程的完整关系链。虽然文档4（并发编程）也相关，但前三名已足够直接支撑问题回答。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -4727,7 +5144,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -4759,14 +5177,14 @@
         "\"TCP三次握手详解\"",
         "HTTP协议详解"
       ],
-      "latencyMs": 1114.21,
+      "latencyMs": 1010.79,
       "channelLatencyMs": {
-        "init_ms": 17.48,
-        "grep_ms": 513.12,
-        "vector_ms": 519.55,
-        "graph_ms": 7.4,
+        "init_ms": 33.3,
+        "grep_ms": 508.61,
+        "vector_ms": 388.35,
+        "graph_ms": 17.09,
         "web_ms": 0.0,
-        "fusion_ms": 0.5
+        "fusion_ms": 0.47
       },
       "success": true,
       "error": null,
@@ -4825,7 +5243,10 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "计算机网络/ipv4与ipv6对比"
+        ]
       }
     },
     {
@@ -4859,14 +5280,14 @@
         "\"写时复制（Copy-on-Write）\"",
         "\"C语言-指针算术与内存模型\""
       ],
-      "latencyMs": 1086.58,
+      "latencyMs": 981.87,
       "channelLatencyMs": {
-        "init_ms": 21.98,
-        "grep_ms": 549.21,
-        "vector_ms": 466.59,
-        "graph_ms": 9.92,
+        "init_ms": 16.79,
+        "grep_ms": 539.4,
+        "vector_ms": 363.76,
+        "graph_ms": 14.59,
         "web_ms": 0.0,
-        "fusion_ms": 0.46
+        "fusion_ms": 0.51
       },
       "success": true,
       "error": null,
@@ -4925,7 +5346,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -4956,14 +5378,14 @@
         "后缀数组算法",
         "\"KMP字符串匹配算法\""
       ],
-      "latencyMs": 972.15,
+      "latencyMs": 892.64,
       "channelLatencyMs": {
-        "init_ms": 17.58,
-        "grep_ms": 440.26,
-        "vector_ms": 448.89,
-        "graph_ms": 7.65,
+        "init_ms": 15.96,
+        "grep_ms": 445.44,
+        "vector_ms": 360.87,
+        "graph_ms": 13.24,
         "web_ms": 0.0,
-        "fusion_ms": 0.42
+        "fusion_ms": 0.39
       },
       "success": true,
       "error": null,
@@ -5022,7 +5444,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -5054,14 +5477,14 @@
         "\"写时复制（Copy-on-Write）\"",
         "\"TCP三次握手详解\""
       ],
-      "latencyMs": 2258.5,
+      "latencyMs": 926.48,
       "channelLatencyMs": {
-        "init_ms": 28.52,
-        "grep_ms": 459.54,
-        "vector_ms": 1720.88,
-        "graph_ms": 11.65,
+        "init_ms": 38.05,
+        "grep_ms": 442.29,
+        "vector_ms": 372.1,
+        "graph_ms": 17.92,
         "web_ms": 0.0,
-        "fusion_ms": 0.51
+        "fusion_ms": 0.48
       },
       "success": true,
       "error": null,
@@ -5120,7 +5543,8 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -5152,14 +5576,14 @@
         "ZooKeeper原理与应用",
         "Multi-Paxos与日志复制"
       ],
-      "latencyMs": 3485.27,
+      "latencyMs": 1769.55,
       "channelLatencyMs": {
-        "init_ms": 24.4,
-        "grep_ms": 450.12,
-        "vector_ms": 2957.26,
-        "graph_ms": 7.86,
+        "init_ms": 15.88,
+        "grep_ms": 440.3,
+        "vector_ms": 1229.73,
+        "graph_ms": 15.53,
         "web_ms": 0.0,
-        "fusion_ms": 0.65
+        "fusion_ms": 0.4
       },
       "success": true,
       "error": null,
@@ -5189,7 +5613,7 @@
           "rank": 4,
           "slug": "分布式系统/Paxos协议详解",
           "title": "Paxos协议详解",
-          "score": 0.1339,
+          "score": 0.1341,
           "extra": null
         },
         {
@@ -5218,7 +5642,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -5253,14 +5678,14 @@
         "\"图着色与色多项式\"",
         "\"最小生成树（Prim与Kruskal）\""
       ],
-      "latencyMs": 2739.51,
+      "latencyMs": 1022.28,
       "channelLatencyMs": {
-        "init_ms": 30.54,
-        "grep_ms": 555.93,
-        "vector_ms": 2106.6,
-        "graph_ms": 7.98,
+        "init_ms": 17.04,
+        "grep_ms": 566.55,
+        "vector_ms": 382.91,
+        "graph_ms": 16.55,
         "web_ms": 0.0,
-        "fusion_ms": 0.42
+        "fusion_ms": 0.45
       },
       "success": true,
       "error": null,
@@ -5319,7 +5744,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据结构/最小生成树mst"
+        ]
       }
     },
     {
@@ -5349,14 +5777,14 @@
         "经典同步问题-生产者消费者",
         "经典同步问题-读者写者与哲学家进餐"
       ],
-      "latencyMs": 2662.37,
+      "latencyMs": 939.26,
       "channelLatencyMs": {
-        "init_ms": 16.9,
-        "grep_ms": 458.66,
-        "vector_ms": 2137.41,
-        "graph_ms": 8.1,
+        "init_ms": 31.18,
+        "grep_ms": 447.71,
+        "vector_ms": 369.85,
+        "graph_ms": 19.0,
         "web_ms": 0.0,
-        "fusion_ms": 0.64
+        "fusion_ms": 0.53
       },
       "success": true,
       "error": null,
@@ -5415,7 +5843,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -5448,14 +5877,14 @@
         "\"欧拉函数与RSA密码原理\"",
         "消息认证码MAC与HMAC"
       ],
-      "latencyMs": 2253.51,
+      "latencyMs": 966.22,
       "channelLatencyMs": {
-        "init_ms": 21.35,
-        "grep_ms": 485.36,
-        "vector_ms": 1698.14,
-        "graph_ms": 8.74,
+        "init_ms": 16.72,
+        "grep_ms": 492.04,
+        "vector_ms": 374.42,
+        "graph_ms": 14.53,
         "web_ms": 0.0,
-        "fusion_ms": 0.67
+        "fusion_ms": 0.46
       },
       "success": true,
       "error": null,
@@ -5485,7 +5914,7 @@
           "rank": 4,
           "slug": "信息安全/哈希函数与SHA系列",
           "title": "哈希函数与SHA系列",
-          "score": 0.132,
+          "score": 0.1321,
           "extra": null
         },
         {
@@ -5514,7 +5943,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -5550,60 +5980,60 @@
         "群",
         "\"同余与模运算\""
       ],
-      "latencyMs": 3178.18,
+      "latencyMs": 863.56,
       "channelLatencyMs": {
-        "init_ms": 31.65,
-        "grep_ms": 421.84,
-        "vector_ms": 2653.08,
-        "graph_ms": 8.49,
+        "init_ms": 16.53,
+        "grep_ms": 428.47,
+        "vector_ms": 361.95,
+        "graph_ms": 16.31,
         "web_ms": 0.0,
-        "fusion_ms": 0.66
+        "fusion_ms": 0.88
       },
       "success": true,
       "error": null,
       "top": [
         {
           "rank": 1,
-          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
-          "title": "实操案例-代数实践",
-          "score": 0.2344,
-          "extra": null
-        },
-        {
-          "rank": 2,
           "slug": "离散数学/同余与模运算",
           "title": "\"同余与模运算\"",
           "score": 0.144,
           "extra": null
         },
         {
-          "rank": 3,
+          "rank": 2,
           "slug": "离散数学/环与域",
           "title": "环与域",
           "score": 0.0905,
           "extra": null
         },
         {
+          "rank": 3,
+          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
+          "title": "实操案例-代数实践",
+          "score": 0.082,
+          "extra": null
+        },
+        {
           "rank": 4,
-          "slug": "数据库原理/关系代数-运算规则",
-          "title": "关系代数运算规则",
-          "score": 0.0738,
+          "slug": "数据库原理/关系模型",
+          "title": "关系模型",
+          "score": 0.074,
           "extra": null
         },
         {
           "rank": 5,
-          "slug": "离散数学/关系矩阵",
-          "title": "关系矩阵",
-          "score": 0.0726,
+          "slug": "离散数学/偏序关系与Hasse图",
+          "title": "偏序关系与Hasse图",
+          "score": 0.0103,
           "extra": null
         }
       ],
       "judge": {
         "hitAt1": false,
         "hitAt3": true,
-        "bestRank": 3,
-        "relevanceScore": 0.6,
-        "reason": "候选文档3（环与域）直接对应用户问题的核心主题，能提供环与域的定义、性质及其与群的关系，是构建学习路径的关键。候选文档2（同余与模运算）也相关，因为它涉及模运算，是环与域（特别是有限域）的重要应用和联系点。候选文档1（实操案例-代数实践）可能包含代数系统的实践案例，但相关性较弱。整体上，前三个候选中至少两个（2和3）与问题直接相关，能帮助回答如何从群到环与域，再联系同余模运算的学习路径。"
+        "bestRank": 2,
+        "relevanceScore": 0.7,
+        "reason": "候选文档2（环与域）直接对应用户问题的核心主题，能提供环与域的定义、性质及其与群的关系，是构建学习路径的关键。候选文档1（同余与模运算）也相关，因为它涉及模运算，这是环与域（特别是有限域）的重要实例和应用。候选文档3（实操案例-代数实践）可能提供代数系统的实践视角，但相关性较弱。整体上，前三个候选中至少两个（1和2）与问题直接相关，但最佳文档（环与域）未排名第一，因此hitAt1为false。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -5616,7 +6046,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/群论"
+        ]
       }
     },
     {
@@ -5647,44 +6080,44 @@
         "最短路径-Bellman-Ford算法",
         "\"最小生成树（Prim与Kruskal）\""
       ],
-      "latencyMs": 2725.35,
+      "latencyMs": 943.52,
       "channelLatencyMs": {
-        "init_ms": 18.31,
-        "grep_ms": 447.18,
-        "vector_ms": 2197.22,
-        "graph_ms": 7.51,
+        "init_ms": 26.52,
+        "grep_ms": 451.07,
+        "vector_ms": 408.06,
+        "graph_ms": 15.54,
         "web_ms": 0.0,
-        "fusion_ms": 0.53
+        "fusion_ms": 0.49
       },
       "success": true,
       "error": null,
       "top": [
         {
           "rank": 1,
+          "slug": "算法设计与分析/Dijkstra算法",
+          "title": "Dijkstra最短路径算法",
+          "score": 0.1525,
+          "extra": null
+        },
+        {
+          "rank": 2,
           "slug": "数据结构/最短路径-BellmanFord",
           "title": "最短路径-Bellman-Ford算法",
           "score": 0.1519,
           "extra": null
         },
         {
-          "rank": 2,
-          "slug": "数据结构/最短路径-Dijkstra",
-          "title": "最短路径-Dijkstra算法",
-          "score": 0.1486,
-          "extra": null
-        },
-        {
           "rank": 3,
-          "slug": "算法设计与分析/Dijkstra算法",
-          "title": "Dijkstra最短路径算法",
-          "score": 0.1445,
+          "slug": "数据结构/最短路径Dijkstra",
+          "title": "\"最短路径算法（Dijkstra）\"",
+          "score": 0.1414,
           "extra": null
         },
         {
           "rank": 4,
-          "slug": "数据结构/最短路径Dijkstra",
-          "title": "\"最短路径算法（Dijkstra）\"",
-          "score": 0.1336,
+          "slug": "数据结构/最短路径-Dijkstra",
+          "title": "最短路径-Dijkstra算法",
+          "score": 0.1406,
           "extra": null
         },
         {
@@ -5698,9 +6131,9 @@
       "judge": {
         "hitAt1": false,
         "hitAt3": true,
-        "bestRank": 1,
+        "bestRank": 3,
         "relevanceScore": 0.85,
-        "reason": "候选文档1（Bellman-Ford）、2（Dijkstra）和5（最小生成树）直接覆盖了用户问题中要求比较的核心算法（Dijkstra、Bellman-Ford、最小生成树），能够提供主概念、角色、前置/实现/应用关系以及学习路径的对比信息。虽然排名1的文档标题是Bellman-Ford，但内容很可能包含与其他算法的比较，因此整体相关性高。"
+        "reason": "候选文档中，排名3的文档标题与预期标题完全匹配，且内容直接涉及Dijkstra算法，是回答用户问题的核心部分。排名2和5的文档分别覆盖Bellman-Ford算法和最小生成树，与问题要求比较的算法直接相关。这些文档共同覆盖了问题要求的比较点（主概念、角色、关系、前置条件与失败场景），但需要综合多个文档才能完整回答，因此整体相关性高但非单一文档完全覆盖。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -5710,10 +6143,11 @@
         "partialEvidenceTop5": true,
         "completeEvidenceTop5": true,
         "evidenceNodeRecallTop5": 1.0,
-        "primaryTop3": false,
+        "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -5749,14 +6183,14 @@
         "\"Rust语言-智能指针与内部可变性\"",
         "语言特性对比-Go"
       ],
-      "latencyMs": 2873.16,
+      "latencyMs": 945.52,
       "channelLatencyMs": {
-        "init_ms": 18.87,
-        "grep_ms": 443.99,
-        "vector_ms": 2362.99,
-        "graph_ms": 10.01,
+        "init_ms": 19.67,
+        "grep_ms": 459.57,
+        "vector_ms": 383.92,
+        "graph_ms": 20.23,
         "web_ms": 0.0,
-        "fusion_ms": 0.71
+        "fusion_ms": 0.5
       },
       "success": true,
       "error": null,
@@ -5770,52 +6204,53 @@
         },
         {
           "rank": 2,
+          "slug": "程序设计/类型系统",
+          "title": "类型系统",
+          "score": 0.1495,
+          "extra": null
+        },
+        {
+          "rank": 3,
           "slug": "Rust语言/智能指针与内部可变性",
           "title": "\"Rust语言-智能指针与内部可变性\"",
           "score": 0.114,
           "extra": null
         },
         {
-          "rank": 3,
+          "rank": 4,
           "slug": "Go语言/接口与类型系统",
           "title": "\"Go语言-接口与类型系统\"",
           "score": 0.1117,
           "extra": null
         },
         {
-          "rank": 4,
+          "rank": 5,
           "slug": "程序设计/语言特性对比-Rust",
           "title": "语言特性对比-Rust",
           "score": 0.111,
-          "extra": null
-        },
-        {
-          "rank": 5,
-          "slug": "None",
-          "title": "程序设计-Rust所有权与借用系统（视频）",
-          "score": 0.0769,
           "extra": null
         }
       ],
       "judge": {
         "hitAt1": false,
         "hitAt3": true,
-        "bestRank": 3,
-        "relevanceScore": 0.6,
-        "reason": "候选文档中，排名第3的「Go语言-接口与类型系统」直接涉及类型系统与Go语言特性的关系，排名第2的「Rust语言-智能指针与内部可变性」直接涉及Rust智能指针，两者结合能部分回答问题中关于类型系统如何影响Rust智能指针和Go语言特性设计的核心。但缺少一个直接整合「类型系统」作为主概念并串联多跳关系的文档，因此整体相关性中等。"
+        "bestRank": 2,
+        "relevanceScore": 0.85,
+        "reason": "候选文档2（类型系统）直接对应用户问题的核心概念，是回答多跳联系的起点。候选文档3（Rust智能指针与内部可变性）和候选文档4（Go接口与类型系统）分别覆盖了问题中提到的Rust和Go的具体方面，与类型系统形成直接关联。虽然候选文档1（语言特性对比-Go）和候选文档5（语言特性对比-Rust）可能提供对比视角，但相关性较弱。整体上，前三个候选文档共同覆盖了问题所需的关键概念和关系，能够直接帮助构建从类型系统到Rust智能指针和Go语言特性的多跳联系。"
       },
-      "judgeFromCache": false,
+      "judgeFromCache": true,
       "graphMetrics": {
         "graphIntent": "CROSS_LAYER_RELATION",
-        "primaryTop5": false,
+        "primaryTop5": true,
         "anyRelatedTop5": true,
         "partialEvidenceTop5": true,
-        "completeEvidenceTop5": false,
-        "evidenceNodeRecallTop5": 0.6667,
-        "primaryTop3": false,
+        "completeEvidenceTop5": true,
+        "evidenceNodeRecallTop5": 1.0,
+        "primaryTop3": true,
         "anyRelatedTop3": true,
-        "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "presentEvidenceNodesTop5": 3,
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -5847,14 +6282,14 @@
         "归并排序",
         "最长公共子序列 LCS"
       ],
-      "latencyMs": 1010.9,
+      "latencyMs": 901.98,
       "channelLatencyMs": {
-        "init_ms": 29.16,
-        "grep_ms": 450.1,
-        "vector_ms": 483.36,
-        "graph_ms": 9.23,
+        "init_ms": 31.03,
+        "grep_ms": 443.66,
+        "vector_ms": 367.7,
+        "graph_ms": 17.71,
         "web_ms": 0.0,
-        "fusion_ms": 0.51
+        "fusion_ms": 0.46
       },
       "success": true,
       "error": null,
@@ -5913,7 +6348,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "算法设计与分析/归并排序"
+        ]
       }
     },
     {
@@ -5948,62 +6386,62 @@
         "关系模型",
         "推理规则"
       ],
-      "latencyMs": 1064.16,
+      "latencyMs": 940.64,
       "channelLatencyMs": {
-        "init_ms": 24.89,
-        "grep_ms": 443.86,
-        "vector_ms": 539.72,
-        "graph_ms": 7.0,
+        "init_ms": 15.74,
+        "grep_ms": 441.08,
+        "vector_ms": 399.91,
+        "graph_ms": 23.37,
         "web_ms": 0.0,
-        "fusion_ms": 0.74
+        "fusion_ms": 0.86
       },
       "success": true,
       "error": null,
       "top": [
         {
           "rank": 1,
-          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
-          "title": "离散数学-集合与关系思维导图",
-          "score": 0.1563,
-          "extra": null
-        },
-        {
-          "rank": 2,
           "slug": "数据库原理/关系代数-运算规则",
           "title": "关系代数运算规则",
           "score": 0.1523,
           "extra": null
         },
         {
-          "rank": 3,
+          "rank": 2,
           "slug": "离散数学/集合运算",
           "title": "集合运算",
           "score": 0.1519,
           "extra": null
         },
         {
-          "rank": 4,
+          "rank": 3,
           "slug": "数据库原理/关系代数-连接",
           "title": "关系代数-连接运算",
           "score": 0.1459,
           "extra": null
         },
         {
-          "rank": 5,
+          "rank": 4,
           "slug": "数据库原理/关系模型",
           "title": "关系模型",
           "score": 0.0726,
+          "extra": null
+        },
+        {
+          "rank": 5,
+          "slug": "离散数学/基数",
+          "title": "基数",
+          "score": 0.0103,
           "extra": null
         }
       ],
       "judge": {
         "hitAt1": false,
         "hitAt3": true,
-        "bestRank": 3,
+        "bestRank": 2,
         "relevanceScore": 0.7,
-        "reason": "候选文档3（集合运算）直接对应用户问题的核心概念，提供了集合运算的基础知识，这是构建学习路径的起点。候选文档2（关系代数运算规则）和候选文档5（关系模型）分别涉及关系模型和数据库应用，与问题中‘关系模型’部分相关，但未直接阐述从集合运算到关系模型和推理规则的完整路径。候选文档1（离散数学-集合与关系思维导图）可能涵盖更广的离散数学内容，但未明确聚焦于集合运算与关系模型、推理规则的连接。整体上，候选文档3是最佳匹配，但缺乏对推理规则和完整学习路径的直接覆盖，因此相关性评分中等。"
+        "reason": "候选文档2（集合运算）直接对应用户问题的核心概念，是构建学习路径的起点。候选文档1（关系代数运算规则）和候选文档3（关系代数-连接运算）与关系模型相关，能体现集合运算在数据库中的应用，但未明确覆盖推理规则。整体上，候选文档能部分支撑从集合运算到关系模型的路径，但缺乏对推理规则的直接关联，因此相关性中等。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -6014,7 +6452,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/推理规则"
+        ]
       }
     },
     {
@@ -6046,14 +6487,14 @@
         "代码优化综合",
         "寄存器分配"
       ],
-      "latencyMs": 1040.97,
+      "latencyMs": 3441.29,
       "channelLatencyMs": {
-        "init_ms": 32.93,
-        "grep_ms": 468.78,
-        "vector_ms": 468.86,
-        "graph_ms": 7.77,
+        "init_ms": 15.39,
+        "grep_ms": 478.14,
+        "vector_ms": 2858.42,
+        "graph_ms": 15.82,
         "web_ms": 0.0,
-        "fusion_ms": 0.62
+        "fusion_ms": 0.51
       },
       "success": true,
       "error": null,
@@ -6112,7 +6553,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/代码优化综合"
+        ]
       }
     },
     {
@@ -6145,14 +6589,14 @@
         "关键路径-AOE网",
         "主定理"
       ],
-      "latencyMs": 961.42,
+      "latencyMs": 1034.94,
       "channelLatencyMs": {
-        "init_ms": 18.65,
-        "grep_ms": 390.12,
-        "vector_ms": 490.7,
-        "graph_ms": 9.13,
+        "init_ms": 29.27,
+        "grep_ms": 393.69,
+        "vector_ms": 554.87,
+        "graph_ms": 16.71,
         "web_ms": 0.0,
-        "fusion_ms": 0.74
+        "fusion_ms": 0.59
       },
       "success": true,
       "error": null,
@@ -6211,7 +6655,10 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "算法设计与分析/活动选择问题"
+        ]
       }
     },
     {
@@ -6244,14 +6691,14 @@
         "\"C语言-内存对齐与位域详解\"",
         "\"GCC与LLVM编译器架构对比\""
       ],
-      "latencyMs": 1154.69,
+      "latencyMs": 1032.62,
       "channelLatencyMs": {
-        "init_ms": 19.74,
-        "grep_ms": 572.28,
-        "vector_ms": 516.39,
-        "graph_ms": 7.83,
+        "init_ms": 17.98,
+        "grep_ms": 572.7,
+        "vector_ms": 366.84,
+        "graph_ms": 28.33,
         "web_ms": 0.0,
-        "fusion_ms": 0.48
+        "fusion_ms": 0.51
       },
       "success": true,
       "error": null,
@@ -6310,7 +6757,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -6343,14 +6791,14 @@
         "语言特性对比-Go",
         "类型系统"
       ],
-      "latencyMs": 1006.5,
+      "latencyMs": 5525.73,
       "channelLatencyMs": {
-        "init_ms": 31.97,
-        "grep_ms": 419.81,
-        "vector_ms": 495.09,
-        "graph_ms": 8.4,
+        "init_ms": 14.69,
+        "grep_ms": 412.07,
+        "vector_ms": 5029.09,
+        "graph_ms": 18.86,
         "web_ms": 0.0,
-        "fusion_ms": 0.56
+        "fusion_ms": 0.47
       },
       "success": true,
       "error": null,
@@ -6409,7 +6857,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "程序设计/类型系统"
+        ]
       }
     },
     {
@@ -6442,14 +6893,14 @@
         "主定理",
         "最长公共子序列 LCS"
       ],
-      "latencyMs": 992.89,
+      "latencyMs": 2284.35,
       "channelLatencyMs": {
-        "init_ms": 17.51,
-        "grep_ms": 404.99,
-        "vector_ms": 513.03,
-        "graph_ms": 8.19,
+        "init_ms": 27.22,
+        "grep_ms": 391.17,
+        "vector_ms": 1802.61,
+        "graph_ms": 17.99,
         "web_ms": 0.0,
-        "fusion_ms": 0.64
+        "fusion_ms": 0.47
       },
       "success": true,
       "error": null,
@@ -6508,7 +6959,10 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "算法设计与分析/归并排序"
+        ]
       }
     },
     {
@@ -6540,14 +6994,14 @@
         "二叉排序树",
         "\"KMP字符串匹配算法\""
       ],
-      "latencyMs": 988.02,
+      "latencyMs": 2028.32,
       "channelLatencyMs": {
-        "init_ms": 33.77,
-        "grep_ms": 402.51,
-        "vector_ms": 503.34,
-        "graph_ms": 7.85,
+        "init_ms": 17.49,
+        "grep_ms": 407.52,
+        "vector_ms": 1523.54,
+        "graph_ms": 17.62,
         "web_ms": 0.0,
-        "fusion_ms": 0.65
+        "fusion_ms": 0.49
       },
       "success": true,
       "error": null,
@@ -6606,7 +7060,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据结构/二叉排序树"
+        ]
       }
     },
     {
@@ -6641,30 +7098,30 @@
         "置换群",
         "环与域"
       ],
-      "latencyMs": 870.78,
+      "latencyMs": 2024.3,
       "channelLatencyMs": {
-        "init_ms": 19.13,
-        "grep_ms": 332.66,
-        "vector_ms": 471.63,
-        "graph_ms": 7.8,
+        "init_ms": 34.26,
+        "grep_ms": 322.95,
+        "vector_ms": 1583.42,
+        "graph_ms": 15.8,
         "web_ms": 0.0,
-        "fusion_ms": 0.47
+        "fusion_ms": 0.81
       },
       "success": true,
       "error": null,
       "top": [
         {
           "rank": 1,
-          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
-          "title": "离散数学-代数思维导图",
-          "score": 0.2344,
+          "slug": "离散数学/置换群",
+          "title": "置换群",
+          "score": 0.1544,
           "extra": null
         },
         {
           "rank": 2,
-          "slug": "离散数学/置换群",
-          "title": "置换群",
-          "score": 0.1544,
+          "slug": "https://en.wikipedia.org/wiki/Discrete_mathematics",
+          "title": "离散数学-代数思维导图",
+          "score": 0.082,
           "extra": null
         },
         {
@@ -6683,20 +7140,20 @@
         },
         {
           "rank": 5,
-          "slug": "数据库原理/关系代数-运算规则",
-          "title": "关系代数运算规则",
-          "score": 0.0714,
+          "slug": "离散数学/函数-单射-满射-双射",
+          "title": "函数-单射-满射-双射",
+          "score": 0.0102,
           "extra": null
         }
       ],
       "judge": {
         "hitAt1": false,
         "hitAt3": true,
-        "bestRank": 2,
+        "bestRank": 3,
         "relevanceScore": 0.6,
-        "reason": "候选文档2（置换群）和候选文档3（环与域）直接对应问题中要求解释的「置换群」和「环与域」概念，且问题焦点是从群出发解释这些结构的扩展关系。候选文档1（离散数学-代数思维导图）可能提供整体框架，但不够具体。候选文档4和5与问题无关。因此，前三个候选中至少有一个（实际有两个）与问题直接相关，最佳相关候选排名为2。"
+        "reason": "候选文档中，排名第1的「置换群」和排名第3的「环与域」直接对应了用户问题中要求覆盖的核心概念（置换群、环与域），能够提供这些概念的定义、角色和部分关系。排名第2的「离散数学-代数思维导图」可能提供更宏观的代数系统结构视角，有助于串联学习路径。但这些文档均未直接、完整地阐述从「群」出发的依赖/通向关系、前置/实现/应用关系以及具体的学习路径串联，因此整体相关性中等。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": false,
@@ -6707,7 +7164,10 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/群论"
+        ]
       }
     },
     {
@@ -6737,14 +7197,14 @@
         "顺序栈",
         "\"C语言-内存对齐与位域详解\""
       ],
-      "latencyMs": 901.34,
+      "latencyMs": 3428.7,
       "channelLatencyMs": {
-        "init_ms": 20.24,
-        "grep_ms": 383.59,
-        "vector_ms": 438.51,
-        "graph_ms": 8.33,
+        "init_ms": 16.12,
+        "grep_ms": 398.38,
+        "vector_ms": 2933.3,
+        "graph_ms": 15.51,
         "web_ms": 0.0,
-        "fusion_ms": 0.69
+        "fusion_ms": 0.5
       },
       "success": true,
       "error": null,
@@ -6803,7 +7263,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -6837,14 +7298,14 @@
         "\"MVCC多版本并发控制详解\"",
         "SQL SELECT查询基础"
       ],
-      "latencyMs": 1023.6,
+      "latencyMs": 3263.42,
       "channelLatencyMs": {
-        "init_ms": 28.74,
-        "grep_ms": 413.37,
-        "vector_ms": 512.75,
-        "graph_ms": 8.45,
+        "init_ms": 17.17,
+        "grep_ms": 405.13,
+        "vector_ms": 2764.76,
+        "graph_ms": 15.14,
         "web_ms": 0.0,
-        "fusion_ms": 0.5
+        "fusion_ms": 0.49
       },
       "success": true,
       "error": null,
@@ -6867,7 +7328,7 @@
           "rank": 3,
           "slug": "数据库原理/MVCC多版本并发控制",
           "title": "\"MVCC多版本并发控制详解\"",
-          "score": 0.1368,
+          "score": 0.145,
           "extra": null
         },
         {
@@ -6879,9 +7340,9 @@
         },
         {
           "rank": 5,
-          "slug": "数据库原理/关系代数-除",
-          "title": "关系代数-除运算",
-          "score": 0.0782,
+          "slug": "数据库原理/关系模型",
+          "title": "关系模型",
+          "score": 0.076,
           "extra": null
         }
       ],
@@ -6890,7 +7351,7 @@
         "hitAt3": true,
         "bestRank": 2,
         "relevanceScore": 0.85,
-        "reason": "候选文档2（多版本并发控制MVCC）与问题直接相关，标题和slug完全匹配预期主题，能覆盖MVCC主概念、相关角色及与SQL查询可见性的关系。候选文档3（MVCC多版本并发控制详解）也高度相关，可补充具体机制。候选文档1（数据库原理-事务思维导图）可能涉及事务背景，但相关性较弱。整体上，前三个候选中至少两个直接相关，能有效回答问题。"
+        "reason": "候选文档2（多版本并发控制MVCC）与用户问题直接相关，其标题和slug与预期完全匹配，内容应能覆盖MVCC的核心概念、机制落地、与SQL查询可见性的关系。候选文档3（MVCC多版本并发控制详解）也高度相关，可能提供更详细的实现细节。候选文档1（数据库原理-事务思维导图）可能涉及事务背景，但相关性较低。整体上，前三个候选中至少两个直接相关，能有效回答用户关于MVCC机制落地、概念角色及学习路径的问题。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -6903,7 +7364,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据库原理/sql-select基础"
+        ]
       }
     },
     {
@@ -6939,14 +7403,14 @@
         "\"Go语言-错误处理哲学\"",
         "类型系统"
       ],
-      "latencyMs": 980.86,
+      "latencyMs": 2557.3,
       "channelLatencyMs": {
-        "init_ms": 19.47,
-        "grep_ms": 403.54,
-        "vector_ms": 490.55,
-        "graph_ms": 8.84,
+        "init_ms": 31.79,
+        "grep_ms": 410.09,
+        "vector_ms": 2052.56,
+        "graph_ms": 22.62,
         "web_ms": 0.0,
-        "fusion_ms": 0.8
+        "fusion_ms": 0.55
       },
       "success": true,
       "error": null,
@@ -7005,7 +7469,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "程序设计/类型系统"
+        ]
       }
     },
     {
@@ -7039,14 +7506,14 @@
         "着色频率（Flat/Gouraud/Phong Shading）",
         "\"PBR材质系统\""
       ],
-      "latencyMs": 2817.97,
+      "latencyMs": 2864.03,
       "channelLatencyMs": {
-        "init_ms": 34.32,
-        "grep_ms": 662.91,
-        "vector_ms": 2071.63,
-        "graph_ms": 8.86,
+        "init_ms": 16.98,
+        "grep_ms": 709.24,
+        "vector_ms": 2079.11,
+        "graph_ms": 16.39,
         "web_ms": 0.0,
-        "fusion_ms": 0.6
+        "fusion_ms": 0.56
       },
       "success": true,
       "error": null,
@@ -7105,7 +7572,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "计算机图形学/pbr材质系统"
+        ]
       }
     },
     {
@@ -7136,14 +7606,14 @@
         "IEEE754浮点数标准",
         "代码优化综合"
       ],
-      "latencyMs": 2172.82,
+      "latencyMs": 1924.41,
       "channelLatencyMs": {
-        "init_ms": 19.01,
-        "grep_ms": 439.74,
-        "vector_ms": 1660.41,
-        "graph_ms": 8.14,
+        "init_ms": 16.43,
+        "grep_ms": 446.26,
+        "vector_ms": 1398.48,
+        "graph_ms": 17.83,
         "web_ms": 0.0,
-        "fusion_ms": 0.62
+        "fusion_ms": 0.92
       },
       "success": true,
       "error": null,
@@ -7178,9 +7648,9 @@
         },
         {
           "rank": 5,
-          "slug": "None",
-          "title": "编译原理核心流程图解",
-          "score": 0.0781,
+          "slug": "软件工程/面向对象设计-类图-顺序图-状态图",
+          "title": "面向对象设计-类图-顺序图-状态图",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -7189,7 +7659,7 @@
         "hitAt3": true,
         "bestRank": 3,
         "relevanceScore": 0.85,
-        "reason": "候选文档3（浮点加法器设计流程）直接对应用户问题的核心主题，详细覆盖了浮点加法器的设计流程，是构建学习路径的主体。候选文档1（IEEE754浮点数标准）提供了必要的前置知识，解释了浮点数的表示基础。候选文档2（编译器优化Pass设计）则关联了代码优化对浮点计算的影响，扩展了应用层面。这三个文档共同构成了从IEEE754表示到浮点加法器设计，再到编译器优化的完整学习路径，覆盖了用户要求的主概念、角色、关系及串联方式。其他候选文档相关性较低。"
+        "reason": "候选文档3（浮点加法器设计流程）直接对应用户问题的核心主题，提供了构建学习路径的主体内容。候选文档1（IEEE754浮点数标准）是前置知识，候选文档2（编译器优化Pass设计）是后续应用，三者共同覆盖了用户要求的从IEEE754表示到浮点加法器设计再到编译器优化的关系链。候选文档4（加法器设计）部分相关但非核心，候选文档5不相关。因此，前三个候选中至少一个直接相关，最佳相关候选排名为3，整体相关性较高。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -7202,7 +7672,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/代码优化综合"
+        ]
       }
     },
     {
@@ -7236,14 +7709,14 @@
         "First与Follow集",
         "二义性"
       ],
-      "latencyMs": 2557.23,
+      "latencyMs": 2102.95,
       "channelLatencyMs": {
-        "init_ms": 17.94,
-        "grep_ms": 455.62,
-        "vector_ms": 2010.72,
-        "graph_ms": 8.11,
+        "init_ms": 32.22,
+        "grep_ms": 461.34,
+        "vector_ms": 1526.7,
+        "graph_ms": 16.38,
         "web_ms": 0.0,
-        "fusion_ms": 0.95
+        "fusion_ms": 0.99
       },
       "success": true,
       "error": null,
@@ -7266,21 +7739,21 @@
           "rank": 3,
           "slug": "编译原理/语法制导翻译SDT",
           "title": "语法制导翻译SDT",
-          "score": 0.1057,
+          "score": 0.1134,
           "extra": null
         },
         {
           "rank": 4,
-          "slug": "None",
-          "title": "编译原理核心流程图解",
-          "score": 0.0781,
+          "slug": "编译原理/二义性",
+          "title": "二义性",
+          "score": 0.0726,
           "extra": null
         },
         {
           "rank": 5,
-          "slug": "https://en.wikipedia.org/wiki/Compiler",
-          "title": "编译原理-语义分析思维导图",
-          "score": 0.0769,
+          "slug": "编译原理/符号表",
+          "title": "符号表",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -7289,7 +7762,7 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.9,
-        "reason": "候选文档1（语法制导定义SDD）直接对应用户问题的核心主题，且其内容（如属性文法、综合属性、继承属性、依赖图）是构建学习路径的主体。候选文档2（First与Follow集）直接覆盖了问题中要求的前置概念。候选文档3（语法制导翻译SDT）是SDD的实现应用，也相关。这些文档共同覆盖了问题要求的主概念、相关概念角色、前置/实现/应用关系，足以串联学习路径。"
+        "reason": "候选文档1（语法制导定义SDD）直接对应用户问题的核心概念，是构建学习路径的起点。候选文档2（First与Follow集）和候选文档4（二义性）分别覆盖了问题中要求的前置概念和依赖的语法分析结果。这三个文档共同构成了从SDD到First/Follow集和二义性处理的完整关系链，能够直接帮助回答如何构建学习路径。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -7297,12 +7770,13 @@
         "primaryTop5": true,
         "anyRelatedTop5": true,
         "partialEvidenceTop5": true,
-        "completeEvidenceTop5": false,
-        "evidenceNodeRecallTop5": 0.6667,
+        "completeEvidenceTop5": true,
+        "evidenceNodeRecallTop5": 1.0,
         "primaryTop3": true,
         "anyRelatedTop3": true,
-        "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "presentEvidenceNodesTop5": 3,
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -7335,14 +7809,14 @@
         "关系模型",
         "消息认证码MAC与HMAC"
       ],
-      "latencyMs": 4705.87,
+      "latencyMs": 2184.3,
       "channelLatencyMs": {
-        "init_ms": 35.42,
-        "grep_ms": 474.74,
-        "vector_ms": 4129.73,
-        "graph_ms": 9.2,
+        "init_ms": 15.5,
+        "grep_ms": 466.22,
+        "vector_ms": 1628.49,
+        "graph_ms": 17.95,
         "web_ms": 0.0,
-        "fusion_ms": 0.48
+        "fusion_ms": 0.54
       },
       "success": true,
       "error": null,
@@ -7401,7 +7875,10 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据库原理/关系模型"
+        ]
       }
     },
     {
@@ -7431,14 +7908,14 @@
         "链栈",
         "\"C语言-指针算术与内存模型\""
       ],
-      "latencyMs": 1011.31,
+      "latencyMs": 2197.13,
       "channelLatencyMs": {
-        "init_ms": 18.15,
-        "grep_ms": 418.12,
-        "vector_ms": 504.81,
-        "graph_ms": 7.73,
+        "init_ms": 15.6,
+        "grep_ms": 438.43,
+        "vector_ms": 1665.43,
+        "graph_ms": 17.13,
         "web_ms": 0.0,
-        "fusion_ms": 0.53
+        "fusion_ms": 0.54
       },
       "success": true,
       "error": null,
@@ -7497,7 +7974,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -7528,14 +8006,14 @@
         "\"IPv4与IPv6全面对比\"",
         "HTTP协议详解"
       ],
-      "latencyMs": 1050.96,
+      "latencyMs": 2262.74,
       "channelLatencyMs": {
-        "init_ms": 17.92,
-        "grep_ms": 516.16,
-        "vector_ms": 469.68,
-        "graph_ms": 8.51,
+        "init_ms": 27.83,
+        "grep_ms": 517.45,
+        "vector_ms": 1642.89,
+        "graph_ms": 17.62,
         "web_ms": 0.0,
-        "fusion_ms": 0.69
+        "fusion_ms": 0.76
       },
       "success": true,
       "error": null,
@@ -7594,7 +8072,10 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "计算机网络/ipv4与ipv6对比"
+        ]
       }
     },
     {
@@ -7630,14 +8111,14 @@
         "\"TCP三次握手详解\"",
         "OAuth2与OpenID Connect"
       ],
-      "latencyMs": 1072.28,
+      "latencyMs": 2217.6,
       "channelLatencyMs": {
-        "init_ms": 35.29,
-        "grep_ms": 465.29,
-        "vector_ms": 501.18,
-        "graph_ms": 8.88,
+        "init_ms": 19.59,
+        "grep_ms": 477.44,
+        "vector_ms": 1663.71,
+        "graph_ms": 17.52,
         "web_ms": 0.0,
-        "fusion_ms": 0.56
+        "fusion_ms": 0.52
       },
       "success": true,
       "error": null,
@@ -7696,7 +8177,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -7730,14 +8212,14 @@
         "关系模型",
         "SQL触发器"
       ],
-      "latencyMs": 1124.22,
+      "latencyMs": 2446.9,
       "channelLatencyMs": {
-        "init_ms": 20.15,
-        "grep_ms": 502.7,
-        "vector_ms": 517.46,
-        "graph_ms": 8.05,
+        "init_ms": 32.85,
+        "grep_ms": 507.38,
+        "vector_ms": 1849.59,
+        "graph_ms": 16.65,
         "web_ms": 0.0,
-        "fusion_ms": 0.62
+        "fusion_ms": 0.61
       },
       "success": true,
       "error": null,
@@ -7796,7 +8278,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据库原理/关系模型"
+        ]
       }
     },
     {
@@ -7830,14 +8315,14 @@
         "First与Follow集",
         "LR(0)与SLR(1)分析"
       ],
-      "latencyMs": 1206.42,
+      "latencyMs": 2371.65,
       "channelLatencyMs": {
-        "init_ms": 17.15,
-        "grep_ms": 426.29,
-        "vector_ms": 714.92,
-        "graph_ms": 7.86,
+        "init_ms": 17.0,
+        "grep_ms": 426.92,
+        "vector_ms": 1864.21,
+        "graph_ms": 18.5,
         "web_ms": 0.0,
-        "fusion_ms": 0.88
+        "fusion_ms": 0.86
       },
       "success": true,
       "error": null,
@@ -7896,7 +8381,10 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/二义性"
+        ]
       }
     },
     {
@@ -7928,14 +8416,14 @@
         "\"Rust语言-智能指针与内部可变性\"",
         "类型系统"
       ],
-      "latencyMs": 975.69,
+      "latencyMs": 2133.72,
       "channelLatencyMs": {
-        "init_ms": 18.42,
-        "grep_ms": 475.76,
-        "vector_ms": 416.95,
-        "graph_ms": 8.22,
+        "init_ms": 16.62,
+        "grep_ms": 483.92,
+        "vector_ms": 1558.65,
+        "graph_ms": 17.87,
         "web_ms": 0.0,
-        "fusion_ms": 0.62
+        "fusion_ms": 0.49
       },
       "success": true,
       "error": null,
@@ -7994,7 +8482,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -8026,14 +8515,14 @@
         "边缘计算架构",
         "\"IPv4与IPv6全面对比\""
       ],
-      "latencyMs": 1103.71,
+      "latencyMs": 2237.84,
       "channelLatencyMs": {
-        "init_ms": 25.99,
-        "grep_ms": 562.34,
-        "vector_ms": 452.46,
-        "graph_ms": 7.58,
+        "init_ms": 30.81,
+        "grep_ms": 575.01,
+        "vector_ms": 1553.04,
+        "graph_ms": 18.54,
         "web_ms": 0.0,
-        "fusion_ms": 0.51
+        "fusion_ms": 0.65
       },
       "success": true,
       "error": null,
@@ -8092,7 +8581,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "分布式系统/边缘计算架构"
+        ]
       }
     },
     {
@@ -8123,14 +8615,14 @@
         "\"同余与模运算\"",
         "消息认证码MAC与HMAC"
       ],
-      "latencyMs": 997.44,
+      "latencyMs": 2084.47,
       "channelLatencyMs": {
-        "init_ms": 21.27,
-        "grep_ms": 507.0,
-        "vector_ms": 403.31,
-        "graph_ms": 8.25,
+        "init_ms": 15.96,
+        "grep_ms": 533.13,
+        "vector_ms": 1452.49,
+        "graph_ms": 14.54,
         "web_ms": 0.0,
-        "fusion_ms": 0.45
+        "fusion_ms": 0.98
       },
       "success": true,
       "error": null,
@@ -8165,9 +8657,9 @@
         },
         {
           "rank": 5,
-          "slug": "https://en.wikipedia.org/wiki/Information_security",
-          "title": "实操案例-密码学实践",
-          "score": 0.0781,
+          "slug": "信息安全/安全开发生命周期SDL",
+          "title": "安全开发生命周期SDL",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -8176,7 +8668,7 @@
         "hitAt3": true,
         "bestRank": 2,
         "relevanceScore": 0.7,
-        "reason": "候选文档2（欧拉函数与RSA密码原理）直接对应用户问题的核心主题，提供了构建学习路径的基础。候选文档1（消息认证码MAC与HMAC）覆盖了问题中要求的比较部分，但未直接涉及欧拉函数与RSA的依赖关系。候选文档3（非对称加密RSA）与RSA相关，但未明确涵盖欧拉函数或与HMAC的比较。整体上，候选文档2和1共同覆盖了问题的主要方面，但缺乏一个文档能完整串联所有要求的关系路径，因此相关性评分为0.7。"
+        "reason": "候选文档2（欧拉函数与RSA密码原理）直接覆盖了问题核心概念之一，但未明确涉及同余、模运算、MAC/HMAC及其关系。候选文档1（MAC与HMAC）覆盖了另一核心概念，但未涉及欧拉函数与RSA。候选文档3（非对称加密RSA）部分相关，但未深入欧拉函数或关系路径。整体上，前三个候选文档各自覆盖了问题的部分关键概念，但没有一个文档能完整回答如何构建从欧拉函数/RSA到同余/模运算再到MAC/HMAC的学习路径及其关系。因此，hitAt3为true，但最佳相关文档（rank 2）仅部分相关，relevanceScore为0.7。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -8189,7 +8681,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/同余与模运算"
+        ]
       }
     },
     {
@@ -8222,14 +8717,14 @@
         "安全策略与等保",
         "802.1X与网络准入控制"
       ],
-      "latencyMs": 921.63,
+      "latencyMs": 1997.99,
       "channelLatencyMs": {
-        "init_ms": 18.89,
-        "grep_ms": 407.86,
-        "vector_ms": 431.08,
-        "graph_ms": 10.4,
+        "init_ms": 19.5,
+        "grep_ms": 433.91,
+        "vector_ms": 1468.27,
+        "graph_ms": 16.5,
         "web_ms": 0.0,
-        "fusion_ms": 0.42
+        "fusion_ms": 0.45
       },
       "success": true,
       "error": null,
@@ -8288,7 +8783,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -8323,14 +8819,14 @@
         "\"浮点加法器设计流程\"",
         "BCD码与ASCII编码"
       ],
-      "latencyMs": 1017.82,
+      "latencyMs": 3038.56,
       "channelLatencyMs": {
-        "init_ms": 24.89,
-        "grep_ms": 452.01,
-        "vector_ms": 498.1,
-        "graph_ms": 8.04,
+        "init_ms": 34.32,
+        "grep_ms": 464.66,
+        "vector_ms": 2462.59,
+        "graph_ms": 13.47,
         "web_ms": 0.0,
-        "fusion_ms": 0.45
+        "fusion_ms": 0.9
       },
       "success": true,
       "error": null,
@@ -8358,16 +8854,16 @@
         },
         {
           "rank": 4,
-          "slug": "https://en.wikipedia.org/wiki/Computer_architecture",
-          "title": "计算机组成原理-数据表示思维导图",
-          "score": 0.0781,
+          "slug": "软件工程/设计模式-结构型与行为型",
+          "title": "设计模式-结构型与行为型",
+          "score": 0.0762,
           "extra": null
         },
         {
           "rank": 5,
-          "slug": "https://en.wikipedia.org/wiki/IEEE_754",
-          "title": "计算机组成原理-数据表示与运算器设计",
-          "score": 0.0769,
+          "slug": "计算机组成原理/乘法器Booth算法",
+          "title": "\"乘法器设计（Booth算法）\"",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -8376,9 +8872,9 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.9,
-        "reason": "候选文档1（IEEE754浮点数标准）直接对应用户问题的核心概念，是构建学习路径的起点。候选文档2（BCD码与ASCII编码）和候选文档3（浮点加法器设计流程）分别覆盖了问题中要求的编码表示和硬件实现部分，三者共同构成了从编码到IEEE754再到浮点加法器的完整关系路径。因此，前三个候选文档均与问题直接相关，且最佳相关候选排名第1。"
+        "reason": "候选文档1（IEEE754浮点数标准）直接对应用户问题的核心概念，是构建学习路径的起点。候选文档2（BCD码与ASCII编码）和候选文档3（浮点加法器设计流程）分别覆盖了问题中要求的编码表示和硬件实现部分，三者共同构成了从编码到IEEE754再到浮点加法器的完整关系链。候选文档4和5与问题无关。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -8389,7 +8885,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -8423,14 +8920,14 @@
         "集合运算",
         "\"NP完全性与归约\""
       ],
-      "latencyMs": 961.71,
+      "latencyMs": 3069.81,
       "channelLatencyMs": {
-        "init_ms": 17.8,
-        "grep_ms": 393.27,
-        "vector_ms": 487.58,
-        "graph_ms": 8.35,
+        "init_ms": 16.35,
+        "grep_ms": 402.18,
+        "vector_ms": 2564.58,
+        "graph_ms": 22.93,
         "web_ms": 0.0,
-        "fusion_ms": 0.75
+        "fusion_ms": 0.99
       },
       "success": true,
       "error": null,
@@ -8465,9 +8962,9 @@
         },
         {
           "rank": 5,
-          "slug": "编译原理/推导与归约与语法树",
-          "title": "推导与归约与语法树",
-          "score": 0.126,
+          "slug": "离散数学/真值表",
+          "title": "真值表",
+          "score": 0.0103,
           "extra": null
         }
       ],
@@ -8476,9 +8973,9 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.85,
-        "reason": "候选文档1（推理规则）直接对应用户问题的核心概念，提供了推理规则的定义、类型（如假言推理、归结）及其在形式证明中的作用，这为构建学习路径奠定了基础。候选文档2（NP完全性概述）和候选文档4（NP完全性与归约）覆盖了问题中要求的NP完全性与归约部分，解释了归约作为复杂度证明工具的角色。候选文档3（关系代数运算规则）涉及集合运算（如并集、交集），与问题中集合运算的基础性相关。这些文档共同支持了从推理规则（逻辑基础）到集合运算（数学工具）再到NP完全性与归约（复杂度证明）的学习路径，覆盖了主概念解决的问题、相关概念的角色及前置/应用关系。然而，文档间未直接阐述它们之间的串联逻辑，因此相关性评分未达满分。"
+        "reason": "候选文档1（推理规则）直接对应用户问题的核心概念，提供了推理规则的基础定义和逻辑结构，是构建学习路径的起点。候选文档2（NP完全性概述）和候选文档4（NP完全性与归约）覆盖了问题中要求的NP完全性与归约部分，与推理规则在复杂度证明中的应用相关。候选文档3（关系代数运算规则）涉及集合运算，但更偏向数据库领域，与逻辑推理的直接关联较弱。整体上，前三个候选文档共同覆盖了问题要求的主要方面，但推理规则与集合运算、NP完全性之间的具体依赖关系需要进一步整合。"
       },
-      "judgeFromCache": true,
+      "judgeFromCache": false,
       "graphMetrics": {
         "graphIntent": "PREREQUISITE_PATH",
         "primaryTop5": true,
@@ -8489,7 +8986,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/集合运算"
+        ]
       }
     },
     {
@@ -8523,14 +9023,14 @@
         "First与Follow集",
         "二义性"
       ],
-      "latencyMs": 2240.65,
+      "latencyMs": 2122.97,
       "channelLatencyMs": {
-        "init_ms": 19.77,
-        "grep_ms": 471.26,
-        "vector_ms": 1679.77,
-        "graph_ms": 7.58,
+        "init_ms": 16.12,
+        "grep_ms": 458.61,
+        "vector_ms": 1562.85,
+        "graph_ms": 16.46,
         "web_ms": 0.0,
-        "fusion_ms": 0.87
+        "fusion_ms": 0.95
       },
       "success": true,
       "error": null,
@@ -8565,9 +9065,9 @@
         },
         {
           "rank": 5,
-          "slug": "None",
-          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
-          "score": 0.0781,
+          "slug": "编译原理/YACC",
+          "title": "YACC",
+          "score": 0.0102,
           "extra": null
         }
       ],
@@ -8576,7 +9076,7 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.9,
-        "reason": "候选文档1（递归下降分析）直接对应用户问题的核心主题，且其标签包含First集、Follow集、二义性等关键概念，能够直接覆盖问题要求的全部内容。候选文档2（自顶向下LL(1)分析）和候选文档3（First与Follow集）也高度相关，分别涉及递归下降的理论基础和前置概念，共同构成完整的学习路径。"
+        "reason": "候选文档1（递归下降分析）直接对应用户问题的核心主题，且其标签包含First集、Follow集、二义性等关键概念，能够直接支撑构建学习路径。候选文档2（自顶向下LL(1)分析）和候选文档3（First与Follow集）也高度相关，分别覆盖了递归下降的上下文和前置知识。整体上，前三个候选文档共同覆盖了问题要求的全部要素，因此相关性很高。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -8589,7 +9089,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/二义性"
+        ]
       }
     },
     {
@@ -8620,14 +9123,14 @@
         "后缀数组与后缀树",
         "\"KMP字符串匹配算法\""
       ],
-      "latencyMs": 2303.06,
+      "latencyMs": 5382.43,
       "channelLatencyMs": {
-        "init_ms": 29.68,
-        "grep_ms": 411.87,
-        "vector_ms": 1789.66,
-        "graph_ms": 7.97,
+        "init_ms": 32.61,
+        "grep_ms": 399.71,
+        "vector_ms": 4893.99,
+        "graph_ms": 13.93,
         "web_ms": 0.0,
-        "fusion_ms": 0.79
+        "fusion_ms": 0.42
       },
       "success": true,
       "error": null,
@@ -8686,7 +9189,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据结构/kmp字符串匹配"
+        ]
       }
     },
     {
@@ -8718,12 +9224,12 @@
         "最长公共子序列 LCS",
         "归并排序"
       ],
-      "latencyMs": 2173.42,
+      "latencyMs": 3054.32,
       "channelLatencyMs": {
-        "init_ms": 20.16,
-        "grep_ms": 436.63,
-        "vector_ms": 1646.85,
-        "graph_ms": 8.42,
+        "init_ms": 16.25,
+        "grep_ms": 434.37,
+        "vector_ms": 2527.41,
+        "graph_ms": 17.4,
         "web_ms": 0.0,
         "fusion_ms": 0.49
       },
@@ -8784,7 +9290,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "算法设计与分析/归并排序"
+        ]
       }
     },
     {
@@ -8815,14 +9324,14 @@
         "\"C语言-内存对齐与位域详解\"",
         "顺序栈"
       ],
-      "latencyMs": 2665.18,
+      "latencyMs": 4726.07,
       "channelLatencyMs": {
-        "init_ms": 22.55,
-        "grep_ms": 485.48,
-        "vector_ms": 2110.28,
-        "graph_ms": 7.91,
+        "init_ms": 15.76,
+        "grep_ms": 505.6,
+        "vector_ms": 4132.78,
+        "graph_ms": 14.86,
         "web_ms": 0.0,
-        "fusion_ms": 0.69
+        "fusion_ms": 0.41
       },
       "success": true,
       "error": null,
@@ -8852,7 +9361,7 @@
           "rank": 4,
           "slug": "程序设计/指针与引用",
           "title": "指针与引用",
-          "score": 0.1255,
+          "score": 0.1258,
           "extra": null
         },
         {
@@ -8881,7 +9390,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据结构/顺序栈"
+        ]
       }
     },
     {
@@ -8915,14 +9427,14 @@
         "\"Python深入-生成器与协程底层\"",
         "\"并发编程-线程池原理\""
       ],
-      "latencyMs": 2346.83,
+      "latencyMs": 1044.46,
       "channelLatencyMs": {
-        "init_ms": 53.95,
-        "grep_ms": 577.51,
-        "vector_ms": 1651.35,
-        "graph_ms": 7.85,
+        "init_ms": 32.74,
+        "grep_ms": 555.64,
+        "vector_ms": 398.91,
+        "graph_ms": 17.54,
         "web_ms": 0.0,
-        "fusion_ms": 0.51
+        "fusion_ms": 0.46
       },
       "success": true,
       "error": null,
@@ -8981,7 +9493,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "程序设计/线程池原理"
+        ]
       }
     },
     {
@@ -9014,14 +9529,14 @@
         "顺序查找",
         "\"最小生成树（Prim与Kruskal）\""
       ],
-      "latencyMs": 2164.37,
+      "latencyMs": 868.03,
       "channelLatencyMs": {
-        "init_ms": 18.43,
-        "grep_ms": 413.98,
-        "vector_ms": 1671.41,
-        "graph_ms": 8.35,
+        "init_ms": 15.52,
+        "grep_ms": 416.1,
+        "vector_ms": 379.75,
+        "graph_ms": 15.57,
         "web_ms": 0.0,
-        "fusion_ms": 0.51
+        "fusion_ms": 0.49
       },
       "success": true,
       "error": null,
@@ -9080,7 +9595,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据结构/顺序查找"
+        ]
       }
     },
     {
@@ -9112,14 +9630,14 @@
         "\"欧拉函数与RSA密码原理\"",
         "区块链密码学基础"
       ],
-      "latencyMs": 3277.75,
+      "latencyMs": 977.31,
       "channelLatencyMs": {
-        "init_ms": 29.88,
-        "grep_ms": 510.51,
-        "vector_ms": 2691.32,
-        "graph_ms": 8.2,
+        "init_ms": 15.81,
+        "grep_ms": 515.45,
+        "vector_ms": 381.18,
+        "graph_ms": 16.71,
         "web_ms": 0.0,
-        "fusion_ms": 0.73
+        "fusion_ms": 0.47
       },
       "success": true,
       "error": null,
@@ -9149,7 +9667,7 @@
           "rank": 4,
           "slug": "信息安全/哈希函数与SHA系列",
           "title": "哈希函数与SHA系列",
-          "score": 0.1316,
+          "score": 0.1318,
           "extra": null
         },
         {
@@ -9178,7 +9696,8 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 3,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": []
       }
     },
     {
@@ -9212,14 +9731,14 @@
         "代码优化综合",
         "\"GCC与LLVM编译器架构对比\""
       ],
-      "latencyMs": 2324.79,
+      "latencyMs": 935.63,
       "channelLatencyMs": {
-        "init_ms": 23.63,
-        "grep_ms": 453.97,
-        "vector_ms": 1773.82,
-        "graph_ms": 7.81,
+        "init_ms": 27.18,
+        "grep_ms": 448.86,
+        "vector_ms": 385.21,
+        "graph_ms": 15.7,
         "web_ms": 0.0,
-        "fusion_ms": 0.51
+        "fusion_ms": 0.66
       },
       "success": true,
       "error": null,
@@ -9242,7 +9761,7 @@
           "rank": 3,
           "slug": "编译原理/寄存器分配与图着色",
           "title": "\"寄存器分配与图着色算法\"",
-          "score": 0.1231,
+          "score": 0.1309,
           "extra": null
         },
         {
@@ -9278,7 +9797,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/代码优化综合"
+        ]
       }
     },
     {
@@ -9312,14 +9834,14 @@
         "SQL SELECT查询基础",
         "\"MVCC多版本并发控制详解\""
       ],
-      "latencyMs": 2065.96,
+      "latencyMs": 875.04,
       "channelLatencyMs": {
-        "init_ms": 19.21,
-        "grep_ms": 408.94,
-        "vector_ms": 1589.38,
-        "graph_ms": 9.1,
+        "init_ms": 17.53,
+        "grep_ms": 426.1,
+        "vector_ms": 369.91,
+        "graph_ms": 12.24,
         "web_ms": 0.0,
-        "fusion_ms": 0.57
+        "fusion_ms": 0.52
       },
       "success": true,
       "error": null,
@@ -9340,23 +9862,23 @@
         },
         {
           "rank": 3,
+          "slug": "数据库原理/MVCC多版本并发控制",
+          "title": "\"MVCC多版本并发控制详解\"",
+          "score": 0.1412,
+          "extra": null
+        },
+        {
+          "rank": 4,
           "slug": "数据库原理/SQL-子查询",
           "title": "SQL子查询与相关子查询",
           "score": 0.1369,
           "extra": null
         },
         {
-          "rank": 4,
+          "rank": 5,
           "slug": "数据库原理/SQL-视图",
           "title": "SQL视图",
           "score": 0.1366,
-          "extra": null
-        },
-        {
-          "rank": 5,
-          "slug": "数据库原理/MVCC多版本并发控制",
-          "title": "\"MVCC多版本并发控制详解\"",
-          "score": 0.133,
           "extra": null
         }
       ],
@@ -9365,7 +9887,7 @@
         "hitAt3": true,
         "bestRank": 1,
         "relevanceScore": 0.85,
-        "reason": "候选文档1（SQL触发器）直接对应用户问题的核心主题，提供了触发器的定义、机制和应用场景，是回答问题的基础。候选文档2和5（MVCC）提供了并发控制的关键背景，有助于解释触发器在事务中的可见性问题。候选文档3（SQL子查询）和4（SQL视图）与SELECT查询基础相关，但相关性较弱。整体上，前三个候选文档能有效覆盖问题要求的主概念、角色和关系路径，但需要整合才能完整回答。"
+        "reason": "候选文档1（SQL触发器）直接对应用户问题的核心主题，提供了触发器的定义、类型（BEFORE/AFTER/INSTEAD OF）和应用场景（如审计日志），这与问题中要求的“主概念解决的问题”和“相关概念各自承担的角色”直接相关。候选文档2和3（MVCC）也直接覆盖了问题中要求的MVCC并发控制部分，解释了多版本并发控制如何影响事务可见性，这与问题中“关系焦点：说明 SQL 触发器如何与 SELECT 查询、MVCC 并发可见性相互影响”紧密相关。虽然候选文档4和5（SQL子查询、视图）与SELECT查询基础有一定关联，但相关性较弱。整体上，前三个候选文档共同覆盖了问题要求的所有关键点（触发器、SELECT查询、MVCC），因此hitAt3为true，最佳排名为1，整体相关性评分较高。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -9376,9 +9898,12 @@
         "completeEvidenceTop5": false,
         "evidenceNodeRecallTop5": 0.6667,
         "primaryTop3": true,
-        "anyRelatedTop3": false,
+        "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "数据库原理/sql-select基础"
+        ]
       }
     },
     {
@@ -9409,60 +9934,60 @@
         "\"词法分析与自动机\"",
         "\"DFA最小化（Hopcroft算法）\""
       ],
-      "latencyMs": 2200.57,
+      "latencyMs": 949.29,
       "channelLatencyMs": {
-        "init_ms": 25.6,
-        "grep_ms": 455.57,
-        "vector_ms": 1652.43,
-        "graph_ms": 10.4,
+        "init_ms": 30.0,
+        "grep_ms": 461.6,
+        "vector_ms": 394.24,
+        "graph_ms": 16.11,
         "web_ms": 0.0,
-        "fusion_ms": 0.47
+        "fusion_ms": 0.81
       },
       "success": true,
       "error": null,
       "top": [
         {
           "rank": 1,
-          "slug": "https://en.wikipedia.org/wiki/Compiler",
-          "title": "编译原理-词法分析思维导图",
-          "score": 0.155,
+          "slug": "编译原理/NFA转DFA",
+          "title": "NFA转DFA",
+          "score": 0.1497,
           "extra": null
         },
         {
           "rank": 2,
-          "slug": "编译原理/NFA转DFA",
-          "title": "NFA转DFA",
-          "score": 0.1495,
+          "slug": "编译原理/DFA",
+          "title": "DFA",
+          "score": 0.0784,
           "extra": null
         },
         {
           "rank": 3,
-          "slug": "https://www.bilibili.com/video/BV1KW411j7GV",
-          "title": "编译原理-词法分析与有限自动机（视频）",
-          "score": 0.082,
+          "slug": "编译原理/DFA最小化",
+          "title": "DFA最小化",
+          "score": 0.0738,
           "extra": null
         },
         {
           "rank": 4,
-          "slug": "https://en.wikipedia.org/wiki/Lexical_analysis",
-          "title": "编译原理-词法分析器实现指南",
-          "score": 0.0794,
+          "slug": "编译原理/词法分析",
+          "title": "词法分析",
+          "score": 0.0726,
           "extra": null
         },
         {
           "rank": 5,
-          "slug": "编译原理/DFA",
-          "title": "DFA",
-          "score": 0.0782,
+          "slug": "视频资源/离散数学-图论基础与应用",
+          "title": "编译原理-LL(1)与LR(1)语法分析（视频）",
+          "score": 0.0102,
           "extra": null
         }
       ],
       "judge": {
         "hitAt1": false,
         "hitAt3": true,
-        "bestRank": 2,
-        "relevanceScore": 0.6,
-        "reason": "候选文档2（NFA转DFA）直接涉及NFA到DFA的转换，这是构建学习路径的核心环节，与问题中「NFA如何依赖或通向词法分析与自动机、DFA最小化」高度相关。候选文档1（编译原理-词法分析思维导图）和候选文档3（编译原理-词法分析与有限自动机视频）也提供了相关背景，但不如文档2直接。整体上，这些文档能部分覆盖问题要求，但未明确涵盖DFA最小化（Hopcroft算法）的具体内容，因此相关性评分中等。"
+        "bestRank": 1,
+        "relevanceScore": 0.7,
+        "reason": "候选文档1（NFA转DFA）直接涉及从NFA到DFA的转换，这是构建学习路径的核心环节，与问题中「NFA如何依赖或通向词法分析与自动机、DFA最小化」高度相关。候选文档2（DFA）和候选文档3（DFA最小化）也分别覆盖了DFA概念和最小化算法，共同支撑了路径的后续部分。但候选文档1未明确包含词法分析或Hopcroft算法的具体内容，因此整体相关性未达最高。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -9475,7 +10000,12 @@
         "primaryTop3": false,
         "anyRelatedTop3": false,
         "presentEvidenceNodesTop5": 0,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/dfa最小化算法",
+          "编译原理/nfa",
+          "编译原理/词法分析与dfa"
+        ]
       }
     },
     {
@@ -9508,12 +10038,12 @@
         "ZooKeeper原理与应用",
         "边缘计算架构"
       ],
-      "latencyMs": 3190.64,
+      "latencyMs": 974.01,
       "channelLatencyMs": {
-        "init_ms": 40.5,
-        "grep_ms": 497.42,
-        "vector_ms": 2588.94,
-        "graph_ms": 7.06,
+        "init_ms": 16.58,
+        "grep_ms": 512.49,
+        "vector_ms": 380.93,
+        "graph_ms": 18.17,
         "web_ms": 0.0,
         "fusion_ms": 0.47
       },
@@ -9574,7 +10104,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "分布式系统/边缘计算架构"
+        ]
       }
     },
     {
@@ -9609,14 +10142,14 @@
         "First与Follow集",
         "二义性"
       ],
-      "latencyMs": 3168.16,
+      "latencyMs": 906.14,
       "channelLatencyMs": {
-        "init_ms": 38.38,
-        "grep_ms": 468.96,
-        "vector_ms": 2602.49,
-        "graph_ms": 9.45,
+        "init_ms": 20.17,
+        "grep_ms": 458.79,
+        "vector_ms": 351.39,
+        "graph_ms": 11.13,
         "web_ms": 0.0,
-        "fusion_ms": 0.52
+        "fusion_ms": 0.62
       },
       "success": true,
       "error": null,
@@ -9675,7 +10208,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "编译原理/二义性"
+        ]
       }
     },
     {
@@ -9708,30 +10244,30 @@
         "\"PBR材质系统\"",
         "着色频率（Flat/Gouraud/Phong Shading）"
       ],
-      "latencyMs": 2463.62,
+      "latencyMs": 1148.66,
       "channelLatencyMs": {
-        "init_ms": 19.81,
-        "grep_ms": 647.7,
-        "vector_ms": 1720.23,
-        "graph_ms": 8.36,
+        "init_ms": 27.2,
+        "grep_ms": 649.57,
+        "vector_ms": 418.31,
+        "graph_ms": 15.34,
         "web_ms": 0.0,
-        "fusion_ms": 0.94
+        "fusion_ms": 0.66
       },
       "success": true,
       "error": null,
       "top": [
         {
           "rank": 1,
-          "slug": "计算机图形学/PBR物理渲染原理",
-          "title": "PBR物理渲染原理",
-          "score": 0.1589,
+          "slug": "计算机图形学/OpenGL与Vulkan架构对比",
+          "title": "OpenGL与Vulkan架构对比",
+          "score": 0.1557,
           "extra": null
         },
         {
           "rank": 2,
-          "slug": "计算机图形学/OpenGL与Vulkan架构对比",
-          "title": "OpenGL与Vulkan架构对比",
-          "score": 0.1557,
+          "slug": "计算机图形学/PBR物理渲染原理",
+          "title": "PBR物理渲染原理",
+          "score": 0.151,
           "extra": null
         },
         {
@@ -9757,11 +10293,11 @@
         }
       ],
       "judge": {
-        "hitAt1": false,
+        "hitAt1": true,
         "hitAt3": true,
-        "bestRank": 2,
-        "relevanceScore": 0.7,
-        "reason": "候选文档2（OpenGL与Vulkan架构对比）直接匹配用户问题的核心主题，能够提供关于图形API架构如何承载渲染管线概念（如PBR材质和着色频率）的直接信息。候选文档1和3（PBR相关）提供了PBR材质系统的背景知识，但未直接涉及OpenGL/Vulkan架构对比或多跳联系。候选文档4和5（着色相关）提供了着色频率的背景，但未直接关联到API架构。因此，前三个候选中至少有一个（文档2）与问题直接相关，但整体相关性因缺少对多跳联系的完整覆盖而受限。"
+        "bestRank": 1,
+        "relevanceScore": 0.85,
+        "reason": "候选文档1（OpenGL与Vulkan架构对比）直接对应用户问题的核心主题，提供了图形API架构对比的基础，是理解PBR材质和着色频率如何被承载的关键前置知识。候选文档2和3（PBR相关）直接覆盖了问题中提到的PBR材质系统，与问题高度相关。候选文档4和5（着色相关）部分覆盖了着色频率概念，但相关性较弱。整体上，前三个候选文档共同覆盖了问题要求的主概念、相关概念角色及关系路径，能有效帮助回答多跳联系问题。"
       },
       "judgeFromCache": true,
       "graphMetrics": {
@@ -9774,7 +10310,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "计算机图形学/着色频率（flat/gouraud/phong shading）"
+        ]
       }
     },
     {
@@ -9805,14 +10344,14 @@
         "管程",
         "经典同步问题-生产者消费者"
       ],
-      "latencyMs": 2019.24,
+      "latencyMs": 910.56,
       "channelLatencyMs": {
-        "init_ms": 19.49,
-        "grep_ms": 438.05,
-        "vector_ms": 1516.27,
-        "graph_ms": 8.02,
+        "init_ms": 17.85,
+        "grep_ms": 448.74,
+        "vector_ms": 374.14,
+        "graph_ms": 18.91,
         "web_ms": 0.0,
-        "fusion_ms": 0.58
+        "fusion_ms": 0.59
       },
       "success": true,
       "error": null,
@@ -9835,7 +10374,7 @@
           "rank": 3,
           "slug": "操作系统/互斥与同步机制",
           "title": "互斥与同步机制",
-          "score": 0.1253,
+          "score": 0.1334,
           "extra": null
         },
         {
@@ -9871,7 +10410,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "操作系统/管程"
+        ]
       }
     },
     {
@@ -9901,14 +10443,14 @@
         "后缀数组算法",
         "后缀数组与后缀树"
       ],
-      "latencyMs": 2161.63,
+      "latencyMs": 871.12,
       "channelLatencyMs": {
-        "init_ms": 32.2,
-        "grep_ms": 406.76,
-        "vector_ms": 1676.86,
-        "graph_ms": 8.08,
+        "init_ms": 28.71,
+        "grep_ms": 408.38,
+        "vector_ms": 367.56,
+        "graph_ms": 12.85,
         "web_ms": 0.0,
-        "fusion_ms": 0.45
+        "fusion_ms": 0.41
       },
       "success": true,
       "error": null,
@@ -9967,7 +10509,10 @@
         "primaryTop3": false,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "算法设计与分析/后缀数组算法"
+        ]
       }
     },
     {
@@ -9998,14 +10543,14 @@
         "\"一致性哈希（Consistent Hashing）\"",
         "信息论基础"
       ],
-      "latencyMs": 3234.44,
+      "latencyMs": 976.45,
       "channelLatencyMs": {
-        "init_ms": 17.39,
-        "grep_ms": 510.24,
-        "vector_ms": 2640.56,
-        "graph_ms": 7.98,
+        "init_ms": 16.53,
+        "grep_ms": 524.95,
+        "vector_ms": 374.07,
+        "graph_ms": 15.68,
         "web_ms": 0.0,
-        "fusion_ms": 0.8
+        "fusion_ms": 0.43
       },
       "success": true,
       "error": null,
@@ -10064,7 +10609,10 @@
         "primaryTop3": true,
         "anyRelatedTop3": true,
         "presentEvidenceNodesTop5": 2,
-        "expectedEvidenceNodes": 3
+        "expectedEvidenceNodes": 3,
+        "missingEvidenceSlugsTop5": [
+          "离散数学/信息论基础"
+        ]
       }
     }
   ]

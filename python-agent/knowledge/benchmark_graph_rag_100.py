@@ -62,6 +62,7 @@ def evaluate_graph_evidence(question_item: dict[str, Any], candidates: list[dict
     top3 = _top_slugs(candidates, 3)
     top5 = _top_slugs(candidates, TOP_K)
     present_top5 = expected_nodes & top5
+    missing_top5 = expected_nodes - top5
 
     return {
         "graphIntent": question_item.get("graphIntent"),
@@ -74,6 +75,7 @@ def evaluate_graph_evidence(question_item: dict[str, Any], candidates: list[dict
         "anyRelatedTop3": bool(related_slugs & top3),
         "presentEvidenceNodesTop5": len(present_top5),
         "expectedEvidenceNodes": len(expected_nodes),
+        "missingEvidenceSlugsTop5": sorted(missing_top5),
     }
 
 
@@ -117,6 +119,32 @@ def summarize_by_graph_intent(records: list[dict[str, Any]]) -> dict[str, Any]:
         intent: summarize_graph_records(items)
         for intent, items in sorted(buckets.items())
     }
+
+
+def summarize_low_evidence_records(records: list[dict[str, Any]], limit: int = 20) -> list[dict[str, Any]]:
+    low_records = [
+        record
+        for record in records
+        if not record["graphMetrics"]["completeEvidenceTop5"]
+    ]
+    low_records.sort(
+        key=lambda record: (
+            float(record["graphMetrics"]["evidenceNodeRecallTop5"]),
+            0 if record.get("graphIntent") == "PREREQUISITE_PATH" else 1,
+            str(record.get("id") or ""),
+        )
+    )
+    return [
+        {
+            "id": record.get("id"),
+            "graphIntent": record.get("graphIntent"),
+            "classifierGraphIntent": record.get("classifierGraphIntent"),
+            "evidenceNodeRecallTop5": record["graphMetrics"]["evidenceNodeRecallTop5"],
+            "missingEvidenceSlugsTop5": record["graphMetrics"].get("missingEvidenceSlugsTop5", []),
+            "topSlugs": [candidate.get("slug") for candidate in record.get("top", [])],
+        }
+        for record in low_records[:limit]
+    ]
 
 
 def _graph_judge_cache_key(question_item: dict[str, Any], candidates: list[dict[str, Any]]) -> str:
@@ -220,6 +248,7 @@ async def benchmark_graph_questions(
         "summary": legacy_summary,
         "graphSummary": graph_summary,
         "byGraphIntent": summarize_by_graph_intent(records),
+        "lowEvidenceRecords": summarize_low_evidence_records(records),
         "records": records,
     }
     _write_json(output_path, report)
@@ -246,6 +275,7 @@ def main() -> None:
                 "summary": report["summary"],
                 "graphSummary": report["graphSummary"],
                 "byGraphIntent": report["byGraphIntent"],
+                "lowEvidenceRecords": report["lowEvidenceRecords"],
             },
             ensure_ascii=False,
             indent=2,

@@ -154,11 +154,29 @@ def run_retrieval(
                     grep_slugs = [item[0] for item in grep_results.get("priority", [])[: retriever.graph_seed_n]]
                     vec_slugs = [item[0] for item in vector_results[: retriever.graph_seed_n]]
                     seed_slugs = list(dict.fromkeys(grep_slugs + vec_slugs))[: retriever.graph_seed_n]
-                    graph_results = retriever._graph.expand(cur, seed_slugs, top_n=5)
+                    graph_results = retriever._graph.expand(
+                        cur,
+                        seed_slugs,
+                        top_n=retriever._graph_top_n(graph_intent),
+                        query=question,
+                        graph_intent=graph_intent,
+                    )
 
                 web_results: list[Any] = []
                 with channel_timer(timings, "fusion_ms"):
-                    fused = retriever._rrf.fuse(grep_results, vector_results, graph_results, web_results)
+                    fused = retriever._rrf.fuse(
+                        grep_results,
+                        vector_results,
+                        graph_results,
+                        web_results,
+                        graph_weight=retriever._graph_weight(graph_intent),
+                        slug_penalty=(
+                            retriever._graph_slug_penalty
+                            if retriever._uses_prerequisite_graph_fill(graph_intent)
+                            else None
+                        ),
+                    )
+                    fused = retriever._stabilize_graph_top5(fused, graph_results, graph_intent)
 
                 result = {
                     "query": question,
