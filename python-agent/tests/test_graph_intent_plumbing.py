@@ -1,6 +1,12 @@
 import pytest
 
-from knowledge.benchmark_graph_rag_100 import evaluate_graph_evidence, summarize_graph_records
+from knowledge.benchmark_graph_rag_100 import (
+    evaluate_graph_evidence,
+    summarize_graph_records,
+    summarize_intent_mismatches,
+    summarize_low_value_sources,
+)
+from knowledge.benchmark_rag_100 import _fusion_replacements, _summarize_low_value_sources
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.graph_expander import GraphExpander
 from retrieval.rrf_fusion import RRFFusion
@@ -82,6 +88,27 @@ def test_graph_expander_uses_undirected_edges_and_filters_weak_shared_tags() -> 
 
     assert [item[0] for item in results] == ["strong-tag-doc", "incoming-doc"]
     assert all(item[0] != "weak-tag-doc" for item in results)
+
+
+def test_graph_expander_explain_candidates_keeps_candidate_rows() -> None:
+    explanation = GraphExpander().explain_candidates(
+        FakeGraphCursor(),
+        ["seed-doc"],
+        query="strong tag",
+        graph_intent="PREREQUISITE_PATH",
+    )
+
+    assert [item["slug"] for item in explanation["candidates"]] == ["strong-tag-doc", "incoming-doc"]
+    assert explanation["seedSlugs"] == ["seed-doc"]
+    assert explanation["queryTerms"] == ["strong", "tag"]
+
+
+def test_prerequisite_graph_low_value_filter_covers_video_resource_slug() -> None:
+    expander = GraphExpander()
+    retriever = HybridRetriever({})
+
+    assert expander._is_low_value_resource("视频资源/离散数学-图论基础与应用", "Graph Doc") is True
+    assert retriever._graph_slug_penalty("视频资源/离散数学-图论基础与应用") < 1.0
 
 
 def test_query_classifier_marks_graph_relation_intent() -> None:
@@ -282,6 +309,83 @@ def test_graph_benchmark_summary_groups_evidence_metrics() -> None:
     assert summary["anyRelatedTop5Pct"] == 100.0
     assert summary["completeEvidenceTop5Pct"] == 50.0
     assert summary["evidenceNodeRecallTop5Pct"] == 66.67
+
+
+def test_graph_benchmark_summarizes_intent_mismatches() -> None:
+    records = [
+        {
+            "id": "grq001",
+            "graphIntent": "CROSS_LAYER_RELATION",
+            "classifierGraphIntent": "PREREQUISITE_PATH",
+            "retrievalGraphIntent": "CROSS_LAYER_RELATION",
+        },
+        {
+            "id": "grq002",
+            "graphIntent": "PREREQUISITE_PATH",
+            "classifierGraphIntent": "PREREQUISITE_PATH",
+            "retrievalGraphIntent": "PREREQUISITE_PATH",
+        },
+    ]
+
+    summary = summarize_intent_mismatches(records)
+
+    assert summary["count"] == 1
+    assert summary["pct"] == 50.0
+    assert summary["examples"][0]["id"] == "grq001"
+
+
+def test_benchmark_diagnostics_track_low_value_sources_and_replacements() -> None:
+    low_value = _summarize_low_value_sources(
+        grep_results={
+            "priority": [("None", "Video Doc", 1.0, [])],
+            "normal": [("wiki://course/ref", "Wiki Ref", 0.8, [])],
+        },
+        vector_results=[("https://example.com/ref", "External Ref", 0.9)],
+        graph_results=[("视频资源/图论", "Graph Video", 2.0)],
+        web_results=[("https://example.com/video", "Video", 0.7)],
+    )
+    replacements = _fusion_replacements(
+        [("doc-a", "Doc A", 0.2), ("None", "Video", 0.1)],
+        [("doc-a", "Doc A", 0.2), ("graph-b", "Graph B", 0.01)],
+    )
+
+    assert low_value["byChannel"]["grepPriority"]["none"] == 1
+    assert low_value["byChannel"]["grepNormal"]["wiki"] == 1
+    assert low_value["byChannel"]["vector"]["http"] == 1
+    assert low_value["byChannel"]["graph"]["video"] == 1
+    assert low_value["byChannel"]["web"]["http"] == 1
+    assert replacements == [
+        {
+            "rank": 2,
+            "before": {"rank": 2, "slug": "None", "title": "Video", "score": 0.1, "extra": None},
+            "after": {"rank": 2, "slug": "graph-b", "title": "Graph B", "score": 0.01, "extra": None},
+        }
+    ]
+
+
+def test_graph_report_summarizes_low_value_sources_from_records() -> None:
+    records = [
+        {
+            "id": "grq001",
+            "diagnostics": {
+                "lowValueSources": {
+                    "byChannel": {
+                        "vector": {"none": 1, "http": 2, "wiki": 0, "video": 0},
+                        "graph": {"none": 0, "http": 0, "wiki": 1, "video": 0},
+                    },
+                    "items": [
+                        {"channel": "vector", "rank": 1, "kind": "http", "slug": "https://x", "title": "X"}
+                    ],
+                }
+            },
+        }
+    ]
+
+    summary = summarize_low_value_sources(records)
+
+    assert summary["byChannel"]["vector"]["http"] == 2
+    assert summary["byChannel"]["graph"]["wiki"] == 1
+    assert summary["examples"][0]["id"] == "grq001"
 
 
 class RecordingRewriteAgent(PlaceholderAgent):

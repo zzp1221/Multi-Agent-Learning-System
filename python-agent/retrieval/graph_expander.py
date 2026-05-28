@@ -155,6 +155,126 @@ class GraphExpander:
         # Sort by score and return top_n
         return sorted(neighbors.values(), key=lambda x: x[2], reverse=True)[:top_n]
 
+    def explain_candidates(
+        self,
+        cur,
+        seed_slugs: list[str],
+        *,
+        limit: int = 50,
+        default_window: int = 15,
+        min_shared_tags: int = 3,
+        query: str | None = None,
+        graph_intent: str | None = None,
+    ) -> dict:
+        """Return graph candidate diagnostics without changing retrieval behavior."""
+        if not seed_slugs:
+            return {"seedSlugs": [], "queryTerms": [], "candidates": []}
+
+        cur.execute("""
+            SELECT id, slug, title FROM rag.wiki_page
+            WHERE slug = ANY(%s) AND is_active = true
+        """, (seed_slugs,))
+        seed_rows = cur.fetchall()
+        if not seed_rows:
+            return {"seedSlugs": seed_slugs, "queryTerms": [], "candidates": []}
+
+        seed_ids = [row[0] for row in seed_rows]
+        seed_slug_set = {row[1] for row in seed_rows}
+        cur.execute("""
+            SELECT
+                CASE
+                    WHEN l.from_page_id::text = ANY(%s) THEN l.to_page_id
+                    ELSE l.from_page_id
+                END AS neighbor_id,
+                l.relation_type,
+                COUNT(*) AS strength
+            FROM rag.wiki_link l
+            WHERE l.from_page_id::text = ANY(%s)
+               OR l.to_page_id::text = ANY(%s)
+            GROUP BY neighbor_id, l.relation_type
+        """, (seed_ids, seed_ids, seed_ids))
+
+        neighbor_scores = defaultdict(lambda: {"WIKILINK": 0, "SHARED_TAG": 0})
+        for neighbor_id, relation_type, strength in cur.fetchall():
+            neighbor_key = str(neighbor_id)
+            if neighbor_key in seed_ids:
+                continue
+            neighbor_scores[neighbor_key][relation_type] = int(strength)
+
+        qualified = []
+        for neighbor_id, scores in neighbor_scores.items():
+            if scores["WIKILINK"] > 0 or scores["SHARED_TAG"] >= min_shared_tags:
+                qualified.append(
+                    (
+                        neighbor_id,
+                        scores["WIKILINK"] * 2 + scores["SHARED_TAG"],
+                        scores["WIKILINK"],
+                        scores["SHARED_TAG"],
+                    )
+                )
+        qualified.sort(key=lambda item: item[1], reverse=True)
+        if not qualified:
+            return {"seedSlugs": list(seed_slug_set), "queryTerms": [], "candidates": []}
+
+        candidate_ids = [neighbor_id for neighbor_id, *_ in qualified[:limit]]
+        rank_by_id = {neighbor_id: rank for rank, (neighbor_id, *_) in enumerate(qualified, start=1)}
+        scores_by_id = {
+            neighbor_id: {"base": base_score, "wikilink": wikilink, "sharedTag": shared_tag}
+            for neighbor_id, base_score, wikilink, shared_tag in qualified
+        }
+        cur.execute("""
+            SELECT wp.id::text, wp.slug, wp.title,
+                   COALESCE(f.community_id, 0) AS community_id,
+                   COALESCE(f.pagerank_score, 0) AS pagerank_score,
+                   COALESCE(wp.aliases, '[]'::jsonb)::text AS aliases_text,
+                   COALESCE(wp.tags, '[]'::jsonb)::text AS tags_text
+            FROM rag.wiki_page wp
+            LEFT JOIN rag.wiki_page_graph_features f ON f.page_id = wp.id
+            WHERE wp.id::text = ANY(%s)
+              AND wp.is_active = true
+        """, (candidate_ids,))
+
+        query_terms = self._extract_query_terms(query)
+        scoring_terms = query_terms if self._normalize_graph_intent(graph_intent) == "PREREQUISITE_PATH" else []
+        page_rows = cur.fetchall()
+        seed_communities = self._load_seed_communities(cur, seed_ids)
+        candidates = []
+        for row in page_rows:
+            neighbor_id, slug, title, community_id, pagerank_score, aliases_text, tags_text = row
+            if slug in seed_slug_set:
+                continue
+            score_parts = scores_by_id.get(neighbor_id, {"base": 0, "wikilink": 0, "sharedTag": 0})
+            query_bonus = self._query_bonus(scoring_terms, slug, title, aliases_text, tags_text)
+            community_bonus = 0.75 if int(community_id) in seed_communities else 0.0
+            pagerank_bonus = float(pagerank_score) * 0.5
+            low_value = self._is_low_value_resource(slug, title)
+            candidates.append(
+                {
+                    "qualifiedRank": rank_by_id.get(neighbor_id),
+                    "slug": slug,
+                    "title": title,
+                    "baseScore": score_parts["base"],
+                    "wikilinkCount": score_parts["wikilink"],
+                    "sharedTagCount": score_parts["sharedTag"],
+                    "queryBonus": round(query_bonus, 4),
+                    "communityBonus": round(community_bonus, 4),
+                    "pagerankBonus": round(pagerank_bonus, 4),
+                    "finalScore": round(float(score_parts["base"]) + query_bonus + community_bonus + pagerank_bonus, 4),
+                    "inDefaultWindow": bool(rank_by_id.get(neighbor_id, limit + 1) <= default_window),
+                    "lowValueFilteredForPrerequisite": bool(
+                        self._normalize_graph_intent(graph_intent) == "PREREQUISITE_PATH" and low_value
+                    ),
+                }
+            )
+
+        candidates.sort(key=lambda item: (-float(item["finalScore"]), int(item["qualifiedRank"] or limit + 1)))
+        return {
+            "seedSlugs": list(seed_slug_set),
+            "queryTerms": query_terms,
+            "defaultWindow": default_window,
+            "candidates": candidates[:limit],
+        }
+
     def _load_seed_communities(self, cur, seed_ids: list[str]) -> set[int]:
         if not seed_ids:
             return set()
@@ -224,7 +344,9 @@ class GraphExpander:
         return (
             lowered_slug.startswith("http")
             or lowered_slug.startswith("wiki://")
+            or "视频资源" in lowered_slug
             or "视频资源" in title
             or "视频资源" in lowered_title
+            or "视频" in lowered_title
             or "video" in lowered_slug
         )

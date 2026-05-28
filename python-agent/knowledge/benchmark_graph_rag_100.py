@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -41,6 +42,8 @@ DEFAULT_OUTPUT = PROJECT_ROOT / "reports" / "graph_rag_100_current.json"
 DEFAULT_CACHE = PROJECT_ROOT / "reports" / "graph_rag_100_judge_cache.json"
 GRAPH_METRIC_VERSION = "graph-rag-lite-metrics-v1"
 GRAPH_JUDGE_CACHE_VERSION = f"{JUDGE_CACHE_VERSION}:graph-v1"
+INTENT_MODE_ORACLE = "oracle"
+INTENT_MODE_CLASSIFIER = "classifier"
 
 
 def _normalize_slug(value: Any) -> str:
@@ -147,6 +150,207 @@ def summarize_low_evidence_records(records: list[dict[str, Any]], limit: int = 2
     ]
 
 
+def summarize_intent_mismatches(records: list[dict[str, Any]]) -> dict[str, Any]:
+    mismatches = [
+        record
+        for record in records
+        if record.get("graphIntent") != record.get("classifierGraphIntent")
+    ]
+    examples = [
+        {
+            "id": record.get("id"),
+            "graphIntent": record.get("graphIntent"),
+            "classifierGraphIntent": record.get("classifierGraphIntent"),
+            "retrievalGraphIntent": record.get("retrievalGraphIntent"),
+        }
+        for record in mismatches[:20]
+    ]
+    return {
+        "count": len(mismatches),
+        "pct": _pct(len(mismatches), len(records)),
+        "examples": examples,
+    }
+
+
+def summarize_low_value_sources(records: list[dict[str, Any]]) -> dict[str, Any]:
+    totals: dict[str, dict[str, int]] = {}
+    examples = []
+    for record in records:
+        sources = record.get("diagnostics", {}).get("lowValueSources", {})
+        by_channel = sources.get("byChannel", {}) if isinstance(sources, dict) else {}
+        for channel, kinds in by_channel.items():
+            channel_totals = totals.setdefault(channel, {"none": 0, "http": 0, "wiki": 0, "video": 0})
+            for kind, count in kinds.items():
+                channel_totals[kind] = channel_totals.get(kind, 0) + int(count)
+        for item in sources.get("items", [])[:3] if isinstance(sources, dict) else []:
+            if len(examples) >= 30:
+                break
+            examples.append({"id": record.get("id"), **item})
+    return {"byChannel": totals, "examples": examples}
+
+
+def _compact_text(value: Any) -> str:
+    return re.sub(r"[\s\"'《》“”]+", "", str(value or "").strip().lower())
+
+
+def _page_alias_diagnostics(cur, slugs: set[str], top_slugs: set[str]) -> dict[str, Any]:
+    if not slugs:
+        return {}
+    probes = sorted(slugs | top_slugs)
+    cur.execute(
+        """
+        SELECT slug, title, is_active,
+               COALESCE(aliases, '[]'::jsonb)::text AS aliases_text
+        FROM rag.wiki_page
+        WHERE lower(slug) = ANY(%s)
+        """,
+        ([slug.lower() for slug in probes],),
+    )
+    exact_rows = {
+        _normalize_slug(row[0]): {
+            "slug": row[0],
+            "title": row[1],
+            "isActive": bool(row[2]),
+            "aliases": _parse_json_list(row[3]),
+        }
+        for row in cur.fetchall()
+    }
+
+    diagnostics = {}
+    for missing_slug in sorted(slugs):
+        compact_missing = _compact_text(missing_slug)
+        title_tail = compact_missing.split("/")[-1]
+        like_pattern = f"%{title_tail}%"
+        cur.execute(
+            """
+            SELECT slug, title, is_active,
+                   COALESCE(aliases, '[]'::jsonb)::text AS aliases_text
+            FROM rag.wiki_page
+            WHERE lower(slug) LIKE lower(%s)
+               OR lower(title) LIKE lower(%s)
+            ORDER BY length(slug), slug
+            LIMIT 8
+            """,
+            (like_pattern, like_pattern),
+        )
+        similar = [
+            {
+                "slug": row[0],
+                "title": row[1],
+                "isActive": bool(row[2]),
+                "aliases": _parse_json_list(row[3]),
+                "inTop5": _normalize_slug(row[0]) in top_slugs,
+            }
+            for row in cur.fetchall()
+        ]
+        possible_matches = []
+        for top_slug in top_slugs:
+            compact_top = _compact_text(top_slug)
+            if compact_missing and (
+                compact_missing in compact_top
+                or compact_top in compact_missing
+                or title_tail and title_tail in compact_top
+            ):
+                possible_matches.append(top_slug)
+        diagnostics[missing_slug] = {
+            "exact": exact_rows.get(missing_slug),
+            "possibleTop5Matches": sorted(set(possible_matches)),
+            "similarPages": similar,
+            "likelyFalseNegative": bool(possible_matches),
+        }
+    return diagnostics
+
+
+def _parse_json_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return [value.strip()]
+        return _parse_json_list(parsed)
+    return []
+
+
+def attach_alias_diagnostics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    missing_by_record = {
+        record["id"]: {
+            _normalize_slug(slug)
+            for slug in record.get("graphMetrics", {}).get("missingEvidenceSlugsTop5", [])
+            if _normalize_slug(slug)
+        }
+        for record in records
+        if record.get("graphMetrics", {}).get("missingEvidenceSlugsTop5")
+    }
+    if not missing_by_record:
+        return {"recordsWithMissing": 0, "likelyFalseNegativeCount": 0, "examples": []}
+
+    import psycopg2
+
+    likely_false_negative_count = 0
+    examples = []
+    with psycopg2.connect(**RUNTIME_CONFIG.postgres.model_dump()) as conn:
+        with conn.cursor() as cur:
+            for record in records:
+                missing_slugs = missing_by_record.get(record.get("id"), set())
+                if not missing_slugs:
+                    continue
+                top_slugs = {_normalize_slug(item.get("slug")) for item in record.get("top", [])}
+                alias_diag = _page_alias_diagnostics(cur, missing_slugs, top_slugs)
+                record["aliasDiagnostics"] = alias_diag
+                if any(item.get("likelyFalseNegative") for item in alias_diag.values()):
+                    likely_false_negative_count += 1
+                    if len(examples) < 20:
+                        examples.append(
+                            {
+                                "id": record.get("id"),
+                                "graphIntent": record.get("graphIntent"),
+                                "missingEvidenceSlugsTop5": sorted(missing_slugs),
+                                "topSlugs": sorted(top_slugs),
+                                "aliasDiagnostics": alias_diag,
+                            }
+                        )
+    return {
+        "recordsWithMissing": len(missing_by_record),
+        "likelyFalseNegativeCount": likely_false_negative_count,
+        "examples": examples,
+    }
+
+
+def attach_focused_low_case_diagnostics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    focus_ids = {"grq094", "grq007", "grq024", "grq037", "grq039"}
+    focused = {}
+    for record in records:
+        if record.get("id") not in focus_ids:
+            continue
+        graph_explain = record.get("diagnostics", {}).get("graphCandidateExplainTop50", {})
+        candidates = graph_explain.get("candidates", []) if isinstance(graph_explain, dict) else []
+        missing = {
+            _normalize_slug(slug)
+            for slug in record.get("graphMetrics", {}).get("missingEvidenceSlugsTop5", [])
+        }
+        seed_slugs = {_normalize_slug(slug) for slug in graph_explain.get("seedSlugs", [])}
+        candidate_slugs = {_normalize_slug(item.get("slug")) for item in candidates}
+        graph_channel_slugs = {
+            _normalize_slug(item.get("slug"))
+            for item in record.get("diagnostics", {}).get("channelsTopN", {}).get("graph", [])
+        }
+        focused[record["id"]] = {
+            "graphIntent": record.get("graphIntent"),
+            "retrievalGraphIntent": record.get("retrievalGraphIntent"),
+            "queryTerms": graph_explain.get("queryTerms", []),
+            "seedSlugs": sorted(seed_slugs),
+            "missingEvidenceSlugsTop5": sorted(missing),
+            "missingAlreadySeedSlugs": sorted(missing & seed_slugs),
+            "missingFoundInGraphCandidateTop50": sorted(missing & candidate_slugs),
+            "missingFoundInGraphChannelTopN": sorted(missing & graph_channel_slugs),
+            "missingAbsentFromGraphCandidateTop50": sorted(missing - candidate_slugs - seed_slugs),
+            "topGraphCandidates": candidates[:10],
+        }
+    return focused
+
+
 def _graph_judge_cache_key(question_item: dict[str, Any], candidates: list[dict[str, Any]]) -> str:
     return _json_hash(
         {
@@ -168,6 +372,7 @@ async def benchmark_graph_questions(
     questions_path: Path,
     output_path: Path,
     judge_cache_path: Path,
+    intent_mode: str = INTENT_MODE_ORACLE,
 ) -> dict[str, Any]:
     question_set = _read_json(questions_path)
     questions = question_set.get("questions", [])
@@ -181,12 +386,18 @@ async def benchmark_graph_questions(
 
     for index, question_item in enumerate(questions, start=1):
         question = str(question_item.get("question") or "")
+        classification = classifier.classify({"query": question})
+        retrieval_graph_intent = (
+            classification.graph_intent
+            if intent_mode == INTENT_MODE_CLASSIFIER
+            else str(question_item.get("graphIntent") or "")
+        )
         result, timings, total_ms, error = run_retrieval(
             question,
-            graph_intent=str(question_item.get("graphIntent") or ""),
+            graph_intent=retrieval_graph_intent,
+            include_diagnostics=True,
         )
         candidates = _top_candidates(result)
-        classification = classifier.classify({"query": question})
         cache_key = _graph_judge_cache_key(question_item, candidates)
         if cache_key in judge_cache:
             judge_result = normalize_judge_payload(judge_cache[cache_key])
@@ -202,6 +413,8 @@ async def benchmark_graph_questions(
             "id": question_item.get("id", f"grq{index:03d}"),
             "question": question,
             "graphIntent": question_item.get("graphIntent"),
+            "retrievalGraphIntent": retrieval_graph_intent,
+            "intentMode": intent_mode,
             "classifierGraphIntent": classification.graph_intent,
             "classifierRetrievalStrategy": classification.retrieval_strategy,
             "classifierReason": classification.reason,
@@ -215,6 +428,7 @@ async def benchmark_graph_questions(
             "success": error is None,
             "error": error,
             "top": candidates,
+            "diagnostics": result.get("diagnostics", {}),
             "judge": judge_result,
             "judgeFromCache": judge_from_cache,
             "graphMetrics": graph_metrics,
@@ -231,6 +445,7 @@ async def benchmark_graph_questions(
 
     legacy_summary = summarize_records(records)
     graph_summary = summarize_graph_records(records)
+    alias_summary = attach_alias_diagnostics(records)
     report = {
         "questionSet": {
             "path": str(questions_path),
@@ -244,10 +459,15 @@ async def benchmark_graph_questions(
             "judgeCacheVersion": JUDGE_CACHE_VERSION,
             "graphJudgeCacheVersion": GRAPH_JUDGE_CACHE_VERSION,
             "graphMetricVersion": GRAPH_METRIC_VERSION,
+            "intentMode": intent_mode,
         },
         "summary": legacy_summary,
         "graphSummary": graph_summary,
         "byGraphIntent": summarize_by_graph_intent(records),
+        "intentMismatchSummary": summarize_intent_mismatches(records),
+        "lowValueSourceSummary": summarize_low_value_sources(records),
+        "aliasDiagnosticSummary": alias_summary,
+        "focusedLowCaseDiagnostics": attach_focused_low_case_diagnostics(records),
         "lowEvidenceRecords": summarize_low_evidence_records(records),
         "records": records,
     }
@@ -260,6 +480,7 @@ def main() -> None:
     parser.add_argument("--questions", type=Path, default=DEFAULT_QUESTIONS)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--judge-cache", type=Path, default=DEFAULT_CACHE)
+    parser.add_argument("--intent-mode", choices=[INTENT_MODE_ORACLE, INTENT_MODE_CLASSIFIER], default=INTENT_MODE_ORACLE)
     args = parser.parse_args()
 
     report = asyncio.run(
@@ -267,6 +488,7 @@ def main() -> None:
             questions_path=args.questions,
             output_path=args.output,
             judge_cache_path=args.judge_cache,
+            intent_mode=args.intent_mode,
         )
     )
     print(
@@ -275,6 +497,10 @@ def main() -> None:
                 "summary": report["summary"],
                 "graphSummary": report["graphSummary"],
                 "byGraphIntent": report["byGraphIntent"],
+                "intentMismatchSummary": report["intentMismatchSummary"],
+                "lowValueSourceSummary": report["lowValueSourceSummary"],
+                "aliasDiagnosticSummary": report["aliasDiagnosticSummary"],
+                "focusedLowCaseDiagnostics": report["focusedLowCaseDiagnostics"],
                 "lowEvidenceRecords": report["lowEvidenceRecords"],
             },
             ensure_ascii=False,

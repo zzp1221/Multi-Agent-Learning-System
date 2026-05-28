@@ -274,6 +274,8 @@ class HybridRetriever:
             return 0.35
         if normalized.startswith("wiki://"):
             return 0.6
+        if "视频资源" in normalized or "video" in normalized:
+            return 0.4
         return 1.0
 
     def _stabilize_graph_top5(

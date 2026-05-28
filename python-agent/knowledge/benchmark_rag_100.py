@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import re
 import statistics
 import sys
 import time
@@ -34,6 +35,108 @@ DEFAULT_QUESTION_COUNT = 100
 DEFAULT_SEED = 20260524
 TOP_K = 5
 JUDGE_CACHE_VERSION = "rag-judge-v1"
+
+
+def _normalize_slug(value: Any) -> str:
+    return str(value or "").strip().strip('"').lower()
+
+
+def _tuple_item_to_candidate(item: Any, rank: int) -> dict[str, Any]:
+    if not isinstance(item, (list, tuple)) or len(item) < 3:
+        return {"rank": rank, "slug": "", "title": "", "score": 0.0, "extra": None}
+    try:
+        score = float(item[2])
+    except (TypeError, ValueError):
+        score = 0.0
+    return {
+        "rank": rank,
+        "slug": str(item[0]),
+        "title": str(item[1]),
+        "score": round(score, 4),
+        "extra": item[3] if len(item) > 3 else None,
+    }
+
+
+def _top_channel_items(items: list[Any], limit: int = 10) -> list[dict[str, Any]]:
+    return [_tuple_item_to_candidate(item, rank) for rank, item in enumerate(items[:limit], start=1)]
+
+
+def _low_value_kind(slug: Any, title: Any) -> str | None:
+    normalized_slug = _normalize_slug(slug)
+    normalized_title = str(title or "").strip().lower()
+    if not normalized_slug or normalized_slug == "none":
+        return "none"
+    if re.match(r"^https?://", normalized_slug):
+        return "http"
+    if normalized_slug.startswith("wiki://"):
+        return "wiki"
+    if "视频资源" in normalized_slug or "视频" in str(title or "") or "video" in normalized_slug or "video" in normalized_title:
+        return "video"
+    return None
+
+
+def _summarize_low_value_sources(
+    *,
+    grep_results: dict[str, Any],
+    vector_results: list[tuple],
+    graph_results: list[tuple],
+    web_results: list[Any],
+) -> dict[str, Any]:
+    summary = {
+        "byChannel": {
+            "grepPriority": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+            "grepNormal": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+            "vector": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+            "graph": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+            "web": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+        },
+        "items": [],
+    }
+
+    channel_items = {
+        "grepPriority": grep_results.get("priority", []) if isinstance(grep_results, dict) else [],
+        "grepNormal": grep_results.get("normal", []) if isinstance(grep_results, dict) else [],
+        "vector": vector_results,
+        "graph": graph_results,
+        "web": web_results,
+    }
+    for channel, items in channel_items.items():
+        for rank, item in enumerate(items[:10], start=1):
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            kind = _low_value_kind(item[0], item[1])
+            if not kind:
+                continue
+            summary["byChannel"][channel][kind] += 1
+            summary["items"].append(
+                {
+                    "channel": channel,
+                    "rank": rank,
+                    "kind": kind,
+                    "slug": str(item[0]),
+                    "title": str(item[1]),
+                }
+            )
+    return summary
+
+
+def _fusion_replacements(pre_fused: list[tuple], post_fused: list[tuple], limit: int = 5) -> list[dict[str, Any]]:
+    replacements = []
+    for index in range(limit):
+        before = pre_fused[index] if index < len(pre_fused) else None
+        after = post_fused[index] if index < len(post_fused) else None
+        before_slug = str(before[0]) if isinstance(before, (list, tuple)) and before else None
+        after_slug = str(after[0]) if isinstance(after, (list, tuple)) and after else None
+        if before_slug == after_slug:
+            continue
+        replacements.append(
+            {
+                "rank": index + 1,
+                "before": _tuple_item_to_candidate(before, index + 1) if before else None,
+                "after": _tuple_item_to_candidate(after, index + 1) if after else None,
+            }
+        )
+    return replacements
 
 
 def _read_json(path: Path) -> Any:
@@ -130,6 +233,7 @@ def run_retrieval(
     question: str,
     *,
     graph_intent: str | None = None,
+    include_diagnostics: bool = False,
 ) -> tuple[dict[str, Any], dict[str, float], float, str | None]:
     retriever = HybridRetriever(DB_CONFIG, top_k=TOP_K)
     timings = {"init_ms": 0.0, "grep_ms": 0.0, "vector_ms": 0.0, "graph_ms": 0.0, "web_ms": 0.0, "fusion_ms": 0.0}
@@ -164,7 +268,7 @@ def run_retrieval(
 
                 web_results: list[Any] = []
                 with channel_timer(timings, "fusion_ms"):
-                    fused = retriever._rrf.fuse(
+                    pre_fused = retriever._rrf.fuse(
                         grep_results,
                         vector_results,
                         graph_results,
@@ -176,7 +280,39 @@ def run_retrieval(
                             else None
                         ),
                     )
-                    fused = retriever._stabilize_graph_top5(fused, graph_results, graph_intent)
+                    fused = retriever._stabilize_graph_top5(pre_fused, graph_results, graph_intent)
+
+                diagnostics = None
+                if include_diagnostics:
+                    graph_explain = retriever._graph.explain_candidates(
+                        cur,
+                        seed_slugs,
+                        limit=50,
+                        default_window=retriever._graph_top_n(graph_intent) * 3,
+                        query=question,
+                        graph_intent=graph_intent,
+                    )
+                    diagnostics = {
+                        "retrievalGraphIntent": graph_intent,
+                        "graphSeedSlugs": seed_slugs,
+                        "channelsTopN": {
+                            "grepPriority": _top_channel_items(grep_results.get("priority", []), 10),
+                            "grepNormal": _top_channel_items(grep_results.get("normal", []), 10),
+                            "vector": _top_channel_items(vector_results, 10),
+                            "graph": _top_channel_items(graph_results, 10),
+                            "web": _top_channel_items(web_results, 10),
+                        },
+                        "preFused": _top_channel_items(pre_fused, 10),
+                        "postFused": _top_channel_items(fused, 10),
+                        "fusionReplacementsTop5": _fusion_replacements(pre_fused, fused),
+                        "lowValueSources": _summarize_low_value_sources(
+                            grep_results=grep_results,
+                            vector_results=vector_results,
+                            graph_results=graph_results,
+                            web_results=web_results,
+                        ),
+                        "graphCandidateExplainTop50": graph_explain,
+                    }
 
                 result = {
                     "query": question,
@@ -194,6 +330,8 @@ def run_retrieval(
                     "fused": fused,
                     "top": fused[:5],
                 }
+                if diagnostics:
+                    result["diagnostics"] = diagnostics
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
 
