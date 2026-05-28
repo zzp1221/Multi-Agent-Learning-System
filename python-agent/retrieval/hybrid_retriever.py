@@ -130,6 +130,7 @@ class HybridRetriever:
         grep_slugs = [r[0] for r in grep_results.get("priority", [])[:self.graph_seed_n]]
         vec_slugs = [r[0] for r in vector_results[:self.graph_seed_n]]
         seed_slugs = list(dict.fromkeys(grep_slugs + vec_slugs))[:self.graph_seed_n]
+        prerequisite_evidence = self._empty_prerequisite_evidence()
         try:
             graph_results = self._graph.expand(
                 cur,
@@ -138,6 +139,13 @@ class HybridRetriever:
                 query=query,
                 graph_intent=graph_intent,
             )
+            if self._uses_prerequisite_evidence_fill(graph_intent, query) and hasattr(self._graph, "build_prerequisite_evidence"):
+                prerequisite_evidence = self._graph.build_prerequisite_evidence(cur, seed_slugs, query)
+                graph_results = self._merge_graph_evidence(
+                    prerequisite_evidence["directEvidence"],
+                    graph_results,
+                    prerequisite_evidence["protectedSeeds"],
+                )
         except Exception as exc:
             LOGGER.warning("Graph retrieval failed for query %r: %s", query, exc)
             graph_results = []
@@ -153,11 +161,20 @@ class HybridRetriever:
             web_results,
             slug_penalty=self._graph_slug_penalty if self._uses_prerequisite_graph_fill(graph_intent) else None,
         )
-        fused = self._stabilize_graph_top5(fused, graph_results, graph_intent)
+        fused, graph_diagnostics = self._stabilize_graph_top5_with_diagnostics(
+            fused,
+            graph_results,
+            graph_intent,
+            protected_slugs={item[0] for item in prerequisite_evidence["protectedSeeds"]},
+        )
 
         return {
             "query": query,
             "graphIntent": graph_intent,
+            "graphDiagnostics": {
+                "prerequisiteEvidence": self._format_prerequisite_evidence(prerequisite_evidence),
+                "top5Stabilization": graph_diagnostics,
+            },
             "webSearchEnabled": web_search_enabled,
             "channels": {
                 "grep": {
@@ -254,6 +271,24 @@ class HybridRetriever:
     def _uses_prerequisite_graph_fill(self, graph_intent: str | None) -> bool:
         return self._normalize_graph_intent(graph_intent) == PREREQUISITE_PATH_INTENT
 
+    def _uses_prerequisite_evidence_fill(self, graph_intent: str | None, query: str | None) -> bool:
+        if not self._uses_prerequisite_graph_fill(graph_intent):
+            return False
+        compact_query = re.sub(r"\s+", "", str(query or "").strip().lower())
+        if not compact_query:
+            return False
+        strong_path_signals = (
+            "\u6784\u5efa\u4e00\u6761\u5b66\u4e60\u8def\u5f84",  # 构建一条学习路径
+            "\u5b66\u4e60\u8def\u5f84",  # 学习路径
+            "\u4f9d\u8d56\u6216\u901a\u5411",  # 依赖或通向
+            "\u5982\u4f55\u4f9d\u8d56\u6216\u901a\u5411",  # 如何依赖或通向
+            "\u524d\u7f6e\u8def\u5f84",  # 前置路径
+            "\u5148\u4fee\u8def\u5f84",  # 先修路径
+            "learningpath",
+            "prerequisitepath",
+        )
+        return any(signal in compact_query for signal in strong_path_signals)
+
     def _graph_top_n(self, graph_intent: str | None) -> int:
         if self._uses_prerequisite_graph_fill(graph_intent):
             return 8
@@ -265,6 +300,55 @@ class HybridRetriever:
         if self._is_graph_aware_intent(graph_intent):
             return None
         return None
+
+    def _empty_prerequisite_evidence(self) -> dict:
+        return {"queryTerms": [], "protectedSeeds": [], "directEvidence": []}
+
+    def _merge_graph_evidence(
+        self,
+        direct_evidence: list[tuple],
+        graph_results: list[tuple],
+        protected_seeds: list[tuple],
+    ) -> list[tuple]:
+        merged = []
+        seen: set[str] = set()
+        for source in (direct_evidence, graph_results, protected_seeds):
+            for item in source:
+                if not isinstance(item, (list, tuple)) or len(item) < 3:
+                    continue
+                slug = str(item[0])
+                if slug in seen:
+                    continue
+                seen.add(slug)
+                merged.append(item)
+        return merged
+
+    def _format_prerequisite_evidence(self, evidence: dict) -> dict:
+        return {
+            "queryTerms": list(evidence.get("queryTerms", [])),
+            "protectedSeeds": self._format_graph_items(evidence.get("protectedSeeds", [])),
+            "directEvidenceCandidatesTopN": self._format_graph_items(evidence.get("directEvidence", [])),
+        }
+
+    def _format_graph_items(self, items: list[tuple]) -> list[dict]:
+        formatted = []
+        for rank, item in enumerate(items, start=1):
+            if not isinstance(item, (list, tuple)) or len(item) < 3:
+                continue
+            try:
+                score = float(item[2])
+            except (TypeError, ValueError):
+                score = 0.0
+            formatted.append(
+                {
+                    "rank": rank,
+                    "slug": str(item[0]),
+                    "title": str(item[1]),
+                    "score": round(score, 4),
+                    "source": str(item[3]) if len(item) > 3 else "graph",
+                }
+            )
+        return formatted
 
     def _graph_slug_penalty(self, slug: str) -> float:
         normalized = str(slug or "").strip().lower()
@@ -284,10 +368,23 @@ class HybridRetriever:
         graph_results: list[tuple],
         graph_intent: str | None,
     ) -> list[tuple]:
+        stabilized, _diagnostics = self._stabilize_graph_top5_with_diagnostics(fused, graph_results, graph_intent)
+        return stabilized
+
+    def _stabilize_graph_top5_with_diagnostics(
+        self,
+        fused: list[tuple],
+        graph_results: list[tuple],
+        graph_intent: str | None,
+        *,
+        protected_slugs: set[str] | None = None,
+    ) -> tuple[list[tuple], dict]:
+        diagnostics = {"seedProtectedTop5": [], "replacementReason": []}
         if not self._uses_prerequisite_graph_fill(graph_intent) or not graph_results:
-            return fused
+            return fused, diagnostics
 
         ranked = list(fused)
+        protected_slugs = protected_slugs or set()
         seen = {str(item[0]) for item in ranked if isinstance(item, (list, tuple)) and item}
         insertions = [
             (slug, title, round(0.01 + float(score) / 10000, 4))
@@ -295,31 +392,70 @@ class HybridRetriever:
             if str(slug) not in seen and self._graph_slug_penalty(str(slug)) >= 1.0
         ]
         if not insertions:
-            return ranked
+            diagnostics["seedProtectedTop5"] = self._protected_slugs_in_top5(ranked, protected_slugs)
+            return ranked, diagnostics
 
         protected_prefix = 3
         for candidate in insertions:
             if len(ranked) < 5:
                 ranked.append(candidate)
                 seen.add(str(candidate[0]))
+                diagnostics["replacementReason"].append(
+                    {"rank": len(ranked), "insertedSlug": str(candidate[0]), "reason": "append_under_top5"}
+                )
                 continue
-            replace_at = self._graph_replacement_index(ranked, protected_prefix)
+            replace_at, replacement_kind = self._graph_replacement_target(ranked, protected_prefix, protected_slugs)
             if replace_at is None:
                 break
+            replaced = ranked[replace_at]
             ranked[replace_at] = candidate
             seen.add(str(candidate[0]))
-        return ranked
+            diagnostics["replacementReason"].append(
+                {
+                    "rank": replace_at + 1,
+                    "insertedSlug": str(candidate[0]),
+                    "replacedSlug": str(replaced[0]) if isinstance(replaced, (list, tuple)) and replaced else None,
+                    "reason": replacement_kind,
+                }
+            )
+            if replacement_kind == "replace_unprotected_tail":
+                break
+        diagnostics["seedProtectedTop5"] = self._protected_slugs_in_top5(ranked, protected_slugs)
+        return ranked, diagnostics
 
-    def _graph_replacement_index(self, ranked: list[tuple], protected_prefix: int) -> int | None:
+    def _protected_slugs_in_top5(self, ranked: list[tuple], protected_slugs: set[str]) -> list[str]:
+        top5 = {str(item[0]) for item in ranked[:5] if isinstance(item, (list, tuple)) and item}
+        return sorted(slug for slug in protected_slugs if slug in top5)
+
+    def _graph_replacement_target(
+        self,
+        ranked: list[tuple],
+        protected_prefix: int,
+        protected_slugs: set[str] | None = None,
+    ) -> tuple[int | None, str]:
+        protected_slugs = protected_slugs or set()
         for index in range(protected_prefix, len(ranked)):
             item = ranked[index]
             if not isinstance(item, (list, tuple)) or not item:
                 continue
+            if str(item[0]) in protected_slugs:
+                continue
             if self._graph_slug_penalty(str(item[0])) < 1.0:
-                return index
+                return index, "replace_low_value_tail"
         if len(ranked) >= 5:
-            return 4
-        return None
+            if str(ranked[4][0]) in protected_slugs:
+                return None, "no_replaceable_tail"
+            return 4, "replace_unprotected_tail"
+        return None, "no_replaceable_tail"
+
+    def _graph_replacement_index(
+        self,
+        ranked: list[tuple],
+        protected_prefix: int,
+        protected_slugs: set[str] | None = None,
+    ) -> int | None:
+        index, _reason = self._graph_replacement_target(ranked, protected_prefix, protected_slugs)
+        return index
 
     def _web_query(self, query: str) -> str:
         lowered = query.lower()

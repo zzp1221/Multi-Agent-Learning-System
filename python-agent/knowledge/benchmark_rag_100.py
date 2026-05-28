@@ -229,6 +229,25 @@ def channel_timer(timings: dict[str, float], channel_name: str):
         timings[channel_name] += (time.perf_counter() - started) * 1000
 
 
+def _search_vector_with_retries(retriever: HybridRetriever, cur, question: str, max_attempts: int = 3) -> list[tuple]:
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return retriever._vector.search_all(
+                cur,
+                question,
+                top_k=retriever.top_k,
+                domain=retriever.domain,
+            )
+        except Exception as exc:
+            last_error = exc
+            if attempt >= max_attempts:
+                break
+            time.sleep(0.5 * attempt)
+    assert last_error is not None
+    raise last_error
+
+
 def run_retrieval(
     question: str,
     *,
@@ -240,6 +259,7 @@ def run_retrieval(
     error: str | None = None
     started = time.perf_counter()
     result: dict[str, Any] = {"query": question, "graphIntent": graph_intent, "channels": {}, "top": []}
+    channel_errors: dict[str, str] = {}
 
     with psycopg2.connect(**DB_CONFIG) as conn:
         with conn.cursor() as cur:
@@ -248,23 +268,43 @@ def run_retrieval(
                     retriever._init(cur)
 
                 with channel_timer(timings, "grep_ms"):
-                    grep_results = retriever._grep.search(cur, question, retriever.domain)
+                    try:
+                        grep_results = retriever._grep.search(cur, question, retriever.domain)
+                    except Exception as exc:
+                        channel_errors["grep"] = f"{type(exc).__name__}: {exc}"
+                        grep_results = {"priority": [], "normal": []}
 
                 with channel_timer(timings, "vector_ms"):
-                    vector_all = retriever._vector.search_all(cur, question, top_k=retriever.top_k, domain=retriever.domain)
+                    try:
+                        vector_all = _search_vector_with_retries(retriever, cur, question)
+                    except Exception as exc:
+                        channel_errors["vector"] = f"{type(exc).__name__}: {exc}"
+                        vector_all = []
                     vector_results = [(item[0], item[1], item[2]) for item in vector_all]
 
                 with channel_timer(timings, "graph_ms"):
                     grep_slugs = [item[0] for item in grep_results.get("priority", [])[: retriever.graph_seed_n]]
                     vec_slugs = [item[0] for item in vector_results[: retriever.graph_seed_n]]
                     seed_slugs = list(dict.fromkeys(grep_slugs + vec_slugs))[: retriever.graph_seed_n]
-                    graph_results = retriever._graph.expand(
-                        cur,
-                        seed_slugs,
-                        top_n=retriever._graph_top_n(graph_intent),
-                        query=question,
-                        graph_intent=graph_intent,
-                    )
+                    prerequisite_evidence = retriever._empty_prerequisite_evidence()
+                    try:
+                        graph_results = retriever._graph.expand(
+                            cur,
+                            seed_slugs,
+                            top_n=retriever._graph_top_n(graph_intent),
+                            query=question,
+                            graph_intent=graph_intent,
+                        )
+                        if retriever._uses_prerequisite_evidence_fill(graph_intent, question):
+                            prerequisite_evidence = retriever._graph.build_prerequisite_evidence(cur, seed_slugs, question)
+                            graph_results = retriever._merge_graph_evidence(
+                                prerequisite_evidence["directEvidence"],
+                                graph_results,
+                                prerequisite_evidence["protectedSeeds"],
+                            )
+                    except Exception as exc:
+                        channel_errors["graph"] = f"{type(exc).__name__}: {exc}"
+                        graph_results = []
 
                 web_results: list[Any] = []
                 with channel_timer(timings, "fusion_ms"):
@@ -280,20 +320,30 @@ def run_retrieval(
                             else None
                         ),
                     )
-                    fused = retriever._stabilize_graph_top5(pre_fused, graph_results, graph_intent)
+                    fused, graph_diagnostics = retriever._stabilize_graph_top5_with_diagnostics(
+                        pre_fused,
+                        graph_results,
+                        graph_intent,
+                        protected_slugs={item[0] for item in prerequisite_evidence["protectedSeeds"]},
+                    )
 
                 diagnostics = None
                 if include_diagnostics:
-                    graph_explain = retriever._graph.explain_candidates(
-                        cur,
-                        seed_slugs,
-                        limit=50,
-                        default_window=retriever._graph_top_n(graph_intent) * 3,
-                        query=question,
-                        graph_intent=graph_intent,
-                    )
+                    try:
+                        graph_explain = retriever._graph.explain_candidates(
+                            cur,
+                            seed_slugs,
+                            limit=50,
+                            default_window=retriever._graph_top_n(graph_intent) * 3,
+                            query=question,
+                            graph_intent=graph_intent,
+                        )
+                    except Exception as exc:
+                        channel_errors["graphExplain"] = f"{type(exc).__name__}: {exc}"
+                        graph_explain = {}
                     diagnostics = {
                         "retrievalGraphIntent": graph_intent,
+                        "channelErrors": channel_errors,
                         "graphSeedSlugs": seed_slugs,
                         "channelsTopN": {
                             "grepPriority": _top_channel_items(grep_results.get("priority", []), 10),
@@ -305,6 +355,8 @@ def run_retrieval(
                         "preFused": _top_channel_items(pre_fused, 10),
                         "postFused": _top_channel_items(fused, 10),
                         "fusionReplacementsTop5": _fusion_replacements(pre_fused, fused),
+                        "prerequisiteEvidence": retriever._format_prerequisite_evidence(prerequisite_evidence),
+                        "top5Stabilization": graph_diagnostics,
                         "lowValueSources": _summarize_low_value_sources(
                             grep_results=grep_results,
                             vector_results=vector_results,

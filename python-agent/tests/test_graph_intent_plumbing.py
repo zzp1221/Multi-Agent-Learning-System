@@ -6,7 +6,7 @@ from knowledge.benchmark_graph_rag_100 import (
     summarize_intent_mismatches,
     summarize_low_value_sources,
 )
-from knowledge.benchmark_rag_100 import _fusion_replacements, _summarize_low_value_sources
+from knowledge.benchmark_rag_100 import _fusion_replacements, _search_vector_with_retries, _summarize_low_value_sources
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.graph_expander import GraphExpander
 from retrieval.rrf_fusion import RRFFusion
@@ -47,6 +47,8 @@ class FakeGraphCursor:
             "incoming-id": ("incoming-id", "incoming-doc", "Incoming Doc"),
             "weak-tag-id": ("weak-tag-id", "weak-tag-doc", "Weak Tag Doc"),
             "strong-tag-id": ("strong-tag-id", "strong-tag-doc", "Strong Tag Doc"),
+            "direct-id": ("direct-id", "direct-doc", "Direct Evidence Doc"),
+            "seed-id": ("seed-id", "seed-doc", "Seed Doc"),
         }
 
     def execute(self, sql, params):
@@ -62,9 +64,30 @@ class FakeGraphCursor:
             ]
             return
         if "LEFT JOIN rag.wiki_page_graph_features" in sql:
-            candidate_ids = set(params[0])
+            if "wp.slug = ANY" in sql:
+                seed_slugs = set(params[0])
+                candidate_ids = {
+                    page_id
+                    for page_id, row in self._pages.items()
+                    if row[1] in seed_slugs
+                }
+            elif "wp.id::text = ANY" in sql:
+                candidate_ids = set(params[0])
+            else:
+                pattern = str(params[0]).strip("%").lower()
+                candidate_ids = {
+                    page_id
+                    for page_id, row in self._pages.items()
+                    if pattern in row[1].lower() or pattern in row[2].lower()
+                }
             self._rows = [
-                (*row, 1 if row[0] == "strong-tag-id" else 2, 0.9 if row[0] == "strong-tag-id" else 0.2, '["alias"]', '["tag"]')
+                (
+                    *row,
+                    1 if row[0] == "strong-tag-id" else 2,
+                    0.9 if row[0] == "strong-tag-id" else 0.2,
+                    '["direct alias"]' if row[0] == "direct-id" else '["seed alias"]' if row[0] == "seed-id" else '["alias"]',
+                    '["tag"]',
+                )
                 for page_id, row in self._pages.items()
                 if page_id in candidate_ids
             ]
@@ -101,6 +124,17 @@ def test_graph_expander_explain_candidates_keeps_candidate_rows() -> None:
     assert [item["slug"] for item in explanation["candidates"]] == ["strong-tag-doc", "incoming-doc"]
     assert explanation["seedSlugs"] == ["seed-doc"]
     assert explanation["queryTerms"] == ["strong", "tag"]
+
+
+def test_graph_expander_builds_prerequisite_direct_and_seed_evidence() -> None:
+    evidence = GraphExpander().build_prerequisite_evidence(
+        FakeGraphCursor(),
+        ["seed-doc"],
+        "请说明 seed doc 和 direct alias 的学习路径",
+    )
+
+    assert [item[0] for item in evidence["protectedSeeds"]] == ["seed-doc"]
+    assert [item[0] for item in evidence["directEvidence"]] == ["direct-doc"]
 
 
 def test_prerequisite_graph_low_value_filter_covers_video_resource_slug() -> None:
@@ -189,6 +223,69 @@ def test_graph_intent_keeps_top3_and_fills_low_trust_tail() -> None:
 
     assert [item[0] for item in result[:3]] == ["doc-a", "doc-b", "doc-c"]
     assert [item[0] for item in result[3:5]] == ["graph-d", "graph-e"]
+
+
+def test_graph_intent_does_not_replace_protected_seed_tail() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("seed-doc", "Seed Doc", 0.17),
+        ("tail-doc", "Tail Doc", 0.16),
+    ]
+    graph_results = [("graph-d", "Graph D", 3), ("graph-e", "Graph E", 2)]
+
+    result, diagnostics = retriever._stabilize_graph_top5_with_diagnostics(
+        fused,
+        graph_results,
+        "PREREQUISITE_PATH",
+        protected_slugs={"seed-doc"},
+    )
+
+    assert result[3][0] == "seed-doc"
+    assert result[4][0] == "graph-d"
+    assert diagnostics["seedProtectedTop5"] == ["seed-doc"]
+    assert diagnostics["replacementReason"][0]["reason"] == "replace_unprotected_tail"
+
+
+def test_prerequisite_direct_evidence_requires_strong_path_signal() -> None:
+    retriever = HybridRetriever({})
+
+    assert retriever._uses_prerequisite_evidence_fill(
+        "PREREQUISITE_PATH",
+        "请构建一条学习路径，说明 NFA 如何依赖或通向 DFA 最小化。",
+    )
+    assert not retriever._uses_prerequisite_evidence_fill(
+        "PREREQUISITE_PATH",
+        "请从知识图谱关系角度说明图着色与 NP 完全性之间的多跳联系。",
+    )
+
+
+def test_benchmark_vector_search_retries_transient_errors(monkeypatch) -> None:
+    monkeypatch.setattr("knowledge.benchmark_rag_100.time.sleep", lambda _seconds: None)
+
+    class FlakyVector:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def search_all(self, cur, query, top_k, domain):
+            del cur, query, top_k, domain
+            self.calls += 1
+            if self.calls < 3:
+                raise ConnectionError("temporary embedding disconnect")
+            return [("doc-a", "Doc A", 0.9, "knowledge")]
+
+    class FakeRetriever:
+        def __init__(self) -> None:
+            self._vector = FlakyVector()
+            self.top_k = 5
+            self.domain = "COMPUTER_SCIENCE"
+
+    retriever = FakeRetriever()
+
+    assert _search_vector_with_retries(retriever, object(), "query") == [("doc-a", "Doc A", 0.9, "knowledge")]
+    assert retriever._vector.calls == 3
 
 
 def test_non_prerequisite_graph_intent_does_not_fill_tail() -> None:

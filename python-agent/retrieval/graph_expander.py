@@ -9,6 +9,32 @@ from collections import defaultdict
 class GraphExpander:
     """Expand from seed slugs via WIKILINK and SHARED_TAG relations."""
 
+    def build_prerequisite_evidence(
+        self,
+        cur,
+        seed_slugs: list[str],
+        query: str | None,
+        *,
+        direct_limit: int = 8,
+    ) -> dict:
+        """Build prerequisite-only evidence candidates from explicit query terms."""
+        query_terms = self._extract_direct_evidence_terms(query)
+        if not query_terms:
+            return {"queryTerms": [], "protectedSeeds": [], "directEvidence": []}
+
+        protected_seeds = self._protected_seed_candidates(cur, seed_slugs, query_terms)
+        direct_evidence = self._direct_evidence_candidates(
+            cur,
+            query_terms,
+            protected_seed_slugs={item[0] for item in protected_seeds},
+            limit=direct_limit,
+        )
+        return {
+            "queryTerms": query_terms,
+            "protectedSeeds": protected_seeds,
+            "directEvidence": direct_evidence,
+        }
+
     def expand(
         self,
         cur,
@@ -302,6 +328,126 @@ class GraphExpander:
             result.append(normalized)
         return result[:8]
 
+    def _extract_direct_evidence_terms(self, query: str | None) -> list[str]:
+        terms = self._extract_query_terms(query)
+        if query:
+            quoted_chunks = re.findall(r"[「《“\"]([^」》”\"]+)[」》”\"]", query)
+            for chunk in quoted_chunks:
+                terms.append(self._normalize_text(chunk))
+                terms.extend(
+                    self._normalize_text(part)
+                    for part in re.split(r"[、,，/（）()\\s]+", chunk)
+                    if self._normalize_text(part)
+                )
+
+        seen: set[str] = set()
+        result: list[str] = []
+        for term in terms:
+            normalized = self._normalize_text(term)
+            if not normalized or len(normalized) < 2 or normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(normalized)
+        return result[:18]
+
+    def _protected_seed_candidates(self, cur, seed_slugs: list[str], query_terms: list[str]) -> list[tuple]:
+        if not seed_slugs:
+            return []
+        cur.execute("""
+            SELECT wp.id::text, wp.slug, wp.title,
+                   COALESCE(f.community_id, 0) AS community_id,
+                   COALESCE(f.pagerank_score, 0) AS pagerank_score,
+                   COALESCE(wp.aliases, '[]'::jsonb)::text AS aliases_text,
+                   COALESCE(wp.tags, '[]'::jsonb)::text AS tags_text
+            FROM rag.wiki_page wp
+            LEFT JOIN rag.wiki_page_graph_features f ON f.page_id = wp.id
+            WHERE wp.slug = ANY(%s)
+              AND wp.is_active = true
+        """, (seed_slugs,))
+        protected = []
+        for _page_id, slug, title, _community_id, pagerank_score, aliases_text, tags_text in cur.fetchall():
+            if self._is_low_value_resource(slug, title):
+                continue
+            bonus = self._query_bonus(query_terms, slug, title, aliases_text, tags_text)
+            if bonus < 3.0:
+                continue
+            protected.append((slug, title, round(25.0 + bonus + float(pagerank_score) * 0.5, 4), "seed_protected"))
+        protected.sort(key=lambda item: item[2], reverse=True)
+        return protected
+
+    def _direct_evidence_candidates(
+        self,
+        cur,
+        query_terms: list[str],
+        *,
+        protected_seed_slugs: set[str],
+        limit: int,
+    ) -> list[tuple]:
+        candidates: dict[str, tuple] = {}
+        for term in query_terms:
+            pattern = f"%{term}%"
+            cur.execute(
+                """
+                SELECT wp.id::text, wp.slug, wp.title,
+                       COALESCE(f.community_id, 0) AS community_id,
+                       COALESCE(f.pagerank_score, 0) AS pagerank_score,
+                       COALESCE(wp.aliases, '[]'::jsonb)::text AS aliases_text,
+                       COALESCE(wp.tags, '[]'::jsonb)::text AS tags_text
+                FROM rag.wiki_page wp
+                LEFT JOIN rag.wiki_page_graph_features f ON f.page_id = wp.id
+                WHERE wp.is_active = true
+                  AND (
+                    lower(wp.slug) LIKE lower(%s)
+                    OR lower(wp.title) LIKE lower(%s)
+                    OR lower(COALESCE(wp.aliases, '[]'::jsonb)::text) LIKE lower(%s)
+                    OR lower(COALESCE(wp.tags, '[]'::jsonb)::text) LIKE lower(%s)
+                  )
+                ORDER BY length(wp.slug), wp.slug
+                LIMIT 20
+                """,
+                (pattern, pattern, pattern, pattern),
+            )
+            for _page_id, slug, title, _community_id, pagerank_score, aliases_text, tags_text in cur.fetchall():
+                if slug in protected_seed_slugs or self._is_low_value_resource(slug, title):
+                    continue
+                if not self._has_specific_direct_match(query_terms, slug, title, aliases_text, tags_text):
+                    continue
+                bonus = self._query_bonus(query_terms, slug, title, aliases_text, tags_text)
+                if bonus < 3.0:
+                    continue
+                score = round(30.0 + bonus + float(pagerank_score) * 0.5, 4)
+                existing = candidates.get(slug)
+                if existing is None or score > existing[2]:
+                    candidates[slug] = (slug, title, score, "direct_evidence")
+
+        ranked = sorted(
+            candidates.values(),
+            key=lambda item: (float(item[2]), -len(str(item[0])), str(item[0])),
+            reverse=True,
+        )
+        return ranked[:limit]
+
+    def _has_specific_direct_match(self, query_terms: list[str], slug: str, title: str, aliases_text, tags_text) -> bool:
+        slug_norm = self._normalize_text(slug)
+        title_norm = self._normalize_text(title)
+        alias_norms = {self._normalize_text(alias) for alias in self._parse_json_list(aliases_text)}
+        tag_norms = {self._normalize_text(tag) for tag in self._parse_json_list(tags_text)}
+        generic_terms = {"alias", "doc", "docs", "path", "query", "seed"}
+        for term in query_terms:
+            if term in generic_terms:
+                continue
+            has_cjk = bool(re.search(r"[\u4e00-\u9fff]", term))
+            if (has_cjk and len(term) < 3) or (not has_cjk and len(term) < 4):
+                continue
+            if (
+                term in slug_norm
+                or term in title_norm
+                or any(term in alias_norm for alias_norm in alias_norms)
+                or any(term in tag_norm for tag_norm in tag_norms)
+            ):
+                return True
+        return False
+
     def _normalize_text(self, text: str) -> str:
         return re.sub(r"\s+", "", str(text or "").strip().lower())
 
@@ -334,7 +480,12 @@ class GraphExpander:
             if term in alias_norms:
                 bonus += 2.5
                 continue
-            if term in title_norm or term in slug_norm or term in alias_norms or term in tag_norms:
+            if (
+                term in title_norm
+                or term in slug_norm
+                or any(term in alias_norm for alias_norm in alias_norms)
+                or any(term in tag_norm for tag_norm in tag_norms)
+            ):
                 bonus += 1.5
         return bonus
 

@@ -332,6 +332,13 @@ def attach_focused_low_case_diagnostics(records: list[dict[str, Any]]) -> dict[s
         }
         seed_slugs = {_normalize_slug(slug) for slug in graph_explain.get("seedSlugs", [])}
         candidate_slugs = {_normalize_slug(item.get("slug")) for item in candidates}
+        prerequisite_evidence = record.get("diagnostics", {}).get("prerequisiteEvidence", {})
+        direct_evidence = prerequisite_evidence.get("directEvidenceCandidatesTopN", [])
+        direct_evidence_slugs = {_normalize_slug(item.get("slug")) for item in direct_evidence}
+        protected_seed_slugs = {
+            _normalize_slug(item.get("slug"))
+            for item in prerequisite_evidence.get("protectedSeeds", [])
+        }
         graph_channel_slugs = {
             _normalize_slug(item.get("slug"))
             for item in record.get("diagnostics", {}).get("channelsTopN", {}).get("graph", [])
@@ -341,11 +348,16 @@ def attach_focused_low_case_diagnostics(records: list[dict[str, Any]]) -> dict[s
             "retrievalGraphIntent": record.get("retrievalGraphIntent"),
             "queryTerms": graph_explain.get("queryTerms", []),
             "seedSlugs": sorted(seed_slugs),
+            "seedProtectedTop5": record.get("diagnostics", {}).get("top5Stabilization", {}).get("seedProtectedTop5", []),
+            "protectedSeedSlugs": sorted(protected_seed_slugs),
+            "directEvidenceCandidatesTopN": direct_evidence[:10],
             "missingEvidenceSlugsTop5": sorted(missing),
             "missingAlreadySeedSlugs": sorted(missing & seed_slugs),
+            "missingFoundInDirectEvidence": sorted(missing & direct_evidence_slugs),
             "missingFoundInGraphCandidateTop50": sorted(missing & candidate_slugs),
             "missingFoundInGraphChannelTopN": sorted(missing & graph_channel_slugs),
             "missingAbsentFromGraphCandidateTop50": sorted(missing - candidate_slugs - seed_slugs),
+            "replacementReason": record.get("diagnostics", {}).get("top5Stabilization", {}).get("replacementReason", []),
             "topGraphCandidates": candidates[:10],
         }
     return focused
