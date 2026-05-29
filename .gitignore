@@ -301,6 +301,7 @@ python-agent/grpo_output/
 python-agent/sft_output/
 python-agent/reports/graph_rag_100_pr*.json
 python-agent/reports/rag_100_pr*.json
+python-agent/reports/*judge_cache.json
 
 # ============================================================
 # 9. Docker
