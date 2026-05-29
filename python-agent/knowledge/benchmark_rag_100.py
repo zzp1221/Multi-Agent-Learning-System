@@ -26,6 +26,7 @@ import psycopg2
 
 from knowledge.settings_helper import configure_dashscope_api_key
 from retrieval.hybrid_retriever import HybridRetriever
+from retrieval.slug_canonicalizer import safe_slug_key
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import OpenAICompatibleJSONGenerator
 
@@ -316,15 +317,21 @@ def run_retrieval(
                         graph_weight=retriever._graph_weight(graph_intent),
                         slug_penalty=(
                             retriever._graph_slug_penalty
-                            if retriever._uses_prerequisite_graph_fill(graph_intent)
+                            if retriever._is_graph_aware_intent(graph_intent)
                             else None
                         ),
+                        slug_key=safe_slug_key,
                     )
                     fused, graph_diagnostics = retriever._stabilize_graph_top5_with_diagnostics(
                         pre_fused,
                         graph_results,
                         graph_intent,
                         protected_slugs={item[0] for item in prerequisite_evidence["protectedSeeds"]},
+                    )
+                    fused, grep_top_diagnostics = retriever._promote_strong_grep_top_with_diagnostics(
+                        fused,
+                        grep_results,
+                        graph_intent,
                     )
 
                 diagnostics = None
@@ -357,6 +364,7 @@ def run_retrieval(
                         "fusionReplacementsTop5": _fusion_replacements(pre_fused, fused),
                         "prerequisiteEvidence": retriever._format_prerequisite_evidence(prerequisite_evidence),
                         "top5Stabilization": graph_diagnostics,
+                        "strongGrepTop": grep_top_diagnostics,
                         "lowValueSources": _summarize_low_value_sources(
                             grep_results=grep_results,
                             vector_results=vector_results,

@@ -52,6 +52,9 @@ class FakeGraphCursor:
             "incoming-id": ("incoming-id", "incoming-doc", "Incoming Doc"),
             "weak-tag-id": ("weak-tag-id", "weak-tag-doc", "Weak Tag Doc"),
             "strong-tag-id": ("strong-tag-id", "strong-tag-doc", "Strong Tag Doc"),
+            "two-hop-id": ("two-hop-id", "two-hop-doc", "Two Hop Doc"),
+            "low-value-id": ("low-value-id", "http://example.com/video", "Video Resource"),
+            "none-id": ("none-id", "None", "None Resource"),
             "direct-id": ("direct-id", "direct-doc", "Direct Evidence Doc"),
             "seed-id": ("seed-id", "seed-doc", "Seed Doc"),
         }
@@ -59,6 +62,15 @@ class FakeGraphCursor:
     def execute(self, sql, params):
         if "FROM rag.wiki_page" in sql and "slug = ANY" in sql and "LEFT JOIN rag.wiki_page_graph_features" not in sql:
             self._rows = [("seed-id", "seed-doc", "Seed Doc")]
+            return
+        if "FROM rag.wiki_link l" in sql and "GROUP BY source_id, neighbor_id" in sql:
+            self._rows = [
+                ("strong-tag-id", "two-hop-id", 2, 0),
+                ("strong-tag-id", "seed-id", 5, 0),
+                ("incoming-id", "low-value-id", 3, 0),
+                ("incoming-id", "incoming-id", 4, 0),
+                ("incoming-id", "none-id", 4, 0),
+            ]
             return
         if "FROM rag.wiki_link l" in sql and "GROUP BY neighbor_id" in sql:
             self._rows = [
@@ -126,9 +138,13 @@ def test_graph_expander_explain_candidates_keeps_candidate_rows() -> None:
         graph_intent="PREREQUISITE_PATH",
     )
 
-    assert [item["slug"] for item in explanation["candidates"]] == ["strong-tag-doc", "incoming-doc"]
+    assert [item["slug"] for item in explanation["candidates"][:3]] == ["strong-tag-doc", "incoming-doc", "two-hop-doc"]
     assert explanation["seedSlugs"] == ["seed-doc"]
     assert explanation["queryTerms"] == ["strong", "tag"]
+    assert explanation["candidates"][0]["source"] == "graph_1hop"
+    two_hop = next(item for item in explanation["candidates"] if item["slug"] == "two-hop-doc")
+    assert two_hop["source"] == "graph_2hop"
+    assert two_hop["hop"] == 2
 
 
 def test_graph_expander_builds_prerequisite_direct_and_seed_evidence() -> None:
@@ -142,12 +158,38 @@ def test_graph_expander_builds_prerequisite_direct_and_seed_evidence() -> None:
     assert [item[0] for item in evidence["directEvidence"]] == ["direct-doc"]
 
 
+def test_graph_expander_only_prerequisite_path_returns_bounded_two_hop() -> None:
+    expander = GraphExpander()
+
+    default_results = expander.expand(
+        FakeGraphCursor(),
+        ["seed-doc"],
+        top_n=5,
+        min_shared_tags=3,
+        query="two hop",
+    )
+    prerequisite_results = expander.expand(
+        FakeGraphCursor(),
+        ["seed-doc"],
+        top_n=5,
+        min_shared_tags=3,
+        query="two hop",
+        graph_intent="PREREQUISITE_PATH",
+    )
+
+    assert all(len(item) == 3 for item in default_results)
+    assert [item[0] for item in default_results] == ["strong-tag-doc", "incoming-doc"]
+    assert any(item[0] == "two-hop-doc" and item[3] == "graph_2hop" for item in prerequisite_results)
+    assert all(item[0] not in {"seed-doc", "http://example.com/video", "None"} for item in prerequisite_results)
+
+
 def test_prerequisite_graph_low_value_filter_covers_video_resource_slug() -> None:
     expander = GraphExpander()
     retriever = HybridRetriever({})
 
     assert expander._is_low_value_resource("视频资源/离散数学-图论基础与应用", "Graph Doc") is True
     assert retriever._graph_slug_penalty("视频资源/离散数学-图论基础与应用") < 1.0
+    assert expander._is_low_value_resource("knowledge-doc", None) is False
 
 
 def test_query_classifier_marks_graph_relation_intent() -> None:
@@ -209,6 +251,64 @@ def test_rrf_graph_weight_override_remains_opt_in() -> None:
     assert graph_top[-1][0] == "https://example.com/video"
 
 
+def test_hybrid_retriever_graph_weight_mapping() -> None:
+    retriever = HybridRetriever({})
+
+    assert retriever._graph_weight(None) == 0.5
+    assert retriever._graph_weight("COMPARISON") == 1.2
+    assert retriever._graph_weight("CROSS_LAYER_RELATION") == 1.4
+    assert retriever._graph_weight("MECHANISM_APPLICATION") == 1.4
+    assert retriever._graph_weight("COMMON_MISTAKE") == 1.3
+    assert retriever._graph_weight("COMMUNITY_SUMMARY") == 1.5
+    assert retriever._graph_weight("MULTI_HOP_RELATION") == 1.6
+    assert retriever._graph_weight("PREREQUISITE_PATH") == 1.8
+
+
+def test_hybrid_retriever_passes_dynamic_graph_weight_to_rrf() -> None:
+    class FakeGrep:
+        def search(self, cur, query, domain):
+            del cur, query, domain
+            return {"priority": [], "normal": []}
+
+    class FakeVector:
+        def search_all(self, cur, query, top_k, domain):
+            del cur, query, top_k, domain
+            return []
+
+    class FakeGraph:
+        def expand(self, cur, seed_slugs, top_n, query=None, graph_intent=None):
+            del cur, seed_slugs, top_n, query, graph_intent
+            return [("graph-doc", "Graph Doc", 10)]
+
+    class FakeWeb:
+        def search(self, query, top_k):
+            del query, top_k
+            return []
+
+    class RecordingRRF:
+        def __init__(self) -> None:
+            self.graph_weight = None
+
+        def fuse(self, *args, **kwargs):
+            del args
+            self.graph_weight = kwargs.get("graph_weight")
+            return [("graph-doc", "Graph Doc", 0.1)]
+
+    recording_rrf = RecordingRRF()
+    retriever = HybridRetriever({}, top_k=3, graph_seed_n=1)
+    retriever._initialized = True
+    retriever._grep = FakeGrep()
+    retriever._vector = FakeVector()
+    retriever._graph = FakeGraph()
+    retriever._web = FakeWeb()
+    retriever._rrf = recording_rrf
+
+    result = retriever.retrieve(object(), "graph query", graph_intent="MULTI_HOP_RELATION")
+
+    assert recording_rrf.graph_weight == 1.6
+    assert result["top"] == [("graph-doc", "Graph Doc", 0.1)]
+
+
 def test_graph_intent_keeps_top3_and_fills_low_trust_tail() -> None:
     retriever = HybridRetriever({})
     fused = [
@@ -228,6 +328,33 @@ def test_graph_intent_keeps_top3_and_fills_low_trust_tail() -> None:
 
     assert [item[0] for item in result[:3]] == ["doc-a", "doc-b", "doc-c"]
     assert [item[0] for item in result[3:5]] == ["graph-d", "graph-e"]
+
+
+def test_strong_grep_top_promotion_only_reorders_existing_top3() -> None:
+    retriever = HybridRetriever({})
+    grep_results = {"priority": [("doc-b", "Doc B", 1.0, ["doc b"])], "normal": []}
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("doc-d", "Doc D", 0.17),
+    ]
+
+    promoted, diagnostics = retriever._promote_strong_grep_top_with_diagnostics(
+        fused,
+        grep_results,
+        "COMPARISON",
+    )
+    unchanged, unchanged_diagnostics = retriever._promote_strong_grep_top_with_diagnostics(
+        fused,
+        {"priority": [("doc-d", "Doc D", 1.0, ["doc d"])], "normal": []},
+        "COMPARISON",
+    )
+
+    assert [item[0] for item in promoted[:3]] == ["doc-b", "doc-a", "doc-c"]
+    assert diagnostics["reason"] == "strong_grep_top_in_top3"
+    assert unchanged == fused
+    assert unchanged_diagnostics["promotedSlug"] is None
 
 
 def test_graph_intent_does_not_replace_protected_seed_tail() -> None:
@@ -366,8 +493,12 @@ def test_non_prerequisite_graph_intent_does_not_fill_tail() -> None:
 
 def test_graph_intent_forces_grep_first_to_keep_graph_channel() -> None:
     class FakeGrep:
+        def __init__(self) -> None:
+            self.calls = 0
+
         def search(self, cur, query, domain):
             del cur, query, domain
+            self.calls += 1
             return {"priority": [("seed-doc", "Seed Doc", 0.95, ["seed"])], "normal": []}
 
     class FakeVector:
@@ -389,10 +520,11 @@ def test_graph_intent_forces_grep_first_to_keep_graph_channel() -> None:
             del query, top_k
             return []
 
+    fake_grep = FakeGrep()
     fake_graph = FakeGraph()
     retriever = HybridRetriever({}, top_k=3, graph_seed_n=1)
     retriever._initialized = True
-    retriever._grep = FakeGrep()
+    retriever._grep = fake_grep
     retriever._vector = FakeVector()
     retriever._graph = fake_graph
     retriever._web = FakeWeb()
@@ -402,13 +534,15 @@ def test_graph_intent_forces_grep_first_to_keep_graph_channel() -> None:
     graph_result = retriever.retrieve_grep_first(
         object(),
         "seed query",
-        graph_intent="PREREQUISITE_PATH",
+        graph_intent="COMPARISON",
     )
 
     assert plain_result["channels"]["graph"] == []
     assert graph_result["channels"]["graph"] == [("graph-doc", "Graph Doc", 10)]
     assert graph_result["grepFirstPromoted"] is True
-    assert fake_graph.calls[0]["top_n"] == 8
+    assert fake_grep.calls == 2
+    assert fake_graph.calls[0]["top_n"] == 5
+    assert fake_graph.calls[0]["graph_intent"] == "COMPARISON"
     assert graph_result["top"][:2] == [("vector-doc", "Vector Doc", 0.082), ("seed-doc", "Seed Doc", 0.0738)]
 
 
@@ -432,6 +566,42 @@ def test_graph_benchmark_metrics_cover_primary_and_related_nodes() -> None:
     assert metrics["completeEvidenceTop5"] is True
     assert metrics["evidenceNodeRecallTop5"] == 1.0
     assert metrics["missingEvidenceSlugsTop5"] == []
+
+
+def test_graph_benchmark_evidence_matches_canonical_slug_and_title_alias() -> None:
+    question = {
+        "graphIntent": "COMPARISON",
+        "expectedSlug": "wiki://Course/Type-System",
+        "expectedRelatedSlugs": ["wiki://Course/Type-System"],
+    }
+    candidates = [
+        {"rank": 1, "slug": "Go语言/接口与类型系统", "title": '"Go语言-接口与类型系统"', "score": 1.0},
+        {"rank": 2, "slug": "course/type system", "title": "Type System", "score": 0.9},
+    ]
+
+    metrics = evaluate_graph_evidence(question, candidates)
+
+    assert metrics["primaryTop5"] is True
+    assert metrics["completeEvidenceTop5"] is True
+    assert metrics["evidenceNodeRecallTop5"] == 1.0
+    assert metrics["missingEvidenceSlugsTop5"] == []
+
+
+def test_graph_benchmark_evidence_does_not_match_broad_tail_substrings() -> None:
+    question = {
+        "graphIntent": "COMPARISON",
+        "expectedSlug": "程序设计/类型系统",
+        "expectedRelatedSlugs": [],
+    }
+    candidates = [
+        {"rank": 1, "slug": "Go语言/接口与类型系统", "title": '"Go语言-接口与类型系统"', "score": 1.0},
+    ]
+
+    metrics = evaluate_graph_evidence(question, candidates)
+
+    assert metrics["primaryTop5"] is False
+    assert metrics["completeEvidenceTop5"] is False
+    assert metrics["missingEvidenceSlugsTop5"] == ["程序设计/类型系统"]
 
 
 def test_graph_benchmark_summary_groups_evidence_metrics() -> None:

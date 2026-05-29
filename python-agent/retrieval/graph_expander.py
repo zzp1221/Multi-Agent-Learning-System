@@ -5,6 +5,15 @@ import json
 import re
 from collections import defaultdict
 
+PREREQUISITE_PATH_INTENT = "PREREQUISITE_PATH"
+GRAPH_SOURCE_1HOP = "graph_1hop"
+GRAPH_SOURCE_2HOP = "graph_2hop"
+TWO_HOP_DECAY = 0.45
+MIN_ONE_HOP_WINDOW = 12
+MAX_ONE_HOP_WINDOW = 24
+TWO_HOP_PER_NODE_LIMIT = 3
+MAX_TWO_HOP_CANDIDATES = 24
+
 
 class GraphExpander:
     """Expand from seed slugs via WIKILINK and SHARED_TAG relations."""
@@ -46,6 +55,7 @@ class GraphExpander:
     ) -> list[tuple]:
         """
         Returns top_n neighbors as [(slug, title, score), ...].
+        PREREQUISITE_PATH appends a source marker: (slug, title, score, source).
         Score = WIKILINK_count * 2 + SHARED_TAG_count.
         """
         if not seed_slugs:
@@ -60,88 +70,55 @@ class GraphExpander:
         if not seed_rows:
             return []
 
-        seed_ids = [row[0] for row in seed_rows]
+        seed_ids = [str(row[0]) for row in seed_rows]
         seed_slug_set = {row[1] for row in seed_rows}
+        prerequisite_intent = self._is_prerequisite_path(graph_intent)
 
-        # Treat wiki graph edges as evidence links: prerequisites often point
-        # into the current page, while applications point outward.
-        cur.execute("""
-            SELECT
-                CASE
-                    WHEN l.from_page_id::text = ANY(%s) THEN l.to_page_id
-                    ELSE l.from_page_id
-                END AS neighbor_id,
-                l.relation_type,
-                COUNT(*) AS strength
-            FROM rag.wiki_link l
-            WHERE l.from_page_id::text = ANY(%s)
-               OR l.to_page_id::text = ANY(%s)
-            GROUP BY neighbor_id, l.relation_type
-        """, (seed_ids, seed_ids, seed_ids))
-
-        neighbor_scores = defaultdict(lambda: {"WIKILINK": 0, "SHARED_TAG": 0})
-        for neighbor_id, relation_type, strength in cur.fetchall():
-            neighbor_key = str(neighbor_id)
-            if neighbor_key in seed_ids:
-                continue
-            neighbor_scores[neighbor_key][relation_type] = int(strength)
-
-        qualified = []
-        for neighbor_id, scores in neighbor_scores.items():
-            if scores["WIKILINK"] > 0 or scores["SHARED_TAG"] >= min_shared_tags:
-                qualified.append((neighbor_id, scores["WIKILINK"] * 2 + scores["SHARED_TAG"]))
-        qualified.sort(key=lambda item: item[1], reverse=True)
+        qualified = self._one_hop_qualified(cur, seed_ids, min_shared_tags)
 
         if not qualified:
             return []
 
-        candidate_ids = [neighbor_id for neighbor_id, _ in qualified[: top_n * 3]]
-        score_by_id = {neighbor_id: score for neighbor_id, score in qualified}
-        cur.execute("""
-            SELECT wp.id::text, wp.slug, wp.title,
-                   COALESCE(f.community_id, 0) AS community_id,
-                   COALESCE(f.pagerank_score, 0) AS pagerank_score,
-                   COALESCE(wp.aliases, '[]'::jsonb)::text AS aliases_text,
-                   COALESCE(wp.tags, '[]'::jsonb)::text AS tags_text
-            FROM rag.wiki_page wp
-            LEFT JOIN rag.wiki_page_graph_features f ON f.page_id = wp.id
-            WHERE wp.id::text = ANY(%s)
-              AND wp.is_active = true
-        """, (candidate_ids,))
+        one_hop_window = self._one_hop_window(top_n) if prerequisite_intent else top_n * 3
+        one_hop_ids = [neighbor_id for neighbor_id, *_ in qualified[:one_hop_window]]
+        one_hop_scores = self._score_parts_by_id(qualified)
+        seed_communities = self._load_seed_communities(cur, seed_ids)
+        query_terms = self._extract_query_terms(query) if prerequisite_intent else []
+        candidates = self._score_page_rows(
+            self._load_page_rows(cur, one_hop_ids),
+            one_hop_scores,
+            query_terms=query_terms,
+            seed_communities=seed_communities,
+            seed_slug_set=seed_slug_set,
+            hop=1,
+            source=GRAPH_SOURCE_1HOP,
+            prerequisite_intent=prerequisite_intent,
+            skip_low_value=prerequisite_intent,
+        )
 
-        neighbors = []
-        query_terms = self._extract_query_terms(query) if self._normalize_graph_intent(graph_intent) == "PREREQUISITE_PATH" else []
-        for neighbor_id, neighbor_slug, neighbor_title, community_id, pagerank_score, aliases_text, tags_text in cur.fetchall():
-            if neighbor_slug in seed_slug_set:
-                continue
-            if self._normalize_graph_intent(graph_intent) == "PREREQUISITE_PATH" and self._is_low_value_resource(neighbor_slug, neighbor_title):
-                continue
-            graph_score = score_by_id.get(neighbor_id, 0)
-            query_bonus = self._query_bonus(query_terms, neighbor_slug, neighbor_title, aliases_text, tags_text)
-            community_bonus = 0.75 if int(community_id) in self._load_seed_communities(cur, seed_ids) else 0.0
-            pagerank_bonus = float(pagerank_score) * 0.5
-            neighbors.append(
-                (
-                    neighbor_slug,
-                    neighbor_title,
-                    round(float(graph_score) + query_bonus + community_bonus + pagerank_bonus, 4),
-                    int(community_id),
-                    float(pagerank_score),
+        if prerequisite_intent:
+            two_hop_scores = self._two_hop_qualified(
+                cur,
+                one_hop_ids,
+                excluded_ids=set(seed_ids) | set(one_hop_ids),
+                min_shared_tags=min_shared_tags,
+            )
+            candidates.extend(
+                self._score_page_rows(
+                    self._load_page_rows(cur, list(two_hop_scores.keys())),
+                    two_hop_scores,
+                    query_terms=query_terms,
+                    seed_communities=seed_communities,
+                    seed_slug_set=seed_slug_set,
+                    hop=2,
+                    source=GRAPH_SOURCE_2HOP,
+                    prerequisite_intent=True,
+                    skip_low_value=True,
                 )
             )
 
-        ranked = sorted(
-            neighbors,
-            key=lambda item: (
-                item[2],
-                item[3],
-                item[4],
-                -len(str(item[0])),
-                item[0],
-            ),
-            reverse=True,
-        )
-        return [(slug, title, score) for slug, title, score, _, _ in ranked[:top_n]]
+        ranked = self._rank_candidates(self._dedupe_candidates(candidates))
+        return [self._candidate_tuple(candidate, include_source=prerequisite_intent) for candidate in ranked[:top_n]]
 
     def expand_outgoing(self, cur, seed_slugs: list[str], top_n: int = 5) -> list[tuple]:
         """Legacy outgoing-only expansion kept for diagnostics."""
@@ -204,8 +181,99 @@ class GraphExpander:
         if not seed_rows:
             return {"seedSlugs": seed_slugs, "queryTerms": [], "candidates": []}
 
-        seed_ids = [row[0] for row in seed_rows]
+        seed_ids = [str(row[0]) for row in seed_rows]
         seed_slug_set = {row[1] for row in seed_rows}
+        prerequisite_intent = self._is_prerequisite_path(graph_intent)
+        qualified = self._one_hop_qualified(cur, seed_ids, min_shared_tags)
+        if not qualified:
+            return {"seedSlugs": list(seed_slug_set), "queryTerms": [], "candidates": []}
+
+        rank_by_id = {neighbor_id: rank for rank, (neighbor_id, *_) in enumerate(qualified, start=1)}
+        query_terms = self._extract_query_terms(query)
+        scoring_terms = query_terms if prerequisite_intent else []
+        seed_communities = self._load_seed_communities(cur, seed_ids)
+        one_hop_ids = [neighbor_id for neighbor_id, *_ in qualified[:limit]]
+        candidates = self._score_page_rows(
+            self._load_page_rows(cur, one_hop_ids),
+            self._score_parts_by_id(qualified),
+            query_terms=scoring_terms,
+            seed_communities=seed_communities,
+            seed_slug_set=seed_slug_set,
+            hop=1,
+            source=GRAPH_SOURCE_1HOP,
+            prerequisite_intent=prerequisite_intent,
+            skip_low_value=prerequisite_intent,
+        )
+
+        two_hop_rank_by_id = {}
+        if prerequisite_intent:
+            two_hop_source_window = min(max(default_window, MIN_ONE_HOP_WINDOW), MAX_ONE_HOP_WINDOW)
+            two_hop_source_ids = [neighbor_id for neighbor_id, *_ in qualified[:two_hop_source_window]]
+            two_hop_scores = self._two_hop_qualified(
+                cur,
+                two_hop_source_ids,
+                excluded_ids=set(seed_ids) | set(two_hop_source_ids),
+                min_shared_tags=min_shared_tags,
+            )
+            two_hop_rank_by_id = {neighbor_id: rank for rank, neighbor_id in enumerate(two_hop_scores, start=1)}
+            candidates.extend(
+                self._score_page_rows(
+                    self._load_page_rows(cur, list(two_hop_scores.keys())),
+                    two_hop_scores,
+                    query_terms=scoring_terms,
+                    seed_communities=seed_communities,
+                    seed_slug_set=seed_slug_set,
+                    hop=2,
+                    source=GRAPH_SOURCE_2HOP,
+                    prerequisite_intent=True,
+                    skip_low_value=True,
+                )
+            )
+
+        formatted = []
+        for candidate in self._rank_candidates(self._dedupe_candidates(candidates)):
+            page_id = candidate["id"]
+            qualified_rank = rank_by_id.get(page_id) if candidate["hop"] == 1 else two_hop_rank_by_id.get(page_id)
+            formatted.append(
+                {
+                    "qualifiedRank": qualified_rank,
+                    "slug": candidate["slug"],
+                    "title": candidate["title"],
+                    "source": candidate["source"],
+                    "hop": candidate["hop"],
+                    "sourceId": candidate["sourceId"],
+                    "baseScore": candidate["base"],
+                    "wikilinkCount": candidate["wikilink"],
+                    "sharedTagCount": candidate["sharedTag"],
+                    "queryBonus": candidate["queryBonus"],
+                    "communityBonus": candidate["communityBonus"],
+                    "pagerankBonus": candidate["pagerankBonus"],
+                    "finalScore": candidate["score"],
+                    "inDefaultWindow": bool(candidate["hop"] == 1 and rank_by_id.get(page_id, limit + 1) <= default_window),
+                    "lowValueFilteredForPrerequisite": candidate["filteredForPrerequisite"],
+                }
+            )
+
+        return {
+            "seedSlugs": list(seed_slug_set),
+            "queryTerms": query_terms,
+            "defaultWindow": default_window,
+            "candidates": formatted[:limit],
+        }
+
+    def _load_seed_communities(self, cur, seed_ids: list[str]) -> set[int]:
+        if not seed_ids:
+            return set()
+        cur.execute("""
+            SELECT DISTINCT COALESCE(f.community_id, 0)
+            FROM rag.wiki_page_graph_features f
+            WHERE f.page_id::text = ANY(%s)
+        """, (seed_ids,))
+        return {int(row[0]) for row in cur.fetchall()}
+
+    def _one_hop_qualified(self, cur, seed_ids: list[str], min_shared_tags: int) -> list[tuple]:
+        # Treat wiki graph edges as evidence links: prerequisites often point
+        # into the current page, while applications point outward.
         cur.execute("""
             SELECT
                 CASE
@@ -219,35 +287,141 @@ class GraphExpander:
                OR l.to_page_id::text = ANY(%s)
             GROUP BY neighbor_id, l.relation_type
         """, (seed_ids, seed_ids, seed_ids))
+        return self._qualified_from_edge_rows(
+            cur.fetchall(),
+            min_shared_tags=min_shared_tags,
+            excluded_ids=set(seed_ids),
+            decay=1.0,
+        )
 
-        neighbor_scores = defaultdict(lambda: {"WIKILINK": 0, "SHARED_TAG": 0})
-        for neighbor_id, relation_type, strength in cur.fetchall():
+    def _two_hop_qualified(
+        self,
+        cur,
+        one_hop_ids: list[str],
+        *,
+        excluded_ids: set[str],
+        min_shared_tags: int,
+    ) -> dict[str, dict]:
+        if not one_hop_ids:
+            return {}
+        cur.execute(
+            """
+            WITH edge_counts AS (
+                SELECT
+                    CASE
+                        WHEN l.from_page_id::text = ANY(%s) THEN l.from_page_id::text
+                        ELSE l.to_page_id::text
+                    END AS source_id,
+                    CASE
+                        WHEN l.from_page_id::text = ANY(%s) THEN l.to_page_id::text
+                        ELSE l.from_page_id::text
+                    END AS neighbor_id,
+                    SUM(CASE WHEN l.relation_type = 'WIKILINK' THEN 1 ELSE 0 END) AS wikilink_count,
+                    SUM(CASE WHEN l.relation_type = 'SHARED_TAG' THEN 1 ELSE 0 END) AS shared_tag_count
+                FROM rag.wiki_link l
+                WHERE l.from_page_id::text = ANY(%s)
+                   OR l.to_page_id::text = ANY(%s)
+                GROUP BY source_id, neighbor_id
+            ),
+            ranked AS (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY source_id
+                           ORDER BY (wikilink_count * 2 + shared_tag_count) DESC, neighbor_id DESC
+                       ) AS source_rank
+                FROM edge_counts
+                WHERE neighbor_id != source_id
+                  AND neighbor_id != ALL(%s)
+                  AND (wikilink_count > 0 OR shared_tag_count >= %s)
+            )
+            SELECT source_id, neighbor_id, wikilink_count, shared_tag_count
+            FROM ranked
+            WHERE source_rank <= %s
+            ORDER BY source_id, source_rank
+            """,
+            (
+                one_hop_ids,
+                one_hop_ids,
+                one_hop_ids,
+                one_hop_ids,
+                sorted(excluded_ids),
+                min_shared_tags,
+                TWO_HOP_PER_NODE_LIMIT,
+            ),
+        )
+
+        per_source_scores = defaultdict(lambda: defaultdict(lambda: {"WIKILINK": 0, "SHARED_TAG": 0}))
+        for source_id, neighbor_id, wikilink_count, shared_tag_count in cur.fetchall():
+            source_key = str(source_id)
             neighbor_key = str(neighbor_id)
-            if neighbor_key in seed_ids:
+            if neighbor_key in excluded_ids or neighbor_key == source_key:
+                continue
+            per_source_scores[source_key][neighbor_key]["WIKILINK"] = int(wikilink_count)
+            per_source_scores[source_key][neighbor_key]["SHARED_TAG"] = int(shared_tag_count)
+
+        selected: dict[str, dict] = {}
+        for source_id in one_hop_ids:
+            ranked = []
+            for neighbor_id, scores in per_source_scores.get(str(source_id), {}).items():
+                if scores["WIKILINK"] > 0 or scores["SHARED_TAG"] >= min_shared_tags:
+                    base = scores["WIKILINK"] * 2 + scores["SHARED_TAG"]
+                    ranked.append((neighbor_id, base, scores["WIKILINK"], scores["SHARED_TAG"]))
+            ranked.sort(key=lambda item: item[1], reverse=True)
+            for neighbor_id, base, wikilink, shared_tag in ranked[:TWO_HOP_PER_NODE_LIMIT]:
+                decayed_base = round(float(base) * TWO_HOP_DECAY, 4)
+                current = selected.get(neighbor_id)
+                if current is None or decayed_base > float(current["base"]):
+                    selected[neighbor_id] = {
+                        "base": decayed_base,
+                        "wikilink": wikilink,
+                        "sharedTag": shared_tag,
+                        "sourceId": str(source_id),
+                    }
+            if len(selected) >= MAX_TWO_HOP_CANDIDATES:
+                break
+
+        ranked_selected = sorted(
+            selected.items(),
+            key=lambda item: (float(item[1]["base"]), item[0]),
+            reverse=True,
+        )
+        return dict(ranked_selected[:MAX_TWO_HOP_CANDIDATES])
+
+    def _qualified_from_edge_rows(
+        self,
+        edge_rows: list[tuple],
+        *,
+        min_shared_tags: int,
+        excluded_ids: set[str],
+        decay: float,
+    ) -> list[tuple]:
+        neighbor_scores = defaultdict(lambda: {"WIKILINK": 0, "SHARED_TAG": 0})
+        for neighbor_id, relation_type, strength in edge_rows:
+            neighbor_key = str(neighbor_id)
+            if neighbor_key in excluded_ids:
                 continue
             neighbor_scores[neighbor_key][relation_type] = int(strength)
 
         qualified = []
         for neighbor_id, scores in neighbor_scores.items():
             if scores["WIKILINK"] > 0 or scores["SHARED_TAG"] >= min_shared_tags:
-                qualified.append(
-                    (
-                        neighbor_id,
-                        scores["WIKILINK"] * 2 + scores["SHARED_TAG"],
-                        scores["WIKILINK"],
-                        scores["SHARED_TAG"],
-                    )
-                )
+                base_score = (scores["WIKILINK"] * 2 + scores["SHARED_TAG"]) * decay
+                qualified.append((neighbor_id, round(float(base_score), 4), scores["WIKILINK"], scores["SHARED_TAG"]))
         qualified.sort(key=lambda item: item[1], reverse=True)
-        if not qualified:
-            return {"seedSlugs": list(seed_slug_set), "queryTerms": [], "candidates": []}
+        return qualified
 
-        candidate_ids = [neighbor_id for neighbor_id, *_ in qualified[:limit]]
-        rank_by_id = {neighbor_id: rank for rank, (neighbor_id, *_) in enumerate(qualified, start=1)}
-        scores_by_id = {
-            neighbor_id: {"base": base_score, "wikilink": wikilink, "sharedTag": shared_tag}
+    def _one_hop_window(self, top_n: int) -> int:
+        return min(max(top_n * 3, MIN_ONE_HOP_WINDOW), MAX_ONE_HOP_WINDOW)
+
+    def _score_parts_by_id(self, qualified: list[tuple]) -> dict[str, dict]:
+        return {
+            str(neighbor_id): {"base": base_score, "wikilink": wikilink, "sharedTag": shared_tag}
             for neighbor_id, base_score, wikilink, shared_tag in qualified
         }
+
+    def _load_page_rows(self, cur, candidate_ids: list[str]) -> list[tuple]:
+        if not candidate_ids:
+            return []
         cur.execute("""
             SELECT wp.id::text, wp.slug, wp.title,
                    COALESCE(f.community_id, 0) AS community_id,
@@ -259,60 +433,95 @@ class GraphExpander:
             WHERE wp.id::text = ANY(%s)
               AND wp.is_active = true
         """, (candidate_ids,))
+        return cur.fetchall()
 
-        query_terms = self._extract_query_terms(query)
-        scoring_terms = query_terms if self._normalize_graph_intent(graph_intent) == "PREREQUISITE_PATH" else []
-        page_rows = cur.fetchall()
-        seed_communities = self._load_seed_communities(cur, seed_ids)
+    def _score_page_rows(
+        self,
+        page_rows: list[tuple],
+        score_parts_by_id: dict[str, dict],
+        *,
+        query_terms: list[str],
+        seed_communities: set[int],
+        seed_slug_set: set[str],
+        hop: int,
+        source: str,
+        prerequisite_intent: bool,
+        skip_low_value: bool,
+    ) -> list[dict]:
         candidates = []
         for row in page_rows:
-            neighbor_id, slug, title, community_id, pagerank_score, aliases_text, tags_text = row
+            page_id, slug, title, community_id, pagerank_score, aliases_text, tags_text = row
             if slug in seed_slug_set:
                 continue
-            score_parts = scores_by_id.get(neighbor_id, {"base": 0, "wikilink": 0, "sharedTag": 0})
-            query_bonus = self._query_bonus(scoring_terms, slug, title, aliases_text, tags_text)
+            low_value = self._is_low_value_resource(slug, title)
+            if skip_low_value and low_value:
+                continue
+            score_parts = score_parts_by_id.get(
+                str(page_id),
+                {"base": 0.0, "wikilink": 0, "sharedTag": 0, "sourceId": None},
+            )
+            query_bonus = self._query_bonus(query_terms, slug, title, aliases_text, tags_text)
             community_bonus = 0.75 if int(community_id) in seed_communities else 0.0
             pagerank_bonus = float(pagerank_score) * 0.5
-            low_value = self._is_low_value_resource(slug, title)
             candidates.append(
                 {
-                    "qualifiedRank": rank_by_id.get(neighbor_id),
+                    "id": str(page_id),
                     "slug": slug,
                     "title": title,
-                    "baseScore": score_parts["base"],
-                    "wikilinkCount": score_parts["wikilink"],
-                    "sharedTagCount": score_parts["sharedTag"],
+                    "score": round(
+                        float(score_parts["base"]) + query_bonus + community_bonus + pagerank_bonus,
+                        4,
+                    ),
+                    "base": score_parts["base"],
+                    "wikilink": score_parts["wikilink"],
+                    "sharedTag": score_parts["sharedTag"],
                     "queryBonus": round(query_bonus, 4),
                     "communityBonus": round(community_bonus, 4),
                     "pagerankBonus": round(pagerank_bonus, 4),
-                    "finalScore": round(float(score_parts["base"]) + query_bonus + community_bonus + pagerank_bonus, 4),
-                    "inDefaultWindow": bool(rank_by_id.get(neighbor_id, limit + 1) <= default_window),
-                    "lowValueFilteredForPrerequisite": bool(
-                        self._normalize_graph_intent(graph_intent) == "PREREQUISITE_PATH" and low_value
-                    ),
+                    "communityId": int(community_id),
+                    "pagerank": float(pagerank_score),
+                    "hop": hop,
+                    "source": source,
+                    "sourceId": score_parts.get("sourceId"),
+                    "lowValue": low_value,
+                    "filteredForPrerequisite": bool(prerequisite_intent and low_value),
                 }
             )
+        return candidates
 
-        candidates.sort(key=lambda item: (-float(item["finalScore"]), int(item["qualifiedRank"] or limit + 1)))
-        return {
-            "seedSlugs": list(seed_slug_set),
-            "queryTerms": query_terms,
-            "defaultWindow": default_window,
-            "candidates": candidates[:limit],
-        }
+    def _dedupe_candidates(self, candidates: list[dict]) -> list[dict]:
+        by_slug: dict[str, dict] = {}
+        for candidate in candidates:
+            slug = str(candidate["slug"])
+            current = by_slug.get(slug)
+            if current is None or self._candidate_sort_key(candidate) > self._candidate_sort_key(current):
+                by_slug[slug] = candidate
+        return list(by_slug.values())
 
-    def _load_seed_communities(self, cur, seed_ids: list[str]) -> set[int]:
-        if not seed_ids:
-            return set()
-        cur.execute("""
-            SELECT DISTINCT COALESCE(f.community_id, 0)
-            FROM rag.wiki_page_graph_features f
-            WHERE f.page_id::text = ANY(%s)
-        """, (seed_ids,))
-        return {int(row[0]) for row in cur.fetchall()}
+    def _rank_candidates(self, candidates: list[dict]) -> list[dict]:
+        return sorted(candidates, key=self._candidate_sort_key, reverse=True)
+
+    def _candidate_sort_key(self, candidate: dict) -> tuple:
+        return (
+            float(candidate["score"]),
+            int(candidate["communityId"]),
+            float(candidate["pagerank"]),
+            -int(candidate.get("hop", 1)),
+            -len(str(candidate["slug"])),
+            str(candidate["slug"]),
+        )
+
+    def _candidate_tuple(self, candidate: dict, *, include_source: bool) -> tuple:
+        item = (candidate["slug"], candidate["title"], candidate["score"])
+        if include_source:
+            return (*item, candidate["source"])
+        return item
 
     def _normalize_graph_intent(self, graph_intent: str | None) -> str:
         return str(graph_intent or "").strip().upper()
+
+    def _is_prerequisite_path(self, graph_intent: str | None) -> bool:
+        return self._normalize_graph_intent(graph_intent) == PREREQUISITE_PATH_INTENT
 
     def _extract_query_terms(self, query: str | None) -> list[str]:
         if not query:
@@ -492,6 +701,9 @@ class GraphExpander:
     def _is_low_value_resource(self, slug: str, title: str) -> bool:
         lowered_slug = self._normalize_text(slug)
         lowered_title = self._normalize_text(title)
+        title = str(title or "")
+        if not lowered_slug or lowered_slug == "none":
+            return True
         return (
             lowered_slug.startswith("http")
             or lowered_slug.startswith("wiki://")

@@ -64,11 +64,13 @@ class RuleBasedTutorLLM:
         if self._is_small_talk(query):
             return self._compose_small_talk_reply(query)
         documents = evidence.get("documents", []) if isinstance(evidence.get("documents"), list) else []
+        graph_pack = evidence.get("graphEvidencePack") if isinstance(evidence, dict) else {}
         return self._compose_direct_answer(
             query=query,
             memory=memory,
             context=context,
             documents=documents,
+            graph_pack=graph_pack if isinstance(graph_pack, dict) else {},
         )
 
     def _is_small_talk(self, query: str) -> bool:
@@ -115,6 +117,7 @@ class RuleBasedTutorLLM:
         memory: dict[str, Any],
         context: dict[str, Any],
         documents: list[dict[str, Any]],
+        graph_pack: dict[str, Any],
     ) -> str:
         normalized = "".join(query.lower().split())
         if "什么是java" in normalized or normalized == "java":
@@ -154,6 +157,12 @@ class RuleBasedTutorLLM:
         else:
             answer_lines.append(f"它通常需要结合概念定义、使用条件和具体场景一起理解，而不是只记一句结论。")
 
+        graph_lines = self._collect_graph_evidence_lines(graph_pack)
+        if graph_lines:
+            answer_lines.append("")
+            answer_lines.append("结合图谱证据，可以优先围绕这些相关概念展开：")
+            answer_lines.extend(graph_lines)
+
         if len(evidence_texts) > 1:
             answer_lines.append("")
             answer_lines.append("你可以重点抓住这几点：")
@@ -183,6 +192,46 @@ class RuleBasedTutorLLM:
             if cleaned and cleaned not in lines:
                 lines.append(cleaned)
         return lines
+
+    def _collect_graph_evidence_lines(self, graph_pack: dict[str, Any]) -> list[str]:
+        intent = str(graph_pack.get("intent") or "").strip().upper()
+        nodes = graph_pack.get("nodes", [])
+        if intent not in {
+            "COMMON_MISTAKE",
+            "COMMUNITY_SUMMARY",
+            "COMPARISON",
+            "CROSS_LAYER_RELATION",
+            "MECHANISM_APPLICATION",
+            "MULTI_HOP_RELATION",
+            "PREREQUISITE_PATH",
+        } or not isinstance(nodes, list):
+            return []
+
+        titles: list[str] = []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            title = str(node.get("title") or "").strip()
+            if title and title not in titles:
+                titles.append(title)
+            if len(titles) >= 4:
+                break
+        if not titles:
+            return []
+
+        guidance_by_intent = {
+            "PREREQUISITE_PATH": "把它们当作可能的前置基础、当前概念和后续延伸来梳理，不要硬背顺序。",
+            "CROSS_LAYER_RELATION": "把它们当作跨层关联证据来解释每层负责什么、如何相互影响。",
+            "MECHANISM_APPLICATION": "把它们当作机制、实现位置和应用效果的线索来串起来。",
+            "COMPARISON": "把它们当作对比对象来区分共同点、差异和适用边界。",
+            "COMMON_MISTAKE": "把它们当作易错点证据来设计反例和纠正心智模型。",
+            "COMMUNITY_SUMMARY": "把它们当作同一概念群来概括共同作用和组内差异。",
+            "MULTI_HOP_RELATION": "把它们当作多跳相关证据来解释概念之间的联系。",
+        }
+        return [
+            f"1. 相关概念集合：{'、'.join(titles)}。",
+            f"2. 组织方式：{guidance_by_intent.get(intent, '围绕这些证据组织回答。')}",
+        ]
 
     def _extract_generic_concept(self, query: str) -> str:
         normalized = query.strip().rstrip("？?。.")

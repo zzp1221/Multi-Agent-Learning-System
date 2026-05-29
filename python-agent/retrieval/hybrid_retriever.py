@@ -11,6 +11,7 @@ from retrieval.grep_searcher import GrepSearcher
 from retrieval.vector_searcher import VectorSearcher
 from retrieval.graph_expander import GraphExpander
 from retrieval.rrf_fusion import RRFFusion
+from retrieval.slug_canonicalizer import safe_slug_key
 from retrieval.tavily_searcher import TavilySearcher
 from src.ai_modules.config import get_settings
 
@@ -26,6 +27,16 @@ GRAPH_AWARE_INTENTS = {
     "PREREQUISITE_PATH",
 }
 PREREQUISITE_PATH_INTENT = "PREREQUISITE_PATH"
+DEFAULT_GRAPH_WEIGHT = 0.5
+GRAPH_WEIGHT_BY_INTENT = {
+    "COMPARISON": 1.2,
+    "CROSS_LAYER_RELATION": 1.4,
+    "MECHANISM_APPLICATION": 1.4,
+    "COMMON_MISTAKE": 1.3,
+    "COMMUNITY_SUMMARY": 1.5,
+    "MULTI_HOP_RELATION": 1.6,
+    PREREQUISITE_PATH_INTENT: 1.8,
+}
 
 
 class HybridRetriever:
@@ -94,7 +105,9 @@ class HybridRetriever:
                 vector_results=[],
                 graph_results=[],
                 web_results=web_results,
-                slug_penalty=self._graph_slug_penalty if self._uses_prerequisite_graph_fill(graph_intent) else None,
+                graph_weight=self._graph_weight(graph_intent),
+                slug_penalty=self._graph_slug_penalty if self._is_graph_aware_intent(graph_intent) else None,
+                slug_key=safe_slug_key,
             )
             return {
                 "query": query,
@@ -159,13 +172,20 @@ class HybridRetriever:
             vector_results,
             graph_results,
             web_results,
-            slug_penalty=self._graph_slug_penalty if self._uses_prerequisite_graph_fill(graph_intent) else None,
+            graph_weight=self._graph_weight(graph_intent),
+            slug_penalty=self._graph_slug_penalty if self._is_graph_aware_intent(graph_intent) else None,
+            slug_key=safe_slug_key,
         )
         fused, graph_diagnostics = self._stabilize_graph_top5_with_diagnostics(
             fused,
             graph_results,
             graph_intent,
             protected_slugs={item[0] for item in prerequisite_evidence["protectedSeeds"]},
+        )
+        fused, grep_top_diagnostics = self._promote_strong_grep_top_with_diagnostics(
+            fused,
+            grep_results,
+            graph_intent,
         )
 
         return {
@@ -174,6 +194,7 @@ class HybridRetriever:
             "graphDiagnostics": {
                 "prerequisiteEvidence": self._format_prerequisite_evidence(prerequisite_evidence),
                 "top5Stabilization": graph_diagnostics,
+                "strongGrepTop": grep_top_diagnostics,
             },
             "webSearchEnabled": web_search_enabled,
             "channels": {
@@ -197,6 +218,17 @@ class HybridRetriever:
         graph_intent: str | None = None,
     ) -> dict:
         """Run grep first and skip vector/graph when phrase confidence is strong."""
+        if self._is_graph_aware_intent(graph_intent):
+            raw_result = self.retrieve(
+                cur,
+                query,
+                web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
+            )
+            raw_result["retrievalStrategy"] = "LOCAL_GREP_FIRST"
+            raw_result["grepFirstPromoted"] = True
+            return raw_result
+
         try:
             self._init(cur)
         except Exception as exc:
@@ -214,7 +246,7 @@ class HybridRetriever:
             LOGGER.warning("Grep-first grep retrieval failed for query %r: %s", query, exc)
             grep_results = {"priority": [], "normal": []}
 
-        if self._uses_prerequisite_graph_fill(graph_intent) or not self._has_strong_grep_hit(grep_results):
+        if not self._has_strong_grep_hit(grep_results):
             raw_result = self.retrieve(
                 cur,
                 query,
@@ -226,7 +258,7 @@ class HybridRetriever:
             return raw_result
 
         web_results = self._web.search(self._web_query(query), top_k=5) if web_search_enabled else []
-        fused = self._rrf.fuse(grep_results, [], [], web_results)
+        fused = self._rrf.fuse(grep_results, [], [], web_results, slug_key=safe_slug_key)
         return {
             "query": query,
             "graphIntent": graph_intent,
@@ -294,12 +326,8 @@ class HybridRetriever:
             return 8
         return 5
 
-    def _graph_weight(self, graph_intent: str | None) -> float | None:
-        if self._normalize_graph_intent(graph_intent) == PREREQUISITE_PATH_INTENT:
-            return None
-        if self._is_graph_aware_intent(graph_intent):
-            return None
-        return None
+    def _graph_weight(self, graph_intent: str | None) -> float:
+        return GRAPH_WEIGHT_BY_INTENT.get(self._normalize_graph_intent(graph_intent), DEFAULT_GRAPH_WEIGHT)
 
     def _empty_prerequisite_evidence(self) -> dict:
         return {"queryTerms": [], "protectedSeeds": [], "directEvidence": []}
@@ -361,6 +389,53 @@ class HybridRetriever:
         if "视频资源" in normalized or "video" in normalized:
             return 0.4
         return 1.0
+
+    def _promote_strong_grep_top_with_diagnostics(
+        self,
+        fused: list[tuple],
+        grep_results: dict,
+        graph_intent: str | None,
+    ) -> tuple[list[tuple], dict]:
+        diagnostics = {"promotedSlug": None, "fromRank": None, "reason": None}
+        if not self._is_graph_aware_intent(graph_intent):
+            return fused, diagnostics
+        priority = grep_results.get("priority", []) if isinstance(grep_results, dict) else []
+        if not priority:
+            return fused, diagnostics
+        top_hit = priority[0]
+        if not isinstance(top_hit, (list, tuple)) or len(top_hit) < 3:
+            return fused, diagnostics
+        try:
+            coverage = float(top_hit[2])
+        except (TypeError, ValueError):
+            return fused, diagnostics
+        if coverage < 0.98:
+            return fused, diagnostics
+
+        target_slug = str(top_hit[0])
+        ranked = list(fused)
+        current_index = self._find_slug_index(ranked, target_slug, start=0)
+        if current_index is None or current_index == 0 or current_index >= 3:
+            return fused, diagnostics
+
+        item = ranked.pop(current_index)
+        lead_score = self._item_score(ranked[0]) if ranked else self._item_score(item)
+        promoted = (item[0], item[1], max(self._item_score(item), lead_score))
+        ranked.insert(0, promoted)
+        diagnostics.update(
+            {
+                "promotedSlug": target_slug,
+                "fromRank": current_index + 1,
+                "reason": "strong_grep_top_in_top3",
+            }
+        )
+        return ranked, diagnostics
+
+    def _item_score(self, item: tuple) -> float:
+        try:
+            return float(item[2])
+        except (IndexError, TypeError, ValueError):
+            return 0.0
 
     def _stabilize_graph_top5(
         self,

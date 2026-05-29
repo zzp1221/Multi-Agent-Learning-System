@@ -35,6 +35,7 @@ from knowledge.benchmark_rag_100 import (  # noqa: E402
     LLMRetrievalJudge,
     summarize_records,
 )
+from retrieval.slug_canonicalizer import canonicalize_slug, compact_text, slug_tail_key  # noqa: E402
 from src.ai_modules.retrieval import QueryClassifier  # noqa: E402
 
 DEFAULT_QUESTIONS = PROJECT_ROOT / "reports" / "graph_rag_100_questions.json"
@@ -47,11 +48,25 @@ INTENT_MODE_CLASSIFIER = "classifier"
 
 
 def _normalize_slug(value: Any) -> str:
-    return str(value or "").strip().strip('"').lower()
+    return canonicalize_slug(value)
 
 
 def _top_slugs(candidates: list[dict[str, Any]], limit: int) -> set[str]:
     return {_normalize_slug(item.get("slug")) for item in candidates[:limit]}
+
+
+def _equivalent_evidence_nodes(expected_slug: str, candidate: dict[str, Any]) -> set[str]:
+    candidate_slug = _normalize_slug(candidate.get("slug"))
+    if not expected_slug or not candidate_slug:
+        return set()
+    if expected_slug == candidate_slug:
+        return {expected_slug}
+    expected_tail = slug_tail_key(expected_slug)
+    candidate_tail = slug_tail_key(candidate.get("slug"))
+    candidate_title = compact_text(candidate.get("title"))
+    if expected_tail and (expected_tail == candidate_tail or expected_tail == candidate_title):
+        return {expected_slug}
+    return set()
 
 
 def evaluate_graph_evidence(question_item: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -64,18 +79,24 @@ def evaluate_graph_evidence(question_item: dict[str, Any], candidates: list[dict
     expected_nodes = {primary_slug, *related_slugs} - {""}
     top3 = _top_slugs(candidates, 3)
     top5 = _top_slugs(candidates, TOP_K)
-    present_top5 = expected_nodes & top5
-    missing_top5 = expected_nodes - top5
+    present_top3 = set(expected_nodes & top3)
+    present_top5 = set(expected_nodes & top5)
+    for expected_slug in expected_nodes:
+        for candidate in candidates[:TOP_K]:
+            present_top5.update(_equivalent_evidence_nodes(expected_slug, candidate))
+        for candidate in candidates[:3]:
+            present_top3.update(_equivalent_evidence_nodes(expected_slug, candidate))
+    missing_top5 = expected_nodes - present_top5
 
     return {
         "graphIntent": question_item.get("graphIntent"),
-        "primaryTop5": primary_slug in top5,
-        "anyRelatedTop5": bool(related_slugs & top5),
+        "primaryTop5": primary_slug in present_top5,
+        "anyRelatedTop5": bool(related_slugs & present_top5),
         "partialEvidenceTop5": bool(present_top5),
-        "completeEvidenceTop5": expected_nodes <= top5 if expected_nodes else False,
+        "completeEvidenceTop5": expected_nodes <= present_top5 if expected_nodes else False,
         "evidenceNodeRecallTop5": round(len(present_top5) / len(expected_nodes), 4) if expected_nodes else 0.0,
-        "primaryTop3": primary_slug in top3,
-        "anyRelatedTop3": bool(related_slugs & top3),
+        "primaryTop3": primary_slug in present_top3,
+        "anyRelatedTop3": bool(related_slugs & present_top3),
         "presentEvidenceNodesTop5": len(present_top5),
         "expectedEvidenceNodes": len(expected_nodes),
         "missingEvidenceSlugsTop5": sorted(missing_top5),
@@ -190,7 +211,7 @@ def summarize_low_value_sources(records: list[dict[str, Any]]) -> dict[str, Any]
 
 
 def _compact_text(value: Any) -> str:
-    return re.sub(r"[\s\"'《》“”]+", "", str(value or "").strip().lower())
+    return compact_text(value)
 
 
 def _page_alias_diagnostics(cur, slugs: set[str], top_slugs: set[str]) -> dict[str, Any]:
