@@ -53,6 +53,7 @@ class RetrievalAgent(PlaceholderAgent):
         rewritten_query = str(params.get("rewrittenQuery") or query)
         keywords = list(params.get("keywords", []))
         retrieval_strategy = self._retrieval_strategy(params)
+        graph_intent = self._graph_intent(params)
         web_search_enabled = retrieval_strategy == "WEB_AUGMENTED" or self._web_search_enabled(params)
 
         if retrieval_strategy in {"NONE", "CONTEXT_ONLY"}:
@@ -89,6 +90,7 @@ class RetrievalAgent(PlaceholderAgent):
             keywords=keywords,
             web_search_enabled=web_search_enabled,
             retrieval_strategy=retrieval_strategy,
+            graph_intent=graph_intent,
             params=params,
             system_prompt=system_prompt,
         )
@@ -124,6 +126,7 @@ class RetrievalAgent(PlaceholderAgent):
         keywords: list[str],
         web_search_enabled: bool,
         retrieval_strategy: str,
+        graph_intent: str | None,
         params: dict[str, Any],
         system_prompt: str,
     ):
@@ -134,6 +137,7 @@ class RetrievalAgent(PlaceholderAgent):
                 keywords=keywords,
                 web_search_enabled=web_search_enabled,
                 retrieval_strategy=retrieval_strategy,
+                graph_intent=graph_intent,
             )
             params["retrievalRawResult"] = raw_result
 
@@ -156,6 +160,7 @@ class RetrievalAgent(PlaceholderAgent):
             params["graphRetrievalResult"] = {
                 "results": list(graph_result) if not isinstance(graph_result, dict) else graph_result.get("results", []),
                 "query": rewritten_query,
+                "graphIntent": graph_intent,
             }
             params["webRetrievalResult"] = {
                 "enabled": web_search_enabled,
@@ -187,6 +192,7 @@ class RetrievalAgent(PlaceholderAgent):
             rewritten_query=rewritten_query,
             keywords=keywords,
             web_search_enabled=web_search_enabled,
+            graph_intent=graph_intent,
         )
         summary_text = await self._safe_summarize(
             retrieval_response=retrieval_response,
@@ -202,6 +208,7 @@ class RetrievalAgent(PlaceholderAgent):
         keywords: list[str],
         web_search_enabled: bool = False,
         retrieval_strategy: str = "LOCAL_HYBRID",
+        graph_intent: str | None = None,
     ) -> dict[str, Any]:
         async def operation() -> dict[str, Any]:
             if retrieval_strategy == "LOCAL_GREP_FIRST":
@@ -211,11 +218,13 @@ class RetrievalAgent(PlaceholderAgent):
                         retrieve_grep_first,
                         rewritten_query,
                         web_search_enabled=web_search_enabled,
+                        graph_intent=graph_intent,
                     )
             return await asyncio.to_thread(
                 self.service.retrieve_raw,
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
             )
 
         async def fallback_operation() -> dict[str, Any]:
@@ -277,6 +286,17 @@ class RetrievalAgent(PlaceholderAgent):
             "DEEP_EVIDENCE",
         }
         return strategy if strategy in allowed else "LOCAL_HYBRID"
+
+    def _graph_intent(self, params: dict[str, Any]) -> str | None:
+        direct = params.get("graphIntent")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip().upper()
+        classification = params.get("queryClassification")
+        if isinstance(classification, dict):
+            value = classification.get("graphIntent")
+            if isinstance(value, str) and value.strip():
+                return value.strip().upper()
+        return None
 
     def _llm_summary_enabled(self, params: dict[str, Any]) -> bool:
         return params.get("llmRetrievalSummaryEnabled") is True

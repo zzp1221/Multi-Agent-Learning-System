@@ -99,5 +99,114 @@
     "权衡",
     "设计方案",
     "为什么会这样"
+  ],
+  "graphPrerequisiteTemplateTerms": [
+    "请构建一条学习路径",
+    "构建一条学习路径"
+  ],
+  "graphComparisonTemplateTerms": [
+    "请比较"
+  ],
+  "graphMechanismTemplateTerms": [
+    "在机制落地时如何连接"
+  ],
+  "graphCommonMistakeTemplateTerms": [
+    "请围绕常见误区"
+  ],
+  "graphSummaryTemplateTerms": [
+    "请总结"
+  ],
+  "graphRelationTemplateTerms": [
+    "请从知识图谱关系角度说明"
+  ],
+  "graphRelationTerms": [
+    "关系",
+    "联系",
+    "关联",
+    "图谱",
+    "多跳",
+    "跨层",
+    "串联",
+    "脉络",
+    "知识链",
+    "链路",
+    "依赖关系"
+  ],
+  "graphComparisonTerms": [
+    "对比",
+    "比较",
+    "区别",
+    "差异",
+    "异同",
+    "优缺点",
+    "vs",
+    "versus"
+  ],
+  "graphPrerequisiteTerms": [
+    "前置",
+    "前提",
+    "基础",
+    "先学",
+    "依赖",
+    "通向"
+  ],
+  "graphPrerequisiteStrongTerms": [
+    "前置知识",
+    "前置路径",
+    "前置依赖关系",
+    "先修路径",
+    "学习路径",
+    "学习顺序",
+    "先学什么",
+    "依赖或通向",
+    "如何依赖或通向",
+    "构建一条学习路径"
+  ],
+  "graphSummaryTerms": [
+    "总结",
+    "概括",
+    "梳理",
+    "综述",
+    "归纳",
+    "总览",
+    "知识簇"
+  ],
+  "graphMechanismTerms": [
+    "机制",
+    "落地",
+    "应用到",
+    "如何串联",
+    "怎么串",
+    "实现到",
+    "承载"
+  ],
+  "graphCommonMistakeTerms": [
+    "常见错误",
+    "误区",
+    "容易混淆",
+    "混淆",
+    "坑点",
+    "易错"
+  ],
+  "graphStrongTerms": [
+    "图谱",
+    "多跳",
+    "跨层",
+    "串联",
+    "知识链",
+    "链路"
+  ],
+  "graphMultiHopTerms": [
+    "多跳",
+    "多步",
+    "跨层",
+    "跨领域",
+    "跨课程",
+    "multi-hop"
+  ],
+  "graphMultiHopStrongTerms": [
+    "跨领域",
+    "跨课程",
+    "multi-hop"
   ]
 }

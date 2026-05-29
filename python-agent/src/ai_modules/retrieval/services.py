@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import inspect
 from typing import Any, Protocol
 
 from src.ai_modules.config import get_settings
@@ -20,7 +21,7 @@ _RETRIEVAL_RAW_CACHE_NAMESPACE = "retrieval_raw"
 
 
 class SupportsHybridRetrieve(Protocol):
-    def retrieve(self, query: str) -> dict[str, Any]: ...
+    def retrieve(self, query: str, *, graph_intent: str | None = None) -> dict[str, Any]: ...
 
 
 class LegacyHybridRetrieverAdapter:
@@ -44,7 +45,13 @@ class LegacyHybridRetrieverAdapter:
             domain=self.domain,
         )
 
-    def retrieve(self, query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
+    def retrieve(
+        self,
+        query: str,
+        *,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict[str, Any]:
         import psycopg2
 
         with psycopg2.connect(**self._db_config) as conn:
@@ -53,20 +60,32 @@ class LegacyHybridRetrieverAdapter:
                     cur,
                     query,
                     web_search_enabled=web_search_enabled,
+                    graph_intent=graph_intent,
                 )
 
-    def retrieve_grep_first(self, query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
+    def retrieve_grep_first(
+        self,
+        query: str,
+        *,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict[str, Any]:
         import psycopg2
 
         retrieve_grep_first = getattr(self._retriever, "retrieve_grep_first", None)
         if not callable(retrieve_grep_first):
-            return self.retrieve(query, web_search_enabled=web_search_enabled)
+            return self.retrieve(
+                query,
+                web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
+            )
         with psycopg2.connect(**self._db_config) as conn:
             with conn.cursor() as cur:
                 return retrieve_grep_first(
                     cur,
                     query,
                     web_search_enabled=web_search_enabled,
+                    graph_intent=graph_intent,
                 )
 
 
@@ -225,10 +244,12 @@ class HybridRetrievalService:
         rewritten_query: str,
         keywords: list[str],
         web_search_enabled: bool = False,
+        graph_intent: str | None = None,
     ) -> RetrievalResponse:
         raw_result = self.retrieve_raw(
             rewritten_query,
             web_search_enabled=web_search_enabled,
+            graph_intent=graph_intent,
         )
         return self.build_response(
             query=query,
@@ -237,12 +258,19 @@ class HybridRetrievalService:
             raw_result=raw_result,
         )
 
-    def retrieve_raw(self, rewritten_query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
+    def retrieve_raw(
+        self,
+        rewritten_query: str,
+        *,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict[str, Any]:
         cache_key = ""
         if self._should_use_raw_result_cache():
             cache_key = self._build_raw_result_cache_key(
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
             )
         if cache_key:
             cached_result = _RETRIEVAL_RESULT_CACHE.get(
@@ -255,6 +283,7 @@ class HybridRetrievalService:
         raw_result = self._retrieve_raw(
             rewritten_query,
             web_search_enabled=web_search_enabled,
+            graph_intent=graph_intent,
         )
         if cache_key and self._is_cacheable_raw_result(raw_result):
             _RETRIEVAL_RESULT_CACHE.set(
@@ -265,21 +294,35 @@ class HybridRetrievalService:
             )
         return raw_result
 
-    def retrieve_grep_first(self, rewritten_query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
+    def retrieve_grep_first(
+        self,
+        rewritten_query: str,
+        *,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict[str, Any]:
         if self.retriever is not None:
             retrieve_grep_first = getattr(self.retriever, "retrieve_grep_first", None)
             if callable(retrieve_grep_first):
-                return retrieve_grep_first(
+                return self._call_retriever(
+                    retrieve_grep_first,
                     rewritten_query,
                     web_search_enabled=web_search_enabled,
+                    graph_intent=graph_intent,
                 )
-            return self.retriever.retrieve(rewritten_query)
+            return self._call_retriever(
+                self.retriever.retrieve,
+                rewritten_query,
+                web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
+            )
 
         try:
             adapter = LegacyHybridRetrieverAdapter()
             return adapter.retrieve_grep_first(
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
             )
         except Exception as exc:
             LOGGER.warning("Grep-first retrieval failed for query %r: %s", rewritten_query, exc)
@@ -333,15 +376,27 @@ class HybridRetrievalService:
         channels = raw_result.get("channels", {}) if isinstance(raw_result, dict) else {}
         return channels.get(channel_name, {} if channel_name == "grep" else [])
 
-    def _retrieve_raw(self, rewritten_query: str, *, web_search_enabled: bool = False) -> dict[str, Any]:
+    def _retrieve_raw(
+        self,
+        rewritten_query: str,
+        *,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict[str, Any]:
         if self.retriever is not None:
-            return self.retriever.retrieve(rewritten_query)
+            return self._call_retriever(
+                self.retriever.retrieve,
+                rewritten_query,
+                web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
+            )
 
         try:
             adapter = LegacyHybridRetrieverAdapter()
             return adapter.retrieve(
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                graph_intent=graph_intent,
             )
         except Exception as exc:
             LOGGER.warning("Hybrid retrieval failed for query %r: %s", rewritten_query, exc)
@@ -371,7 +426,13 @@ class HybridRetrievalService:
             return False
         return _RETRIEVAL_RESULT_CACHE.should_read(_RETRIEVAL_RAW_CACHE_NAMESPACE)
 
-    def _build_raw_result_cache_key(self, rewritten_query: str, *, web_search_enabled: bool = False) -> str:
+    def _build_raw_result_cache_key(
+        self,
+        rewritten_query: str,
+        *,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> str:
         return stable_cache_key(
             "retrieval-raw",
             {
@@ -379,8 +440,42 @@ class HybridRetrievalService:
                 "domain": self.domain,
                 "query": rewritten_query,
                 "webSearchEnabled": web_search_enabled,
+                "graphIntent": graph_intent,
             },
         )
+
+    def _call_retriever(
+        self,
+        retrieve_fn: Any,
+        query: str,
+        *,
+        web_search_enabled: bool | None = None,
+        graph_intent: str | None = None,
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {}
+        accepted = self._accepted_keyword_args(retrieve_fn)
+        accepts_var_kwargs = accepted is None
+        if web_search_enabled is not None and (accepts_var_kwargs or "web_search_enabled" in accepted):
+            kwargs["web_search_enabled"] = web_search_enabled
+        if graph_intent is not None and (accepts_var_kwargs or "graph_intent" in accepted):
+            kwargs["graph_intent"] = graph_intent
+        return retrieve_fn(query, **kwargs)
+
+    def _accepted_keyword_args(self, fn: Any) -> set[str] | None:
+        try:
+            signature = inspect.signature(fn)
+        except (TypeError, ValueError):
+            return None
+        names: set[str] = set()
+        for name, parameter in signature.parameters.items():
+            if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+                return None
+            if parameter.kind in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }:
+                names.add(name)
+        return names
 
     def _raw_result_cache_scope(self) -> str:
         if self.retriever is None:

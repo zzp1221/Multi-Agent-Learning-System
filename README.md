@@ -6,7 +6,7 @@
 
 **智能辅导** — 17 个注册 Agent 协同工作，支持多轮对话、SSE 流式逐字渲染、图片上传分析、深度推理模式、长会话记忆压缩
 
-**RAG 知识检索** — 四通道混合检索（短语优先 grep + 向量语义 + 知识图谱遍历 + 可选联网搜索），覆盖 22 门计算机学科、986+ 知识块，hits@3 100%
+**RAG 知识检索** — 四通道混合检索（短语优先 grep + 向量语义 + graph-aware 知识图谱遍历 + 可选联网搜索），覆盖 22 门计算机学科、986+ 知识块；图谱型 100 题 classifier 基准 hit@3 94%、完整证据 Top5 69%
 
 **多格式资源生成** — 文档 / 思维导图 / 幻灯片(PPTX) / 代码示例 / 练习题 / 数字人视频（6 种格式可多选），LangGraph ResourceBundle 编排
 
@@ -229,14 +229,16 @@ wiki/*.md ──①──▶ rag.wiki_page ──②──▶ rag.knowledge_docu
   ├─ Channel B: VectorSearcher ── 权重 5.0 ─── pgvector cosine 相似度 (IVFFlat)
   │   └── 同时搜索 knowledge_chunk + resource_chunk
   │
-  ├─ Channel C: GraphExpander ─── 权重 0.5 ─── 从 top 结果出发沿 wiki_link 扩展 1-hop
+  ├─ Channel C: GraphExpander ─── 动态权重 0.5~1.8 ─── 按 graphIntent 扩展 1-hop；前置路径题启用受限 2-hop
   │
   ├─ Channel D: TavilySearcher ── 权重 1.5 ─── 可选联网搜索
   │
-  └─ 加权 RRF 融合 ─── k=60, 词组匹配 1.5x priority boost
+  └─ 加权 RRF 融合 ─── k=60, 词组匹配 1.5x priority boost, 安全 slug canonical 去重
 ```
 
-> 核心发现：在中文技术术语检索中，字面匹配 (grep) 优于语义相似度 (向量)。
+Tutor 会消费内部图谱证据包（`graphIntent`、1-hop/2-hop 来源、direct evidence、seed protected 节点），在学习路径、跨层关系、机制应用、对比和常见误区问题中按路径/关系链组织回答；外部 API 和 SSE 协议不变。
+
+> 核心发现：在中文技术术语检索中，字面匹配 (grep) 优于语义相似度 (向量)；图谱通道更适合补齐多节点关系证据。
 
 ## 本地 Judge 模型
 
@@ -324,6 +326,9 @@ pytest tests/ -v
 
 # Python Agent 单元测试 (33 个文件)
 cd python-agent && pytest tests/ -v
+
+# 图谱型 RAG 100 题 classifier 基准
+cd python-agent && .\.venv\Scripts\python.exe knowledge\benchmark_graph_rag_100.py --questions reports\graph_rag_100_questions.json --output reports\graph_rag_100_pr_local.json --judge-cache reports\graph_rag_100_judge_cache.json --intent-mode classifier
 
 # Java 后端测试 (16 个文件)
 cd project && mvn test

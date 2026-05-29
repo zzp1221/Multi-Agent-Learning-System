@@ -121,6 +121,157 @@ def test_tutor_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> None:
     assert prompt == "辅导提示词兜底内容"
 
 
+def test_tutor_retrieval_evidence_builds_graph_pack() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "query": "学习 B+树 前需要理解哪些概念？",
+        "rewrittenQuery": "数据库 B+树 学习路径 前置依赖",
+        "graphIntent": "PREREQUISITE_PATH",
+        "retrievalResult": {
+            "documents": [{"title": "B+树", "channel": "graph"}],
+            "sourcesSummary": "B+树(graph:0.8)",
+        },
+        "graphRetrievalResult": {
+            "graphIntent": "PREREQUISITE_PATH",
+            "results": [
+                ("database-index", "数据库索引", 11.0, "graph_1hop"),
+                ("btree", "B树", 9.0, "graph_2hop"),
+            ],
+        },
+        "retrievalRawResult": {
+            "graphIntent": "PREREQUISITE_PATH",
+            "graphDiagnostics": {
+                "prerequisiteEvidence": {
+                    "directEvidenceCandidatesTopN": [
+                        {
+                            "slug": "bplus-tree",
+                            "title": "B+树",
+                            "score": 33.0,
+                            "source": "direct_evidence",
+                        }
+                    ],
+                    "protectedSeeds": [
+                        {
+                            "slug": "index-structure",
+                            "title": "索引结构",
+                            "score": 29.0,
+                            "source": "seed_protected",
+                        }
+                    ],
+                }
+            },
+            "channels": {
+                "graph": [
+                    ("database-index", "数据库索引", 11.0, "graph_1hop"),
+                    ("btree", "B树", 9.0, "graph_2hop"),
+                ]
+            },
+        },
+    }
+
+    evidence = tutor._tool_read_retrieval_evidence(tool_input={}, params=params)
+    graph_pack = evidence["graphEvidencePack"]
+
+    assert graph_pack["intent"] == "PREREQUISITE_PATH"
+    assert "前置基础" in graph_pack["guidance"]
+    assert [node["title"] for node in graph_pack["nodes"][:4]] == [
+        "数据库索引",
+        "B树",
+        "B+树",
+        "索引结构",
+    ]
+    assert graph_pack["nodes"][0]["source"] == "graph_1hop"
+    assert graph_pack["nodes"][1]["hop"] == 2
+    assert any("非严格顺序" in hint for hint in graph_pack["relationHints"])
+
+
+def test_tutor_runtime_context_includes_graph_evidence_pack() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    evidence = {
+        "documents": [{"title": "B+树", "channel": "graph", "evidence": "B+树适合范围查询。"}],
+        "graphEvidencePack": {
+            "intent": "PREREQUISITE_PATH",
+            "guidance": "按“前置基础 -> 当前概念 -> 后续延伸”组织学习路径。",
+            "nodes": [
+                {
+                    "rank": 1,
+                    "slug": "database-index",
+                    "title": "数据库索引",
+                    "source": "graph_1hop",
+                    "hop": 1,
+                    "score": 11.0,
+                },
+                {
+                    "rank": 2,
+                    "slug": "btree",
+                    "title": "B树",
+                    "source": "graph_2hop",
+                    "hop": 2,
+                    "score": 9.0,
+                },
+            ],
+            "relationHints": ["学习路径相关候选集合（非严格顺序）：数据库索引、B树、B+树"],
+        },
+    }
+
+    context = tutor._build_enriched_message(
+        user_query="学习 B+树 前需要理解哪些概念？",
+        memory={},
+        context={},
+        evidence=evidence,
+        profile={},
+        image_analysis={},
+        recent_dialogue={},
+        input_mode="clear_question",
+    )
+
+    assert "图谱证据包" in context
+    assert "图谱题型：学习路径/前置依赖" in context
+    assert "数据库索引（一跳图谱相关概念）" in context
+    assert "B树（二跳图谱补充概念）" in context
+    assert "source=" not in context
+    assert "graphIntent:" not in context
+    assert "学习路径相关候选集合（非严格顺序）：数据库索引、B树、B+树" in context
+
+
+def test_tutor_runtime_context_omits_graph_pack_for_plain_retrieval() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    evidence = tutor._tool_read_retrieval_evidence(
+        tool_input={},
+        params={
+            "query": "什么是 Java？",
+            "retrievalResult": {
+                "documents": [
+                    {"title": "Java", "channel": "hybrid", "evidence": "Java 是编程语言。"}
+                ]
+            },
+        },
+    )
+
+    context = tutor._build_enriched_message(
+        user_query="什么是 Java？",
+        memory={},
+        context={},
+        evidence=evidence,
+        profile={},
+        image_analysis={},
+        recent_dialogue={},
+        input_mode="clear_question",
+    )
+
+    assert evidence["graphEvidencePack"] == {}
+    assert "图谱证据包" not in context
+
+
 @pytest.mark.asyncio
 async def test_tutor_agent_tries_fallback_llm_when_primary_stream_and_core_loop_fail() -> None:
     secondary_llm = _StreamingTutorLLM()
@@ -273,6 +424,58 @@ async def test_tutor_agent_golden_eval_preserves_guidance_contract() -> None:
     assert events[0].dialog_state.next_action == "ask_follow_up"
     assert "联合索引" in events[1].payload.text
     assert "最左字段" in events[1].payload.text
+
+
+@pytest.mark.asyncio
+async def test_tutor_rule_based_smoke_consumes_graph_evidence_pack() -> None:
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "conversationId": "conv-graph-smoke",
+        "messages": [{"role": "user", "content": "学习 B+树 前需要理解哪些概念？"}],
+        "query": "学习 B+树 前需要理解哪些概念？",
+        "rewrittenQuery": "数据库 B+树 学习路径 前置依赖",
+        "graphIntent": "PREREQUISITE_PATH",
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "B+树",
+                    "channel": "graph",
+                    "evidence": "B+树常用于数据库索引，适合范围查询。",
+                }
+            ]
+        },
+        "graphRetrievalResult": {
+            "graphIntent": "PREREQUISITE_PATH",
+            "results": [
+                ("database-index", "数据库索引", 11.0, "graph_1hop"),
+                ("btree", "B树", 9.0, "graph_2hop"),
+            ],
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-graph-smoke",
+            trace_id="trace-graph-smoke",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    text = "".join(event.payload.text for event in events if event.event == "result_chunk")
+    assert "结合图谱证据" in text
+    assert "数据库索引、B树、B+树" in text
+    assert "不要硬背顺序" in text
+    assert "graphIntent" not in text
+    assert "source=" not in text
 
 
 @pytest.mark.asyncio

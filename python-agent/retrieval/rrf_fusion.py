@@ -1,8 +1,8 @@
 """
 Weighted Reciprocal Rank Fusion (RRF) for combining grep, vector, and graph results.
 """
+from collections.abc import Callable
 from typing import Optional
-
 
 class RRFFusion:
     """Weighted RRF with phrase-priority boost."""
@@ -21,7 +21,13 @@ class RRFFusion:
              vector_results: Optional[list[tuple]] = None,
              graph_results: Optional[list[tuple]] = None,
              web_results: Optional[list[tuple]] = None,
-             top_n: int = 15) -> list[tuple]:
+             top_n: int = 15,
+             grep_weight: float | None = None,
+             vector_weight: float | None = None,
+             graph_weight: float | None = None,
+             web_weight: float | None = None,
+             slug_penalty: Callable[[str], float] | None = None,
+             slug_key: Callable[[str], str] | None = None) -> list[tuple]:
         """
         Fuse 3 ranked lists via weighted RRF.
         Each input:
@@ -32,36 +38,46 @@ class RRFFusion:
           - web_results:    [(url, title, score, metadata), ...]
         Returns top_n as [(slug, title, rrf_score), ...].
         """
+        active_grep_weight = self.grep_weight if grep_weight is None else grep_weight
+        active_vector_weight = self.vector_weight if vector_weight is None else vector_weight
+        active_graph_weight = self.graph_weight if graph_weight is None else graph_weight
+        active_web_weight = self.web_weight if web_weight is None else web_weight
         scores: dict[str, dict] = {}  # slug -> {title, score}
 
-        def add_ranked(items, weight, priority_boost: float = 1.0):
+        def add_ranked(items, weight, priority_boost: float = 1.0, apply_penalty: bool = True):
             for rank, item in enumerate(items):
                 slug, title = item[0], item[1]
-                rrf = weight * priority_boost / (self.k + rank + 1)
-                if slug not in scores:
-                    scores[slug] = {"title": title, "score": 0.0}
-                scores[slug]["score"] += rrf
+                penalty = slug_penalty(str(slug)) if slug_penalty and apply_penalty else 1.0
+                if penalty <= 0:
+                    continue
+                key = slug_key(str(slug)) if slug_key else str(slug)
+                if not key:
+                    key = str(slug)
+                rrf = weight * priority_boost * penalty / (self.k + rank + 1)
+                if key not in scores:
+                    scores[key] = {"slug": slug, "title": title, "score": 0.0}
+                scores[key]["score"] += rrf
 
         # Grep: priority (phrase matches) get 1.5x boost, normal no boost
         if grep_results:
             priority = grep_results.get("priority", [])
             normal = grep_results.get("normal", [])
-            add_ranked(priority, self.grep_weight, priority_boost=1.5)
-            add_ranked(normal, self.grep_weight)
+            add_ranked(priority, active_grep_weight, priority_boost=1.5)
+            add_ranked(normal, active_grep_weight)
 
         # Vector results
         if vector_results:
-            add_ranked(vector_results, self.vector_weight)
+            add_ranked(vector_results, active_vector_weight)
 
         # Graph results
         if graph_results:
-            add_ranked(graph_results, self.graph_weight)
+            add_ranked(graph_results, active_graph_weight)
 
         # Web results: opt-in Tavily channel with lower trust than local KB.
         if web_results:
-            add_ranked(web_results, self.web_weight)
+            add_ranked(web_results, active_web_weight, apply_penalty=False)
 
         # Sort by RRF score
         ranked = sorted(scores.items(), key=lambda x: x[1]["score"], reverse=True)
-        return [(slug, info["title"], round(info["score"], 4))
-                for slug, info in ranked[:top_n]]
+        return [(info["slug"], info["title"], round(info["score"], 4))
+                for _key, info in ranked[:top_n]]

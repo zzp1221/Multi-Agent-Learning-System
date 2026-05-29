@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import re
 import statistics
 import sys
 import time
@@ -25,6 +26,7 @@ import psycopg2
 
 from knowledge.settings_helper import configure_dashscope_api_key
 from retrieval.hybrid_retriever import HybridRetriever
+from retrieval.slug_canonicalizer import safe_slug_key
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import OpenAICompatibleJSONGenerator
 
@@ -34,6 +36,108 @@ DEFAULT_QUESTION_COUNT = 100
 DEFAULT_SEED = 20260524
 TOP_K = 5
 JUDGE_CACHE_VERSION = "rag-judge-v1"
+
+
+def _normalize_slug(value: Any) -> str:
+    return str(value or "").strip().strip('"').lower()
+
+
+def _tuple_item_to_candidate(item: Any, rank: int) -> dict[str, Any]:
+    if not isinstance(item, (list, tuple)) or len(item) < 3:
+        return {"rank": rank, "slug": "", "title": "", "score": 0.0, "extra": None}
+    try:
+        score = float(item[2])
+    except (TypeError, ValueError):
+        score = 0.0
+    return {
+        "rank": rank,
+        "slug": str(item[0]),
+        "title": str(item[1]),
+        "score": round(score, 4),
+        "extra": item[3] if len(item) > 3 else None,
+    }
+
+
+def _top_channel_items(items: list[Any], limit: int = 10) -> list[dict[str, Any]]:
+    return [_tuple_item_to_candidate(item, rank) for rank, item in enumerate(items[:limit], start=1)]
+
+
+def _low_value_kind(slug: Any, title: Any) -> str | None:
+    normalized_slug = _normalize_slug(slug)
+    normalized_title = str(title or "").strip().lower()
+    if not normalized_slug or normalized_slug == "none":
+        return "none"
+    if re.match(r"^https?://", normalized_slug):
+        return "http"
+    if normalized_slug.startswith("wiki://"):
+        return "wiki"
+    if "视频资源" in normalized_slug or "视频" in str(title or "") or "video" in normalized_slug or "video" in normalized_title:
+        return "video"
+    return None
+
+
+def _summarize_low_value_sources(
+    *,
+    grep_results: dict[str, Any],
+    vector_results: list[tuple],
+    graph_results: list[tuple],
+    web_results: list[Any],
+) -> dict[str, Any]:
+    summary = {
+        "byChannel": {
+            "grepPriority": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+            "grepNormal": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+            "vector": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+            "graph": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+            "web": {"none": 0, "http": 0, "wiki": 0, "video": 0},
+        },
+        "items": [],
+    }
+
+    channel_items = {
+        "grepPriority": grep_results.get("priority", []) if isinstance(grep_results, dict) else [],
+        "grepNormal": grep_results.get("normal", []) if isinstance(grep_results, dict) else [],
+        "vector": vector_results,
+        "graph": graph_results,
+        "web": web_results,
+    }
+    for channel, items in channel_items.items():
+        for rank, item in enumerate(items[:10], start=1):
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            kind = _low_value_kind(item[0], item[1])
+            if not kind:
+                continue
+            summary["byChannel"][channel][kind] += 1
+            summary["items"].append(
+                {
+                    "channel": channel,
+                    "rank": rank,
+                    "kind": kind,
+                    "slug": str(item[0]),
+                    "title": str(item[1]),
+                }
+            )
+    return summary
+
+
+def _fusion_replacements(pre_fused: list[tuple], post_fused: list[tuple], limit: int = 5) -> list[dict[str, Any]]:
+    replacements = []
+    for index in range(limit):
+        before = pre_fused[index] if index < len(pre_fused) else None
+        after = post_fused[index] if index < len(post_fused) else None
+        before_slug = str(before[0]) if isinstance(before, (list, tuple)) and before else None
+        after_slug = str(after[0]) if isinstance(after, (list, tuple)) and after else None
+        if before_slug == after_slug:
+            continue
+        replacements.append(
+            {
+                "rank": index + 1,
+                "before": _tuple_item_to_candidate(before, index + 1) if before else None,
+                "after": _tuple_item_to_candidate(after, index + 1) if after else None,
+            }
+        )
+    return replacements
 
 
 def _read_json(path: Path) -> Any:
@@ -126,12 +230,37 @@ def channel_timer(timings: dict[str, float], channel_name: str):
         timings[channel_name] += (time.perf_counter() - started) * 1000
 
 
-def run_retrieval(question: str) -> tuple[dict[str, Any], dict[str, float], float, str | None]:
+def _search_vector_with_retries(retriever: HybridRetriever, cur, question: str, max_attempts: int = 3) -> list[tuple]:
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return retriever._vector.search_all(
+                cur,
+                question,
+                top_k=retriever.top_k,
+                domain=retriever.domain,
+            )
+        except Exception as exc:
+            last_error = exc
+            if attempt >= max_attempts:
+                break
+            time.sleep(0.5 * attempt)
+    assert last_error is not None
+    raise last_error
+
+
+def run_retrieval(
+    question: str,
+    *,
+    graph_intent: str | None = None,
+    include_diagnostics: bool = False,
+) -> tuple[dict[str, Any], dict[str, float], float, str | None]:
     retriever = HybridRetriever(DB_CONFIG, top_k=TOP_K)
     timings = {"init_ms": 0.0, "grep_ms": 0.0, "vector_ms": 0.0, "graph_ms": 0.0, "web_ms": 0.0, "fusion_ms": 0.0}
     error: str | None = None
     started = time.perf_counter()
-    result: dict[str, Any] = {"query": question, "channels": {}, "top": []}
+    result: dict[str, Any] = {"query": question, "graphIntent": graph_intent, "channels": {}, "top": []}
+    channel_errors: dict[str, str] = {}
 
     with psycopg2.connect(**DB_CONFIG) as conn:
         with conn.cursor() as cur:
@@ -140,24 +269,114 @@ def run_retrieval(question: str) -> tuple[dict[str, Any], dict[str, float], floa
                     retriever._init(cur)
 
                 with channel_timer(timings, "grep_ms"):
-                    grep_results = retriever._grep.search(cur, question, retriever.domain)
+                    try:
+                        grep_results = retriever._grep.search(cur, question, retriever.domain)
+                    except Exception as exc:
+                        channel_errors["grep"] = f"{type(exc).__name__}: {exc}"
+                        grep_results = {"priority": [], "normal": []}
 
                 with channel_timer(timings, "vector_ms"):
-                    vector_all = retriever._vector.search_all(cur, question, top_k=retriever.top_k, domain=retriever.domain)
+                    try:
+                        vector_all = _search_vector_with_retries(retriever, cur, question)
+                    except Exception as exc:
+                        channel_errors["vector"] = f"{type(exc).__name__}: {exc}"
+                        vector_all = []
                     vector_results = [(item[0], item[1], item[2]) for item in vector_all]
 
                 with channel_timer(timings, "graph_ms"):
                     grep_slugs = [item[0] for item in grep_results.get("priority", [])[: retriever.graph_seed_n]]
                     vec_slugs = [item[0] for item in vector_results[: retriever.graph_seed_n]]
                     seed_slugs = list(dict.fromkeys(grep_slugs + vec_slugs))[: retriever.graph_seed_n]
-                    graph_results = retriever._graph.expand(cur, seed_slugs, top_n=5)
+                    prerequisite_evidence = retriever._empty_prerequisite_evidence()
+                    try:
+                        graph_results = retriever._graph.expand(
+                            cur,
+                            seed_slugs,
+                            top_n=retriever._graph_top_n(graph_intent),
+                            query=question,
+                            graph_intent=graph_intent,
+                        )
+                        if retriever._uses_prerequisite_evidence_fill(graph_intent, question):
+                            prerequisite_evidence = retriever._graph.build_prerequisite_evidence(cur, seed_slugs, question)
+                            graph_results = retriever._merge_graph_evidence(
+                                prerequisite_evidence["directEvidence"],
+                                graph_results,
+                                prerequisite_evidence["protectedSeeds"],
+                            )
+                    except Exception as exc:
+                        channel_errors["graph"] = f"{type(exc).__name__}: {exc}"
+                        graph_results = []
 
                 web_results: list[Any] = []
                 with channel_timer(timings, "fusion_ms"):
-                    fused = retriever._rrf.fuse(grep_results, vector_results, graph_results, web_results)
+                    pre_fused = retriever._rrf.fuse(
+                        grep_results,
+                        vector_results,
+                        graph_results,
+                        web_results,
+                        graph_weight=retriever._graph_weight(graph_intent),
+                        slug_penalty=(
+                            retriever._graph_slug_penalty
+                            if retriever._is_graph_aware_intent(graph_intent)
+                            else None
+                        ),
+                        slug_key=safe_slug_key,
+                    )
+                    fused, graph_diagnostics = retriever._stabilize_graph_top5_with_diagnostics(
+                        pre_fused,
+                        graph_results,
+                        graph_intent,
+                        protected_slugs={item[0] for item in prerequisite_evidence["protectedSeeds"]},
+                    )
+                    fused, grep_top_diagnostics = retriever._promote_strong_grep_top_with_diagnostics(
+                        fused,
+                        grep_results,
+                        graph_intent,
+                    )
+
+                diagnostics = None
+                if include_diagnostics:
+                    try:
+                        graph_explain = retriever._graph.explain_candidates(
+                            cur,
+                            seed_slugs,
+                            limit=50,
+                            default_window=retriever._graph_top_n(graph_intent) * 3,
+                            query=question,
+                            graph_intent=graph_intent,
+                        )
+                    except Exception as exc:
+                        channel_errors["graphExplain"] = f"{type(exc).__name__}: {exc}"
+                        graph_explain = {}
+                    diagnostics = {
+                        "retrievalGraphIntent": graph_intent,
+                        "channelErrors": channel_errors,
+                        "graphSeedSlugs": seed_slugs,
+                        "channelsTopN": {
+                            "grepPriority": _top_channel_items(grep_results.get("priority", []), 10),
+                            "grepNormal": _top_channel_items(grep_results.get("normal", []), 10),
+                            "vector": _top_channel_items(vector_results, 10),
+                            "graph": _top_channel_items(graph_results, 10),
+                            "web": _top_channel_items(web_results, 10),
+                        },
+                        "preFused": _top_channel_items(pre_fused, 10),
+                        "postFused": _top_channel_items(fused, 10),
+                        "fusionReplacementsTop5": _fusion_replacements(pre_fused, fused),
+                        "prerequisiteEvidence": retriever._format_prerequisite_evidence(prerequisite_evidence),
+                        "top5Stabilization": graph_diagnostics,
+                        "strongGrepTop": grep_top_diagnostics,
+                        "lowValueSources": _summarize_low_value_sources(
+                            grep_results=grep_results,
+                            vector_results=vector_results,
+                            graph_results=graph_results,
+                            web_results=web_results,
+                        ),
+                        "graphCandidateExplainTop50": graph_explain,
+                    }
 
                 result = {
                     "query": question,
+                    "graphIntent": graph_intent,
                     "webSearchEnabled": False,
                     "channels": {
                         "grep": {
@@ -171,6 +390,8 @@ def run_retrieval(question: str) -> tuple[dict[str, Any], dict[str, float], floa
                     "fused": fused,
                     "top": fused[:5],
                 }
+                if diagnostics:
+                    result["diagnostics"] = diagnostics
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
 
@@ -381,6 +602,28 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "p95LatencyMs": percentile_ms(latencies, 0.95),
         "maxLatencyMs": round(max(latencies), 2) if latencies else 0.0,
         "channels": channel_summary,
+        **summarize_channel_errors(records),
+    }
+
+
+def summarize_channel_errors(records: list[dict[str, Any]]) -> dict[str, Any]:
+    by_channel: dict[str, int] = {}
+    questions = []
+    for record in records:
+        channel_errors = record.get("channelErrors")
+        if not isinstance(channel_errors, dict):
+            channel_errors = record.get("diagnostics", {}).get("channelErrors", {})
+        if not isinstance(channel_errors, dict) or not channel_errors:
+            continue
+
+        questions.append(str(record.get("id") or ""))
+        for channel in channel_errors:
+            by_channel[str(channel)] = by_channel.get(str(channel), 0) + 1
+
+    return {
+        "channelErrorCount": sum(by_channel.values()),
+        "channelErrorQuestions": questions,
+        "channelErrorByChannel": dict(sorted(by_channel.items())),
     }
 
 
