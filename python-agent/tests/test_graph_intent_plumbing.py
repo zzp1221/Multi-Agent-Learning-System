@@ -6,7 +6,12 @@ from knowledge.benchmark_graph_rag_100 import (
     summarize_intent_mismatches,
     summarize_low_value_sources,
 )
-from knowledge.benchmark_rag_100 import _fusion_replacements, _search_vector_with_retries, _summarize_low_value_sources
+from knowledge.benchmark_rag_100 import (
+    _fusion_replacements,
+    _search_vector_with_retries,
+    _summarize_low_value_sources,
+    summarize_channel_errors,
+)
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.graph_expander import GraphExpander
 from retrieval.rrf_fusion import RRFFusion
@@ -249,6 +254,61 @@ def test_graph_intent_does_not_replace_protected_seed_tail() -> None:
     assert diagnostics["replacementReason"][0]["reason"] == "replace_unprotected_tail"
 
 
+def test_prerequisite_tail_promotion_can_raise_existing_later_candidate() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("tail-a", "Tail A", 0.17),
+        ("tail-b", "Tail B", 0.16),
+        ("direct-doc", "Direct Doc", 0.15),
+    ]
+    graph_results = [
+        ("direct-doc", "Direct Doc", 37.5, "direct_evidence"),
+        ("graph-doc", "Graph Doc", 8),
+    ]
+
+    result, diagnostics = retriever._stabilize_graph_top5_with_diagnostics(
+        fused,
+        graph_results,
+        "PREREQUISITE_PATH",
+    )
+
+    assert [item[0] for item in result[:3]] == ["doc-a", "doc-b", "doc-c"]
+    assert result[4][0] == "direct-doc"
+    assert [item[0] for item in result].count("direct-doc") == 1
+    assert diagnostics["replacementReason"][0]["insertedSlug"] == "direct-doc"
+
+
+def test_prerequisite_protected_seed_is_inserted_before_plain_graph_candidate() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("None", "Video", 0.17),
+        ("tail-doc", "Tail Doc", 0.16),
+    ]
+    graph_results = retriever._merge_graph_evidence(
+        direct_evidence=[],
+        graph_results=[("graph-doc", "Graph Doc", 10)],
+        protected_seeds=[("seed-doc", "Seed Doc", 29, "seed_protected")],
+    )
+
+    result, diagnostics = retriever._stabilize_graph_top5_with_diagnostics(
+        fused,
+        graph_results,
+        "PREREQUISITE_PATH",
+        protected_slugs={"seed-doc"},
+    )
+
+    assert result[3][0] == "seed-doc"
+    assert diagnostics["seedProtectedTop5"] == ["seed-doc"]
+    assert diagnostics["replacementReason"][0]["insertedSlug"] == "seed-doc"
+    assert diagnostics["replacementReason"][0]["reason"] == "replace_low_value_tail"
+
+
 def test_prerequisite_direct_evidence_requires_strong_path_signal() -> None:
     retriever = HybridRetriever({})
 
@@ -483,6 +543,27 @@ def test_graph_report_summarizes_low_value_sources_from_records() -> None:
     assert summary["byChannel"]["vector"]["http"] == 2
     assert summary["byChannel"]["graph"]["wiki"] == 1
     assert summary["examples"][0]["id"] == "grq001"
+
+
+def test_benchmark_summary_lifts_channel_errors_to_top_level() -> None:
+    records = [
+        {
+            "id": "grq001",
+            "diagnostics": {
+                "channelErrors": {
+                    "vector": "ProxyError: temporary disconnect",
+                    "graphExplain": "TimeoutError: slow explain",
+                }
+            },
+        },
+        {"id": "grq002", "channelErrors": {"grep": "RuntimeError: failed"}},
+    ]
+
+    summary = summarize_channel_errors(records)
+
+    assert summary["channelErrorCount"] == 3
+    assert summary["channelErrorQuestions"] == ["grq001", "grq002"]
+    assert summary["channelErrorByChannel"] == {"graphExplain": 1, "grep": 1, "vector": 1}
 
 
 class RecordingRewriteAgent(PlaceholderAgent):

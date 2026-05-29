@@ -312,7 +312,7 @@ class HybridRetriever:
     ) -> list[tuple]:
         merged = []
         seen: set[str] = set()
-        for source in (direct_evidence, graph_results, protected_seeds):
+        for source in (direct_evidence, protected_seeds, graph_results):
             for item in source:
                 if not isinstance(item, (list, tuple)) or len(item) < 3:
                     continue
@@ -385,11 +385,12 @@ class HybridRetriever:
 
         ranked = list(fused)
         protected_slugs = protected_slugs or set()
-        seen = {str(item[0]) for item in ranked if isinstance(item, (list, tuple)) and item}
+        top5_seen = {str(item[0]) for item in ranked[:5] if isinstance(item, (list, tuple)) and item}
+        seen = set(top5_seen)
         insertions = [
             (slug, title, round(0.01 + float(score) / 10000, 4))
             for slug, title, score, *_ in graph_results
-            if str(slug) not in seen and self._graph_slug_penalty(str(slug)) >= 1.0
+            if str(slug) not in top5_seen and self._graph_slug_penalty(str(slug)) >= 1.0
         ]
         if not insertions:
             diagnostics["seedProtectedTop5"] = self._protected_slugs_in_top5(ranked, protected_slugs)
@@ -410,6 +411,9 @@ class HybridRetriever:
             replaced = ranked[replace_at]
             ranked[replace_at] = candidate
             seen.add(str(candidate[0]))
+            existing_at = self._find_slug_index(ranked, str(candidate[0]), start=replace_at + 1)
+            if existing_at is not None:
+                ranked[existing_at] = replaced
             diagnostics["replacementReason"].append(
                 {
                     "rank": replace_at + 1,
@@ -434,7 +438,8 @@ class HybridRetriever:
         protected_slugs: set[str] | None = None,
     ) -> tuple[int | None, str]:
         protected_slugs = protected_slugs or set()
-        for index in range(protected_prefix, len(ranked)):
+        tail_end = min(len(ranked), 5)
+        for index in range(protected_prefix, tail_end):
             item = ranked[index]
             if not isinstance(item, (list, tuple)) or not item:
                 continue
@@ -447,6 +452,13 @@ class HybridRetriever:
                 return None, "no_replaceable_tail"
             return 4, "replace_unprotected_tail"
         return None, "no_replaceable_tail"
+
+    def _find_slug_index(self, ranked: list[tuple], slug: str, *, start: int) -> int | None:
+        for index in range(start, len(ranked)):
+            item = ranked[index]
+            if isinstance(item, (list, tuple)) and item and str(item[0]) == slug:
+                return index
+        return None
 
     def _graph_replacement_index(
         self,

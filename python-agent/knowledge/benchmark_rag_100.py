@@ -594,6 +594,28 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "p95LatencyMs": percentile_ms(latencies, 0.95),
         "maxLatencyMs": round(max(latencies), 2) if latencies else 0.0,
         "channels": channel_summary,
+        **summarize_channel_errors(records),
+    }
+
+
+def summarize_channel_errors(records: list[dict[str, Any]]) -> dict[str, Any]:
+    by_channel: dict[str, int] = {}
+    questions = []
+    for record in records:
+        channel_errors = record.get("channelErrors")
+        if not isinstance(channel_errors, dict):
+            channel_errors = record.get("diagnostics", {}).get("channelErrors", {})
+        if not isinstance(channel_errors, dict) or not channel_errors:
+            continue
+
+        questions.append(str(record.get("id") or ""))
+        for channel in channel_errors:
+            by_channel[str(channel)] = by_channel.get(str(channel), 0) + 1
+
+    return {
+        "channelErrorCount": sum(by_channel.values()),
+        "channelErrorQuestions": questions,
+        "channelErrorByChannel": dict(sorted(by_channel.items())),
     }
 
 
