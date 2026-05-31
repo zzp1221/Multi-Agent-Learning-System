@@ -12,7 +12,7 @@ import {
   type LearningPlanView,
   type QnaState,
 } from './LearningStudioDemoPage.types';
-import { sanitizeConversationMessageContent } from './LearningStudioDemoPage.utils';
+import { formatUserFacingTaskMessage, sanitizeConversationMessageContent } from './LearningStudioDemoPage.utils';
 
 export const ENGINE_TASK_STORAGE_KEY = 'learning_studio_engine_tasks';
 export const QNA_SNAPSHOT_STORAGE_KEY = 'learning_studio_qna_snapshot';
@@ -156,7 +156,7 @@ function dedupeResultLines(lines: string[]): string[] {
   const seen = new Set<string>();
   const normalized: string[] = [];
   for (const raw of lines) {
-    const line = String(raw).trim();
+    const line = formatUserFacingTaskMessage(String(raw).trim());
     if (!line || seen.has(line)) {
       continue;
     }
@@ -252,13 +252,14 @@ function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): Eng
     return null;
   }
   const now = Date.now();
+  const taskSummary = formatUserFacingTaskMessage(record.taskSummary || '');
   return {
     taskId: record.taskId,
-    title: record.title || `任务 ${record.taskId.slice(0, 8)}`,
+    title: formatUserFacingTaskMessage(record.title || taskSummary) || `任务 ${record.taskId.slice(0, 8)}`,
     taskStatus: record.taskStatus || '任务结果',
     engineState: record.engineState || 'ENGINE_COMPLETED',
-    taskSummary: record.taskSummary || '',
-    serviceResultLines: Array.isArray(record.serviceResultLines) ? record.serviceResultLines : [],
+    taskSummary,
+    serviceResultLines: Array.isArray(record.serviceResultLines) ? dedupeResultLines(record.serviceResultLines) : [],
     downloadLinks: Array.isArray(record.downloadLinks) ? record.downloadLinks : [],
     videoResult: record.videoResult ?? null,
     inlineResources: Array.isArray(record.inlineResources) ? record.inlineResources : [],
@@ -278,13 +279,14 @@ function createTaskResultRecord(
   overrides: Partial<EngineTaskResultRecord> = {},
 ): EngineTaskResultRecord {
   const now = Date.now();
+  const taskSummary = formatUserFacingTaskMessage(overrides.taskSummary ?? snapshot.taskSummary);
   return {
     taskId,
-    title: overrides.title || snapshot.taskSummary || snapshot.taskStatus || `任务 ${taskId.slice(0, 8)}`,
+    title: formatUserFacingTaskMessage(overrides.title || taskSummary || snapshot.taskStatus) || `任务 ${taskId.slice(0, 8)}`,
     taskStatus: overrides.taskStatus ?? snapshot.taskStatus,
     engineState: overrides.engineState ?? snapshot.engineState,
-    taskSummary: overrides.taskSummary ?? snapshot.taskSummary,
-    serviceResultLines: overrides.serviceResultLines ?? snapshot.serviceResultLines,
+    taskSummary,
+    serviceResultLines: dedupeResultLines(overrides.serviceResultLines ?? snapshot.serviceResultLines),
     downloadLinks: overrides.downloadLinks ?? snapshot.downloadLinks,
     videoResult: overrides.videoResult ?? snapshot.videoResult,
     inlineResources: overrides.inlineResources ?? getInlineResourcesFromSnapshot(snapshot),
@@ -316,11 +318,11 @@ function upsertTaskResultRecord(
     ...current,
     ...overrides,
     taskId,
-    title: overrides.title || current.title || snapshot.taskSummary || snapshot.taskStatus || `任务 ${taskId.slice(0, 8)}`,
+    title: formatUserFacingTaskMessage(overrides.title || current.title || snapshot.taskSummary || snapshot.taskStatus) || `任务 ${taskId.slice(0, 8)}`,
     taskStatus: overrides.taskStatus ?? snapshot.taskStatus,
     engineState: overrides.engineState ?? snapshot.engineState,
-    taskSummary: overrides.taskSummary ?? snapshot.taskSummary,
-    serviceResultLines: overrides.serviceResultLines ?? snapshot.serviceResultLines,
+    taskSummary: formatUserFacingTaskMessage(overrides.taskSummary ?? snapshot.taskSummary),
+    serviceResultLines: dedupeResultLines(overrides.serviceResultLines ?? snapshot.serviceResultLines),
     downloadLinks: overrides.downloadLinks ?? snapshot.downloadLinks,
     videoResult: overrides.videoResult ?? snapshot.videoResult,
     inlineResources: overrides.inlineResources ?? getInlineResourcesFromSnapshot(snapshot),

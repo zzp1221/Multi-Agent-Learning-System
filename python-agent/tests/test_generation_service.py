@@ -451,13 +451,21 @@ def test_generation_service_synthesizes_video_audio_from_final_script(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     class FakeMimoClient:
+        def __init__(self, **kwargs) -> None:
+            captured["timeout_seconds"] = kwargs["timeout_seconds"]
+
         def synthesize_speech_sync(self, **kwargs) -> bytes:
             captured["text"] = kwargs["text"]
             return b"y" * 512
 
+    from src.ai_modules.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("TTS_TIMEOUT_SECONDS", "180")
+    monkeypatch.setenv("VIDEO_TTS_MAX_CHARS", "260")
     monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMimoClient)
 
     service = ResourceGenerationService(
@@ -490,6 +498,9 @@ def test_generation_service_synthesizes_video_audio_from_final_script(
     asset = service.build_asset(asset_type="VIDEO", params=params, snapshot=snapshot)
 
     assert asset.asset_type == "VIDEO"
+    assert len(captured["text"]) <= 260
+    assert captured["timeout_seconds"] == 180.0
+    get_settings.cache_clear()
     assert "回退候选" not in captured["text"]
     assert captured["text"].startswith("今天我们用联合索引来理解最左前缀原则")
 

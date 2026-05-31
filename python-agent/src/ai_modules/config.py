@@ -113,6 +113,8 @@ class Settings(BaseSettings):
         default="https://api.xiaomimimo.com/v1",
         alias="MIMO_BASE_URL",
     )
+    tts_timeout_seconds: float = Field(default=180.0, alias="TTS_TIMEOUT_SECONDS")
+    video_tts_max_chars: int = Field(default=260, alias="VIDEO_TTS_MAX_CHARS")
     llm_tool_content_max_string_chars: int = Field(
         default=600,
         alias="LLM_TOOL_CONTENT_MAX_STRING_CHARS",

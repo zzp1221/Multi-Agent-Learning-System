@@ -186,7 +186,6 @@ export const smartEngineApi = {
           return true;
         }
         if (parsed.event === 'error') {
-          handlers.onError(new Error(parsed.data || '实时任务连接执行失败'));
           return true;
         }
         return false;

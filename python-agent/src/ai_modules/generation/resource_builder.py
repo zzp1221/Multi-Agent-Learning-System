@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import base64
+import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,9 @@ from src.ai_modules.models import (
     VideoSandboxArtifact,
 )
 from src.ai_modules.runtime import SystemSnapshot
+
+LOGGER = logging.getLogger(__name__)
+DEFAULT_VIDEO_TTS_MAX_CHARS = 260
 
 
 class GeneratedAsset(BaseModel):
@@ -78,6 +82,18 @@ class ResourceGenerationService:
     ) -> None:
         self.sandbox_root = sandbox_root or get_sandbox_root()
         self.content_chain = content_chain or ContentGenerationChain()
+
+    @staticmethod
+    def _video_tts_text(script_text: str, max_chars: int) -> str:
+        normalized = " ".join(script_text.split())
+        limit = max(200, max_chars or DEFAULT_VIDEO_TTS_MAX_CHARS)
+        if len(normalized) <= limit:
+            return normalized
+        head = normalized[:limit]
+        sentence_end = max(head.rfind("。"), head.rfind("！"), head.rfind("？"), head.rfind("."))
+        if sentence_end >= int(limit * 0.6):
+            return head[: sentence_end + 1].strip()
+        return head.rstrip("，,；;、 ") + "。"
 
     def build_asset(
         self,
@@ -140,9 +156,17 @@ class ResourceGenerationService:
             from src.ai_modules.llms.mimo_client import MiMoClient
 
             try:
-                mimo_client = MiMoClient()
+                settings = get_settings()
+                mimo_client = MiMoClient(timeout_seconds=settings.tts_timeout_seconds)
+                tts_text = self._video_tts_text(script_payload.full_text, settings.video_tts_max_chars)
+                LOGGER.info(
+                    "Generating video TTS audio: task_id=%s text_chars=%s timeout_seconds=%s",
+                    task_id,
+                    len(tts_text),
+                    settings.tts_timeout_seconds,
+                )
                 tts_audio_bytes = await mimo_client.synthesize_speech(
-                    text=script_payload.full_text[:1600],
+                    text=tts_text,
                     style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
                     voice="mimo_default",
                     audio_format="mp3",
@@ -805,9 +829,17 @@ class ResourceGenerationService:
             from src.ai_modules.llms.mimo_client import MiMoClient
 
             try:
-                mimo_client = MiMoClient()
+                settings = get_settings()
+                mimo_client = MiMoClient(timeout_seconds=settings.tts_timeout_seconds)
+                tts_text = self._video_tts_text(script_payload.full_text, settings.video_tts_max_chars)
+                LOGGER.info(
+                    "Generating video TTS audio: task_id=%s text_chars=%s timeout_seconds=%s",
+                    task_id,
+                    len(tts_text),
+                    settings.tts_timeout_seconds,
+                )
                 tts_audio_bytes = mimo_client.synthesize_speech_sync(
-                    text=script_payload.full_text[:1600],
+                    text=tts_text,
                     style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
                     voice="mimo_default",
                     audio_format="mp3",

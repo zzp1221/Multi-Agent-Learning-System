@@ -207,7 +207,7 @@ export async function runByApiTask({
       handlers.onLine('任务结果读取需要重新登录，任务本身可能仍在后台继续执行。');
       return 'unauthorized';
     }
-    handlers.onLine(`实时连接中断，正在改用轮询方式读取结果：${streamErrorMessage}`);
+    handlers.onLine('实时连接中断，正在改用轮询方式读取结果。');
   }
 
   try {
@@ -228,7 +228,7 @@ export async function runByApiTask({
       }
 
       if (task.status === 'FAILED' || task.status === 'CANCELLED' || task.status === 'TIMEOUT') {
-        throw new Error(task.errorMessage || '任务失败');
+        throw new Error(formatUserFacingTaskMessage(task.errorMessage || '任务失败'));
       }
 
       await wait(2000);
@@ -245,7 +245,7 @@ export async function runByApiTask({
       flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
       return 'unauthorized';
     }
-    handlers.onLine(getErrorMessage(error));
+    handlers.onLine(formatUserFacingTaskMessage(getErrorMessage(error)));
     flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
     return 'failed';
   }
@@ -383,22 +383,27 @@ async function consumeTaskStreamEvent(
         : '任务完成';
     handlers.onProgress(100, doneLabel);
     if (summary) {
-      handlers.onSummary(summary);
+      handlers.onSummary(formatUserFacingTaskMessage(summary));
     }
     if (doneLabel === '任务失败') {
-      handlers.onLine(summary || '任务执行失败');
+      handlers.onLine(formatUserFacingTaskMessage(summary || '任务执行失败'));
     } else if (doneLabel === '部分完成') {
-      handlers.onLine(summary || '任务部分完成，部分资源生成失败');
+      handlers.onLine(formatUserFacingTaskMessage(summary || '任务部分完成，部分资源生成失败'));
     }
     return;
   }
 
   if (event.event === 'error') {
-    handlers.onLine(`实时任务连接出错：${readSummary(envelope.payload) || '任务执行失败'}`);
+    handlers.onLine(formatUserFacingTaskMessage(readSummary(envelope.payload) || '任务执行失败'));
     return;
   }
 
-  const line = readSummary(envelope.payload) || stringifyCompact(envelope.payload);
+  const summaryLine = readSummary(envelope.payload);
+  const line = summaryLine
+    ? summaryLine
+    : shouldSuppressTaskPayload(envelope.payload)
+      ? ''
+      : formatUserFacingTaskMessage(stringifyCompact(envelope.payload));
   if (line) {
     handlers.onLine(line);
   }
@@ -589,8 +594,18 @@ function responseSummaryToLines(summary: Record<string, unknown>, service: Engin
     }
   }
   return Object.entries(summary)
-    .filter(([key]) => !['summary', 'summaryText', 'message', 'inlineContent', 'questions', 'items'].includes(key))
-    .map(([key, value]) => `${labelForSummaryKey(key, service)}：${stringifyCompact(value)}`)
+    .filter(([key]) => ![
+      'summary',
+      'summaryText',
+      'message',
+      'inlineContent',
+      'questions',
+      'items',
+      'resourceFailures',
+      'traceId',
+      'taskId',
+    ].includes(key))
+    .map(([key, value]) => formatUserFacingTaskMessage(`${labelForSummaryKey(key, service)}：${stringifyCompact(value)}`))
     .filter((line) => !line.endsWith('：'));
 }
 
@@ -1360,7 +1375,65 @@ function readSummary(payload: Record<string, unknown> | undefined): string {
     }
   }
 
-  return readString(payload.summaryText) || readString(payload.summary) || readString(payload.message) || readString(payload.text) || '';
+  return formatUserFacingTaskMessage(
+    readString(payload.summaryText) || readString(payload.summary) || readString(payload.message) || readString(payload.text) || '',
+  );
+}
+
+export function formatUserFacingTaskMessage(value: string): string {
+  const raw = value.trim();
+  if (!raw) {
+    return '';
+  }
+  if (looksLikeInternalTaskDetail(raw)) {
+    return '';
+  }
+  if (/ReadTimeout/i.test(raw) || /read operation timed out/i.test(raw)) {
+    if (/TTS|语音|audio|speech/i.test(raw)) {
+      return '视频语音生成超时，请稍后重试或先生成非视频资源。';
+    }
+    return '智能生成服务响应超时，请稍后重试。';
+  }
+  if (/Resource bundle generation failed/i.test(raw)) {
+    if (/VIDEO|video_generator|Video TTS/i.test(raw)) {
+      return '视频资源生成失败：语音合成服务响应超时，请稍后重试或先生成讲解文档、练习题等非视频资源。';
+    }
+    if (/QUIZ|practice/i.test(raw)) {
+      return '练习题生成失败：智能生成结果不完整，请稍后重试。';
+    }
+    return '资源生成失败，请稍后重试。';
+  }
+  if (/RuntimeError|Traceback|ValidationError|traceId|taskId|resourceType|agentName/i.test(raw)) {
+    return raw
+      .replace(/RuntimeError:\s*/gi, '')
+      .replace(/ValidationError:\s*/gi, '')
+      .replace(/\{[^{}]*(traceId|taskId)[^{}]*\}/gi, '')
+      .replace(/\[\{[^{}]*(resourceType|agentName)[^{}]*\}\]/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim() || '任务执行失败，请稍后重试。';
+  }
+  return raw;
+}
+
+function looksLikeInternalTaskDetail(value: string): boolean {
+  const normalized = value.trim();
+  return normalized.startsWith('原始查询：')
+    || normalized.startsWith('检索查询：')
+    || normalized.includes('来源摘要:')
+    || normalized.includes('phrase:')
+    || normalized.includes('改写后:')
+    || normalized.includes('关键词:');
+}
+
+function shouldSuppressTaskPayload(payload: Record<string, unknown> | undefined): boolean {
+  if (!payload) {
+    return false;
+  }
+  const stage = readString(payload.stage);
+  return stage === 'query_rewrite'
+    || stage === 'retrieving'
+    || Boolean(payload.traceId)
+    || Boolean(payload.taskId);
 }
 
 function formatLearningPathMarkdown(learningPath: Record<string, unknown>): string {

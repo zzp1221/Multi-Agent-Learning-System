@@ -152,6 +152,32 @@ class ConcurrentProcessWorker(CapturingWorker):
         await self.release_processing_event.wait()
 
 
+class DuplicatePendingWorker(CapturingWorker):
+    leader_lock_renew_seconds = 0.01
+
+    def __init__(self, supervisor) -> None:
+        super().__init__(supervisor)
+        self.worker_concurrency = 2
+        self._sync_redis = FakeSyncLeaderRedis()
+        self.read_count = 0
+        self.started_processing: list[str] = []
+        self.process_started_event = asyncio.Event()
+        self.release_processing_event = asyncio.Event()
+
+    async def _read_one_message(self) -> tuple[str, dict[str, str]] | None:
+        self.read_count += 1
+        if self.read_count <= 2:
+            return "message-1", valid_fields()
+        await self.process_started_event.wait()
+        return None
+
+    async def _process_message(self, message_id: str, fields: dict[str, str]) -> None:
+        del fields
+        self.started_processing.append(message_id)
+        self.process_started_event.set()
+        await self.release_processing_event.wait()
+
+
 class BlockingProcessWorker(CapturingWorker):
     leader_lock_renew_seconds = 0.01
 
@@ -257,6 +283,23 @@ async def test_worker_processes_messages_with_limited_concurrency() -> None:
     await asyncio.wait_for(worker.process_started_event.wait(), timeout=1)
 
     assert worker.started_processing == ["message-1", "message-2"]
+
+    worker._sync_redis.values[lock_key] = "other-token"
+    worker.release_processing_event.set()
+    await asyncio.wait_for(consume_task, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_process_same_pending_message_twice() -> None:
+    worker = DuplicatePendingWorker(UnusedSupervisor())
+    lock_key = worker._leader_lock_key()
+    worker._sync_redis.values[lock_key] = "worker-token"
+
+    consume_task = asyncio.create_task(worker._consume_messages_until_leadership_lost("worker-token"))
+    await asyncio.wait_for(worker.process_started_event.wait(), timeout=1)
+    await asyncio.sleep(0.02)
+
+    assert worker.started_processing == ["message-1"]
 
     worker._sync_redis.values[lock_key] = "other-token"
     worker.release_processing_event.set()

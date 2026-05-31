@@ -1,424 +1,218 @@
 # 智学引擎 ZhiXue Engine
 
-基于大语言模型的多智能体个性化学习资源生成与学习系统。
+> 最后更新：2026-05-31
 
-## 核心功能
+智学引擎是一个面向计算机学习场景的 AI 个性化学习系统。项目采用 React 前端、Java 控制平面、Python 多智能体运行时和 PostgreSQL/MongoDB/Redis 数据层，支持流式问答、资源生成、学习评测、路径规划、错题复习和学习画像。
 
-**智能辅导** — 17 个注册 Agent 协同工作，支持多轮对话、SSE 流式逐字渲染、图片上传分析、深度推理模式、长会话记忆压缩
+## 当前运行态
 
-**RAG 知识检索** — 四通道混合检索（短语优先 grep + 向量语义 + graph-aware 知识图谱遍历 + 可选联网搜索），覆盖 22 门计算机学科、986+ 知识块；图谱型 100 题 classifier 基准 hit@3 94%、完整证据 Top5 69%
+当前仓库对应的标准 Docker Compose 栈包含 6 个服务：
 
-**多格式资源生成** — 文档 / 思维导图 / 幻灯片(PPTX) / 代码示例 / 练习题 / 数字人视频（6 种格式可多选），LangGraph ResourceBundle 编排
+| 服务 | 容器 | 技术 | 端口 |
+|---|---|---|---|
+| 前端入口 | `zhixue-frontend` | Nginx + React SPA | 80 |
+| Java 控制平面 | `zhixue-app` | Java 21 + Spring Boot 3.3.12 | 8081 |
+| Python Agent | `zhixue-python-agent` | Python 3.11 + FastAPI + LangGraph | 8000 |
+| 向量/业务库 | `zhixue-postgres` | PostgreSQL 16 + pgvector | 5432 |
+| 会话文档库 | `zhixue-mongo` | MongoDB 7 | 27017 |
+| 队列/缓存 | `zhixue-redis` | Redis 7 Alpine + AOF | 6379 |
 
-**学习画像** — 6 维度能力雷达图、薄弱点追踪、行为趋势分析，每次辅导/练习/评测后自动更新
+浏览器只应访问前端和 Java `/api/*`。Python Agent 的 `/internal/*` 接口只供 Java 控制平面通过 `X-Zhixue-Internal-Token` 调用；这条“Java 是唯一入口”的契约不能破坏。
 
-**学习路径规划** — 基于评估结果自动生成个性化学习计划
-
-**练习与评测** — 自动出题、评分、反馈，客观题字符串比对 + 主观题可选本地 GGUF 模型评分
-
-**错题本** — SM-2 间隔重复算法驱动的错题管理与复习调度，数据库触发器自动收录错题
-
-## 技术架构
-
-```
-                              ┌──────────────────────────┐
-                              │       用户浏览器             │
-                              │   React 18 + TypeScript    │
-                              │   + Tailwind CSS 4         │
-                              └──────────┬───────────────┘
-                                         │ HTTP / SSE (流式)
-                              ┌──────────┴───────────────┐
-                              │    Nginx (反向代理 + SPA)   │
-                              │    Port 80                │
-                              └──────────┬───────────────┘
-                                         │
-            ┌────────────────────────────┼────────────────────────────┐
-            │                            │                            │
-            ▼                            ▼                            ▼
-┌───────────────────────┐  ┌───────────────────────┐  ┌───────────────────────┐
-│    Java Backend (BFF)  │  │   Python AI Agent     │  │       数据层            │
-│    Spring Boot 3.3     │  │   FastAPI + SSE       │  │                       │
-│    Port 8081           │  │   Port 8000           │  │ PostgreSQL 16+pgvector │
-│                        │  │                       │  │ Port 5432              │
-│  ┌──────────────────┐  │  │  ┌─────────────────┐  │  │                       │
-│  │ 六边形架构        │  │  │  │ Supervisor 编排  │  │  │ MongoDB 7             │
-│  │ JWT 认证/鉴权     │  │  │  │ 17 Agent 注册表  │  │  │ Port 27017            │
-│  │ 任务编排/状态机   │  │  │  │ RAG 四通道检索   │  │  │                       │
-│  │ SSE 代理/幂等     │  │  │  │ LLM 多Provider   │  │  │ Redis 7               │
-│  │ 限流/审计/错题本  │  │  │  │ 资源生成流水线   │  │  │ Port 6379             │
-│  └──────────────────┘  │  │  │  │ Agent 运行时内核 │  │  │                       │
-│                        │  │  │  └─────────────────┘  │  │                       │
-└───────────┬────────────┘  └───────────┬───────────────┘  └───────────────────────┘
-            │                           │
-            └───────────┬───────────────┘
-                        │ X-Zhixue-Internal-Token (内部通信)
-                        │ Redis Streams (SmartEngine 任务队列)
+```mermaid
+flowchart LR
+  Browser["浏览器<br/>React SPA"] --> Nginx["Nginx<br/>静态资源 + /api 代理"]
+  Nginx --> Java["Java 控制平面<br/>认证 / 任务 / SSE / 下载签名"]
+  Java --> Postgres["PostgreSQL + pgvector<br/>业务表 / RAG / 任务事件"]
+  Java --> Mongo["MongoDB<br/>会话消息 / 流事件"]
+  Java --> Redis["Redis<br/>限流 / 幂等 / Streams"]
+  Java --> Python["Python Agent<br/>内部流式端点"]
+  Redis --> Worker["Python SmartEngine Worker<br/>Redis Streams 消费"]
+  Worker --> Python
+  Worker --> JavaCallback["Java /internal 回调<br/>started / events / worker-failed"]
+  JavaCallback --> Java
 ```
 
-| 层 | 技术栈 | 端口 |
+## 核心能力
+
+- **智能问答**：支持文字、图片、深度推理、联网搜索开关和多轮历史；前端通过 `fetch + ReadableStream` 解析 SSE，实现逐字渲染。
+- **长任务 SmartEngine**：资源生成、评测、路径规划、练习批改等任务由 Java 入队 Redis Streams，Python Worker 消费执行，再回调 Java 持久化事件，前端订阅 Java SSE。
+- **多智能体运行时**：Python `PythonAgentSupervisor` 当前注册 18 个 Agent，并通过 `supervisor_routes.json` 和 QueryClassifier 选择任务链路；`resource_bundle` 是资源生成的虚拟 Graph 节点。
+- **RAG 检索**：短语优先 grep、向量语义、知识图谱扩展和可选 Tavily Web 检索，经 RRF 融合；当前报告中基础 100 题 hit@3 98%，图谱型 100 题 hit@3 94%。
+- **资源包生成**：`RESOURCE_GENERATION` 使用 LangGraph `ResourceBundleWorkflow`，按 `resourceTypes[]` 并发 fan-out 到文档、PPT、思维导图、代码、练习、视频等资源 Agent。
+- **无伪生成边界**：可发布生成资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 和 `fromCache`，Python、Java、前端三层共同校验。
+- **学习画像与错题本**：画像维度规则集中在 `profile_feature_registry.py`，错题本用 SM-2 间隔重复算法组织复习。
+
+## 路由与服务类型
+
+Java `ServiceType` 与 Python `supervisor_routes.json` 对齐：
+
+| serviceType | 主要链路 | 说明 |
 |---|---|---|
-| 前端 | TypeScript, React 18, Vite 5, Tailwind CSS 4, Nginx | 80 |
-| 后端 BFF | Java 21, Spring Boot 3.3, Spring Security (JWT), Maven | 8081 |
-| AI Agent | Python 3.11, FastAPI, LangChain/LangGraph, SSE-Starlette | 8000 |
-| 向量库 | PostgreSQL 16 + pgvector (1024 维 IVFFlat 索引) | 5432 |
-| 文档库 | MongoDB 7 (对话历史、消息、流事件) | 27017 |
-| 缓存 | Redis 7 Alpine (限流、幂等、缓存, AOF 持久化) | 6379 |
+| `TUTORING` | 动态路由：`tutor` / `query_rewrite -> retrieval -> tutor` / 图片或深度推理链路 | QueryClassifier 根据寒暄、追问、图片题、深度推理等意图切换 |
+| `RESOURCE_GENERATION` | `query_rewrite -> retrieval -> resource_bundle` | LangGraph 资源包 Graph，按用户选择 fan-out |
+| `VIDEO_GENERATION` | `query_rewrite -> retrieval -> video_generator` | 视频脚本、语音、数字人素材和最终资源事件 |
+| `PRACTICE_JUDGE` | `practice -> judge -> profile` | 出题、判题、反馈和画像更新 |
+| `PATH_PLANNING` | `path_planning` | 生成学习路径 |
+| `EVALUATION` / `LEARNING_EVALUATION` | `evaluation` | 交互题或画像维度评估 |
+| `PROFILE_BUILD` | `tutor -> profile` | 画像构建 |
+| `RESOURCE_PUSH` | `resource_push` | 资源推荐和可选联网搜索 |
 
+当前注册 Agent 包括：`query_rewrite`、`retrieval`、`document_generator`、`slide_generator`、`reading_generator`、`mindmap_generator`、`code_generator`、`video_generator`、`deep_reasoning`、`tutor`、`profile`、`practice`、`judge`、`path_planning`、`evaluation`、`image_analysis`、`resource_push`、`critic`。
 
-## 多智能体系统
+## 关键接口
 
-系统通过 Supervisor 模式编排 17 个注册 Agent，根据服务类型自动路由到对应的 Agent 链：
+### 前端路由
 
-| 服务类型 | Agent 链 | 说明 |
-|---|---|---|
-| 智能辅导 (TUTORING) | query_rewrite → retrieval → [image_analysis] → [tutor \| deep_reasoning] → profile | QueryClassifier 动态路由：寒暄/跟进/回答上题短路至 tutor，深度推理走 4 步 pipeline，图片题先分析再检索 |
-| 资源生成 | query_rewrite → retrieval → resource_bundle | LangGraph StateGraph 并发 fan-out（最多 7 路），bundle_synthesizer 汇总，支持部分成功 |
-| 视频生成 | query_rewrite → retrieval → video_generator | 脚本 → TTS → 浏览器端 DH Live WASM 渲染（服务器零负担） |
-| 练习评判 | practice → judge → profile | 自动出题、评分、反馈，`capture_mistake_from_submission` 触发器自动收录错题本 |
-| 路径规划 | path_planning | 基于画像 + 评估结果生成个性化学习计划 |
-| 学习评测 | evaluation | 4 维度（知识基础/案例迁移/学习主动性/复习循环）交互式评估 |
-| 画像构建 | tutor → profile | 每 3 轮对话自动触发，从对话/练习/评测信号构建 6 维度画像 |
-| 资源推送 | resource_push | 匹配已有学习资源 + Tavily 联网搜索，内容安全过滤 |
+| 路由 | 页面 |
+|---|---|
+| `/` | 智能问答 |
+| `/engine` | 智能引擎任务 |
+| `/mistakes` | 错题本 |
+| `/profile` | 学习画像 |
 
-支持 3 家 LLM 提供商，**14 个 Agent 组件可独立配置模型**：
+### Java 对外 API
 
-| Provider | 厂商 | 主模型 | 说明 |
-|----------|------|--------|------|
-| OpenAI Compatible | 阿里云百炼 / DeepSeek | qwen3.6-plus | 默认，支持 Embedding |
-| MiMo | 小米 | mimo-v2-omni | 支持 PPTX 直出 |
-| Spark | 讯飞 | 4.0Ultra | 兼容接口 |
+| 模块 | API |
+|---|---|
+| 健康检查 | `GET /api/health` |
+| 认证 | `POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me` |
+| 对话 | `POST /api/conversations`、`GET /api/conversations`、`GET /api/conversations/{id}/messages`、`POST /api/conversations/{id}/messages/stream` |
+| 图片 | `POST /api/conversations/images/upload`、`GET /api/conversations/images/{token}` |
+| SmartEngine | `POST /api/smart-engine/submit`、`GET /api/smart-engine/tasks/{taskId}`、`GET /api/smart-engine/tasks/{taskId}/stream`、`POST /api/smart-engine/tasks/{taskId}/cancel` |
+| 下载 | `GET /api/assets/download/{token}` |
+| 错题本 | `GET /api/mistakes`、`PATCH /api/mistakes/{id}`、`POST /api/mistakes/review` |
+| 画像 | `GET /api/users/{userId}/profile/current`、`GET /api/users/{userId}/profile/analytics` |
 
-## Agent 运行时内核
+### Python 内部 API
 
-本项目的 Agent 运行时内核 (`python-agent/src/ai_modules/runtime/`) 在架构理念上参考了 Claude Code 的 Agent 执行机制：
+| API | 用途 |
+|---|---|
+| `GET /health` | 容器健康检查 |
+| `POST /internal/smart-engine/stream` | Java 对话流和兼容流式调用 |
+| `POST /internal/smart-engine/{taskId}/cancel` | 通知 Python 取消运行中任务 |
+| `POST /internal/conversations/{conversationId}/messages` | Java 写入会话消息 |
+| `GET /internal/conversations/{conversationId}/messages` | Java 读取会话历史 |
 
-| 智学引擎模块 | 职责 | 设计思路 |
-|---|---|---|
-| `AgentCoreLoop` | LLM 推理 → 工具调用 → 结果注入 → 再推理 | 最多 4 轮迭代，无 tool_calls 则输出最终答案 |
-| `ToolRegistry` | 按 name 注册工具，生成 OpenAI function-calling schema | 按 agent_level 过滤可见工具集 |
-| `HookChain` | 工具执行前后的拦截链 | 可修改输入参数、拒绝执行、校验输出结果 |
-| `PermissionPolicy` | allow/deny 规则匹配 + 数值级别检查 | READ_ONLY(1) → FULL_ACCESS(5) 五级权限，TutorAgent 锁定 READ_ONLY |
-| `ConversationCompactor` | Token 预算估计 + 结构化摘要 + 保留最近 N 轮 | 1200 token 预算，LLM 辅助精炼摘要 |
-| `ContextSnapshot` | 聚合用户画像、学习进度、知识薄弱点 | 注入 Agent prompt 作为运行时上下文 |
-| `RecoveryEngine` | 按 failure_type 分类重试 + 降级 | Timeout 1次, RateLimit 2次, Retrieval 1次 |
-| `Provenance` | 强制 LLM 产物溯源验证 | provider/model/agentName/evidenceIds 缺一不可 |
-| `SmartEngineStreamWorker` | Redis Streams 消费者 | 异步任务队列路径，支持 DLQ 重试与取消 |
+## SSE 事件契约
 
-## 记忆系统
+SSE wire format 固定为：
 
-记忆系统 (`python-agent/src/ai_modules/memory/`) 实现了分层、可衰减、特征粒度的学习者记忆管理，在教育场景下对标 LETTA/MemGPT 的分层记忆架构。
-
-### 三层记忆架构
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Layer 1: 工作记忆 (Working Memory)                              │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ SystemSnapshot + ConversationCompactor                    │  │
-│  │ • 当前课程/章节/进度                                       │  │
-│  │ • 最近 4 轮对话 + 结构化压缩摘要                           │  │
-│  │ • Token 预算 1200，超限自动压缩                             │  │
-│  │ • LLM 辅助精炼（topicFocus, knownGaps, unresolvedQ）       │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                            │ 每次对话注入 Agent prompt            │
-├─────────────────────────────────────────────────────────────────┤
-│  Layer 2: 会话记忆 (Session Memory)                              │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ MongoDB: conversation_messages + conversation_summaries    │  │
-│  │ • 原始消息：user/assistant 全量存储，支持分页回溯           │  │
-│  │ • 结构化摘要：topic/canonical_key/aliases/gaps/goals       │  │
-│  │ • 摘要支持 upsert 覆盖更新，跨会话持久化                    │  │
-│  │ • TutorAgent 压缩后写入，ProfileAgent 读取用于画像分析      │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                            │ ProfileAgent 每 3 轮触发             │
-├─────────────────────────────────────────────────────────────────┤
-│  Layer 3: 长期记忆 (Long-Term Memory)                            │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ PostgreSQL: learner_feature + user_profile_snapshot        │  │
-│  │ • 14 维度特征：由 profile_feature_registry.py 统一登记       │  │
-│  │ • 每维度独立 confidence、decay_rate、stability_period       │  │
-│  │ • canonical_key 主题规范化（"死锁"="deadlock"="两把锁等待"） │  │
-│  │ • 状态生命周期：ACTIVE → RESOLVED → REGRESSED → ARCHIVED   │  │
-│  │ • verification_count 重复观察置信度增强                     │  │
-│  │ • 向量嵌入存入 rag.user_profile_vector，支持相似用户匹配    │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 衰减机制
-
-14 个维度各有独立的衰减参数，配置集中在 `profile_feature_registry.py`，运行时由 `ProfileStore` 读取，基于对数衰减函数：
+```text
+event: <eventType>
+data: <json>
 
 ```
-decayed = initial - log1p(decay_days × rate) × (initial - 0.3) × 0.3
-```
 
-| 维度 | 稳定期(天) | 衰减速率 | 策略 |
-|------|-----------|---------|------|
-| 知识基础 `knowledge_foundation` | 45 | 0.02 | 单例 |
-| 专业背景 `professional_background` | 90 | 0.01 | 单例 |
-| 学习偏好 `learning_preference` | 35 | 0.03 | 单例 |
-| 认知风格 `cognitive_style` | 45 | 0.03 | 单例 |
-| 学习节奏 `learning_pace` | 20 | 0.05 | 单例 |
-| 信心水平 `confidence_level` | 20 | 0.05 | 单例 |
-| 当前目标 `current_goal` | 18 | 0.06 | 单例 |
-| 学习习惯 `learning_habits` | 14 | 0.07 | 单例 |
-| 讲解偏好 `explanation_preference` | 30 | 0.03 | 单例 |
-| 技能掌握 `skill_mastery` | 21 | 0.04 | canonical 匹配 |
-| 薄弱点 `weak_points` | 20 | 0.05 | canonical 匹配，掌握后 RESOLVE |
-| 错误模式 `error_patterns` | 18 | 0.06 | canonical 匹配 |
-| 偏好资源类型 `preferred_resource_type` | 35 | 0.03 | 可多值 |
-| 推断建议 `inferred_recommendation` | 10 | 0.08 | 可多值，推测性特征 |
+事件类型定义在 `contracts/sse-events.schema.json`，当前包括：
 
-当 confidence 衰减至 0.31 以下时，特征自动标记为 `ARCHIVED`。已掌握的薄弱点（skill_mastery ≥ 0.85）自动标记为 `RESOLVED`；若后续再次出现，状态回退为 `REGRESSED`。
+`message`、`progress`、`result_chunk`、`resource_file`、`question_batch`、`judge_result`、`done`、`error`、`video_gen:start`、`video_gen:script`、`video_gen:speech`、`video_gen:avatar`、`video_gen:complete`。
 
-### 存储后端
+Nginx 对 `/api/smart-engine/tasks/{taskId}/stream` 和 `/api/conversations/{conversationId}/messages/stream` 关闭缓冲并设置 1800 秒读取超时，用于支撑长任务不断连。
 
-| Store | 生产后端 | 内存降级 | 用途 |
-|-------|---------|---------|------|
-| ConversationMessageStore | MongoDB | Python list | 原始对话消息 |
-| ConversationSummaryStore | MongoDB | Python list | 结构化会话摘要 |
-| LearningPlanStore | PostgreSQL | Python dict | 学习计划 + 版本快照 |
-| PracticeStore | PostgreSQL | Python dict | 练习题/评分/错题 |
-| ProfileStore | PostgreSQL | Python dict | 14 维度画像 registry + 衰减 + 向量嵌入 |
+## 数据架构
 
-所有 Store 均有 InMemory 降级实现，Redis/MongoDB/PostgreSQL 不可用时自动切换，保证单机开发也能运行。
+| 存储 | 主要内容 |
+|---|---|
+| PostgreSQL `app` schema | 用户、QNA session、SmartEngine task/event、generated_artifact、画像、练习、审计 |
+| PostgreSQL `rag` schema | wiki page/link、knowledge document/chunk、resource chunk、profile vector、video_generation_task |
+| PostgreSQL `storage` schema | resource_object |
+| MongoDB | `conversation_threads`、`conversation_messages`、`conversation_stream_events` |
+| Redis | idempotency key、rate limit、SmartEngine task stream、DLQ、cancel marker、运行时缓存 |
 
-
-## RAG 知识库
-
-### 知识覆盖
-
-22 门计算机学科，986+ 知识块：
-
-操作系统、数据结构、计算机网络、计算机组成原理、编译原理、数据库原理、软件工程、算法设计与分析、程序设计、离散数学、信息安全、分布式系统、计算机图形学、C语言深入、Go语言、Rust语言、Java深入、JavaScript/TypeScript、Python深入、程序设计语言原理、视频资源专题
-
-### 向量化流程
-
-```
-wiki/*.md ──①──▶ rag.wiki_page ──②──▶ rag.knowledge_document + rag.knowledge_chunk
-   │              (结构化存储)              (1024 维向量 + IVFFlat 索引)
-   │
-   └── rag.wiki_link (知识图谱: WIKILINK / SHARED_TAG / SHARED_SOURCE / COMMUNITY)
-```
-
-**阶段一：结构化导入** (`python-agent/knowledge/import_wiki_to_db.py`)
-- 解析 Markdown（含 YAML frontmatter），写入 `rag.wiki_page`
-- 自动提取 `[[wikilink]]` 双链，构建 `rag.wiki_link` 知识图谱
-- 同步填充 `rag.term_lexicon` 术语词典（用于 FMM 分词）
-
-**阶段二：向量化** (`python-agent/knowledge/vectorize_wiki.py`)
-- 向量化知识文档**标题**（title embeddings 远优于 content embeddings）
-- DashScope `qwen3-vl-embedding` → 1024 维稠密向量
-- 批量写入 `rag.knowledge_document` + `rag.knowledge_chunk`
-
-**预置数据**: `vector_data.dump` (~11.5MB pg_dump) 首次启动自动恢复，无需重新调用 Embedding API
-
-### 检索架构
-
-四通道混合检索 + RRF 融合排序（参考 [Karpathy LLM Wiki 方法论与三通道混合检索实践](https://www.cnblogs.com/jtuki/p/19861920)）：
-
-```
-用户查询
-  │
-  ├─ FMM 分词 (rag.term_lexicon 术语词典)
-  │
-  ├─ Channel A: GrepSearcher ─── 权重 3.0 ─── 短语优先匹配 → FMM术语 → Token回退
-  │   └── 同义词扩展 (rag.synonym_group)
-  │
-  ├─ Channel B: VectorSearcher ── 权重 5.0 ─── pgvector cosine 相似度 (IVFFlat)
-  │   └── 同时搜索 knowledge_chunk + resource_chunk
-  │
-  ├─ Channel C: GraphExpander ─── 动态权重 0.5~1.8 ─── 按 graphIntent 扩展 1-hop；前置路径题启用受限 2-hop
-  │
-  ├─ Channel D: TavilySearcher ── 权重 1.5 ─── 可选联网搜索
-  │
-  └─ 加权 RRF 融合 ─── k=60, 词组匹配 1.5x priority boost, 安全 slug canonical 去重
-```
-
-Tutor 会消费内部图谱证据包（`graphIntent`、1-hop/2-hop 来源、direct evidence、seed protected 节点），在学习路径、跨层关系、机制应用、对比和常见误区问题中按路径/关系链组织回答；外部 API 和 SSE 协议不变。
-
-> 核心发现：在中文技术术语检索中，字面匹配 (grep) 优于语义相似度 (向量)；图谱通道更适合补齐多节点关系证据。
-
-## 本地 Judge 模型
-
-Judge Agent 的客观题判分已改为字符串比对（零 LLM 调用），主观题评估支持本地 GGUF 模型：
-
-| 项目 | 值 |
-|------|-----|
-| 基座模型 | Qwen3-0.6B |
-| 训练数据 | Wiki 知识点 × 3 种答案变体 |
-| 训练方式 | SFT (1495 样本) + GRPO (200 组) |
-| 模型格式 | GGUF Q8_0 |
-| 模型大小 | 610MB |
-| 推理引擎 | llama-cpp-python |
-| 推理速度 | ~3s/次（CPU） |
-| Docker 启用方式 | 叠加 `docker-compose.local-judge.yml` |
-| 模型放置路径 | `./models/judge_model.gguf` |
-
-本地 Judge 是可选部署，不会影响默认云端 API 部署路径：
-
-```bash
-mkdir -p models
-# 将 judge_model.gguf 放到 ./models/judge_model.gguf
-
-docker compose -f docker-compose.yml -f docker-compose.local-judge.yml up -d --build
-```
-
-> 当前联调/演示环境禁止重建容器；已有容器切换本地 Judge 需要单独安排维护窗口。
+`vector_data.dump` 随仓库提供预置向量数据，首次部署由 `restore_vector_data.sh` 自动恢复。
 
 ## 快速开始
 
-### 环境要求
-
-- Docker 24+ & Docker Compose v2.20+
-- 至少一个 LLM API Key（OpenAI 兼容格式）
-
-完整部署步骤见 [部署指南](docs/deployment.md)。Java 后端镜像会在 Docker 构建阶段自动编译，不需要先在宿主机执行 Maven 打包。
-
-### Docker Compose 一键启动
+> 当前联调/演示环境只允许 `docker cp` 热更新，禁止 `docker compose build`、`docker compose up --build`、`--force-recreate` 和重建容器。下面的 build 命令仅用于全新空环境或明确维护窗口。
 
 ```bash
-# 1. 克隆并配置环境变量
-git clone <repo-url> && cd zhixue-engine
 cp .env.example .env
-# 编辑 .env，至少设置 POSTGRES_PASSWORD、APP_JWT_SECRET、PYTHON_AGENT_INTERNAL_TOKEN 和一个 LLM API Key
-
-# 2. 启动全部服务
+# 编辑 .env，至少配置 POSTGRES_PASSWORD、APP_JWT_SECRET、
+# PYTHON_AGENT_INTERNAL_TOKEN、AI_OPENAI_COMPATIBLE_API_KEY 和 EMBEDDING_API_KEY
 docker compose up -d --build
-
-# 3. 等待健康检查通过（约 30-60 秒）
-curl -s http://localhost:8081/actuator/health   # Java 后端
-curl -s http://localhost:8000/health             # Python Agent
-# 浏览器打开 http://localhost 访问前端
+docker compose ps
+curl -s http://localhost:8081/api/health
+curl -s http://localhost:8000/health
 ```
 
-首次启动时，PostgreSQL 容器自动执行：
-1. `init.sql` — 建表、建索引、建枚举、RLS（3 个 Schema, 28+ 表, 27 条 RLS 策略, 13 个触发器）
-2. `restore_vector_data.sh` — 从 `vector_data.dump` 恢复预置向量数据
+浏览器访问：
 
-### 本地开发
+```text
+http://localhost/
+```
+
+## 本地开发
 
 ```bash
-# 仅启动数据层
+# 只启动依赖
 docker compose up -d postgres mongo redis
 
-# 前端（热重载，端口 5173）
-cd frontend && pnpm install && pnpm dev
+# 前端
+cd frontend
+pnpm install
+pnpm dev
 
-# Java 后端
-cd project && mvn spring-boot:run
+# Java
+cd project
+mvn spring-boot:run
 
 # Python Agent
 cd python-agent
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## 测试
+Windows PowerShell 激活 Python 虚拟环境：
 
-共 53 个测试文件（4 E2E + 33 Python Agent + 16 Java 后端）：
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+## 验证命令
 
 ```bash
-# 端到端测试 (Playwright, 19 个用例)
-pytest tests/ -v
+docker compose ps
+curl -s http://localhost:8081/api/health
+curl -s http://localhost:8000/health
 
-# Python Agent 单元测试 (33 个文件)
-cd python-agent && pytest tests/ -v
-
-# 图谱型 RAG 100 题 classifier 基准
-cd python-agent && .\.venv\Scripts\python.exe knowledge\benchmark_graph_rag_100.py --questions reports\graph_rag_100_questions.json --output reports\graph_rag_100_pr_local.json --judge-cache reports\graph_rag_100_judge_cache.json --intent-mode classifier
-
-# Java 后端测试 (16 个文件)
-cd project && mvn test
-
-# 前端类型检查 + 构建
 cd frontend && npx tsc --noEmit && npx vite build
+cd project && mvn test
+cd python-agent && pytest tests/ -v
+cd python-agent && pytest tests/ -k rag -v
 ```
+
+当前 RAG 报告文件：
+
+- `python-agent/reports/rag_100_after.json`：基础 100 题 hit@3 98%。
+- `python-agent/reports/graph_rag_100_current.json`：图谱型 100 题 hit@3 94%，completeEvidenceTop5 52%。
 
 ## 项目结构
 
-```
-├── frontend/                    # React 前端 (4 个页面, 38 个源文件)
-│   ├── Dockerfile               # 多阶段构建 (node:20-alpine → nginx:1.27-alpine)
-│   ├── nginx.conf               # SPA 路由 + API 代理 + SSE 透传 (30min 长连接)
-│   ├── public/dh_live/          # DH Live WASM SDK (浏览器端数字人渲染)
-│   └── src/
-│       ├── api/                 # API 调用 & SSE 流式客户端 (请求去重 + 重试)
-│       ├── components/          # UI 组件 (MarkdownRenderer, MermaidDiagram, RadarChart, VideoCard...)
-│       ├── pages/               # 页面: QnaChatView, LearningStudioDemo, MistakeBook, Profile
-│       └── utils/               # 浏览器端视频渲染 (browserVideoRenderer)
-│
-├── project/                     # Java 21 Spring Boot 3.3 后端 (六边形架构, 113 个源文件)
-│   ├── Dockerfile               # 多阶段构建 (Maven + Eclipse Temurin 21)
-│   └── src/main/java/com/project/
-│       ├── api/                 # 7 个 REST 控制器 (Auth, Conversation, SmartEngine, SmartEngineInternal, Profile, Artifact, Mistake)
-│       ├── application/         # 14 个业务服务 (编排器, SSE emitter, 任务状态机, 限流, 幂等, SM-2 错题本, 用户画像分析)
-│       ├── domain/              # 7 个领域实体 + 9 个 Repository (User, Task, Conversation, Profile, Artifact, Audit, Video)
-│       ├── infrastructure/      # HTTP 客户端 (Java ↔ Python Agent 双向通信) + 限流过滤器
-│       └── security/            # JWT 认证, 内部 Token 验证 (timing-safe)
-│
-├── python-agent/                # Python 3.11 FastAPI AI Agent (Supervisor 模式, 149 个源文件)
-│   ├── server.py                # FastAPI 入口 + SSE 流式端点 + Lifespan 管理
-│   ├── src/ai_modules/
-│   │   ├── supervisor.py        # Agent 编排器 (QueryClassifier 动态路由 → Agent 链执行)
-│   │   ├── agents/              # 17 个注册 Agent (TutorAgent, DeepReasoningAgent, JudgeAgent...)
-│   │   ├── runtime/             # Agent 运行时内核 (14 个模块)
-│   │   │   ├── agent_core_loop.py           # 工具调用执行循环 (Hook/Permission/Recovery 集成)
-│   │   │   ├── tool_registry.py             # 工具注册表 (按 agent_level 过滤)
-│   │   │   ├── hook_chain.py                # 前置/后置钩子链
-│   │   │   ├── hooks/knowledge_guard.py     # 知识守卫钩子 (幻觉防护, 拦截无证据生成)
-│   │   │   ├── permission_policy.py         # 五级权限策略 (READ_ONLY → FULL_ACCESS)
-│   │   │   ├── context_snapshot.py          # 上下文快照 (课程/画像/薄弱点注入)
-│   │   │   ├── conversation_compactor.py    # 对话压缩器 (Token 预算 + LLM 辅助摘要)
-│   │   │   ├── recovery_engine.py           # 故障恢复引擎 (按 failure_type 分类重试)
-│   │   │   ├── provenance.py               # LLM 产物溯源验证 (provider/model/agentName)
-│   │   │   ├── resource_bundle_workflow.py  # LangGraph 多资源并发生成编排 (fan-out/fan-in)
-│   │   │   ├── smart_engine_stream_worker.py # Redis Streams 消费者 (异步任务队列)
-│   │   │   ├── topic_canonicalizer.py       # 主题规范化 (去重/别名匹配)
-│   │   │   └── skill_loader.py             # SKILL.md prompt 模板加载器
-│   │   ├── retrieval/           # 四通道混合检索 (grep + vector + graph + web + RRF)
-│   │   ├── llms/                # 多 LLM 提供商适配 (OpenAI/Bailian/Spark/MiMo) + 本地 GGUF 评估器
-│   │   ├── memory/              # 三层记忆系统 (消息/摘要/画像, 含衰减机制)
-│   │   ├── generation/          # 内容生成链 (资源正文与文件产物)
-│   │   └── prompts/             # Agent 提示词模板
-│   ├── skills/                  # 7 个 Agent Skill 定义 (judge, tutor, profile, evaluation, path_planning, query_rewrite, practice)
-│   ├── knowledge/               # 知识库导入 & 向量化 & 基准测试脚本 (17 个)
-│   ├── retrieval/               # 检索模块 (grep/vector/graph/web/RRF/FMM)
-│   ├── recommendation/          # 学习资源推荐引擎
-│   └── scripts/                 # 训练数据生成 & SFT/GRPO 模型训练脚本
-│
-├── wiki/                        # 知识库源文件 (22 门计算机学科, 986+ 知识块)
-├── contracts/                   # SSE 事件 JSON Schema 契约
-├── migrations/                  # 数据库迁移脚本 (4 个幂等迁移)
-├── docs/                        # 7 份文档 (架构、部署、教师指南、实验日志、竞赛提交指南、Judge优化、LangGraph架构)
-├── tests/                       # 端到端测试 (Playwright, 19 个用例)
-├── docker-compose.yml           # 6 服务编排 (postgres, mongo, redis, app, python-agent, frontend)
-├── docker-compose.local-judge.yml # 可选本地 GGUF Judge overlay
-├── init.sql                     # PostgreSQL 完整 DDL (3 Schema, 28+ 表, 27 条 RLS 策略, pgvector 索引)
-└── vector_data.dump             # 预置向量数据 (pg_dump, ~11.5MB)
+```text
+.
+├── contracts/                     # SSE 事件 JSON Schema
+├── docs/                          # 架构、部署、专题设计和实验日志
+├── frontend/                      # React + Vite + Tailwind 前端
+├── migrations/                    # 数据库迁移脚本
+├── project/                       # Java Spring Boot 控制平面
+├── python-agent/                  # Python FastAPI + Agent 运行时
+├── tests/                         # 端到端与系统测试脚本
+├── wiki/                          # RAG 原始知识文档
+├── docker-compose.yml
+├── init.sql
+├── mongo-init.js
+└── vector_data.dump
 ```
 
 ## 安全与可靠性
 
-- **JWT 认证** — Access Token 2h / Refresh Token 7d, HMAC-SHA256
-- **滑动窗口限流** — 按用户 (60 req/min) + 按 IP (100 req/min) 双层 Redis Lua
-- **幂等控制** — Idempotency-Key (Redis SETNX, 24h TTL)，防止重复提交
-- **内容安全审查** — SafetyAgent 对生成内容进行合规检查（政治敏感/学术不端）
-- **幻觉防护** — KnowledgeGuardHook 生成前强制检索知识依据，无证据则拒绝执行
-- **产物溯源** — Provenance 验证强制所有 LLM 产物携带 provider/model/agentName/evidenceIds 元数据
-- **SSE 任务取消** — Redis + 文件系统双通道取消标记，支持跨 Worker
-- **沙箱文件清理** — 生成文件 2h TTL，30min 定时清扫
-- **RLS 行级安全** — PostgreSQL 27 张表启用三级访问控制 (GLOBAL/USER/COURSE)
-- **内部通信保护** — X-Zhixue-Internal-Token (timing-safe 比较), DB 端口仅 loopback
-- **Redis 降级** — 限流/幂等/缓存在 Redis 不可用时自动切换到 InMemory 实现
-- **Mermaid 安全** — DOMPurify SVG 消毒，防止 XSS
-
-
-
-
-
-## 开源许可
-
-本项目使用了 [DH_live](https://github.com/kleinlee/DH_live) 开源项目，该项目基于 [MIT License](https://opensource.org/licenses/MIT) 许可。
+- `.env` 不提交真实密钥。
+- `APP_JWT_SECRET` 至少 32 字节，`PYTHON_AGENT_INTERNAL_TOKEN` 与 JWT secret 分离。
+- Java 外部业务 API 默认 JWT 鉴权；内部回调接口由控制器校验 internal token。
+- Redis 幂等使用 `SETNX + TTL`，限流和任务取消标记也必须有 TTL。
+- 生成资源下载由 Java 签名 token 控制，默认 30 分钟过期。
+- 沙箱目录由 Python 周期清理，默认 2 小时 TTL。
+- 当前 Compose 文件的数据服务宿主机绑定目标是 `127.0.0.1`；若旧容器仍显示 `0.0.0.0`，需等待维护窗口重建对应容器以应用端口绑定。
