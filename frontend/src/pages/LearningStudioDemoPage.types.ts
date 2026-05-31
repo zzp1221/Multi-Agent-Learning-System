@@ -61,6 +61,8 @@ export interface VideoResult {
   knowledgePoint?: string;
   expiresHint?: string;
   fileName?: string;
+  renderStatus?: 'rendering' | 'ready' | 'failed';
+  renderMessage?: string;
 }
 
 export interface InlineResourceView {

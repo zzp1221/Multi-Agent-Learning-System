@@ -32,7 +32,6 @@ from src.ai_modules.runtime.topic_canonicalizer import (
     CanonicalTopic,
     canonicalize_topic,
     canonicalize_topics,
-    topics_match,
 )
 from src.ai_modules.runtime.tool_registry import ToolDefinition, ToolRegistry
 
@@ -65,5 +64,4 @@ __all__ = [
     "CanonicalTopic",
     "canonicalize_topic",
     "canonicalize_topics",
-    "topics_match",
 ]

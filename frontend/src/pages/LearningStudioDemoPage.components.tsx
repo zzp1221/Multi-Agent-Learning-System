@@ -567,6 +567,8 @@ export function TaskResultPanel(props: {
                 knowledgePoint={visibleVideoResult.knowledgePoint}
                 expiresHint={visibleVideoResult.expiresHint}
                 fileName={visibleVideoResult.fileName}
+                renderStatus={visibleVideoResult.renderStatus}
+                renderMessage={visibleVideoResult.renderMessage}
               />
             </Suspense>
           </div>

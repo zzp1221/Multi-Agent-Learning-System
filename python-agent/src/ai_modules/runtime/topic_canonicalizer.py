@@ -123,12 +123,6 @@ def canonicalize_topics(topics: list[str]) -> list[CanonicalTopic]:
     return list(by_key.values())
 
 
-def topics_match(left: str, right: str) -> bool:
-    """Whether two raw topic strings represent the same canonical topic."""
-
-    return canonicalize_topic(left).canonical_key == canonicalize_topic(right).canonical_key
-
-
 def _fallback_key(value: str) -> str:
     normalized = _normalize_for_match(value)
     if not normalized:

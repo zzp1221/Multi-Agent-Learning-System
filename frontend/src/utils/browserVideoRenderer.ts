@@ -69,8 +69,8 @@ export interface BrowserVideoRenderTaskState {
 
 let rendererIframePromise: Promise<HTMLIFrameElement> | null = null;
 let rendererReadyResolver: (() => void) | null = null;
+let rendererReadyRejecter: ((error: Error) => void) | null = null;
 let rendererReadyPromise: Promise<void> | null = null;
-let rendererContentWindow: Window | null = null;
 let activeJob: PendingRenderJob | null = null;
 let rendererMessageBound = false;
 const renderTaskStates = new Map<string, BrowserVideoRenderTaskState>();
@@ -186,19 +186,33 @@ function ensureMessageListener(): void {
     return;
   }
   window.addEventListener('message', handleRendererMessage);
+  rendererMessageBound = true;
 }
 
 function handleRendererMessage(event: MessageEvent<RendererMessage>): void {
-  if (event.origin !== window.location.origin || event.source !== rendererContentWindow) {
+  if (event.origin !== window.location.origin) {
     return;
   }
   if (!event.data || typeof event.data !== 'object') {
     return;
   }
   const message = event.data;
+  if (!message.type?.startsWith('dh_live_renderer:')) {
+    return;
+  }
   if (message.type === 'dh_live_renderer:ready') {
     rendererReadyResolver?.();
     rendererReadyResolver = null;
+    rendererReadyRejecter = null;
+    return;
+  }
+  if (message.type === 'dh_live_renderer:error' && message.requestId === '') {
+    const error = new Error(message.message || 'DH Live 初始化失败');
+    rendererReadyRejecter?.(error);
+    rendererReadyResolver = null;
+    rendererReadyRejecter = null;
+    rendererReadyPromise = null;
+    rendererIframePromise = null;
     return;
   }
   if (!activeJob || ('requestId' in message && message.requestId !== activeJob.requestId)) {
@@ -260,8 +274,18 @@ async function ensureRendererIframe(): Promise<HTMLIFrameElement> {
   }
   ensureMessageListener();
   if (!rendererIframePromise) {
-    rendererReadyPromise = new Promise<void>((resolve) => {
+    rendererReadyPromise = new Promise<void>((resolve, reject) => {
       rendererReadyResolver = resolve;
+      rendererReadyRejecter = reject;
+      window.setTimeout(() => {
+        if (!rendererReadyRejecter) {
+          return;
+        }
+        const error = new Error('DH Live 初始化超时');
+        rendererReadyRejecter(error);
+        rendererReadyResolver = null;
+        rendererReadyRejecter = null;
+      }, 90000);
     });
     rendererIframePromise = Promise.resolve().then(() => {
       const iframe = document.createElement('iframe');
@@ -276,7 +300,6 @@ async function ensureRendererIframe(): Promise<HTMLIFrameElement> {
       iframe.style.border = '0';
       iframe.style.left = '-9999px';
       iframe.style.top = '-9999px';
-      rendererContentWindow = iframe.contentWindow;
       document.body.appendChild(iframe);
       return iframe;
     });

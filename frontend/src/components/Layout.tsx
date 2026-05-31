@@ -7,7 +7,7 @@ import ThemeToggle from './ThemeToggle';
 
 import { authApi, type AuthUser } from '../api/auth';
 import { conversationApi, type ConversationHistoryItem } from '../api/conversation';
-import { clearAuthSession, getAuthToken, isUnauthorizedError } from '../api/request';
+import { AUTH_USER_STORAGE_KEY, clearAuthSession, getAuthToken, isUnauthorizedError } from '../api/request';
 
 type AuthTab = 'login' | 'register';
 
@@ -76,7 +76,7 @@ export default function Layout() {
     if (!token || typeof window === 'undefined') {
       return;
     }
-    const rawAuthUser = window.localStorage.getItem('auth_user');
+    const rawAuthUser = window.localStorage.getItem(AUTH_USER_STORAGE_KEY);
     if (!rawAuthUser) {
       return;
     }
@@ -130,7 +130,7 @@ export default function Layout() {
           setCurrentUser(null);
           return;
         }
-        window.localStorage.setItem('auth_user', JSON.stringify(resolved));
+        window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(resolved));
         setCurrentUser(resolved);
         await loadRecentConversations();
       } catch (error) {
