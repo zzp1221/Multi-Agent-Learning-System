@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LoaderCircle, Sparkles, X } from 'lucide-react';
 import { authApi, type AuthResponse, type AuthUser } from '../api/auth';
-import { getErrorMessage, persistAuthSession } from '../api/request';
+import { AUTH_USER_STORAGE_KEY, getErrorMessage, persistAuthSession } from '../api/request';
 
 type AuthTab = 'login' | 'register';
 
@@ -71,7 +71,7 @@ export default function AuthModal(props: AuthModalProps) {
             });
 
       const user = normalizeUser(result);
-      window.localStorage.setItem('auth_user', JSON.stringify(user));
+      window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
       persistAuthSession({
         token: result.token,
       });

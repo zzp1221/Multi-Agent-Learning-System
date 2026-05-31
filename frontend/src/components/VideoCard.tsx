@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { LoaderCircle, Play, PlayCircle } from 'lucide-react';
+import { LoaderCircle, Play, PlayCircle, TriangleAlert } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '../api/request';
 
 export type VideoCardStyle = 'talking_head' | 'animation' | 'hybrid';
@@ -14,6 +14,8 @@ export interface VideoCardProps {
   knowledgePoint?: string;
   expiresHint?: string;
   fileName?: string;
+  renderStatus?: 'rendering' | 'ready' | 'failed';
+  renderMessage?: string;
   onPlay?: () => void;
   onComplete?: () => void;
 }
@@ -46,6 +48,8 @@ export default function VideoCard(props: VideoCardProps) {
 
   const styleInfo = props.style ? styleLabelMap[props.style] : null;
   const mediaId = resolvedVideoUrl || props.videoUrl;
+  const isPendingRender = props.renderStatus === 'rendering' || (!props.videoUrl && props.renderStatus !== 'failed');
+  const isFailedRender = props.renderStatus === 'failed';
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +57,14 @@ export default function VideoCard(props: VideoCardProps) {
     let thumbnailObjectUrl = '';
 
     async function loadProtectedMedia(): Promise<void> {
+      if (!props.videoUrl) {
+        if (!cancelled) {
+          setResolvedVideoUrl('');
+          setResolvedThumbnailUrl('');
+          setLoading(false);
+        }
+        return;
+      }
       setLoading(true);
 
       if (/^(blob:|data:)/i.test(props.videoUrl)) {
@@ -125,9 +137,24 @@ export default function VideoCard(props: VideoCardProps) {
         )}
 
         {/* Loading Overlay */}
-        {loading && !started ? (
+        {(loading && !started) || isPendingRender ? (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/60">
-            <LoaderCircle className="h-8 w-8 animate-spin text-white/60" />
+            <div className="flex flex-col items-center gap-3 px-4 text-center">
+              <LoaderCircle className="h-8 w-8 animate-spin text-white/70" />
+              {isPendingRender ? (
+                <span className="text-sm font-medium text-white/80">{props.renderMessage || '浏览器本地渲染中，请稍候'}</span>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {isFailedRender ? (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/70 px-4 text-center">
+            <div className="space-y-2 text-white">
+              <TriangleAlert className="mx-auto h-8 w-8 text-amber-300" />
+              <p className="text-sm font-semibold">浏览器本地渲染失败</p>
+              <p className="text-xs text-white/70">{props.renderMessage || '请重新生成视频或换用支持 MediaRecorder 的浏览器。'}</p>
+            </div>
           </div>
         ) : null}
 
@@ -148,7 +175,7 @@ export default function VideoCard(props: VideoCardProps) {
         ) : null}
 
         {/* Play Button Overlay (when not started) */}
-        {!started ? (
+        {!started && !isPendingRender && !isFailedRender ? (
           <button
             type="button"
             onClick={() => {
@@ -169,31 +196,33 @@ export default function VideoCard(props: VideoCardProps) {
           </button>
         ) : null}
 
-        <video
-          ref={videoRef}
-          data-video-id={mediaId}
-          controls
-          preload="metadata"
-          poster={resolvedThumbnailUrl}
-          src={resolvedVideoUrl || resolveMediaUrl(props.videoUrl)}
-          className="relative z-10 h-full w-full"
-          onLoadedData={() => setLoading(false)}
-          onError={() => setLoading(false)}
-          onPlay={() => {
-            if (!started) {
-              setStarted(true);
-              props.onPlay?.();
-            }
-          }}
-          onEnded={() => {
-            if (!completed) {
-              setCompleted(true);
-              props.onComplete?.();
-            }
-          }}
-        >
-          当前浏览器不支持视频播放，请直接下载后查看。
-        </video>
+        {props.videoUrl ? (
+          <video
+            ref={videoRef}
+            data-video-id={mediaId}
+            controls
+            preload="metadata"
+            poster={resolvedThumbnailUrl}
+            src={resolvedVideoUrl || resolveMediaUrl(props.videoUrl)}
+            className="relative z-10 h-full w-full"
+            onLoadedData={() => setLoading(false)}
+            onError={() => setLoading(false)}
+            onPlay={() => {
+              if (!started) {
+                setStarted(true);
+                props.onPlay?.();
+              }
+            }}
+            onEnded={() => {
+              if (!completed) {
+                setCompleted(true);
+                props.onComplete?.();
+              }
+            }}
+          >
+            当前浏览器不支持视频播放，请直接下载后查看。
+          </video>
+        ) : null}
       </div>
 
       {/* Info Section */}
@@ -222,20 +251,32 @@ export default function VideoCard(props: VideoCardProps) {
               已观看完成
             </span>
           ) : null}
+          {isPendingRender ? (
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+              本地渲染中
+            </span>
+          ) : null}
+          {isFailedRender ? (
+            <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+              渲染失败
+            </span>
+          ) : null}
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
           <span className="text-xs text-slate-400 dark:text-slate-500">{props.expiresHint || '视频资源已生成'}</span>
-          <a
-            href={resolvedVideoUrl || resolveMediaUrl(props.videoUrl)}
-            target="_blank"
-            rel="noreferrer"
-            download={props.fileName || `${props.title || 'teaching-video'}.webm`}
-            className="text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-          >
-            下载视频
-          </a>
+          {props.videoUrl ? (
+            <a
+              href={resolvedVideoUrl || resolveMediaUrl(props.videoUrl)}
+              target="_blank"
+              rel="noreferrer"
+              download={props.fileName || `${props.title || 'teaching-video'}.webm`}
+              className="text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+            >
+              下载视频
+            </a>
+          ) : null}
         </div>
       </div>
     </div>

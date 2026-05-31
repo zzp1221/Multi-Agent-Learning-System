@@ -40,7 +40,7 @@ function resolveApiBaseUrl(): string {
 export const API_BASE_URL = resolveApiBaseUrl();
 
 const AUTH_TOKEN_STORAGE_KEY = 'auth_token';
-const AUTH_USER_STORAGE_KEY = 'auth_user';
+export const AUTH_USER_STORAGE_KEY = 'auth_user';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_GET_RETRY_TIMES = 2;
 

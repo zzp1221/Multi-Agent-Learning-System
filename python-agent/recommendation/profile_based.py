@@ -9,7 +9,6 @@ Usage as CLI:  python profile_based.py
 
 import json
 import sys
-from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import psycopg2
@@ -31,16 +30,6 @@ LEARNING_STYLE_TYPE_MAP = {
 
 
 # ── User Profile ───────────────────────────────────────────────
-
-@dataclass
-class UserProfile:
-    preferred_courses: list[str] = field(default_factory=list)
-    preferred_difficulty: list[str] = field(default_factory=list)
-    interested_tags: list[str] = field(default_factory=list)
-    completed_resource_ids: list[str] = field(default_factory=list)
-    preferred_types: list[str] = field(default_factory=list)
-    learning_style: str = "balanced"
-
 
 # ── Helper: Jaccard coefficient ────────────────────────────────
 
@@ -242,7 +231,7 @@ class ProfileBasedRecommender:
         """Generate top_n diverse recommendations for a user profile.
 
         Args:
-            profile: UserProfile-like dict with keys: preferred_courses,
+            profile: dict with keys: preferred_courses,
                      preferred_difficulty, interested_tags, completed_resource_ids,
                      preferred_types, learning_style.
             top_n: Number of recommendations to return.

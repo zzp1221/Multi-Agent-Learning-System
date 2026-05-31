@@ -123,8 +123,10 @@ export async function runByApiTask({
       }
     },
     onVideo: (item) => {
-      browserRenderState.completed = true;
-      setVideoResult((prev) => prev ?? item);
+      if (item.renderStatus === 'ready' || Boolean(item.videoUrl)) {
+        browserRenderState.completed = true;
+      }
+      setVideoResult((prev) => mergeVideoResult(prev, item));
     },
     onInlineResource: (item) => {
       setInlineResource(item);
@@ -291,6 +293,10 @@ async function consumeTaskStreamEvent(
       if (summary) {
         handlers.onSummary(summary);
       }
+      const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '浏览器本地渲染中，请稍候');
+      if (browserRenderedVideo) {
+        handlers.onVideo(browserRenderedVideo);
+      }
       await maybeStartBrowserRender(envelope.payload, handlers, browserRenderState);
       const videoResult = readVideoResult(envelope.payload);
       if (videoResult) {
@@ -301,6 +307,10 @@ async function consumeTaskStreamEvent(
       }
     }
     if (event.event === 'video_gen:speech') {
+      const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '已收到语音素材，正在本地渲染视频');
+      if (browserRenderedVideo) {
+        handlers.onVideo(browserRenderedVideo);
+      }
       await maybeStartBrowserRender(envelope.payload, handlers, browserRenderState);
     }
     return;
@@ -315,6 +325,10 @@ async function consumeTaskStreamEvent(
       return;
     }
     const inlineResource = readInlineResource(envelope.payload);
+    const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '视频素材已就绪，等待浏览器本地渲染');
+    if (browserRenderedVideo) {
+      handlers.onVideo(browserRenderedVideo);
+    }
     if (downloadUrl) {
       const summary = readString(envelope.payload?.summary);
       const sourceName = readString(envelope.payload?.sourceName);
@@ -445,6 +459,10 @@ async function applyTaskSnapshot(
       handlers.onVideo(videoResult);
     }
     if (readString(task.responseSummary.audioBase64)) {
+      const browserRenderedVideo = readBrowserRenderedVideoResult(task.responseSummary, '视频素材已就绪，正在恢复本地渲染');
+      if (browserRenderedVideo) {
+        handlers.onVideo(browserRenderedVideo);
+      }
       if (!ensureGeneratedPayloadProvenance(task.responseSummary, handlers, '视频资源')) {
         return;
       }
@@ -532,12 +550,23 @@ async function maybeStartBrowserRender(
         knowledgePoint: readString(payload.knowledgePoint) || readString(payload.topic),
         expiresHint: '视频已在当前浏览器本地生成',
         fileName: rendered.fileName,
+        renderStatus: 'ready',
+        renderMessage: '浏览器本地渲染完成',
       });
       handlers.onProgress(100, '视频生成完成');
     })
     .catch((error) => {
       browserRenderState.started = false;
       browserRenderState.errorMessage = getErrorMessage(error);
+      const failedVideo = readBrowserRenderedVideoResult(payload, browserRenderState.errorMessage);
+      if (failedVideo) {
+        handlers.onVideo({
+          ...failedVideo,
+          renderStatus: 'failed',
+          renderMessage: browserRenderState.errorMessage,
+          expiresHint: '浏览器本地渲染失败',
+        });
+      }
       handlers.onLine(`浏览器本地渲染失败：${browserRenderState.errorMessage}`);
     })
     .finally(() => {
@@ -1778,6 +1807,60 @@ function readVideoResult(payload: Record<string, unknown> | undefined): VideoRes
     style: readVideoStyle(payload),
     knowledgePoint: readString(payload.knowledgePoint) || readString(payload.topic),
     expiresHint: formatExpiresHint(payload),
+    renderStatus: 'ready',
+  };
+}
+
+function mergeVideoResult(previous: VideoResult | null, next: VideoResult): VideoResult {
+  if (!previous) {
+    return next;
+  }
+  if (next.videoUrl || next.renderStatus === 'ready' || next.renderStatus === 'failed') {
+    return {
+      ...previous,
+      ...next,
+    };
+  }
+  return {
+    ...next,
+    videoUrl: previous.videoUrl || next.videoUrl,
+    thumbnailUrl: previous.thumbnailUrl || next.thumbnailUrl,
+    renderStatus: previous.renderStatus === 'ready' ? previous.renderStatus : next.renderStatus,
+    renderMessage: next.renderMessage || previous.renderMessage,
+  };
+}
+
+function readBrowserRenderedVideoResult(
+  payload: Record<string, unknown> | undefined,
+  renderMessage: string,
+): VideoResult | null {
+  if (!payload) {
+    return null;
+  }
+  const assetType = readString(payload.assetType).toUpperCase();
+  const displayMode = readString(payload.displayMode).toUpperCase();
+  const mimeType = readString(payload.mimeType).toLowerCase();
+  const fileName = readString(payload.fileName).toLowerCase();
+  const hasAudio = Boolean(readString(payload.audioBase64));
+  const isBrowserRenderedVideo =
+    hasAudio
+    || displayMode === 'VIDEO_PLAYER'
+    || fileName === 'browser-rendered.webm'
+    || (assetType === 'VIDEO' && mimeType.startsWith('video/'));
+  if (!isBrowserRenderedVideo) {
+    return null;
+  }
+  return {
+    title: readString(payload.title) || readString(payload.topic) || '教学视频',
+    videoUrl: '',
+    thumbnailUrl: readUrlField(payload, ['thumbnailUrl', 'thumbnail_url', 'posterUrl', 'coverUrl']),
+    duration: readDuration(payload),
+    style: readVideoStyle(payload),
+    knowledgePoint: readString(payload.knowledgePoint) || readString(payload.topic),
+    expiresHint: '视频将在当前浏览器本地生成',
+    fileName: readString(payload.fileName) || undefined,
+    renderStatus: 'rendering',
+    renderMessage,
   };
 }
 
