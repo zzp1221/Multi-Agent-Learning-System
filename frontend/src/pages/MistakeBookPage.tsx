@@ -166,7 +166,7 @@ export default function MistakeBookPage() {
       labels.push(difficultyLabel(difficulty));
     }
     if (knowledgeTag) {
-      labels.push(`知识点: ${knowledgeTag}`);
+      labels.push(`知识点：${knowledgeTag}`);
     }
     return labels;
   }, [difficulty, knowledgeTag, status]);

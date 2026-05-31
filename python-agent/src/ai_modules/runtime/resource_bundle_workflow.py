@@ -22,7 +22,7 @@ from src.ai_modules.models import (
     SSEEvent,
 )
 from src.ai_modules.runtime.context_snapshot import SnapshotBuilder, SystemSnapshot
-from src.ai_modules.runtime.provenance import validate_llm_provenance
+from src.ai_modules.runtime.provenance import ProvenanceError, validate_llm_provenance
 
 
 DEFAULT_RESOURCE_TYPES: tuple[str, ...] = (
@@ -150,41 +150,47 @@ class ResourceBundleWorkflow:
             seq=seq,
         )
         graph_event_count = len(state.events)
-        async for stream_mode, item in self._graph.astream(
-            self._state_to_dict(state),
-            stream_mode=["updates", "custom"],
-        ):
-            if cancelled and request.task_id in cancelled:
-                raise RuntimeError("Task was cancelled during resource bundle generation")
-            if stream_mode == "custom":
-                event = item.get("event") if isinstance(item, dict) else None
-                if isinstance(event, SSEEvent):
-                    event = event.model_copy(update={"seq": state.seq})
-                    state.events.append(event)
-                    state.seq += 1
-                    yield event
-                continue
-            if stream_mode != "updates" or not isinstance(item, dict):
-                continue
-            for update in item.values():
-                if not isinstance(update, dict):
+        try:
+            async for stream_mode, item in self._graph.astream(
+                self._state_to_dict(state),
+                stream_mode=["updates", "custom"],
+            ):
+                if cancelled and request.task_id in cancelled:
+                    raise RuntimeError("Task was cancelled during resource bundle generation")
+                if stream_mode == "custom":
+                    event = item.get("event") if isinstance(item, dict) else None
+                    if isinstance(event, SSEEvent):
+                        event = event.model_copy(update={"seq": state.seq})
+                        state.events.append(event)
+                        state.seq += 1
+                        yield event
                     continue
-                next_state = WorkflowState.model_validate({**self._state_to_dict(state), **update})
-                new_events: list[SSEEvent] = []
-                if "events" in update:
-                    new_events = next_state.events[graph_event_count:]
-                    graph_event_count = len(next_state.events)
-                state.params = next_state.params
-                state.snapshot = next_state.snapshot
-                state.resource_types = next_state.resource_types
-                state.generated_assets = next_state.generated_assets
-                state.resource_results = next_state.resource_results
-                state.resource_failures = next_state.resource_failures
-                for event in new_events:
-                    event = event.model_copy(update={"seq": state.seq})
-                    state.events.append(event)
-                    state.seq += 1
-                    yield event
+                if stream_mode != "updates" or not isinstance(item, dict):
+                    continue
+                for update in item.values():
+                    if not isinstance(update, dict):
+                        continue
+                    next_state = WorkflowState.model_validate({**self._state_to_dict(state), **update})
+                    new_events: list[SSEEvent] = []
+                    if "events" in update:
+                        new_events = next_state.events[graph_event_count:]
+                        graph_event_count = len(next_state.events)
+                    state.params = next_state.params
+                    state.snapshot = next_state.snapshot
+                    state.resource_types = next_state.resource_types
+                    state.generated_assets = next_state.generated_assets
+                    state.resource_results = next_state.resource_results
+                    state.resource_failures = next_state.resource_failures
+                    for event in new_events:
+                        event = event.model_copy(update={"seq": state.seq})
+                        state.events.append(event)
+                        state.seq += 1
+                        yield event
+        except Exception:
+            if initial_state is not None:
+                self._copy_state(initial_state, state)
+            self.last_state = state
+            raise
         if state.resource_failures and not state.generated_assets:
             if initial_state is not None:
                 self._copy_state(initial_state, state)
@@ -289,6 +295,8 @@ class ResourceBundleWorkflow:
             self._validate_resource_events(result)
             return {"resource_results": [result], "resource_failures": []}
         except Exception as exc:
+            if self._is_quality_gate_failure(exc):
+                raise
             return {
                 "resource_results": [],
                 "resource_failures": [
@@ -456,6 +464,25 @@ class ResourceBundleWorkflow:
                 )
         if produced == 0:
             raise RuntimeError(f"{result.agent_name} produced no publishable resource event")
+
+    @staticmethod
+    def _is_quality_gate_failure(exc: Exception) -> bool:
+        if isinstance(exc, ProvenanceError):
+            return True
+        message = str(exc).lower()
+        return any(
+            marker in message
+            for marker in (
+                "review llm failed",
+                "fallback is disabled",
+                "fallback is not allowed",
+                "missing generatedby=llm",
+                "missing contentorigin=llm",
+                "missing llm provider",
+                "missing llm model",
+                "must declare fallback=false",
+            )
+        )
 
     @staticmethod
     def _terminal_event_reason(event: SSEEvent) -> str:

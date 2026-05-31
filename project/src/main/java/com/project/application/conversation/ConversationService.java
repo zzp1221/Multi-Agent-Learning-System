@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -100,7 +101,6 @@ public class ConversationService {
             .toList();
     }
 
-    @Transactional(readOnly = true)
     public List<ConversationMessageItemResponse> listConversationMessages(
         JwtAuthenticatedUser currentUser,
         UUID conversationId,
@@ -119,7 +119,6 @@ public class ConversationService {
 
     private static final int MAX_HISTORY_MESSAGES = 20;
 
-    @Transactional
     public SseEmitter streamMessage(
         JwtAuthenticatedUser currentUser,
         UUID conversationId,
@@ -140,6 +139,7 @@ public class ConversationService {
             session.setTitle(buildConversationTitle(normalizedMessage, imageUrls));
         }
         appendConversationMessage(conversationId, currentUser.userId(), "user", normalizedMessage, imageUrls, true);
+        qnaSessionRepository.save(session);
 
         // 获取会话历史用于多轮记忆
         List<ConversationMessageItemResponse> history = fetchRecentHistory(conversationId, currentUser.userId());
@@ -172,20 +172,16 @@ public class ConversationService {
             } catch (Exception ex) {
                 if (isClientDisconnect(ex)) {
                     LOGGER.info("Conversation stream closed by client conversationId={}", conversationId);
-                    emitter.complete();
+                    safeComplete(emitter);
                     return;
                 }
-                try {
-                    if (assistantReply.isEmpty()) {
-                        appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", List.of(), false);
-                    }
-                    LOGGER.warn("Conversation stream failed conversationId={}", conversationId, ex);
-                    sendErrorEvent(emitter, conversationId, sequence, "会话流式调用失败，请稍后重试");
-                } catch (IOException ioException) {
-                    emitter.completeWithError(ioException);
-                    return;
+                if (assistantReply.isEmpty()) {
+                    appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", List.of(), false);
                 }
-                emitter.complete();
+                LOGGER.warn("Conversation stream failed conversationId={}", conversationId, ex);
+                if (sendErrorEvent(emitter, conversationId, sequence, "会话流式调用失败，请稍后重试")) {
+                    safeComplete(emitter);
+                }
             }
         });
 
@@ -195,12 +191,35 @@ public class ConversationService {
     private boolean isClientDisconnect(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
-            if (current instanceof AsyncRequestNotUsableException || current instanceof ClientAbortException) {
+            if (
+                current instanceof ConversationClientDisconnectedException
+                    || current instanceof AsyncRequestNotUsableException
+                    || current instanceof ClientAbortException
+            ) {
+                return true;
+            }
+            if (current instanceof IOException && isClientDisconnectMessage(current.getMessage())) {
+                return true;
+            }
+            if (current instanceof IllegalStateException && isClientDisconnectMessage(current.getMessage())) {
                 return true;
             }
             current = current.getCause();
         }
         return false;
+    }
+
+    private boolean isClientDisconnectMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("broken pipe")
+            || normalized.contains("connection reset")
+            || normalized.contains("connection aborted")
+            || normalized.contains("connection has been closed")
+            || normalized.contains("asyncrequestnotusableexception")
+            || normalized.contains("responsebodyemitter has already completed");
     }
 
     private void sendConversationEvent(
@@ -232,27 +251,49 @@ public class ConversationService {
                     payload
                 )));
         } catch (IOException ex) {
-            emitter.completeWithError(ex);
+            throw new ConversationClientDisconnectedException(ex);
+        } catch (IllegalStateException ex) {
+            throw new ConversationClientDisconnectedException(ex);
         }
     }
 
-    private void sendErrorEvent(
+    private boolean sendErrorEvent(
         SseEmitter emitter,
         UUID conversationId,
         AtomicInteger sequence,
         String message
-    ) throws IOException {
+    ) {
         int nextSeq = sequence.incrementAndGet();
-        emitter.send(SseEmitter.event()
-            .name("error")
-            .id(String.valueOf(nextSeq))
-            .data(new ConversationStreamEventPayload(
-                "error",
-                nextSeq,
-                OffsetDateTime.now(),
-                new ConversationDialogState(conversationId, "turn_" + nextSeq, "CORRECT", "END_SESSION"),
-                Map.of("message", message == null ? "会话流式调用失败" : message)
-            )));
+        try {
+            emitter.send(SseEmitter.event()
+                .name("error")
+                .id(String.valueOf(nextSeq))
+                .data(new ConversationStreamEventPayload(
+                    "error",
+                    nextSeq,
+                    OffsetDateTime.now(),
+                    new ConversationDialogState(conversationId, "turn_" + nextSeq, "CORRECT", "END_SESSION"),
+                    Map.of("message", message == null ? "会话流式调用失败" : message)
+                )));
+            return true;
+        } catch (IOException | IllegalStateException ex) {
+            LOGGER.debug("Skip sending conversation error because client is unavailable conversationId={}", conversationId, ex);
+            return false;
+        }
+    }
+
+    private void safeComplete(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (IllegalStateException ex) {
+            LOGGER.debug("Conversation SSE emitter already completed", ex);
+        }
+    }
+
+    private static final class ConversationClientDisconnectedException extends RuntimeException {
+        private ConversationClientDisconnectedException(Throwable cause) {
+            super(cause);
+        }
     }
 
     private void collectAssistantReply(StringBuilder assistantReply, PythonStreamEvent event) {
@@ -284,6 +325,11 @@ public class ConversationService {
             return false;
         }
         return normalized.contains("历史摘要")
+            || normalized.contains("检索查询")
+            || normalized.contains("来源摘要")
+            || normalized.contains("查询处理")
+            || normalized.contains("协作计划")
+            || normalized.contains("质量复核")
             || normalized.contains("优先参考的来源")
             || normalized.contains("建议你这样学")
             || normalized.contains("接下来请你先回答")

@@ -4,15 +4,18 @@ from src.ai_modules.agents.evaluation_agent import EvaluationAgent
 from src.ai_modules.agents.path_planning_agent import PathPlanningAgent
 from src.ai_modules.agents.query_rewrite_agent import QueryRewriteAgent
 from src.ai_modules.agents.retrieval_agent import RetrievalAgent
-from src.ai_modules.llms import (
-    RuleBasedPlanningLLM,
-    RuleBasedQueryRewriteLLM,
-)
+from src.ai_modules.llms import RuleBasedQueryRewriteLLM
 from src.ai_modules.memory import InMemoryLearningPlanStore
 from src.ai_modules.models import EvaluationPayload, LearningPlanPayload, QueryRewriteResult, QuestionBatchPayload
 from src.ai_modules.retrieval import HybridRetrievalService
 from src.ai_modules.runtime import SystemSnapshot
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
+
+
+class _UnusedPlanningLLM:
+    async def complete(self, **kwargs):  # pragma: no cover - direct-generator tests.
+        del kwargs
+        raise AssertionError("planning LLM should not be called in this test")
 
 
 def _build_snapshot() -> SystemSnapshot:
@@ -35,7 +38,7 @@ def _build_snapshot() -> SystemSnapshot:
 
 
 def test_evaluation_agent_system_prompt_loads_skill_and_context() -> None:
-    agent = EvaluationAgent(llm_client=RuleBasedPlanningLLM())
+    agent = EvaluationAgent(llm_client=_UnusedPlanningLLM())
 
     prompt = agent.system_prompt(_build_snapshot())
 
@@ -60,7 +63,7 @@ def test_evaluation_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> N
 
 def test_path_planning_agent_system_prompt_loads_skill_and_context() -> None:
     agent = PathPlanningAgent(
-        llm_client=RuleBasedPlanningLLM(),
+        llm_client=_UnusedPlanningLLM(),
         learning_plan_store=InMemoryLearningPlanStore(),
     )
 
@@ -413,7 +416,7 @@ async def test_evaluation_agent_uses_llm_generated_report_via_agent_core_loop() 
             )
 
     agent = EvaluationAgent(
-        llm_client=RuleBasedPlanningLLM(),
+        llm_client=_UnusedPlanningLLM(),
         generator=FakeEvaluationGenerator(),
     )
     params = {
@@ -502,7 +505,7 @@ async def test_evaluation_agent_golden_eval_preserves_interactive_question_batch
             )
 
     agent = EvaluationAgent(
-        llm_client=RuleBasedPlanningLLM(),
+        llm_client=_UnusedPlanningLLM(),
         generator=GoldenEvaluationGenerator(),
         question_generator=FakeQuestionGenerator(),
     )
@@ -587,7 +590,7 @@ async def test_evaluation_agent_profile_dimensions_skip_question_batch(dimension
             raise AssertionError("画像类评估不应进入出题路径")
 
     agent = EvaluationAgent(
-        llm_client=RuleBasedPlanningLLM(),
+        llm_client=_UnusedPlanningLLM(),
         generator=GoldenEvaluationGenerator(),
         question_generator=FailingQuestionGenerator(),
     )
@@ -634,7 +637,7 @@ async def test_evaluation_agent_profile_dimensions_skip_question_batch(dimension
 
 def test_evaluation_agent_context_dimension_falls_back_to_assessment_dimension() -> None:
     agent = EvaluationAgent(
-        llm_client=RuleBasedPlanningLLM(),
+        llm_client=_UnusedPlanningLLM(),
         generator=None,
         question_generator=None,
     )
@@ -739,7 +742,7 @@ async def test_path_planning_agent_golden_eval_preserves_learning_path_contract(
 
     store = InMemoryLearningPlanStore()
     agent = PathPlanningAgent(
-        llm_client=RuleBasedPlanningLLM(),
+        llm_client=_UnusedPlanningLLM(),
         learning_plan_store=store,
         generator=FakePathGenerator(),
     )

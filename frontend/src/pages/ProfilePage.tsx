@@ -5,11 +5,9 @@ import {
   Brain,
   CalendarClock,
   Clock3,
-  Gauge,
   LineChart,
   LoaderCircle,
   Lock,
-  Sparkles,
   Target,
   TriangleAlert,
   UserRoundSearch,
@@ -32,12 +30,10 @@ import {
 import { mapProfileResponse } from './LearningStudioDemoPage.utils';
 
 const navItems = [
-  { id: 'overview', label: '概览' },
-  { id: 'goals', label: '学习目标' },
-  { id: 'knowledge', label: '知识基础' },
-  { id: 'behavior', label: '学习行为' },
-  { id: 'preference', label: '讲解偏好' },
-  { id: 'analysis', label: '系统分析' },
+  { id: 'overview', label: '当前阶段' },
+  { id: 'key-weak', label: '关键薄弱点' },
+  { id: 'next-actions', label: '下一步行动' },
+  { id: 'more-details', label: '更多分析' },
 ];
 
 const defaultResourcePreferences: ProfileResourcePreference[] = [
@@ -185,20 +181,22 @@ export default function ProfilePage() {
     );
   }
 
-  const visibleWeakPoints = showAllWeakPoints ? profile.weakPointRanks : profile.weakPointRanks.slice(0, 5);
+  const weakPointItems = buildWeakPointItems(profile);
+  const keyWeakPoints = weakPointItems.slice(0, 3);
+  const visibleWeakPoints = showAllWeakPoints ? weakPointItems : weakPointItems.slice(0, 5);
   const recommendations = profile.inferredRecommendations.slice(0, 3);
   const resourcePreferenceCards = buildResourcePreferenceCards(analytics, analyticsLoading, analyticsError);
   const explanationPreference = analytics?.preferenceAnalytics?.explanationPreference;
-  const explanationValue = explanationPreference?.value || profile.explanationPreference || EMPTY_VALUE;
+  const explanationValue = formatProfileDisplayValue(explanationPreference?.value || profile.explanationPreference);
   const explanationIdentified = Boolean(explanationPreference?.identified || profile.explanationPreference);
   const explanationDetail = analyticsLoading
     ? '正在读取讲解方式证据'
     : analyticsError
       ? '讲解方式证据读取失败'
       : explanationPreference?.identified
-        ? `来源：${explanationPreference.source}`
+        ? `来源：${formatProfileSourceLabel(explanationPreference.source)}`
         : profile.explanationPreference
-          ? '来源：当前画像字段'
+          ? `来源：${formatProfileSourceLabel('profile_json.explanationPreference')}`
           : '暂无真实证据';
 
   return (
@@ -229,182 +227,197 @@ export default function ProfilePage() {
             </button>
           </header>
 
-          <section id="overview" className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-            <MetricCard
-              icon={<Target className="h-5 w-5" />}
-              label="学习阶段"
-              value={profile.knowledgeBase || EMPTY_VALUE}
-              description={profile.goal || profile.currentGoal.shortTerm || '暂无明确学习目标'}
-              accent="blue"
-            />
-            <MetricCard
-              icon={<Clock3 className="h-5 w-5" />}
-              label="学习节奏"
-              value={profile.learningPace || profile.learningHabits.studyFrequency || EMPTY_VALUE}
-              description={profile.learningHabits.studyFrequency || analyticsTrendSummary(analytics) || '暂无节奏信号'}
-              accent="cyan"
-              mutedHint={analyticsLoading ? '正在读取近 30 天行为趋势' : analyticsError ? '行为趋势读取失败，画像主体不受影响' : undefined}
-            />
-            <MetricCard
-              icon={<Gauge className="h-5 w-5" />}
-              label="知识掌握度"
-              value={metrics.masteryAverage === null ? EMPTY_VALUE : `${metrics.masteryAverage}%`}
-              description={profile.skillMastery.length > 0 ? `来自 ${profile.skillMastery.length} 个知识点掌握度` : '暂无真实掌握度数据'}
-              accent="indigo"
-              progress={metrics.masteryAverage}
-            />
-            <MetricCard
-              icon={<TriangleAlert className="h-5 w-5" />}
-              label="薄弱点数量"
-              value={`${metrics.weakPointCount}个`}
-              description={metrics.weakPointCount > 0 ? '待重点提升知识点' : '暂无明确薄弱点'}
-              accent="orange"
-            />
+          <section id="overview" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.7fr)]">
+            <article className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+              <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-3 inline-flex rounded-xl bg-primary-50 p-2 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
+                    <Target className="h-5 w-5" />
+                  </div>
+                  <div className="text-sm font-medium text-slate-500 dark:text-slate-400">当前阶段</div>
+                  <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{formatProfileDisplayValue(profile.knowledgeBase)}</h2>
+                  <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                    {formatProfileDisplayValue(profile.goal || profile.currentGoal.shortTerm) || '暂无明确学习目标，建议先完成一次学习评估。'}
+                  </p>
+                </div>
+                <div className="grid min-w-[220px] gap-3 sm:grid-cols-2 md:grid-cols-1">
+                  <StageMiniStat label="知识掌握" value={metrics.masteryAverage === null ? EMPTY_VALUE : `${metrics.masteryAverage}%`} detail={profile.skillMastery.length > 0 ? `${profile.skillMastery.length} 个知识点` : '暂无真实数据'} />
+                  <StageMiniStat label="学习节奏" value={formatProfileDisplayValue(profile.learningPace || profile.learningHabits.studyFrequency)} detail={analyticsTrendSummary(analytics) || '等待更多记录'} />
+                </div>
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+              <SectionTitle title="画像摘要" subtitle="先看会影响下一步学习的关键信号" />
+              <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                <StageMiniStat label="薄弱点" value={`${metrics.weakPointCount} 个`} detail={metrics.weakPointCount > 0 ? '优先处理 Top3' : '暂无明确薄弱点'} />
+                <StageMiniStat label="画像可靠度" value={`${profile.confidenceScore}%`} detail={`${profile.history.length} 次画像快照`} />
+                <StageMiniStat label="讲解偏好" value={explanationValue} detail={explanationIdentified ? '已识别偏好' : '暂无真实证据'} />
+              </div>
+            </article>
           </section>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-5">
-              <section id="goals" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
-                <SectionTitle title="学习维度总览" subtitle="所有数量均来自当前画像字段" />
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <DimensionCard icon={<Target className="h-5 w-5" />} title="学习目标" value={`${metrics.goalCount}项`} detail={profile.currentGoal.shortTerm || profile.goal || '暂无短期目标'} href="#goals-detail" />
-                  <DimensionCard icon={<Brain className="h-5 w-5" />} title="知识基础" value={`${profile.skillMastery.length}项维度`} detail={profile.knowledgeBase || '待分析'} href="#knowledge" />
-                  <DimensionCard
-                    icon={<LineChart className="h-5 w-5" />}
-                    title="学习行为"
-                    value={analyticsLoading ? '读取中' : analytics ? `${analytics.systemAnalysis.coverage.activeDays}天记录` : `${metrics.behaviorSignals}项信号`}
-                    detail={analytics ? `近 ${analytics.days} 天真实行为聚合` : metrics.behaviorSignals > 0 ? '来自 learningHabits' : '暂无真实行为记录'}
-                    href="#behavior"
-                  />
-                  <DimensionCard icon={<BookOpen className="h-5 w-5" />} title="讲解偏好" value={`${metrics.preferenceCount}项偏好`} detail={profile.explanationPreference || profile.preference.join('、') || '暂无偏好'} href="#preference" />
-                </div>
-              </section>
-
-              <section id="knowledge" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
-                <SectionTitle title="画像维度可视化" subtitle="分数由前端根据真实画像字段推断，仅供参考" />
-                <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(280px,0.75fr)]">
-                  <RadarChart
-                    data={profile.dimensionScores.map((item) => ({
-                      subject: item.subject,
-                      score: item.score,
-                      fullMark: item.fullMark,
-                      description: item.description,
-                    }))}
-                    height={320}
-                    className="min-h-[320px]"
-                  />
-                  <div className="space-y-3">
-                    {profile.dimensionScores.map((item) => (
-                      <ScoreLine key={item.key} label={item.subject} detail={item.hint} score={item.score} />
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
-                <SectionTitle title="学习建议" subtitle="来自 inferredRecommendations" />
-                {recommendations.length > 0 ? (
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    {recommendations.map((item, index) => (
-                      <RecommendationCard key={`${item}-${index}`} index={index + 1} text={item} />
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyInline text="当前画像暂无学习建议。" />
+          <div className="space-y-5">
+            <section id="key-weak" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+              <SectionTitle title="关键薄弱点 Top3" subtitle="先处理最影响学习推进的内容" />
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {keyWeakPoints.length > 0 ? keyWeakPoints.map((item, index) => (
+                  <WeakPointCard key={`${item.topic}-${index}`} item={item} rank={index + 1} compact />
+                )) : (
+                  <EmptyInline text="暂无明确薄弱点，继续完成练习或学习评估后会更新。" />
                 )}
-              </section>
+              </div>
+            </section>
 
-              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <InfoCard title="偏好学习方式" value={profile.preference.join('、') || EMPTY_VALUE} detail="来自 preferredResourceTypes" />
-                <InfoCard title="认知风格" value={profile.cognitiveStyle || EMPTY_VALUE} detail="来自 cognitiveStyle" />
-                <InfoCard title="当前薄弱点" value={`${metrics.weakPointCount}个知识点`} detail="来自 weakPointDetails/weakPoints" />
-                <InfoCard
-                  title="擅长领域"
-                  value={analytics?.systemAnalysis.strongestSkill || EMPTY_VALUE}
-                  detail={analyticsLoading
-                    ? '正在读取系统分析'
-                    : analyticsError
-                      ? '分析接口读取失败'
-                      : analytics?.systemAnalysis.strongestSkillScore
-                        ? `来自 analytics，掌握度 ${analytics.systemAnalysis.strongestSkillScore}%`
-                        : '真实证据不足，暂不判断'}
-                  muted={!analytics?.systemAnalysis.strongestSkill}
-                />
-              </section>
-
-              <section id="preference" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
-                <SectionTitle title="讲解偏好详情" subtitle="展示真实证据次数，不展示偏好百分比" />
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {resourcePreferenceCards.map((item) => (
-                    <PreferenceCard
-                      key={item.type}
-                      title={item.label}
-                      detail={item.evidenceLabel}
-                      meta={formatPreferenceEvidenceMeta(item)}
-                      muted={!item.identified || Boolean(analyticsError)}
-                      status={preferenceStatusLabel(item, analyticsLoading, analyticsError)}
-                    />
+            <section id="next-actions" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+              <SectionTitle title="下一步行动 Top3" subtitle="把学习建议整理成可以立刻执行的小任务" />
+              {recommendations.length > 0 ? (
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {recommendations.map((item, index) => (
+                    <RecommendationCard key={`${item}-${index}`} index={index + 1} text={item} />
                   ))}
-                  <PreferenceCard
-                    title="讲解方式"
-                    value={explanationValue}
-                    detail={explanationDetail}
-                    muted={!explanationIdentified || Boolean(analyticsError)}
-                    status={analyticsLoading ? '读取中' : analyticsError ? '读取失败' : explanationIdentified ? '已识别' : '暂无证据'}
-                  />
                 </div>
-              </section>
+              ) : (
+                <EmptyInline text="当前画像暂无学习建议。" />
+              )}
+            </section>
 
-              <section className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.8fr)]">
-                <BehaviorTrendPanel
-                  analytics={analytics}
-                  loading={analyticsLoading}
-                  error={analyticsError}
-                  onRetry={() => void loadAnalytics()}
-                />
-                <SystemAnalysisPanel
-                  analytics={analytics}
-                  loading={analyticsLoading}
-                  error={analyticsError}
-                  onRetry={() => void loadAnalytics()}
-                />
-              </section>
-            </div>
+            <details id="more-details" className="group rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                <SectionTitle title="展开更多分析" subtitle="雷达图、来源说明、完整薄弱点和行为趋势默认收起" />
+                <span className="shrink-0 rounded-xl border border-blue-100 px-3 py-1.5 text-sm font-medium text-primary-600 transition-colors group-open:bg-primary-50 dark:border-slate-700 dark:text-primary-300 dark:group-open:bg-slate-800">
+                  <span className="group-open:hidden">展开</span>
+                  <span className="hidden group-open:inline">收起</span>
+                </span>
+              </summary>
 
-            <aside className="space-y-5">
-              <section className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
-                <SectionTitle title="薄弱点排序" subtitle="优先展示最需要补强的内容" />
-                <div className="mt-4 space-y-3">
-                  {visibleWeakPoints.length > 0 ? visibleWeakPoints.map((item, index) => (
-                    <WeakPointCard key={`${item.topic}-${index}`} item={item} rank={index + 1} />
-                  )) : (
-                    <EmptyInline text="暂无薄弱点排序。" />
-                  )}
-                  {profile.weakPointRanks.length > 5 ? (
+              <div className="mt-5 space-y-5">
+                <section id="goals" className="rounded-2xl border border-blue-100/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                  <SectionTitle title="学习维度总览" subtitle="所有数量均来自当前画像字段" />
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <DimensionCard icon={<Target className="h-5 w-5" />} title="学习目标" value={`${metrics.goalCount}项`} detail={formatProfileDisplayValue(profile.currentGoal.shortTerm || profile.goal) || '暂无短期目标'} href="#goals-detail" />
+                    <DimensionCard icon={<Brain className="h-5 w-5" />} title="知识基础" value={`${profile.skillMastery.length}项维度`} detail={formatProfileDisplayValue(profile.knowledgeBase) || '待分析'} href="#knowledge" />
+                    <DimensionCard
+                      icon={<LineChart className="h-5 w-5" />}
+                      title="学习行为"
+                      value={analyticsLoading ? '读取中' : analytics ? `${analytics.systemAnalysis.coverage.activeDays}天记录` : `${metrics.behaviorSignals}项信号`}
+                      detail={analytics ? `近 ${analytics.days} 天真实行为聚合` : metrics.behaviorSignals > 0 ? '来自学习习惯画像' : '暂无真实行为记录'}
+                      href="#behavior"
+                    />
+                    <DimensionCard icon={<BookOpen className="h-5 w-5" />} title="讲解偏好" value={`${metrics.preferenceCount}项偏好`} detail={formatProfileDisplayValue(profile.explanationPreference || profile.preference.join('、')) || '暂无偏好'} href="#preference" />
+                  </div>
+                </section>
+
+                <section id="knowledge" className="rounded-2xl border border-blue-100/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                  <SectionTitle title="画像维度可视化" subtitle="分数由前端根据真实画像字段推断，仅供参考" />
+                  <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(280px,0.75fr)]">
+                    <RadarChart
+                      data={profile.dimensionScores.map((item) => ({
+                        subject: item.subject,
+                        score: item.score,
+                        fullMark: item.fullMark,
+                        description: item.description,
+                      }))}
+                      height={320}
+                      className="min-h-[320px]"
+                    />
+                    <div className="space-y-3">
+                      {profile.dimensionScores.map((item) => (
+                        <ScoreLine key={item.key} label={item.subject} detail={item.hint} score={item.score} />
+                      ))}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <InfoCard title="偏好学习方式" value={formatProfileDisplayValue(profile.preference.join('、'))} detail="来自学习资源偏好" />
+                  <InfoCard title="认知风格" value={formatProfileDisplayValue(profile.cognitiveStyle)} detail="来自学习风格画像" />
+                  <InfoCard title="当前薄弱点" value={`${metrics.weakPointCount}个知识点`} detail="来自薄弱点识别结果" />
+                  <InfoCard
+                    title="擅长领域"
+                    value={analytics?.systemAnalysis.strongestSkill || EMPTY_VALUE}
+                    detail={analyticsLoading
+                      ? '正在读取系统分析'
+                      : analyticsError
+                        ? '分析接口读取失败'
+                        : analytics?.systemAnalysis.strongestSkillScore
+                          ? `来自系统分析，掌握度 ${analytics.systemAnalysis.strongestSkillScore}%`
+                          : '真实证据不足，暂不判断'}
+                    muted={!analytics?.systemAnalysis.strongestSkill}
+                  />
+                </section>
+
+                <section className="rounded-2xl border border-blue-100/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                  <SectionTitle title="完整薄弱点列表" subtitle="默认展示前 5 个，避免一次看太多" />
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {visibleWeakPoints.length > 0 ? visibleWeakPoints.map((item, index) => (
+                      <WeakPointCard key={`${item.topic}-${index}`} item={item} rank={index + 1} />
+                    )) : (
+                      <EmptyInline text="暂无薄弱点排序。" />
+                    )}
+                  </div>
+                  {weakPointItems.length > 5 ? (
                     <button
                       type="button"
                       onClick={() => setShowAllWeakPoints((prev) => !prev)}
-                      className="w-full rounded-xl border border-blue-100 px-3 py-2 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:border-slate-700 dark:text-primary-300 dark:hover:bg-slate-800"
+                      className="mt-4 w-full rounded-xl border border-blue-100 px-3 py-2 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:border-slate-700 dark:text-primary-300 dark:hover:bg-slate-800"
                     >
-                      {showAllWeakPoints ? '收起薄弱点' : `查看全部薄弱点 (${profile.weakPointRanks.length})`}
+                      {showAllWeakPoints ? '收起薄弱点' : `查看全部薄弱点 (${weakPointItems.length})`}
                     </button>
                   ) : null}
-                </div>
-              </section>
+                </section>
 
-              <section id="goals-detail" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
-                <SectionTitle title="目标与节奏" subtitle="来自 currentGoal 与 learningHabits" />
-                <div className="mt-4 space-y-3 text-sm">
-                  <FactRow label="短期目标" value={profile.currentGoal.shortTerm || profile.goal || EMPTY_VALUE} />
-                  <FactRow label="中期目标" value={profile.currentGoal.midTerm || EMPTY_VALUE} />
-                  <FactRow label="学习频率" value={profile.learningHabits.studyFrequency || EMPTY_VALUE} />
-                  <FactRow label="平均时长" value={profile.learningHabits.avgSessionDuration > 0 ? `${profile.learningHabits.avgSessionDuration} 分钟` : EMPTY_VALUE} />
-                  <FactRow label="画像历史" value={`${profile.history.length} 次快照`} />
-                </div>
-              </section>
-            </aside>
+                <section id="preference" className="rounded-2xl border border-blue-100/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                  <SectionTitle title="讲解偏好详情" subtitle="展示真实证据次数，不展示偏好百分比" />
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {resourcePreferenceCards.map((item) => (
+                      <PreferenceCard
+                        key={item.type}
+                        title={item.label}
+                        detail={item.evidenceLabel}
+                        meta={formatPreferenceEvidenceMeta(item)}
+                        muted={!item.identified || Boolean(analyticsError)}
+                        status={preferenceStatusLabel(item, analyticsLoading, analyticsError)}
+                      />
+                    ))}
+                    <PreferenceCard
+                      title="讲解方式"
+                      value={explanationValue}
+                      detail={explanationDetail}
+                      muted={!explanationIdentified || Boolean(analyticsError)}
+                      status={analyticsLoading ? '读取中' : analyticsError ? '读取失败' : explanationIdentified ? '已识别' : '暂无证据'}
+                    />
+                  </div>
+                </section>
+
+                <section className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.8fr)]">
+                  <BehaviorTrendPanel
+                    analytics={analytics}
+                    loading={analyticsLoading}
+                    error={analyticsError}
+                    onRetry={() => void loadAnalytics()}
+                  />
+                  <SystemAnalysisPanel
+                    analytics={analytics}
+                    loading={analyticsLoading}
+                    error={analyticsError}
+                    onRetry={() => void loadAnalytics()}
+                  />
+                </section>
+
+                <section id="goals-detail" className="rounded-2xl border border-blue-100/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/30">
+                  <SectionTitle title="目标与节奏" subtitle="来自学习目标与学习习惯画像" />
+                  <div className="mt-4 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-5">
+                    <FactRow label="短期目标" value={formatProfileDisplayValue(profile.currentGoal.shortTerm || profile.goal)} />
+                    <FactRow label="中期目标" value={formatProfileDisplayValue(profile.currentGoal.midTerm)} />
+                    <FactRow label="学习频率" value={formatProfileDisplayValue(profile.learningHabits.studyFrequency)} />
+                    <FactRow label="平均时长" value={profile.learningHabits.avgSessionDuration > 0 ? `${profile.learningHabits.avgSessionDuration} 分钟` : EMPTY_VALUE} />
+                    <FactRow label="画像历史" value={`${profile.history.length} 次快照`} />
+                  </div>
+                </section>
+              </div>
+            </details>
           </div>
-
           <footer className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pb-2 text-xs text-slate-400 dark:text-slate-500">
             <span>数据基于你的学习行为分析，仅供参考</span>
             <span>更新时间：{updatedAt ? new Date(updatedAt).toLocaleString('zh-CN') : EMPTY_VALUE}</span>
@@ -452,53 +465,6 @@ function ProfileSubnav({ updatedAt }: { updatedAt: string }) {
         </div>
       </div>
     </aside>
-  );
-}
-
-function MetricCard(props: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  description: string;
-  accent: 'blue' | 'cyan' | 'indigo' | 'orange';
-  progress?: number | null;
-  mutedHint?: string;
-}) {
-  const accentMap: Record<typeof props.accent, string> = {
-    blue: 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300',
-    cyan: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-500/10 dark:text-cyan-300',
-    indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300',
-    orange: 'bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-300',
-  };
-  return (
-    <article className="min-h-[156px] rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{props.label}</div>
-          <div className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">{props.value}</div>
-          <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{props.description}</p>
-        </div>
-        <div className={`rounded-xl p-2 ${accentMap[props.accent]}`}>{props.icon}</div>
-      </div>
-      {typeof props.progress === 'number' ? (
-        <div className="mt-4 flex items-center gap-3">
-          <div
-            className="grid h-14 w-14 place-items-center rounded-full"
-            style={{ background: `conic-gradient(#2563eb ${props.progress * 3.6}deg, #e2e8f0 0deg)` }}
-          >
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-white text-xs font-semibold text-slate-800 dark:bg-slate-900 dark:text-slate-100">
-              {props.progress}%
-            </div>
-          </div>
-          <span className="text-xs text-slate-400 dark:text-slate-500">真实知识点均值</span>
-        </div>
-      ) : null}
-      {props.mutedHint ? (
-        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-400 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-500">
-          {props.mutedHint}
-        </div>
-      ) : null}
-    </article>
   );
 }
 
@@ -550,12 +516,24 @@ function ScoreLine({ label, detail, score }: { label: string; detail: string; sc
   );
 }
 
+function StageMiniStat({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-800/60">
+      <div className="text-xs text-slate-400 dark:text-slate-500">{label}</div>
+      <div className="mt-1 line-clamp-1 text-base font-semibold text-slate-900 dark:text-white">{value}</div>
+      <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{detail}</div>
+    </div>
+  );
+}
+
 function RecommendationCard({ index, text }: { index: number; text: string }) {
   return (
-    <article className="rounded-2xl border border-blue-100 bg-primary-50/50 px-4 py-4 dark:border-primary-900/60 dark:bg-primary-500/10">
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary-700 dark:text-primary-200">
-        <Sparkles className="h-4 w-4" />
-        建议 {index}
+    <article className="rounded-2xl border border-blue-100 bg-primary-50/50 px-4 py-4 transition-colors hover:bg-primary-50 dark:border-primary-900/60 dark:bg-primary-500/10">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary-700 dark:text-primary-200">
+        <span className="grid h-7 w-7 place-items-center rounded-full bg-white text-xs shadow-sm shadow-blue-100/70 dark:bg-slate-900 dark:shadow-none">
+          {index}
+        </span>
+        <span>行动建议</span>
       </div>
       <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{text}</p>
     </article>
@@ -605,7 +583,7 @@ function PreferenceCard(props: {
   );
 }
 
-function WeakPointCard({ item, rank }: { item: WeakPointRank; rank: number }) {
+function WeakPointCard({ item, rank, compact = false }: { item: WeakPointRank; rank: number; compact?: boolean }) {
   return (
     <article className="rounded-2xl border border-blue-100 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-950/40">
       <div className="flex items-start gap-3">
@@ -619,10 +597,10 @@ function WeakPointCard({ item, rank }: { item: WeakPointRank; rank: number }) {
               {item.errorPattern}
             </div>
           ) : null}
-          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+          <p className={`mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400 ${compact ? 'line-clamp-2' : ''}`}>
             {item.lastError || '暂无错误样本说明'}
           </p>
-          {item.severityInferred ? (
+          {compact ? null : item.severityInferred ? (
             <div className="mt-3 text-xs text-slate-400 dark:text-slate-500">强度待接入真实数据</div>
           ) : (
             <div className="mt-3">
@@ -880,6 +858,20 @@ function preferenceStatusLabel(
   return item.identified ? '已识别' : '暂无证据';
 }
 
+function buildWeakPointItems(profile: ProfileSnapshot): WeakPointRank[] {
+  if (profile.weakPointRanks.length > 0) {
+    return profile.weakPointRanks;
+  }
+  return profile.weakPoints
+    .filter((topic) => topic.trim())
+    .map((topic) => ({
+      topic,
+      severity: 0,
+      lastError: '等待更多练习或评估记录补充错因。',
+      severityInferred: true,
+    }));
+}
+
 function formatPreferenceEvidenceMeta(item: ProfileResourcePreference): string {
   const sources: string[] = [];
   if (item.profileMentioned) {
@@ -897,6 +889,61 @@ function formatPreferenceEvidenceMeta(item: ProfileResourcePreference): string {
     parts.push(`最近一次：${lastUsedAt}`);
   }
   return parts.join(' · ');
+}
+
+function formatProfileSourceLabel(source?: string | null): string {
+  switch ((source ?? '').trim()) {
+    case 'profile_json.explanationPreference':
+    case 'explanationPreference':
+    case 'explanation_preference':
+      return '讲解方式画像字段';
+    case 'profile_json.preferredResourceTypes':
+    case 'preferredResourceTypes':
+    case 'preferred_resource_types':
+      return '学习资源偏好画像字段';
+    case 'currentGoal':
+    case 'current_goal':
+      return '学习目标画像字段';
+    case 'learningHabits':
+    case 'learning_habits':
+      return '学习习惯画像字段';
+    case 'cognitiveStyle':
+    case 'cognitive_style':
+      return '认知风格画像字段';
+    case 'weakPointDetails':
+    case 'weakPointDetails/weakPoints':
+    case 'weak_point_details':
+    case 'weakPoints':
+    case 'weak_points':
+      return '薄弱点画像字段';
+    case 'inferredRecommendations':
+    case 'inferred_recommendations':
+      return '学习建议画像字段';
+    case 'analytics':
+      return '系统分析结果';
+    default:
+      return source?.trim() ? '画像分析结果' : '当前画像字段';
+  }
+}
+
+function formatProfileDisplayValue(value?: string | null): string {
+  const raw = value?.trim() ?? '';
+  if (!raw) {
+    return EMPTY_VALUE;
+  }
+  const replacements: Array<[RegExp, string]> = [
+    [/\bstep_by_step\b/gi, '分步讲解'],
+    [/\bconcept_first\b/gi, '先讲原理'],
+    [/\bconcept_then_question\b/gi, '先概念后练习'],
+    [/\bexample_first\b/gi, '先例子后原理'],
+    [/\bvisual_first\b/gi, '先图示后讲解'],
+    [/\breasoning_oriented\b/gi, '偏原理推导'],
+    [/\bprocedural_oriented\b/gi, '偏步骤实操'],
+    [/\bmixed\b/gi, '混合型'],
+    [/\bhigh_frequency\b/gi, '高频学习'],
+    [/\bstage_based\b/gi, '阶段性学习'],
+  ];
+  return replacements.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), raw);
 }
 
 function formatPreferenceDateTime(value?: string | null): string {

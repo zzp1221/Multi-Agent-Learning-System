@@ -1,4 +1,4 @@
-"""用于复核生成教学内容的评审和安全 Agent。"""
+"""Critic and safety review agents for generated learning content."""
 
 from __future__ import annotations
 
@@ -7,11 +7,7 @@ import logging
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
-from src.ai_modules.llms import (
-    CriticReviewer,
-    ReviewLLMClientFactory,
-    SafetyReviewer,
-)
+from src.ai_modules.llms import CriticReviewer, SafetyReviewer
 from src.ai_modules.models import (
     CriticReviewPayload,
     ProgressPayload,
@@ -22,9 +18,7 @@ from src.ai_modules.models import (
     SSEEvent,
 )
 from src.ai_modules.prompts import build_critic_system_prompt, build_safety_system_prompt
-from src.ai_modules.runtime import (
-    SystemSnapshot,
-)
+from src.ai_modules.runtime import SystemSnapshot
 
 
 ACADEMIC_MISCONDUCT_KEYWORDS = ("作弊", "代写", "替考", "考试答案", "绕过检测")
@@ -34,7 +28,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class CriticAgent(PlaceholderAgent):
-    """复核生成内容的质量、难度和来源支撑。"""
+    """Review generated content quality, difficulty fit, and source support."""
 
     def __init__(
         self,
@@ -42,8 +36,8 @@ class CriticAgent(PlaceholderAgent):
         reviewer: Any | None = None,
     ) -> None:
         super().__init__("Critic Agent", "critic")
-        self.llm_client = llm_client or ReviewLLMClientFactory.create()
-        self.reviewer = reviewer or CriticReviewer()
+        self.llm_client = llm_client
+        self.reviewer = reviewer
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
         return build_critic_system_prompt(snapshot)
@@ -92,12 +86,18 @@ class CriticAgent(PlaceholderAgent):
         system_prompt: str,
     ) -> CriticReviewPayload:
         review_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
-        return await self._safe_review(
-            params=params,
-            snapshot=snapshot,
-            system_prompt=system_prompt,
-            review_signals=review_signals,
-        )
+        try:
+            return await self._reviewer().review(
+                system_prompt=system_prompt,
+                context_payload=self._build_critic_context(
+                    params=params,
+                    snapshot=snapshot,
+                    review_signals=review_signals,
+                ),
+            )
+        except Exception as exc:
+            LOGGER.exception("Critic review LLM failed")
+            raise RuntimeError("Critic review LLM failed; heuristic fallback is disabled") from exc
 
     def _tool_check_fact_consistency(
         self,
@@ -119,7 +119,7 @@ class CriticAgent(PlaceholderAgent):
         return {
             "status": status,
             "issues": issues,
-            "evidence": f"正文长度={len(content)}，来源数={len(sources)}",
+            "evidence": f"contentLength={len(content)}, sourceCount={len(sources)}",
         }
 
     def _tool_check_difficulty_match(
@@ -137,7 +137,7 @@ class CriticAgent(PlaceholderAgent):
         issues: list[str] = []
         if student_level == "BASIC" and len(content) > 5000:
             status = "TOO_COMPLEX"
-            issues.append("对基础学生来说内容偏长，建议拆分为更小步骤。")
+            issues.append("对基础学生来说内容偏长，建议拆成更小步骤。")
         if student_level == "ADVANCED" and sentence_count < 5:
             status = "TOO_SIMPLE"
             issues.append("对高阶学生来说内容过于简略，建议增加原理或变式。")
@@ -180,39 +180,13 @@ class CriticAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> dict[str, Any]:
-        review_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
-        payload = await self._safe_review(
+        del tool_input
+        payload = await self.review_content(
             params=params,
             snapshot=snapshot,
             system_prompt=system_prompt,
-            review_signals=review_signals,
         )
         return payload.model_dump(by_alias=True)
-
-    async def _safe_review(
-        self,
-        *,
-        params: dict[str, Any],
-        snapshot: SystemSnapshot,
-        system_prompt: str,
-        review_signals: dict[str, Any],
-    ) -> CriticReviewPayload:
-        try:
-            return await self.reviewer.review(
-                system_prompt=system_prompt,
-                context_payload=self._build_critic_context(
-                    params=params,
-                    snapshot=snapshot,
-                    review_signals=review_signals,
-                ),
-            )
-        except Exception as exc:
-            LOGGER.exception("Critic review LLM failed")
-            LOGGER.warning(
-                "Critic review falls back to heuristic signals: error_type=%s",
-                type(exc).__name__,
-            )
-            return self._fallback_review(review_signals=review_signals)
 
     def _build_critic_context(
         self,
@@ -231,6 +205,11 @@ class CriticAgent(PlaceholderAgent):
             "reviewSignals": review_signals,
         }
 
+    def _reviewer(self) -> Any:
+        if self.reviewer is None:
+            self.reviewer = CriticReviewer()
+        return self.reviewer
+
     def _collect_critic_signals(
         self,
         *,
@@ -247,37 +226,16 @@ class CriticAgent(PlaceholderAgent):
             "sourceCoverage": self._tool_review_source_coverage(tool_input={}, params=params),
         }
 
-    def _fallback_review(self, *, review_signals: dict[str, Any]) -> CriticReviewPayload:
-        fact_signal = review_signals["factConsistency"]
-        difficulty_signal = review_signals["difficultyMatch"]
-        coverage_signal = review_signals["sourceCoverage"]
-        issues = [
-            *fact_signal.get("issues", []),
-            *difficulty_signal.get("issues", []),
-            *coverage_signal.get("issues", []),
-        ]
-        verdict = "PASS" if not issues else "REVISE"
-        suggestions = issues or ["内容整体可用，可进入发布环节。"]
-        return CriticReviewPayload(
-            verdict=verdict,
-            factConsistency=str(fact_signal.get("status", "UNCLEAR")),
-            difficultyMatch=str(difficulty_signal.get("status", "MATCHED")),
-            sourceCoverage=str(coverage_signal.get("status", "LIMITED")),
-            issues=issues,
-            suggestions=suggestions[:3],
-            summaryText=(
-                "Critic 复核完成："
-                f"事实一致性={fact_signal.get('status', 'UNCLEAR')}，"
-                f"难度匹配={difficulty_signal.get('status', 'MATCHED')}，"
-                f"来源覆盖={coverage_signal.get('status', 'LIMITED')}。"
-            ),
-        )
-
     def _content_text(self, params: dict[str, Any]) -> str:
+        final_answer = params.get("finalAnswer")
+        if final_answer:
+            return str(final_answer)
         content = params.get("generatedContent")
         if content:
             return str(content)
         generated_asset = params.get("generatedAsset", {})
+        if not isinstance(generated_asset, dict):
+            return ""
         return "\n".join(
             [
                 str(generated_asset.get("title") or ""),
@@ -288,7 +246,7 @@ class CriticAgent(PlaceholderAgent):
 
     def _source_titles(self, params: dict[str, Any]) -> list[str]:
         retrieval_result = params.get("retrievalResult", {})
-        documents = retrieval_result.get("documents", [])
+        documents = retrieval_result.get("documents", []) if isinstance(retrieval_result, dict) else []
         return [
             str(document.get("title", "")).strip()
             for document in documents
@@ -301,7 +259,7 @@ class CriticAgent(PlaceholderAgent):
 
 
 class SafetyAgent(PlaceholderAgent):
-    """复核生成内容的边界、合规和学术违规风险。"""
+    """Review generated content for boundary, compliance, and academic risks."""
 
     def __init__(
         self,
@@ -309,8 +267,8 @@ class SafetyAgent(PlaceholderAgent):
         reviewer: Any | None = None,
     ) -> None:
         super().__init__("Safety Agent", "safety")
-        self.llm_client = llm_client or ReviewLLMClientFactory.create()
-        self.reviewer = reviewer or SafetyReviewer()
+        self.llm_client = llm_client
+        self.reviewer = reviewer
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
         return build_safety_system_prompt(snapshot)
@@ -358,13 +316,19 @@ class SafetyAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> SafetyReviewPayload:
-        risk_signals = self._collect_safety_signals(params=params)
-        return await self._safe_review(
-            params=params,
-            snapshot=snapshot,
-            system_prompt=system_prompt,
-            review_signals=risk_signals,
-        )
+        review_signals = self._collect_safety_signals(params=params)
+        try:
+            return await self._reviewer().review(
+                system_prompt=system_prompt,
+                context_payload=self._build_safety_context(
+                    params=params,
+                    snapshot=snapshot,
+                    review_signals=review_signals,
+                ),
+            )
+        except Exception as exc:
+            LOGGER.exception("Safety review LLM failed")
+            raise RuntimeError("Safety review LLM failed; heuristic fallback is disabled") from exc
 
     def _tool_classify_content(
         self,
@@ -375,9 +339,8 @@ class SafetyAgent(PlaceholderAgent):
         del tool_input
         generated_asset = params.get("generatedAsset", {})
         asset_type = str(generated_asset.get("assetType") or "DOCUMENT")
-        categories = ["educational_content", asset_type.lower()]
         return {
-            "categories": categories,
+            "categories": ["educational_content", asset_type.lower()],
             "contentType": asset_type,
         }
 
@@ -404,7 +367,11 @@ class SafetyAgent(PlaceholderAgent):
     ) -> dict[str, Any]:
         del tool_input
         text = " ".join(
-            [self._content_text(params), str(params.get("query") or ""), str(params.get("rewrittenQuery") or "")]
+            [
+                self._content_text(params),
+                str(params.get("query") or ""),
+                str(params.get("rewrittenQuery") or ""),
+            ]
         )
         hits = [keyword for keyword in ACADEMIC_MISCONDUCT_KEYWORDS if keyword in text]
         return {
@@ -421,39 +388,13 @@ class SafetyAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> dict[str, Any]:
-        review_signals = self._collect_safety_signals(params=params)
-        payload = await self._safe_review(
+        del tool_input
+        payload = await self.review_content(
             params=params,
             snapshot=snapshot,
             system_prompt=system_prompt,
-            review_signals=review_signals,
         )
         return payload.model_dump(by_alias=True)
-
-    async def _safe_review(
-        self,
-        *,
-        params: dict[str, Any],
-        snapshot: SystemSnapshot,
-        system_prompt: str,
-        review_signals: dict[str, Any],
-    ) -> SafetyReviewPayload:
-        try:
-            return await self.reviewer.review(
-                system_prompt=system_prompt,
-                context_payload=self._build_safety_context(
-                    params=params,
-                    snapshot=snapshot,
-                    review_signals=review_signals,
-                ),
-            )
-        except Exception as exc:
-            LOGGER.exception("Safety review LLM failed")
-            LOGGER.warning(
-                "Safety review falls back to heuristic signals: error_type=%s",
-                type(exc).__name__,
-            )
-            return self._fallback_review(review_signals=review_signals)
 
     def _build_safety_context(
         self,
@@ -470,6 +411,11 @@ class SafetyAgent(PlaceholderAgent):
             "reviewSignals": review_signals,
         }
 
+    def _reviewer(self) -> Any:
+        if self.reviewer is None:
+            self.reviewer = SafetyReviewer()
+        return self.reviewer
+
     def _collect_safety_signals(self, *, params: dict[str, Any]) -> dict[str, Any]:
         return {
             "contentClassification": self._tool_classify_content(tool_input={}, params=params),
@@ -480,40 +426,13 @@ class SafetyAgent(PlaceholderAgent):
             ),
         }
 
-    def _fallback_review(self, *, review_signals: dict[str, Any]) -> SafetyReviewPayload:
-        boundary_risk = review_signals["boundaryRisk"]
-        misconduct_risk = review_signals["academicMisconduct"]
-        classification = review_signals["contentClassification"]
-        blocked = bool(misconduct_risk.get("blocked"))
-        allowed = not blocked and str(boundary_risk.get("riskLevel", "LOW")) != "HIGH"
-        risk_tags = [
-            *list(boundary_risk.get("riskTags", [])),
-            *list(misconduct_risk.get("riskTags", [])),
-        ]
-        suggestions = (
-            ["请移除作弊/代写等违规表达，仅保留教学解释与规范学习建议。"]
-            if blocked
-            else ["内容整体安全，可继续输出。"]
-        )
-        return SafetyReviewPayload(
-            allowed=allowed,
-            riskLevel="HIGH" if blocked else str(boundary_risk.get("riskLevel", "LOW")),
-            categories=list(classification.get("categories", [])),
-            riskTags=risk_tags,
-            blockedReason="检测到学术违规风险" if blocked else None,
-            suggestions=suggestions,
-            summaryText=(
-                "Safety 复核完成："
-                f"allowed={'true' if allowed else 'false'}，"
-                f"riskLevel={'HIGH' if blocked else boundary_risk.get('riskLevel', 'LOW')}。"
-            ),
-        )
-
     def _content_text(self, params: dict[str, Any]) -> str:
         content = params.get("generatedContent")
         if content:
             return str(content)
         generated_asset = params.get("generatedAsset", {})
+        if not isinstance(generated_asset, dict):
+            return ""
         return "\n".join(
             [
                 str(generated_asset.get("title") or ""),

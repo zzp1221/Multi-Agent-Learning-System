@@ -84,6 +84,40 @@ class _StreamingTutorLLM:
         self.client = _StreamingTutorClient()
 
 
+class _LengthAwareTutorClient:
+    provider_name = "length-aware"
+    model_name = "length-aware-model"
+    base_url = "https://length-aware.invalid/v1"
+
+    def __init__(self) -> None:
+        self.stream_calls = 0
+        self.chat_calls = 0
+
+    async def chat_completion(self, *, messages, **kwargs):
+        del kwargs
+        self.chat_calls += 1
+        prompt = messages[-1]["content"]
+        if "待压缩答案" in prompt:
+            return {"choices": [{"message": {"content": "红黑树靠旋转和染色维持近似平衡，插入后按父叔颜色分情况修复，保证查找仍接近 O(log n)。"}}]}
+        return {"choices": [{"message": {"content": "红黑树是一种自平衡二叉搜索树。它通过节点染色、左旋、右旋维持树高稳定。插入后如果父节点和叔节点颜色不同，需要按局部结构旋转；如果叔节点为红，则通常先变色再继续向上修复。这个回答故意很长，用来触发压缩。"}}]}
+
+    async def chat_completion_stream(self, **kwargs):
+        del kwargs
+        self.stream_calls += 1
+        yield "不应走流式"
+
+    def extract_message(self, response_json):
+        return response_json["choices"][0]["message"]
+
+    def extract_content(self, message):
+        return message["content"]
+
+
+class _LengthAwareTutorLLM:
+    def __init__(self) -> None:
+        self.client = _LengthAwareTutorClient()
+
+
 class _DeepReasoningLLM:
     def __init__(self) -> None:
         self.calls = 0
@@ -318,6 +352,40 @@ async def test_tutor_agent_tries_fallback_llm_when_primary_stream_and_core_loop_
     assert [event.event for event in events] == ["progress", "result_chunk"]
     assert result_text == "LLM generated answer"
     assert secondary_llm.client.stream_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_uses_real_llm_compression_for_explicit_length_limit() -> None:
+    llm = _LengthAwareTutorLLM()
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=llm,
+    )
+    params = {
+        "conversationId": "conv-length",
+        "messages": [{"role": "user", "content": "80字内总结红黑树"}],
+        "query": "80字内总结红黑树",
+        "retrievalResult": {"documents": [{"title": "红黑树", "evidence": "红黑树保持近似平衡。"}]},
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-length",
+            trace_id="trace-length",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    result_text = "".join(event.payload.text for event in events if event.event == "result_chunk")
+    assert len(result_text) <= 80
+    assert llm.client.stream_calls == 0
+    assert llm.client.chat_calls == 2
+    assert params["responseConstraints"]["maxChars"] == 80
 
 
 @pytest.mark.asyncio

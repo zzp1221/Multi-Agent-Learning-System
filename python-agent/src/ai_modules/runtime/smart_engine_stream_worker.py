@@ -5,6 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import socket
+import threading
+import uuid
 from collections.abc import Callable, Container
 from datetime import datetime, timezone
 from typing import Any
@@ -29,6 +33,22 @@ except ModuleNotFoundError:  # pragma: no cover - protects hot-update before pip
 
 LOGGER = logging.getLogger(__name__)
 INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token"
+LEADER_LOCK_TTL_SECONDS = 90
+LEADER_LOCK_RENEW_SECONDS = 10
+LEADER_LOCK_RETRY_SECONDS = 5
+LEADER_LOCK_MAX_RENEW_ERRORS = 3
+RENEW_LEADERSHIP_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("expire", KEYS[1], ARGV[2])
+end
+return 0
+"""
+RELEASE_LEADERSHIP_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+end
+return 0
+"""
 
 
 class JavaCallbackError(RuntimeError):
@@ -52,8 +72,91 @@ class RedisCancelledTasks(Container[str]):
             return False
 
 
+class LeadershipWatchdog:
+    """Keeps the Redis leader lock alive from a thread outside the asyncio loop."""
+
+    def __init__(
+        self,
+        *,
+        redis_client: Any,
+        lock_key: str,
+        token: str,
+        ttl_seconds: int,
+        renew_seconds: int,
+        max_renew_errors: int,
+        lost_callback: Callable[[], None],
+    ) -> None:
+        self.redis_client = redis_client
+        self.lock_key = lock_key
+        self.token = token
+        self.ttl_seconds = ttl_seconds
+        self.renew_seconds = renew_seconds
+        self.max_renew_errors = max_renew_errors
+        self.lost_callback = lost_callback
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="smart-engine-leader-watchdog",
+            daemon=True,
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._thread.join(timeout=max(1, self.renew_seconds))
+
+    def _run(self) -> None:
+        consecutive_errors = 0
+        while not self._stop_event.wait(self.renew_seconds):
+            try:
+                renewed = self.redis_client.eval(
+                    RENEW_LEADERSHIP_SCRIPT,
+                    1,
+                    self.lock_key,
+                    self.token,
+                    str(self.ttl_seconds),
+                )
+            except RedisError:
+                consecutive_errors += 1
+                LOGGER.warning(
+                    "SmartEngine worker leadership renewal failed lock_key=%s token=%s errors=%s/%s",
+                    self.lock_key,
+                    self.token,
+                    consecutive_errors,
+                    self.max_renew_errors,
+                    exc_info=True,
+                )
+                if consecutive_errors >= self.max_renew_errors:
+                    self._mark_lost()
+                    return
+                continue
+
+            consecutive_errors = 0
+            if int(renewed) == 1:
+                continue
+            self._mark_lost()
+            return
+
+    def _mark_lost(self) -> None:
+        if self._stop_event.is_set():
+            return
+        LOGGER.warning(
+            "SmartEngine worker leadership lost lock_key=%s token=%s",
+            self.lock_key,
+            self.token,
+        )
+        self.lost_callback()
+
+
 class SmartEngineStreamWorker:
     """Consumes SmartEngine task messages and reports execution events to Java."""
+
+    leader_lock_ttl_seconds = LEADER_LOCK_TTL_SECONDS
+    leader_lock_renew_seconds = LEADER_LOCK_RENEW_SECONDS
+    leader_lock_retry_seconds = LEADER_LOCK_RETRY_SECONDS
+    leader_lock_max_renew_errors = LEADER_LOCK_MAX_RENEW_ERRORS
 
     def __init__(
         self,
@@ -67,6 +170,8 @@ class SmartEngineStreamWorker:
         self._redis: Any | None = None
         self._sync_redis: Any | None = None
         self._http_client: httpx.AsyncClient | None = None
+        self._leader_token: str | None = None
+        self.worker_concurrency = max(1, settings.smart_engine_worker_concurrency)
 
     async def run_forever(self) -> None:
         if redis_async is None or redis is None:
@@ -98,13 +203,22 @@ class SmartEngineStreamWorker:
             self.settings.smart_engine_consumer_name,
         )
 
+        leader_token = self._build_leader_token()
+        waiting_for_leadership_logged = False
         try:
             while True:
-                message = await self._read_one_message()
-                if message is None:
+                has_leadership = await self._run_leadership_cycle(leader_token)
+                if has_leadership:
+                    waiting_for_leadership_logged = False
                     continue
-                message_id, fields = message
-                await self._process_message(message_id, fields)
+                if not waiting_for_leadership_logged:
+                    LOGGER.info(
+                        "SmartEngine worker waiting for leadership lock_key=%s token=%s",
+                        self._leader_lock_key(),
+                        leader_token,
+                    )
+                    waiting_for_leadership_logged = True
+                await asyncio.sleep(self.leader_lock_retry_seconds)
         except asyncio.CancelledError:
             LOGGER.info("SmartEngine Redis Streams worker stopping")
             raise
@@ -112,6 +226,7 @@ class SmartEngineStreamWorker:
             await self.close()
 
     async def close(self) -> None:
+        await self._release_active_leadership()
         if self._http_client is not None:
             await self._http_client.aclose()
             self._http_client = None
@@ -121,6 +236,231 @@ class SmartEngineStreamWorker:
         if self._sync_redis is not None:
             self._sync_redis.close()
             self._sync_redis = None
+
+    async def _run_leadership_cycle(self, token: str) -> bool:
+        if not await self._acquire_leadership(token):
+            return False
+
+        self._leader_token = token
+        LOGGER.info(
+            "SmartEngine worker leadership acquired lock_key=%s token=%s",
+            self._leader_lock_key(),
+            token,
+        )
+        try:
+            await self._consume_messages_until_leadership_lost(token)
+        finally:
+            released = await self._release_active_leadership(token)
+            if released:
+                LOGGER.info(
+                    "SmartEngine worker leadership released lock_key=%s token=%s",
+                    self._leader_lock_key(),
+                    token,
+                )
+        return True
+
+    async def _consume_messages_until_leadership_lost(self, token: str) -> None:
+        leadership_lost = asyncio.Event()
+        in_flight: set[asyncio.Task[None]] = set()
+        watchdog = self._start_leadership_watchdog(token, leadership_lost)
+        should_cancel_in_flight = False
+        try:
+            while not leadership_lost.is_set():
+                await self._collect_finished_tasks(in_flight)
+                if len(in_flight) >= self.worker_concurrency:
+                    await self._wait_for_processing_slot(in_flight, leadership_lost)
+                    continue
+                message = await self._read_message_while_leader(leadership_lost)
+                if message is None:
+                    await self._collect_finished_tasks(in_flight)
+                    continue
+                if leadership_lost.is_set():
+                    break
+                message_id, fields = message
+                task = asyncio.create_task(
+                    self._process_message(message_id, fields),
+                    name=f"smart-engine-task:{message_id}",
+                )
+                in_flight.add(task)
+        except asyncio.CancelledError:
+            should_cancel_in_flight = True
+            raise
+        finally:
+            if should_cancel_in_flight or leadership_lost.is_set():
+                await self._cancel_processing_tasks(in_flight)
+            else:
+                await self._drain_processing_tasks(in_flight)
+            watchdog.stop()
+
+    async def _wait_for_processing_slot(
+        self,
+        in_flight: set[asyncio.Task[None]],
+        leadership_lost: asyncio.Event,
+    ) -> None:
+        lost_task = asyncio.create_task(leadership_lost.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {*in_flight, lost_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        except BaseException:
+            await self._cancel_pending_tasks(lost_task)
+            raise
+
+        if lost_task in done:
+            return
+        await self._cancel_pending_tasks(lost_task)
+        for task in done:
+            in_flight.discard(task)
+            await task
+
+    async def _drain_processing_tasks(self, in_flight: set[asyncio.Task[None]]) -> None:
+        while in_flight:
+            done, _ = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                in_flight.discard(task)
+                await task
+
+    async def _cancel_processing_tasks(self, in_flight: set[asyncio.Task[None]]) -> None:
+        for task in in_flight:
+            if not task.done():
+                task.cancel()
+        if in_flight:
+            await asyncio.gather(*in_flight, return_exceptions=True)
+
+    async def _collect_finished_tasks(self, in_flight: set[asyncio.Task[None]]) -> None:
+        for task in tuple(in_flight):
+            if task.done():
+                in_flight.discard(task)
+                await task
+
+    async def _read_message_while_leader(
+        self,
+        leadership_lost: asyncio.Event,
+    ) -> tuple[str, dict[str, str]] | None:
+        read_task = asyncio.create_task(self._read_one_message())
+        lost_task = asyncio.create_task(leadership_lost.wait())
+        try:
+            done, _ = await asyncio.wait({read_task, lost_task}, return_when=asyncio.FIRST_COMPLETED)
+        except BaseException:
+            await self._cancel_pending_tasks(read_task, lost_task)
+            raise
+
+        if read_task in done:
+            await self._cancel_pending_tasks(lost_task)
+            return await read_task
+
+        await self._cancel_pending_tasks(read_task)
+        return None
+
+    async def _process_message_while_leader(
+        self,
+        message_id: str,
+        fields: dict[str, str],
+        leadership_lost: asyncio.Event,
+    ) -> None:
+        process_task = asyncio.create_task(self._process_message(message_id, fields))
+        lost_task = asyncio.create_task(leadership_lost.wait())
+        try:
+            done, _ = await asyncio.wait({process_task, lost_task}, return_when=asyncio.FIRST_COMPLETED)
+        except BaseException:
+            await self._cancel_pending_tasks(process_task, lost_task)
+            raise
+
+        if process_task in done:
+            await self._cancel_pending_tasks(lost_task)
+            await process_task
+            return
+
+        LOGGER.warning(
+            "SmartEngine task processing cancelled after leadership loss message_id=%s token=%s",
+            message_id,
+            self._leader_token,
+        )
+        await self._cancel_pending_tasks(process_task)
+
+    def _start_leadership_watchdog(self, token: str, leadership_lost: asyncio.Event) -> LeadershipWatchdog:
+        if self._sync_redis is None:
+            raise RuntimeError("Synchronous Redis client is not initialized")
+
+        loop = asyncio.get_running_loop()
+
+        def mark_lost() -> None:
+            loop.call_soon_threadsafe(leadership_lost.set)
+
+        watchdog = LeadershipWatchdog(
+            redis_client=self._sync_redis,
+            lock_key=self._leader_lock_key(),
+            token=token,
+            ttl_seconds=self.leader_lock_ttl_seconds,
+            renew_seconds=self.leader_lock_renew_seconds,
+            max_renew_errors=self.leader_lock_max_renew_errors,
+            lost_callback=mark_lost,
+        )
+        watchdog.start()
+        return watchdog
+
+    async def _cancel_pending_tasks(self, *tasks: asyncio.Task[Any]) -> None:
+        pending_tasks = [task for task in tasks if not task.done()]
+        for task in pending_tasks:
+            task.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+    def _leader_lock_key(self) -> str:
+        return f"{self.settings.smart_engine_stream_key}:worker:leader"
+
+    def _build_leader_token(self) -> str:
+        return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4()}"
+
+    async def _acquire_leadership(self, token: str) -> bool:
+        acquired = await self._redis.set(
+            self._leader_lock_key(),
+            token,
+            nx=True,
+            ex=self.leader_lock_ttl_seconds,
+        )
+        return bool(acquired)
+
+    async def _renew_leadership(self, token: str) -> bool:
+        if self._redis is None:
+            return False
+        try:
+            renewed = await self._redis.eval(
+                RENEW_LEADERSHIP_SCRIPT,
+                1,
+                self._leader_lock_key(),
+                token,
+                str(self.leader_lock_ttl_seconds),
+            )
+            return int(renewed) == 1
+        except RedisError:
+            LOGGER.exception("Failed to renew SmartEngine worker leadership")
+            return False
+
+    async def _release_active_leadership(self, token: str | None = None) -> bool:
+        token_to_release = token or self._leader_token
+        if token_to_release is None:
+            return False
+        released = await self._release_leadership(token_to_release)
+        if self._leader_token == token_to_release:
+            self._leader_token = None
+        return released
+
+    async def _release_leadership(self, token: str) -> bool:
+        if self._redis is None:
+            return False
+        try:
+            released = await self._redis.eval(
+                RELEASE_LEADERSHIP_SCRIPT,
+                1,
+                self._leader_lock_key(),
+                token,
+            )
+            return int(released) == 1
+        except RedisError:
+            LOGGER.exception("Failed to release SmartEngine worker leadership")
+            return False
 
     async def _ensure_consumer_group(self) -> None:
         try:

@@ -88,7 +88,13 @@ public class TaskStateMachineService {
 
         SmartEngineTask task = getTaskInternalForUpdate(taskId);
         return taskEventRepository.findByTaskIdAndEventSeq(taskId, eventSeq)
-            .map(existingEvent -> new TaskEventRecordResult(toPayload(task, existingEvent), false))
+            .map(existingEvent -> {
+                if (!task.isTerminal() && pythonEvent.resolvedEventType().isTerminal()) {
+                    int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
+                    return new TaskEventRecordResult(applyAndPersistPythonEvent(task, pythonEvent, nextSequence), true);
+                }
+                return new TaskEventRecordResult(toPayload(task, existingEvent), false);
+            })
             .orElseGet(() -> {
                 if (task.isTerminal()) {
                     return TaskEventRecordResult.ignored();

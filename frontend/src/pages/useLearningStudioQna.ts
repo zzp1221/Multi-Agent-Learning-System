@@ -29,6 +29,9 @@ import {
   type SelectedConversationSnapshot,
 } from './LearningStudioDemoPage.model';
 
+const QNA_STREAM_HISTORY_MAX_ATTEMPTS = 60;
+const QNA_HISTORY_POLL_INTERVAL_MS = 2000;
+
 interface UseLearningStudioQnaOptions {
   mode: 'qna' | 'engine';
   isAuthenticated: boolean;
@@ -57,6 +60,7 @@ export function useLearningStudioQna({
   const qnaDraftsRef = useRef<QnaDrafts>({});
   const qnaConversationCacheRef = useRef<PersistedQnaConversationCache>({});
   const qnaStreamTokensRef = useRef<Record<string, string>>({});
+  const qnaHistorySyncTokensRef = useRef<Record<string, number>>({});
   const qnaRequestVersionRef = useRef(0);
   const previousModeRef = useRef(mode);
 
@@ -77,6 +81,7 @@ export function useLearningStudioQna({
     Object.values(qnaStreamControllersRef.current).forEach((controller) => controller.abort());
     qnaStreamControllersRef.current = {};
     qnaStreamTokensRef.current = {};
+    qnaHistorySyncTokensRef.current = {};
   }, []);
 
   const clearPersistedQnaSnapshot = useCallback(() => {
@@ -118,9 +123,10 @@ export function useLearningStudioQna({
     const cacheKey = conversationCacheKey(normalizedConversationId);
     const cachedSnapshot = qnaConversationCacheRef.current[cacheKey];
     const isVisibleConversation = conversationIdRef.current === normalizedConversationId;
-    const sourceMessages = isVisibleConversation
+    const canUpdateVisibleConversation = isVisibleConversation && mountedRef.current;
+    const sourceMessages = canUpdateVisibleConversation
       ? qnaMessagesRef.current
-      : cachedSnapshot?.qnaMessages ?? [];
+      : cachedSnapshot?.qnaMessages ?? (isVisibleConversation ? qnaMessagesRef.current : []);
     const nextMessages = updater(sourceMessages);
     const nextSnapshot: PersistedConversationViewSnapshot = {
       qnaInput: options.qnaInput ?? cachedSnapshot?.qnaInput ?? (isVisibleConversation ? qnaInputRef.current : ''),
@@ -130,7 +136,7 @@ export function useLearningStudioQna({
 
     cacheConversationView(normalizedConversationId, nextSnapshot);
 
-    if (!isVisibleConversation || !mountedRef.current) {
+    if (!canUpdateVisibleConversation) {
       return;
     }
     qnaMessagesRef.current = nextMessages;
@@ -215,12 +221,37 @@ export function useLearningStudioQna({
       return false;
     }
 
+    const hasActiveStream = Boolean(qnaStreamTokensRef.current[normalizedConversationId]);
+    const shouldPollStreaming = expectStreaming && conversationIdRef.current === normalizedConversationId;
+    const shouldShowStreamingState = shouldPollStreaming && hasActiveStream;
+    const syncToken = Date.now();
+    qnaHistorySyncTokensRef.current[normalizedConversationId] = syncToken;
     let latestMessages = cachedMessages;
     let previousSignature = latestMessages ? buildConversationSyncSignature(latestMessages) : '';
     let unchangedPolls = 0;
-    const maxAttempts = expectStreaming ? 360 : 1;
+    const maxAttempts = shouldPollStreaming
+      ? QNA_STREAM_HISTORY_MAX_ATTEMPTS
+      : expectStreaming
+        ? 3
+        : 1;
+
+    if (expectStreaming && !hasActiveStream && hasPendingAssistantResponse(latestMessages)) {
+      const cleanedMessages = removePendingAssistantPlaceholder(latestMessages ?? []);
+      latestMessages = cleanedMessages;
+      qnaMessagesRef.current = cleanedMessages;
+      setQnaMessages(cleanedMessages);
+      setQnaStateView('QNA_IDLE');
+      cacheConversationView(normalizedConversationId, {
+        qnaInput: nextInput ?? qnaInputRef.current,
+        qnaMessages: cleanedMessages,
+        qnaState: 'QNA_IDLE',
+      });
+    }
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (qnaHistorySyncTokensRef.current[normalizedConversationId] !== syncToken) {
+        return Boolean(latestMessages?.length);
+      }
       const history = await conversationApi.getConversationMessages(normalizedConversationId, {
         dedupe: false,
         retry: 1,
@@ -239,13 +270,13 @@ export function useLearningStudioQna({
           ? mapped
           : pickPreferredConversationMessages(latestMessages, mapped);
         const nextState: QnaState =
-          expectStreaming && hasPendingAssistantResponse(preferredMessages) && !mappedHasResolvedAssistant
+          shouldShowStreamingState && hasPendingAssistantResponse(preferredMessages) && !mappedHasResolvedAssistant
             ? 'QNA_STREAMING'
             : 'QNA_IDLE';
         latestMessages = preferredMessages;
         qnaMessagesRef.current = preferredMessages;
         setQnaMessages(preferredMessages);
-        if (expectStreaming) {
+        if (shouldPollStreaming) {
           setQnaStateView(nextState);
         }
         cacheConversationView(normalizedConversationId, {
@@ -262,18 +293,42 @@ export function useLearningStudioQna({
           unchangedPolls = 0;
         }
 
-        if (
-          !expectStreaming
-          || mappedHasResolvedAssistant
-          || (attempt >= 2 && unchangedPolls >= 2 && !hasPendingAssistantResponse(preferredMessages))
-        ) {
+        if (!shouldPollStreaming || mappedHasResolvedAssistant) {
+          if (
+            shouldShowStreamingState
+            && !mappedHasResolvedAssistant
+            && hasPendingAssistantResponse(preferredMessages)
+          ) {
+            const cleanedMessages = removePendingAssistantPlaceholder(preferredMessages);
+            latestMessages = cleanedMessages;
+            qnaMessagesRef.current = cleanedMessages;
+            setQnaMessages(cleanedMessages);
+            setQnaStateView('QNA_IDLE');
+            cacheConversationView(normalizedConversationId, {
+              qnaInput: nextInput ?? qnaInputRef.current,
+              qnaMessages: cleanedMessages,
+              qnaState: 'QNA_IDLE',
+            });
+          }
           return true;
         }
       }
 
       if (attempt < maxAttempts - 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        await new Promise((resolve) => window.setTimeout(resolve, QNA_HISTORY_POLL_INTERVAL_MS));
       }
+    }
+
+    if (shouldPollStreaming && latestMessages) {
+      const cleanedMessages = removePendingAssistantPlaceholder(latestMessages);
+      qnaMessagesRef.current = cleanedMessages;
+      setQnaMessages(cleanedMessages);
+      setQnaStateView('QNA_IDLE');
+      cacheConversationView(normalizedConversationId, {
+        qnaInput: nextInput ?? qnaInputRef.current,
+        qnaMessages: cleanedMessages,
+        qnaState: 'QNA_IDLE',
+      });
     }
 
     return Boolean(latestMessages?.length);
@@ -297,10 +352,7 @@ export function useLearningStudioQna({
       qnaState: qnaStateRef.current,
     });
     const cachedSnapshot = qnaConversationCacheRef.current[conversationCacheKey(nextConversationId)];
-    const shouldResumeStreaming =
-      cachedSnapshot?.qnaState === 'QNA_STREAMING'
-      || Boolean(qnaStreamTokensRef.current[nextConversationId])
-      || hasPendingAssistantResponse(cachedSnapshot?.qnaMessages);
+    const shouldResumeStreaming = Boolean(qnaStreamTokensRef.current[nextConversationId]);
     const nextInput = cachedSnapshot?.qnaInput ?? qnaDraftsRef.current[nextConversationId] ?? '';
     const nextMessages: ChatMessage[] = cachedSnapshot?.qnaMessages?.length
       ? cachedSnapshot.qnaMessages
@@ -379,17 +431,18 @@ export function useLearningStudioQna({
       const restoredConversationId = snapshot.conversationId ?? '';
       const restoredInput = snapshot.qnaInput ?? '';
       const restoredMessages = normalizeRestoredQnaMessages(snapshot);
+      const restoredState: QnaState = 'QNA_IDLE';
       cacheConversationView(snapshot.conversationId ?? '', {
         qnaInput: restoredInput,
         qnaMessages: restoredMessages,
-        qnaState: snapshot.qnaState === 'QNA_STREAMING' ? 'QNA_STREAMING' : 'QNA_IDLE',
+        qnaState: restoredState,
       });
       conversationIdRef.current = restoredConversationId;
       qnaInputRef.current = restoredInput;
       qnaMessagesRef.current = restoredMessages;
       setConversationId(restoredConversationId);
       setQnaInput(restoredInput);
-      setQnaStateView(snapshot.qnaState === 'QNA_STREAMING' ? 'QNA_STREAMING' : 'QNA_IDLE');
+      setQnaStateView(restoredState);
       setQnaMessages(restoredMessages);
       if (snapshot.qnaState === 'QNA_STREAMING' && snapshot.conversationId?.trim()) {
         const restoredConversationId = snapshot.conversationId.trim();
@@ -796,4 +849,12 @@ export function useLearningStudioQna({
       onRemoveImage: handleRemovePendingQnaImage,
     },
   };
+}
+
+function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage[] {
+  if (!hasPendingAssistantResponse(messages)) {
+    return messages;
+  }
+  const lastIndex = messages.length - 1;
+  return messages.filter((_, index) => index !== lastIndex);
 }

@@ -293,7 +293,7 @@ test-output/
 # Generated data (should be produced by scripts, not committed)
 vector_data.dump
 vector_data/
-models/
+/models/
 python-agent/models/
 *.vectors.npy
 *.embeddings
@@ -322,6 +322,7 @@ docs/*
 !docs/deployment.md
 !docs/experiment_log.md
 !docs/graph_multi_agent_architecture.md
+!docs/planner_reviewer_multi_agent_plan.md
 !docs/teacher_guide.md
 uploads/
 .agents/

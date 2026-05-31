@@ -7,9 +7,11 @@ import {
   resourceTypeButtons,
   type AssessmentForm,
   type CompletedResourceView,
+  type CriticReviewView,
   type EngineService,
   type EngineTaskResultRecord,
   type InlineResourceView,
+  type LearningPlanView,
   type PathForm,
   type PracticeJudgeResult,
   type PracticeQuestionBatch,
@@ -44,6 +46,7 @@ function DeferredMermaidDiagram(props: { chart: string }) {
 export function ServiceDynamicForm(props: {
   service: EngineService | null;
   resourceForm: ResourceForm;
+  resourceErrors?: Partial<Record<'course' | 'keyPoints', string>>;
   pathForm: PathForm;
   pushForm: PushForm;
   assessmentForm: AssessmentForm;
@@ -74,6 +77,8 @@ export function ServiceDynamicForm(props: {
   if (props.service === 'resource') {
     const selectedResourceTypes = resolveSelectedResourceTypes(props.resourceForm);
     const includesVideo = selectedResourceTypes.includes('VIDEO');
+    const courseError = props.resourceErrors?.course;
+    const keyPointsError = props.resourceErrors?.keyPoints;
     const toggleResourceType = (resourceType: ResourceType) => {
       const active = selectedResourceTypes.includes(resourceType);
       const nextResourceTypes = active
@@ -107,12 +112,19 @@ export function ServiceDynamicForm(props: {
           })}
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          <input
-            value={props.resourceForm.course}
-            onChange={(e) => props.onResourceChange({ ...props.resourceForm, course: e.target.value })}
-            placeholder="课程名称"
-            className={baseInputClass}
-          />
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              课程名称 <span className="text-rose-500">*</span>
+            </span>
+            <input
+              value={props.resourceForm.course}
+              onChange={(e) => props.onResourceChange({ ...props.resourceForm, course: e.target.value })}
+              placeholder="请输入课程名称"
+              aria-invalid={Boolean(courseError)}
+              className={`${baseInputClass} ${courseError ? 'border-rose-300 bg-rose-50/40 focus:border-rose-400 focus:ring-rose-500/15 dark:border-rose-500/70 dark:bg-rose-950/20' : ''}`}
+            />
+            {courseError ? <p className="mt-1.5 text-xs text-rose-500">{courseError}</p> : null}
+          </label>
           <select
             value={props.resourceForm.difficulty}
             onChange={(e) =>
@@ -128,13 +140,20 @@ export function ServiceDynamicForm(props: {
             <option value="advanced">进阶</option>
           </select>
         </div>
-        <textarea
-          value={props.resourceForm.keyPoints}
-          onChange={(e) => props.onResourceChange({ ...props.resourceForm, keyPoints: e.target.value })}
-          rows={2}
-          placeholder="重点知识点"
-          className={`${baseInputClass} mt-3`}
-        />
+        <label className="mt-3 block">
+          <span className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+            重点知识点 <span className="text-rose-500">*</span>
+          </span>
+          <textarea
+            value={props.resourceForm.keyPoints}
+            onChange={(e) => props.onResourceChange({ ...props.resourceForm, keyPoints: e.target.value })}
+            rows={2}
+            placeholder="请输入重点知识点，例如：Spring Bean 生命周期、依赖注入"
+            aria-invalid={Boolean(keyPointsError)}
+            className={`${baseInputClass} ${keyPointsError ? 'border-rose-300 bg-rose-50/40 focus:border-rose-400 focus:ring-rose-500/15 dark:border-rose-500/70 dark:bg-rose-950/20' : ''}`}
+          />
+          {keyPointsError ? <p className="mt-1.5 text-xs text-rose-500">{keyPointsError}</p> : null}
+        </label>
         {includesVideo ? (
           <div className="mt-4 rounded-2xl border border-primary-200 bg-primary-50/70 px-4 py-3 text-sm text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-200">
             已固定为数字人视频生成，系统将按默认时长自动完成脚本、TTS，并在当前浏览器本地渲染视频。
@@ -394,6 +413,8 @@ export function TaskResultPanel(props: {
   inlineResource: InlineResourceView | null;
   inlineResources: InlineResourceView[];
   completedResources: CompletedResourceView[];
+  learningPlan: LearningPlanView | null;
+  criticReview: CriticReviewView | null;
   resultHistory: EngineTaskResultRecord[];
   selectedResultTaskId: string;
   practiceBatch: PracticeQuestionBatch | null;

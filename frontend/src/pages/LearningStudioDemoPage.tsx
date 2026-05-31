@@ -58,7 +58,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const mountedRef = useRef(true);
 
   const [conversationId, setConversationId] = useState('');
-  const { resetQnaConversation, abortQnaStreams, viewProps: qnaViewProps } = useLearningStudioQna({
+  const { resetQnaConversation, viewProps: qnaViewProps } = useLearningStudioQna({
     mode,
     isAuthenticated,
     openAuthModal,
@@ -70,6 +70,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const {
     selectedService,
     resourceForm,
+    resourceFieldErrors,
     pathForm,
     pushForm,
     assessmentForm,
@@ -124,9 +125,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     return () => {
       mountedRef.current = false;
       abortEngineTasks();
-      abortQnaStreams();
     };
-  }, [abortEngineTasks, abortQnaStreams]);
+  }, [abortEngineTasks]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -257,6 +257,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
               <ServiceDynamicForm
                 service={selectedService}
                 resourceForm={resourceForm}
+                resourceErrors={resourceFieldErrors}
                 pathForm={pathForm}
                 pushForm={pushForm}
                 assessmentForm={assessmentForm}
@@ -309,6 +310,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           inlineResource={activeEngineSnapshot.inlineResource}
           inlineResources={inlineResources}
           completedResources={completedResources}
+          learningPlan={activeEngineSnapshot.learningPlan}
+          criticReview={activeEngineSnapshot.criticReview}
           resultHistory={activeEngineSnapshot.resultHistory}
           selectedResultTaskId={activeEngineSnapshot.selectedResultTaskId}
           practiceBatch={activeEngineSnapshot.practiceBatch}

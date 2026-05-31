@@ -76,6 +76,36 @@ export type CompletedResourceView =
   | { kind: 'inline'; key: string; resource: InlineResourceView }
   | { kind: 'question_batch'; key: string; batch: PracticeQuestionBatch };
 
+export interface LearningPlanStepView {
+  stepId: string;
+  title: string;
+  intent?: string;
+  agentName?: string;
+  serviceType?: string;
+  status?: string;
+  qualityGate?: string;
+}
+
+export interface LearningPlanView {
+  planId: string;
+  goal: string;
+  status?: string;
+  createdBy?: string;
+  provider?: string;
+  model?: string;
+  steps: LearningPlanStepView[];
+}
+
+export interface CriticReviewView {
+  verdict?: string;
+  factConsistency?: string;
+  difficultyMatch?: string;
+  sourceCoverage?: string;
+  issues: string[];
+  suggestions: string[];
+  summaryText?: string;
+}
+
 export interface EngineTaskResultRecord {
   taskId: string;
   title: string;
@@ -89,6 +119,8 @@ export interface EngineTaskResultRecord {
   practiceBatch: PracticeQuestionBatch | null;
   completedResources: CompletedResourceView[];
   judgeResult: PracticeJudgeResult | null;
+  learningPlan: LearningPlanView | null;
+  criticReview: CriticReviewView | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -167,6 +199,8 @@ export interface EngineTaskSnapshot {
   practiceBatch: PracticeQuestionBatch | null;
   completedResources: CompletedResourceView[];
   judgeResult: PracticeJudgeResult | null;
+  learningPlan: LearningPlanView | null;
+  criticReview: CriticReviewView | null;
   resultHistory: EngineTaskResultRecord[];
   selectedResultTaskId: string;
 }
@@ -268,6 +302,8 @@ export interface TaskRunHandlers {
   onInlineResource: (item: InlineResourceView) => void;
   onQuestionBatch: (item: PracticeQuestionBatch) => void;
   onJudgeResult: (item: PracticeJudgeResult) => void;
+  onLearningPlan: (item: LearningPlanView) => void;
+  onCriticReview: (item: CriticReviewView) => void;
 }
 
 export interface RunByApiTaskArgs {
@@ -287,6 +323,8 @@ export interface RunByApiTaskArgs {
   setCompletedResources: (value: React.SetStateAction<CompletedResourceView[]>) => void;
   setPracticeBatch: (value: React.SetStateAction<PracticeQuestionBatch | null>) => void;
   setJudgeResult: (value: React.SetStateAction<PracticeJudgeResult | null>) => void;
+  setLearningPlan: (value: React.SetStateAction<LearningPlanView | null>) => void;
+  setCriticReview: (value: React.SetStateAction<CriticReviewView | null>) => void;
   taskStreamAbortRef: React.MutableRefObject<AbortController | null>;
 }
 
@@ -339,7 +377,7 @@ export const resourceTypeButtons: ResourceTypeButtonConfig[] = [
   { type: 'CODE_CASE', label: '代码案例' },
   { type: 'QUIZ', label: '练习题' },
   { type: 'MINDMAP', label: '思维导图' },
-  { type: 'SLIDES', label: 'PPT课件' },
+  { type: 'SLIDES', label: '演示课件' },
   { type: 'VIDEO', label: '数字人视频' },
 ];
 

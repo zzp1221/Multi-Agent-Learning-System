@@ -75,14 +75,14 @@ export default function QnaChatView(props: QnaChatViewProps) {
             你好，我是<span>智学引擎</span>
           </h1>
           <p className="qna-hero-subtitle">
-            AI驱动的个性化学习助手，随时为你解答问题
+            智能驱动的个性化学习助手，随时为你解答问题
           </p>
         </motion.div>
         <div className="qna-landing-composer">
           <InputPanel
             value={props.qnaInput}
             busy={props.qnaBusy}
-            placeholder="请输入你的学习问题或需求，Enter 发送，Shift + Enter 换行"
+            placeholder="请输入你的学习问题或需求，按回车发送，按住上档键再按回车换行"
             pendingImages={props.pendingImages ?? []}
             errorMessage={props.imageErrorMessage}
             deepReasoningEnabled={props.deepReasoningEnabled}

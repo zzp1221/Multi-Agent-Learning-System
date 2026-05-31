@@ -9,7 +9,6 @@ from typing import Any
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.async_utils import cancel_and_await
 from src.ai_modules.llms import (
-    HeuristicSubjectiveJudgeEvaluator,
     JudgeLLMClientFactory,
     JudgeFeedbackGenerator,
     ObjectiveJudgeGenerator,
@@ -29,6 +28,7 @@ from src.ai_modules.models import (
 )
 from src.ai_modules.prompts import build_judge_system_prompt
 from src.ai_modules.runtime import SystemSnapshot
+from src.ai_modules.runtime.provenance import ProvenanceError, validate_llm_provenance
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 
@@ -48,8 +48,7 @@ class JudgeAgent(PlaceholderAgent):
         self.llm_client = llm_client or JudgeLLMClientFactory.create()
         self.practice_store = practice_store or PostgresPracticeStore()
         self.fallback_practice_store = InMemoryPracticeStore()
-        self.subjective_evaluator = subjective_evaluator or SubjectiveJudgeEvaluatorFactory.create()
-        self.fallback_subjective_evaluator = HeuristicSubjectiveJudgeEvaluator()
+        self.subjective_evaluator = subjective_evaluator
         self.objective_judge_generator = objective_judge_generator or ObjectiveJudgeGenerator()
         self.feedback_generator = feedback_generator or JudgeFeedbackGenerator()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
@@ -155,8 +154,10 @@ class JudgeAgent(PlaceholderAgent):
         user_id: str,
         params: dict[str, Any],
     ) -> dict[str, Any]:
+        self._validate_reused_question_batch_provenance(params)
         objective = await self._tool_grade_objective(tool_input={}, params=params)
         judged = await self._tool_evaluate_subjective(tool_input=objective, params=params)
+        self._validate_complete_judge_items(params=params, judge_items=judged.get("items", []))
         feedback = await self._tool_generate_feedback(tool_input=judged, params=params)
         return await self._tool_save_practice_result(
             tool_input=feedback,
@@ -174,25 +175,6 @@ class JudgeAgent(PlaceholderAgent):
         del tool_input
         questions = self._questions(params)
         answers = self._answers(params)
-        judged: dict[str, Any] | None = None
-        try:
-            judged = await self.objective_judge_generator.judge(
-                questions=questions,
-                answers=answers,
-            )
-        except Exception:
-            judged = None
-        if judged is not None:
-            items = [
-                JudgeItemResult.model_validate(item).model_dump(by_alias=True)
-                for item in judged.get("items", [])
-            ]
-            pending_subjective = [
-                PracticeQuestion.model_validate(item).model_dump(by_alias=True)
-                for item in judged.get("pendingSubjective", [])
-            ]
-            return {"items": items, "pendingSubjective": pending_subjective}
-
         objective_results: list[dict[str, Any]] = []
         subjective_questions: list[dict[str, Any]] = []
         for question in questions:
@@ -200,7 +182,7 @@ class JudgeAgent(PlaceholderAgent):
             if question.question_type == "SHORT_ANSWER":
                 subjective_questions.append(question.model_dump(by_alias=True))
                 continue
-            is_correct = self._normalize_text(answer) == self._normalize_text(question.answer)
+            is_correct = self._is_objective_answer_correct(question=question, learner_answer=answer)
             objective_results.append(
                 JudgeItemResult(
                     questionId=question.question_id,
@@ -227,7 +209,7 @@ class JudgeAgent(PlaceholderAgent):
         for question_payload in tool_input.get("pendingSubjective", []):
             question = PracticeQuestion.model_validate(question_payload)
             learner_answer = self._answers(params).get(question.question_id, "")
-            evaluation = await self._safe_evaluate_subjective(
+            evaluation = await self._evaluate_subjective(
                 question=question,
                 learner_answer=learner_answer,
             )
@@ -276,13 +258,10 @@ class JudgeAgent(PlaceholderAgent):
             feedback = await self.feedback_generator.summarize(items=items, topic=str(topic))
             if not isinstance(feedback, dict):
                 raise TypeError("judge feedback must be a dict")
-            feedback.setdefault(
-                "items",
-                [item.model_dump(by_alias=True) for item in items],
-            )
-            feedback.setdefault("totalScore", round(total_score, 2))
-            feedback.setdefault("accuracy", round(accuracy, 4))
-            feedback.setdefault("weakKnowledgeTags", list(dict.fromkeys(incorrect_tags)))
+            feedback["items"] = [item.model_dump(by_alias=True) for item in items]
+            feedback["totalScore"] = round(total_score, 2)
+            feedback["accuracy"] = round(accuracy, 4)
+            feedback["weakKnowledgeTags"] = list(dict.fromkeys(incorrect_tags))
             return feedback
         except Exception:
             full_score = 20.0 * len(items) if items else 1.0
@@ -634,6 +613,92 @@ class JudgeAgent(PlaceholderAgent):
             return normalized
         return {}
 
+    def _validate_reused_question_batch_provenance(self, params: dict[str, Any]) -> None:
+        raw_batch = params.get("practiceQuestionBatch")
+        if not isinstance(raw_batch, dict):
+            return
+        try:
+            validate_llm_provenance(raw_batch, artifact_label="practiceQuestionBatch")
+        except ProvenanceError as exc:
+            raise RuntimeError(f"题批缺少 LLM 来源元数据: {exc}") from exc
+
+    def _validate_complete_judge_items(
+        self,
+        *,
+        params: dict[str, Any],
+        judge_items: list[Any],
+    ) -> None:
+        questions = self._questions(params)
+        judged_question_ids = {
+            str(JudgeItemResult.model_validate(item).question_id)
+            for item in judge_items
+        }
+        expected_question_ids = {question.question_id for question in questions}
+        if len(judge_items) != len(questions) or judged_question_ids != expected_question_ids:
+            missing_ids = sorted(expected_question_ids - judged_question_ids)
+            extra_ids = sorted(judged_question_ids - expected_question_ids)
+            raise RuntimeError(
+                "判题结果不完整"
+                f"：缺少 {missing_ids or '无'}，多余 {extra_ids or '无'}"
+            )
+
+    def _is_objective_answer_correct(
+        self,
+        *,
+        question: PracticeQuestion,
+        learner_answer: str,
+    ) -> bool:
+        learner_candidates = self._answer_candidates(learner_answer, question.options)
+        correct_candidates = self._answer_candidates(question.answer, question.options)
+        return bool(learner_candidates & correct_candidates)
+
+    def _answer_candidates(self, value: str, options: list[str]) -> set[str]:
+        text = str(value or "").strip()
+        if not text:
+            return {""}
+        candidates = {self._normalize_text(text), self._normalize_option_label(text)}
+        label = self._extract_option_label(text)
+        if label:
+            candidates.add(label)
+            option_index = ord(label) - ord("A")
+            if 0 <= option_index < len(options):
+                candidates.add(self._normalize_text(options[option_index]))
+                candidates.add(self._normalize_option_label(options[option_index]))
+        for index, option in enumerate(options):
+            option_label = chr(ord("A") + index)
+            normalized_option = self._normalize_text(option)
+            normalized_option_label = self._normalize_option_label(option)
+            if self._normalize_text(text) in {normalized_option, normalized_option_label}:
+                candidates.add(option_label)
+                candidates.add(normalized_option)
+                candidates.add(normalized_option_label)
+        return {candidate for candidate in candidates if candidate}
+
+    def _extract_option_label(self, value: str) -> str:
+        normalized = str(value or "").strip().lstrip("(（").lstrip().upper()
+        if not normalized:
+            return ""
+        label = normalized[0]
+        if not "A" <= label <= "Z":
+            return ""
+        if len(normalized) == 1:
+            return label
+        delimiter = normalized[1]
+        if delimiter.isspace() or delimiter in {".", "．", "、", ":", "：", ")", "）"}:
+            return label
+        return ""
+
+    def _normalize_option_label(self, value: str) -> str:
+        text = str(value or "").strip()
+        label = self._extract_option_label(text)
+        if not label:
+            return self._normalize_text(text)
+        rest = text.lstrip()
+        if rest[:1].upper() != label:
+            return self._normalize_text(text)
+        rest = rest[1:].lstrip(" .．、:：)）（(")
+        return self._normalize_text(rest or label)
+
     def _build_profile_delta(
         self,
         *,
@@ -648,25 +713,23 @@ class JudgeAgent(PlaceholderAgent):
             "weakPoints": question.knowledge_tags,
         }
 
-    async def _safe_evaluate_subjective(
+    async def _evaluate_subjective(
         self,
         *,
         question: PracticeQuestion,
         learner_answer: str,
     ) -> SubjectiveJudgeEvaluation:
-        try:
-            return await self.subjective_evaluator.evaluate(
-                question=question,
-                learner_answer=learner_answer,
-            )
-        except Exception:
-            return await self.fallback_subjective_evaluator.evaluate(
-                question=question,
-                learner_answer=learner_answer,
-            )
+        if self.subjective_evaluator is None:
+            self.subjective_evaluator = SubjectiveJudgeEvaluatorFactory.create()
+        return await self.subjective_evaluator.evaluate(
+            question=question,
+            learner_answer=learner_answer,
+        )
 
     def _normalize_text(self, value: str) -> str:
-        return "".join(str(value).strip().upper().split())
+        text = "".join(str(value).strip().upper().split())
+        punctuation = ".,，。:：;；、()（）[]【】{}《》<>"
+        return "".join(char for char in text if char not in punctuation)
 
     def _contains_any(self, text: str, keywords: list[str]) -> bool:
         lowered = str(text).lower()

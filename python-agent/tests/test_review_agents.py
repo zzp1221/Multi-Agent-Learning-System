@@ -4,9 +4,22 @@ import pytest
 
 from src.ai_modules.agents import CriticAgent, DocumentGeneratorAgent, SafetyAgent
 from src.ai_modules.generation import GeneratedAsset
-from src.ai_modules.llms import RuleBasedGenerationLLM, RuleBasedReviewLLM
+from src.ai_modules.llms import RuleBasedGenerationLLM
 from src.ai_modules.models import CriticReviewPayload, SafetyReviewPayload
 from src.ai_modules.runtime import SystemSnapshot
+
+
+def _test_provenance(agent_name: str) -> dict:
+    return {
+        "generatedBy": "LLM",
+        "contentOrigin": "LLM",
+        "provider": "test-provider",
+        "model": "test-model",
+        "agentName": agent_name,
+        "evidenceIds": ["source-a"],
+        "fallback": False,
+        "fromCache": False,
+    }
 
 
 def _build_snapshot() -> SystemSnapshot:
@@ -44,10 +57,7 @@ async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
                 summaryText="LLM Critic：内容与来源基本一致。",
             )
 
-    agent = CriticAgent(
-        llm_client=RuleBasedReviewLLM(),
-        reviewer=FakeCriticReviewer(),
-    )
+    agent = CriticAgent(reviewer=FakeCriticReviewer())
     params = {
         "profile": {"studentLevel": "BASIC"},
         "generatedAsset": {
@@ -84,6 +94,35 @@ async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
 
 
 @pytest.mark.asyncio
+async def test_critic_agent_reviews_final_answer_before_asset() -> None:
+    class FakeCriticReviewer:
+        async def review(self, *, system_prompt, context_payload):
+            del system_prompt
+            assert "红黑树核心是用旋转和染色保持近似平衡" in context_payload["contentPreview"]
+            assert "空资产标题" not in context_payload["contentPreview"]
+            return CriticReviewPayload(
+                verdict="PASS",
+                factConsistency="SUPPORTED",
+                difficultyMatch="MATCHED",
+                sourceCoverage="GOOD",
+                issues=[],
+                suggestions=[],
+                summaryText="Critic OK",
+            )
+
+    agent = CriticAgent(reviewer=FakeCriticReviewer())
+    await agent.review_content(
+        params={
+            "finalAnswer": "红黑树核心是用旋转和染色保持近似平衡。",
+            "generatedAsset": {"title": "空资产标题", "summary": ""},
+            "retrievalResult": {"documents": [{"title": "红黑树"}]},
+        },
+        snapshot=_build_snapshot(),
+        system_prompt="test",
+    )
+
+
+@pytest.mark.asyncio
 async def test_safety_agent_returns_blocking_review_via_agent_core_loop() -> None:
     class FakeSafetyReviewer:
         async def review(self, *, system_prompt, context_payload):
@@ -99,10 +138,7 @@ async def test_safety_agent_returns_blocking_review_via_agent_core_loop() -> Non
                 summaryText="LLM Safety：检测到学术违规风险，已拦截输出。",
             )
 
-    agent = SafetyAgent(
-        llm_client=RuleBasedReviewLLM(),
-        reviewer=FakeSafetyReviewer(),
-    )
+    agent = SafetyAgent(reviewer=FakeSafetyReviewer())
     params = {
         "query": "帮我代写数据库作业",
         "generatedAsset": {
@@ -133,16 +169,13 @@ async def test_safety_agent_returns_blocking_review_via_agent_core_loop() -> Non
 
 
 @pytest.mark.asyncio
-async def test_safety_agent_falls_back_to_heuristics_when_reviewer_fails() -> None:
+async def test_safety_agent_fails_when_reviewer_fails() -> None:
     class FailingSafetyReviewer:
         async def review(self, *, system_prompt, context_payload):
             del system_prompt, context_payload
             raise RuntimeError("review backend timeout")
 
-    agent = SafetyAgent(
-        llm_client=RuleBasedReviewLLM(),
-        reviewer=FailingSafetyReviewer(),
-    )
+    agent = SafetyAgent(reviewer=FailingSafetyReviewer())
     params = {
         "query": "解释联合索引的最左匹配原则",
         "generatedAsset": {
@@ -153,6 +186,14 @@ async def test_safety_agent_falls_back_to_heuristics_when_reviewer_fails() -> No
         },
         "generatedContent": "联合索引用于说明最左匹配原则及其判断条件。",
     }
+
+    with pytest.raises(RuntimeError, match="heuristic fallback is disabled"):
+        await agent.review_content(
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    return
 
     events = [
         event
@@ -173,16 +214,13 @@ async def test_safety_agent_falls_back_to_heuristics_when_reviewer_fails() -> No
 
 
 @pytest.mark.asyncio
-async def test_safety_agent_fallback_still_blocks_misconduct_content() -> None:
+async def test_safety_agent_does_not_fallback_for_misconduct_content() -> None:
     class FailingSafetyReviewer:
         async def review(self, *, system_prompt, context_payload):
             del system_prompt, context_payload
             raise RuntimeError("review backend timeout")
 
-    agent = SafetyAgent(
-        llm_client=RuleBasedReviewLLM(),
-        reviewer=FailingSafetyReviewer(),
-    )
+    agent = SafetyAgent(reviewer=FailingSafetyReviewer())
     params = {
         "query": "帮我代写数据库作业",
         "generatedAsset": {
@@ -193,6 +231,14 @@ async def test_safety_agent_fallback_still_blocks_misconduct_content() -> None:
         },
         "generatedContent": "这里直接提供代写答案和提交模板。",
     }
+
+    with pytest.raises(RuntimeError, match="heuristic fallback is disabled"):
+        await agent.review_content(
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    return
 
     events = [
         event
@@ -214,7 +260,7 @@ async def test_safety_agent_fallback_still_blocks_misconduct_content() -> None:
 
 
 @pytest.mark.asyncio
-async def test_document_generator_uses_review_fallback_when_reviewers_fail(tmp_path: Path) -> None:
+async def test_document_generator_fails_when_reviewers_fail(tmp_path: Path) -> None:
     asset_path = tmp_path / "document-fallback.md"
     asset_path.write_text("# 联合索引导学\n来源A\n来源B\n", encoding="utf-8")
 
@@ -254,16 +300,27 @@ async def test_document_generator_uses_review_fallback_when_reviewers_fail(tmp_p
     agent = DocumentGeneratorAgent(
         generation_service=FakeGenerationService(),
         llm_client=RuleBasedGenerationLLM(),
-        critic_agent=CriticAgent(
-            llm_client=RuleBasedReviewLLM(),
-            reviewer=FailingCriticReviewer(),
-        ),
-        safety_agent=SafetyAgent(
-            llm_client=RuleBasedReviewLLM(),
-            reviewer=FailingSafetyReviewer(),
-        ),
+        critic_agent=CriticAgent(reviewer=FailingCriticReviewer()),
+        safety_agent=SafetyAgent(reviewer=FailingSafetyReviewer()),
     )
     params = {"query": "联合索引"}
+
+    with pytest.raises(RuntimeError, match="fallback is disabled"):
+        _ = [
+            event
+            async for event in agent.run(
+                task_id="task-document-review-fallback",
+                trace_id="trace-document-review-fallback",
+                seq=1,
+                service_type="RESOURCE_GENERATION",
+                params=params,
+                snapshot=_build_snapshot(),
+                system_prompt="test",
+            )
+        ]
+    assert "criticReview" not in params
+    assert "safetyReview" not in params
+    return
 
     events = [
         event
@@ -293,6 +350,18 @@ async def test_document_generator_runs_reviews_before_emitting_resource_file(
     asset_path.write_text("# 联合索引导学\n来源A\n来源B\n", encoding="utf-8")
 
     class FakeGenerationService:
+        content_chain = type(
+            "FakeContentChain",
+            (),
+            {
+                "primary_generator": type(
+                    "FakeGenerator",
+                    (),
+                    {"provider_name": "test-provider", "model_name": "test-model"},
+                )()
+            },
+        )()
+
         def _plan_document_sections(self, *, params, snapshot, sources):
             del params, snapshot, sources
 

@@ -3,11 +3,13 @@ import {
   QNA_GREETING,
   type ChatMessage,
   type CompletedResourceView,
+  type CriticReviewView,
   type EngineService,
   type EngineState,
   type EngineTaskResultRecord,
   type EngineTaskSnapshot,
   type InlineResourceView,
+  type LearningPlanView,
   type QnaState,
 } from './LearningStudioDemoPage.types';
 import { sanitizeConversationMessageContent } from './LearningStudioDemoPage.utils';
@@ -47,6 +49,11 @@ export interface PersistedConversationViewSnapshot {
 export type QnaDrafts = Record<string, string>;
 export type PersistedQnaConversationCache = Record<string, PersistedConversationViewSnapshot>;
 
+const transientAssistantPlaceholders = [
+  '上一条回复未完整加载',
+  '回复已中断',
+];
+
 export function mapConversationHistory(history: ConversationMessageItem[]): ChatMessage[] {
   const messages: ChatMessage[] = history
     .map((item, index) => ({
@@ -56,7 +63,7 @@ export function mapConversationHistory(history: ConversationMessageItem[]): Chat
         ? item.content?.trim() ?? ''
         : sanitizeConversationMessageContent(item.content ?? ''),
     }))
-    .filter((item) => item.content);
+    .filter((item) => item.content && !(item.role === 'assistant' && isTransientAssistantPlaceholder(item.content)));
 
   return messages.length > 0
     ? messages
@@ -125,6 +132,8 @@ export function createEmptyEngineTaskSnapshot(baseState: EngineState = 'ENGINE_I
     practiceBatch: null,
     completedResources: [],
     judgeResult: null,
+    learningPlan: null,
+    criticReview: null,
     resultHistory: [],
     selectedResultTaskId: '',
   };
@@ -184,6 +193,60 @@ export function createCompletedResourcesFromSnapshot(snapshot: Partial<EngineTas
   return completedResources;
 }
 
+function normalizeLearningPlan(value: unknown): LearningPlanView | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Partial<LearningPlanView>;
+  const steps = Array.isArray(record.steps)
+    ? record.steps
+        .filter((item): item is LearningPlanView['steps'][number] => Boolean(item && typeof item === 'object'))
+        .map((step) => ({
+          stepId: String(step.stepId || ''),
+          title: String(step.title || ''),
+          intent: step.intent ? String(step.intent) : undefined,
+          agentName: step.agentName ? String(step.agentName) : undefined,
+          serviceType: step.serviceType ? String(step.serviceType) : undefined,
+          status: step.status ? String(step.status) : undefined,
+          qualityGate: step.qualityGate ? String(step.qualityGate) : undefined,
+        }))
+        .filter((step) => step.stepId || step.title)
+    : [];
+  if (!record.planId && !record.goal && steps.length === 0) {
+    return null;
+  }
+  return {
+    planId: String(record.planId || ''),
+    goal: String(record.goal || ''),
+    status: record.status ? String(record.status) : undefined,
+    createdBy: record.createdBy ? String(record.createdBy) : undefined,
+    provider: record.provider ? String(record.provider) : undefined,
+    model: record.model ? String(record.model) : undefined,
+    steps,
+  };
+}
+
+function normalizeCriticReview(value: unknown): CriticReviewView | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Partial<CriticReviewView>;
+  const issues = Array.isArray(record.issues) ? record.issues.map((item) => String(item)).filter(Boolean) : [];
+  const suggestions = Array.isArray(record.suggestions) ? record.suggestions.map((item) => String(item)).filter(Boolean) : [];
+  if (!record.verdict && !record.summaryText && issues.length === 0 && suggestions.length === 0) {
+    return null;
+  }
+  return {
+    verdict: record.verdict ? String(record.verdict) : undefined,
+    factConsistency: record.factConsistency ? String(record.factConsistency) : undefined,
+    difficultyMatch: record.difficultyMatch ? String(record.difficultyMatch) : undefined,
+    sourceCoverage: record.sourceCoverage ? String(record.sourceCoverage) : undefined,
+    issues,
+    suggestions,
+    summaryText: record.summaryText ? String(record.summaryText) : undefined,
+  };
+}
+
 function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): EngineTaskResultRecord | null {
   if (!record.taskId) {
     return null;
@@ -202,6 +265,8 @@ function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): Eng
     practiceBatch: record.practiceBatch ?? null,
     completedResources: createCompletedResourcesFromSnapshot(record),
     judgeResult: record.judgeResult ?? null,
+    learningPlan: normalizeLearningPlan(record.learningPlan),
+    criticReview: normalizeCriticReview(record.criticReview),
     createdAt: typeof record.createdAt === 'number' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : now,
   };
@@ -226,6 +291,8 @@ function createTaskResultRecord(
     practiceBatch: overrides.practiceBatch ?? snapshot.practiceBatch,
     completedResources: overrides.completedResources ?? createCompletedResourcesFromSnapshot(snapshot),
     judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
+    learningPlan: overrides.learningPlan ?? snapshot.learningPlan,
+    criticReview: overrides.criticReview ?? snapshot.criticReview,
     createdAt: overrides.createdAt ?? now,
     updatedAt: overrides.updatedAt ?? now,
   };
@@ -260,6 +327,8 @@ function upsertTaskResultRecord(
     practiceBatch: overrides.practiceBatch ?? snapshot.practiceBatch,
     completedResources: overrides.completedResources ?? createCompletedResourcesFromSnapshot(snapshot),
     judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
+    learningPlan: overrides.learningPlan ?? snapshot.learningPlan,
+    criticReview: overrides.criticReview ?? snapshot.criticReview,
     createdAt: current.createdAt,
     updatedAt: Date.now(),
   };
@@ -283,6 +352,8 @@ function sanitizeEngineSnapshot(snapshot: EngineTaskSnapshot): EngineTaskSnapsho
     serviceResultLines: dedupeResultLines(snapshot.serviceResultLines),
     inlineResources: getInlineResourcesFromSnapshot(snapshot),
     completedResources: createCompletedResourcesFromSnapshot(snapshot),
+    learningPlan: normalizeLearningPlan(snapshot.learningPlan),
+    criticReview: normalizeCriticReview(snapshot.criticReview),
     resultHistory: Array.isArray(snapshot.resultHistory)
       ? snapshot.resultHistory.map(normalizeTaskResultRecord).filter((item): item is EngineTaskResultRecord => Boolean(item))
       : [],
@@ -317,27 +388,23 @@ export function normalizeRestoredQnaMessages(snapshot: PersistedQnaSnapshot): Ch
   if (!Array.isArray(snapshot.qnaMessages) || snapshot.qnaMessages.length === 0) {
     return [{ id: 'qna-greeting', role: 'assistant', content: QNA_GREETING }];
   }
-  if (snapshot.qnaState !== 'QNA_STREAMING') {
-    return snapshot.qnaMessages;
-  }
-
-  const normalized = [...snapshot.qnaMessages];
-  const lastAssistantIndex = [...normalized]
-    .map((item, index) => ({ item, index }))
-    .reverse()
-    .find(({ item }) => item.role === 'assistant' && !item.content.trim())?.index;
-
-  if (lastAssistantIndex === undefined) {
-    return normalized;
-  }
-
-  normalized[lastAssistantIndex] = {
-    ...normalized[lastAssistantIndex],
-    content: '上一条回复未完整加载，你可以继续提问，或重新发送上一条问题。',
-  };
-  return normalized;
+  return snapshot.qnaMessages.filter((item, index) => {
+    const isLastMessage = index === snapshot.qnaMessages.length - 1;
+    if (item.role !== 'assistant') {
+      return true;
+    }
+    if (isTransientAssistantPlaceholder(item.content)) {
+      return false;
+    }
+    return !(snapshot.qnaState === 'QNA_STREAMING' && isLastMessage && !item.content.trim());
+  });
 }
 
 export function buildConversationSyncSignature(messages: ChatMessage[]): string {
   return messages.map((item) => `${item.role}:${item.content}`).join('\u0001');
+}
+
+function isTransientAssistantPlaceholder(content: string): boolean {
+  const normalized = content.trim();
+  return transientAssistantPlaceholders.some((placeholder) => normalized.startsWith(placeholder));
 }

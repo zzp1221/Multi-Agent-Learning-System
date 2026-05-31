@@ -2,6 +2,7 @@ package com.project.api.common;
 
 import com.project.api.common.dto.ApiMessageResponse;
 import com.project.application.common.ApplicationException;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -10,7 +11,10 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
+import java.io.IOException;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
@@ -35,10 +39,59 @@ public class GlobalExceptionHandler {
             .body(new ApiMessageResponse("INVALID_ARGUMENT", message));
     }
 
+    @ExceptionHandler({ClientAbortException.class, AsyncRequestNotUsableException.class})
+    public void handleKnownClientDisconnect(Exception ex) {
+        LOGGER.debug("Client disconnected before response completed: {}", ex.getMessage());
+    }
+
+    @ExceptionHandler(IOException.class)
+    public ResponseEntity<ApiMessageResponse> handleIOException(IOException ex) {
+        if (isClientDisconnect(ex)) {
+            LOGGER.debug("Client disconnected before response completed: {}", ex.getMessage());
+            return ResponseEntity.noContent().build();
+        }
+        LOGGER.error("Unhandled I/O exception", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(new ApiMessageResponse("INTERNAL_ERROR", "系统开小差了，请稍后重试"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiMessageResponse> handleUnexpectedException(Exception ex) {
+        if (isClientDisconnect(ex)) {
+            LOGGER.debug("Client disconnected before response completed: {}", ex.getMessage());
+            return ResponseEntity.noContent().build();
+        }
         LOGGER.error("Unhandled application exception", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(new ApiMessageResponse("INTERNAL_ERROR", "系统开小差了，请稍后重试"));
+    }
+
+    private boolean isClientDisconnect(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (
+                current instanceof ClientAbortException
+                    || current instanceof AsyncRequestNotUsableException
+                    || (current instanceof IOException && isClientDisconnectMessage(current.getMessage()))
+                    || (current instanceof IllegalStateException && isClientDisconnectMessage(current.getMessage()))
+            ) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isClientDisconnectMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("broken pipe")
+            || normalized.contains("connection reset")
+            || normalized.contains("connection aborted")
+            || normalized.contains("connection has been closed")
+            || normalized.contains("asyncrequestnotusableexception")
+            || normalized.contains("responsebodyemitter has already completed");
     }
 }

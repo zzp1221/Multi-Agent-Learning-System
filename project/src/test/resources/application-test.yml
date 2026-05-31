@@ -30,6 +30,8 @@ management:
         include: health,info
 
 app:
+  redis:
+    enabled: false
   python-agent:
     internal-token: test-internal-token
   security:

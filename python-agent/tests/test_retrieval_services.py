@@ -70,6 +70,47 @@ class CountingRetriever:
         }
 
 
+class CountingLegacyAdapter:
+    instances = 0
+
+    def __init__(self) -> None:
+        type(self).instances += 1
+        self.calls = 0
+
+    def retrieve(
+        self,
+        query: str,
+        *,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict:
+        self.calls += 1
+        return {
+            "query": query,
+            "webSearchEnabled": web_search_enabled,
+            "graphIntent": graph_intent,
+            "channels": {
+                "grep": {"priority": [("legacy-doc", "Legacy Doc", 1.0, ["legacy"])]},
+                "vector": [],
+                "graph": [],
+            },
+            "top": [("legacy-doc", "Legacy Doc", 1.0)],
+        }
+
+    def retrieve_grep_first(
+        self,
+        query: str,
+        *,
+        web_search_enabled: bool = False,
+        graph_intent: str | None = None,
+    ) -> dict:
+        return self.retrieve(
+            query,
+            web_search_enabled=web_search_enabled,
+            graph_intent=graph_intent,
+        )
+
+
 def test_query_rewrite_service_injects_learning_context() -> None:
     service = QueryRewriteService()
 
@@ -155,6 +196,30 @@ def test_hybrid_retrieval_service_cache_can_be_disabled(monkeypatch) -> None:
     service.retrieve_raw("cache-disabled-query")
 
     assert retriever.calls == 2
+
+
+def test_hybrid_retrieval_service_reuses_default_legacy_adapter(monkeypatch) -> None:
+    monkeypatch.setattr(
+        retrieval_services,
+        "get_settings",
+        lambda: Settings(RETRIEVAL_RESULT_CACHE_TTL_SECONDS=0),
+    )
+    monkeypatch.setattr(
+        retrieval_services,
+        "LegacyHybridRetrieverAdapter",
+        CountingLegacyAdapter,
+    )
+    CountingLegacyAdapter.instances = 0
+    service = HybridRetrievalService()
+
+    first = service.retrieve_raw("legacy-query-one")
+    second = service.retrieve_raw("legacy-query-two", graph_intent="COMPARISON")
+
+    assert CountingLegacyAdapter.instances == 1
+    assert service._legacy_adapter is not None
+    assert service._legacy_adapter.calls == 2
+    assert first["top"][0][0] == "legacy-doc"
+    assert second["graphIntent"] == "COMPARISON"
 
 
 def test_hybrid_retrieval_service_deduplicates_same_title_documents() -> None:

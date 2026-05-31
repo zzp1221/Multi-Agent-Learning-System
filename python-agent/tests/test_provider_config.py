@@ -13,12 +13,13 @@ from src.ai_modules.llms.agent_models import (
     ProfileLLMClientFactory,
     TutorToolLLMClientFactory,
 )
+from src.ai_modules.llms import judge_subjective_evaluator
 from src.ai_modules.llms.judge_subjective_evaluator import OpenAICompatibleSubjectiveJudgeEvaluator
 from src.ai_modules.llms.openai_compatible import OpenAICompatibleToolCallingLLM
-from src.ai_modules.llms.planning_llm import PlanningLLMClientFactory, RuleBasedPlanningLLM
+from src.ai_modules.llms.planning_llm import PlanningLLMClientFactory
 from src.ai_modules.llms.practice_llm import RuleBasedJudgeLLM, RuleBasedPracticeLLM
 from src.ai_modules.llms.profile_llm import RuleBasedProfileLLM
-from src.ai_modules.llms.review_llm import ReviewLLMClientFactory, RuleBasedReviewLLM
+from src.ai_modules.llms.review_llm import ReviewLLMClientFactory
 from src.ai_modules.llms.spark_compatible import SparkCompatibleToolCallingLLM
 from src.ai_modules.llms.tutor_llm import RuleBasedTutorLLM, TutorLLMClientFactory
 from src.ai_modules.llms.workflow_llm import (
@@ -110,7 +111,14 @@ def test_settings_loads_model_routing_config_from_yaml(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    settings = Settings(MODEL_ROUTING_CONFIG_PATH=str(config_path))
+    settings = Settings(
+        ACTIVE_PROVIDER="spark",
+        FALLBACK_PROVIDER="openai_compatible",
+        MODEL_ROUTING_CONFIG_PATH=str(config_path),
+        SPARK_API_KEY="spark-key",
+        OPENAI_COMPATIBLE_API_KEY="openai-key",
+        MIMO_API_KEY="",
+    )
 
     routing = settings.model_routing_config()
 
@@ -120,10 +128,16 @@ def test_settings_loads_model_routing_config_from_yaml(tmp_path: Path) -> None:
 
 
 def test_settings_provider_ready_for_spark_requires_api_key() -> None:
-    settings = Settings(ACTIVE_PROVIDER="spark", SPARK_API_KEY="", OPENAI_COMPATIBLE_API_KEY="test")
+    settings = Settings(
+        ACTIVE_PROVIDER="spark",
+        FALLBACK_PROVIDER="",
+        SPARK_API_KEY="",
+        OPENAI_COMPATIBLE_API_KEY="test",
+        MIMO_API_KEY="",
+    )
 
     assert settings.selected_provider_name() == "spark"
-    assert settings.provider_ready() is False
+    assert settings.provider_ready("spark") is False
 
 
 def test_settings_resolve_unknown_model_raises_key_error() -> None:
@@ -137,8 +151,9 @@ def test_settings_component_override_resolves_provider_and_model() -> None:
     settings = Settings(
         ACTIVE_PROVIDER="openai_compatible",
         OPENAI_COMPATIBLE_API_KEY="openai-key",
+        MIMO_API_KEY="",
         SPARK_API_KEY="spark-key",
-        query_rewrite_llm={"provider": "spark", "model": "fast_model"},
+        QUERY_REWRITE_LLM={"provider": "spark", "model": "fast_model"},
     )
 
     provider_name = settings.resolve_component_provider("query_rewrite_llm")
@@ -156,18 +171,26 @@ def test_settings_component_override_accepts_literal_model_name() -> None:
     settings = Settings(
         ACTIVE_PROVIDER="openai_compatible",
         OPENAI_COMPATIBLE_API_KEY="openai-key",
-        evaluation_llm={"model": "custom-eval-model"},
+        MIMO_API_KEY="",
+        EVALUATION_LLM={"model": "custom-eval-model"},
     )
 
     assert settings.resolve_component_model("evaluation_llm", default_logical_model="main_chat_model") == "custom-eval-model"
 
 
-def test_tool_orchestration_factories_fallback_to_rule_based_clients_without_provider_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(workflow_llm, "get_settings", lambda: Settings(OPENAI_COMPATIBLE_API_KEY=""))
-    monkeypatch.setattr(tutor_llm, "get_settings", lambda: Settings(OPENAI_COMPATIBLE_API_KEY=""))
-    monkeypatch.setattr(planning_llm, "get_settings", lambda: Settings(OPENAI_COMPATIBLE_API_KEY=""))
-    monkeypatch.setattr(review_llm, "get_settings", lambda: Settings(OPENAI_COMPATIBLE_API_KEY=""))
-    monkeypatch.setattr(agent_models, "get_settings", lambda: Settings(OPENAI_COMPATIBLE_API_KEY=""))
+def test_tool_orchestration_factories_handle_missing_provider_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    unavailable_settings = Settings(
+        ACTIVE_PROVIDER="openai_compatible",
+        FALLBACK_PROVIDER="",
+        OPENAI_COMPATIBLE_API_KEY="",
+        MIMO_API_KEY="",
+        SPARK_API_KEY="",
+    )
+    monkeypatch.setattr(workflow_llm, "get_settings", lambda: unavailable_settings)
+    monkeypatch.setattr(tutor_llm, "get_settings", lambda: unavailable_settings)
+    monkeypatch.setattr(planning_llm, "get_settings", lambda: unavailable_settings)
+    monkeypatch.setattr(review_llm, "get_settings", lambda: unavailable_settings)
+    monkeypatch.setattr(agent_models, "get_settings", lambda: unavailable_settings)
 
     assert isinstance(QueryRewriteToolLLMClientFactory.create(), RuleBasedQueryRewriteLLM)
     assert isinstance(GenerationToolLLMClientFactory.create(), RuleBasedGenerationLLM)
@@ -176,12 +199,24 @@ def test_tool_orchestration_factories_fallback_to_rule_based_clients_without_pro
     assert isinstance(ProfileLLMClientFactory.create(), RuleBasedProfileLLM)
     assert isinstance(TutorToolLLMClientFactory.create(), RuleBasedTutorLLM)
     assert isinstance(TutorLLMClientFactory.create(), RuleBasedTutorLLM)
-    assert isinstance(PlanningLLMClientFactory.create(), RuleBasedPlanningLLM)
-    assert isinstance(ReviewLLMClientFactory.create(), RuleBasedReviewLLM)
+    with pytest.raises(RuntimeError, match="planning fallback is disabled"):
+        PlanningLLMClientFactory.create()
+    with pytest.raises(RuntimeError, match="review fallback is disabled"):
+        ReviewLLMClientFactory.create()
 
 
 def test_tutor_runtime_candidates_exclude_rule_based_without_provider_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(tutor_llm, "get_settings", lambda: Settings(OPENAI_COMPATIBLE_API_KEY=""))
+    monkeypatch.setattr(
+        tutor_llm,
+        "get_settings",
+        lambda: Settings(
+            ACTIVE_PROVIDER="openai_compatible",
+            FALLBACK_PROVIDER="",
+            OPENAI_COMPATIBLE_API_KEY="",
+            MIMO_API_KEY="",
+            SPARK_API_KEY="",
+        ),
+    )
 
     assert TutorLLMClientFactory.create_llm_candidates() == []
 
@@ -209,14 +244,16 @@ def test_component_factories_support_component_level_provider_switch(monkeypatch
     spark_settings = Settings(
         ACTIVE_PROVIDER="openai_compatible",
         OPENAI_COMPATIBLE_API_KEY="openai-key",
+        MIMO_API_KEY="",
         SPARK_API_KEY="spark-key",
-        query_rewrite_llm={"provider": "spark", "model": "fast_model"},
-        planning_llm={"provider": "spark", "model": "reasoning_model"},
-        judge_llm={"provider": "spark", "model": "fast_model"},
+        QUERY_REWRITE_LLM={"provider": "spark", "model": "fast_model"},
+        PLANNING_LLM={"provider": "spark", "model": "reasoning_model"},
+        JUDGE_LLM={"provider": "spark", "model": "fast_model"},
     )
     monkeypatch.setattr(workflow_llm, "get_settings", lambda: spark_settings)
     monkeypatch.setattr(planning_llm, "get_settings", lambda: spark_settings)
     monkeypatch.setattr(agent_models, "get_settings", lambda: spark_settings)
+    monkeypatch.setattr(judge_subjective_evaluator, "get_settings", lambda: spark_settings)
 
     query_rewrite_llm = QueryRewriteToolLLMClientFactory.create()
     planning_client = PlanningLLMClientFactory.create()

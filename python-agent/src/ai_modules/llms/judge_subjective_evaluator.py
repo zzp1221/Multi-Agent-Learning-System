@@ -190,7 +190,7 @@ class SubjectiveJudgeEvaluatorFactory:
         provider_name = settings.resolve_component_provider("judge_llm")
         if settings.provider_ready(provider_name):
             return OpenAICompatibleSubjectiveJudgeEvaluator()
-        return HeuristicSubjectiveJudgeEvaluator()
+        raise RuntimeError("judge_llm provider is not ready; subjective questions require a real LLM judge")
 
 
 SubjectiveJudgeEvaluator = OpenAICompatibleSubjectiveJudgeEvaluator

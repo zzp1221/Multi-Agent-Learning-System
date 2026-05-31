@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
-from src.ai_modules.llms import EvaluationGenerator, PlanningLLMClientFactory, PracticeQuestionGenerator
+from src.ai_modules.llms import EvaluationGenerator, PracticeQuestionGenerator
 from src.ai_modules.models import (
     EvaluationPayload,
     ProgressPayload,
@@ -42,7 +42,7 @@ class EvaluationAgent(PlaceholderAgent):
         question_generator: Any | None = None,
     ) -> None:
         super().__init__("Evaluation Agent", "evaluation")
-        self.llm_client = llm_client or PlanningLLMClientFactory.create()
+        self.llm_client = llm_client
         self.generator = generator
         self.question_generator = question_generator or PracticeQuestionGenerator()
         self.skill_loader = SkillPromptLoader()

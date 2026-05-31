@@ -139,7 +139,7 @@ services:
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       SANDBOX_ROOT: /data/sandbox-temp
       ENABLE_LOCAL_JUDGE: ${ENABLE_LOCAL_JUDGE:-false}
-      UVICORN_WORKERS: ${PY_AGENT_WORKERS:-2}
+      UVICORN_WORKERS: ${PY_AGENT_WORKERS:-1}
     ports:
       - "${PY_AGENT_PORT:-8000}:8000"
     volumes:

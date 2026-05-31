@@ -111,6 +111,7 @@ class ResultChunkPayload(BaseModel):
     """Streaming text chunk payload."""
 
     text: str
+    stage: str | None = None
 
 
 class ResourceFilePayload(BaseModel):
@@ -155,6 +156,8 @@ class DonePayload(BaseModel):
     status: Literal["SUCCESS", "FAILED", "PARTIAL_FAILED"] = "SUCCESS"
     summary: str
     learning_path: dict[str, Any] | None = Field(default=None, alias="learningPath")
+    learning_plan: dict[str, Any] | None = Field(default=None, alias="learningPlan")
+    critic_review: dict[str, Any] | None = Field(default=None, alias="criticReview")
     resource_failures: list[dict[str, Any]] = Field(default_factory=list, alias="resourceFailures")
 
     model_config = ConfigDict(populate_by_name=True)

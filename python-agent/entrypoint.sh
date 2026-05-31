@@ -2,7 +2,7 @@
 set -e
 
 PORT="${APP_PORT:-8000}"
-WORKERS="${UVICORN_WORKERS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)}"
+WORKERS="${UVICORN_WORKERS:-1}"
 
 if [ "$WORKERS" -lt 1 ] 2>/dev/null; then
   WORKERS=1

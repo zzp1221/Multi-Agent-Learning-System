@@ -2,6 +2,7 @@ package com.project;
 
 import com.project.application.artifact.ArtifactDownloadService;
 import com.project.application.smartengine.PythonStreamEvent;
+import com.project.application.smartengine.TaskEventRecordResult;
 import com.project.application.smartengine.TaskStateMachineService;
 import com.project.application.smartengine.TaskStreamEventPayload;
 import com.project.application.smartengine.VideoGenerationTaskService;
@@ -211,5 +212,38 @@ class TaskStateMachineProvenanceTest {
         assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.COMPLETED);
         assertThat(task.getCurrentStage()).isEqualTo("partial_failed");
         assertThat(task.getResponseSummary()).containsEntry("status", "PARTIAL_FAILED");
+    }
+
+    @Test
+    void duplicateTerminalSeqStillFailsActiveTaskAtNextSequence() {
+        SmartEngineTaskEvent existingEvent = new SmartEngineTaskEvent();
+        existingEvent.setTask(task);
+        existingEvent.setEventSeq(8);
+        existingEvent.setEventType("progress");
+        existingEvent.setStageName("practice");
+        existingEvent.setEventPayload(Map.of("stage", "practice", "percent", 35));
+
+        when(taskEventRepository.findByTaskIdAndEventSeq(taskId, 8)).thenReturn(Optional.of(existingEvent));
+        when(taskEventRepository.countByTaskId(taskId)).thenReturn(8);
+
+        TaskEventRecordResult result = service.recordPythonEvent(
+            taskId,
+            new PythonStreamEvent(
+                "error",
+                null,
+                Map.of(
+                    "code", "RESOURCE_BUNDLE_FAILED",
+                    "message", "Practice question LLM generation failed; template fallback is not allowed"
+                )
+            ),
+            8
+        );
+
+        assertThat(result.created()).isTrue();
+        assertThat(result.payload().event()).isEqualTo("error");
+        assertThat(result.payload().seq()).isEqualTo(9);
+        assertThat(result.payload().payload()).containsEntry("code", "RESOURCE_BUNDLE_FAILED");
+        assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.FAILED);
+        assertThat(task.getErrorCode()).isEqualTo("RESOURCE_BUNDLE_FAILED");
     }
 }

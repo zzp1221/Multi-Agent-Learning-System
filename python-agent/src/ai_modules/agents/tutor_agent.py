@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
@@ -119,6 +120,9 @@ class TutorAgent(PlaceholderAgent):
         del service_type
         conversation = self._extract_conversation(params)
         user_query = self._resolve_user_query(params)
+        response_constraints = self._extract_response_constraints(user_query)
+        if response_constraints:
+            params["responseConstraints"] = response_constraints
         persisted_summary = await self._load_persisted_summary(
             conversation_id=self._conversation_id(params, task_id),
             user_id=params.get("userId"),
@@ -183,38 +187,39 @@ class TutorAgent(PlaceholderAgent):
         last_error: Exception | None = None
         for llm_client in self.llm_clients:
             streamed = False
-            try:
-                async for token in self._try_direct_chat_stream(
-                    llm_client=llm_client,
-                    system_prompt=system_prompt,
-                    params=params,
-                    persisted_summary=persisted_summary,
-                ):
-                    streamed = True
-                    yield ResultChunkSSEEvent(
-                        taskId=task_id,
-                        traceId=trace_id,
-                        seq=current_seq,
-                        payload=ResultChunkPayload(text=token, stage="tutoring"),
-                        dialogState=dialog_state,
+            if not response_constraints:
+                try:
+                    async for token in self._try_direct_chat_stream(
+                        llm_client=llm_client,
+                        system_prompt=system_prompt,
+                        params=params,
+                        persisted_summary=persisted_summary,
+                    ):
+                        streamed = True
+                        yield ResultChunkSSEEvent(
+                            taskId=task_id,
+                            traceId=trace_id,
+                            seq=current_seq,
+                            payload=ResultChunkPayload(text=token, stage="tutoring"),
+                            dialogState=dialog_state,
+                        )
+                        current_seq += 1
+                    if streamed:
+                        self._log_llm_success("direct_stream", llm_client)
+                        return
+                    details = self._describe_llm_client(llm_client)
+                    LOGGER.warning(
+                        "Direct tutor stream produced no tokens; trying non-stream LLM "
+                        "provider=%s model=%s baseUrl=%s",
+                        details["provider"],
+                        details["model"],
+                        details["baseUrl"],
                     )
-                    current_seq += 1
-                if streamed:
-                    self._log_llm_success("direct_stream", llm_client)
-                    return
-                details = self._describe_llm_client(llm_client)
-                LOGGER.warning(
-                    "Direct tutor stream produced no tokens; trying non-stream LLM "
-                    "provider=%s model=%s baseUrl=%s",
-                    details["provider"],
-                    details["model"],
-                    details["baseUrl"],
-                )
-            except Exception as exc:
-                last_error = exc
-                self._log_llm_failure("direct_stream", exc, llm_client)
-                if streamed:
-                    raise
+                except Exception as exc:
+                    last_error = exc
+                    self._log_llm_failure("direct_stream", exc, llm_client)
+                    if streamed:
+                        raise
 
             try:
                 response_text = await self._run_agent_core_loop(
@@ -223,6 +228,12 @@ class TutorAgent(PlaceholderAgent):
                     params=params,
                     snapshot=snapshot,
                     persisted_summary=persisted_summary,
+                )
+                response_text = await self._enforce_response_constraints(
+                    llm_client=llm_client,
+                    response_text=response_text,
+                    constraints=response_constraints,
+                    user_query=user_query,
                 )
                 yield ResultChunkSSEEvent(
                     taskId=task_id,
@@ -240,6 +251,65 @@ class TutorAgent(PlaceholderAgent):
         if last_error is not None:
             raise last_error
         raise RuntimeError("tutor_llm provider is not ready")
+
+    def _extract_response_constraints(self, user_query: str) -> dict[str, Any]:
+        text = str(user_query or "")
+        match = re.search(r"(\d{2,4})\s*(?:字|个字|字符)\s*(?:以内|内|之内|以下|左右)?", text)
+        if not match:
+            return {}
+        max_chars = int(match.group(1))
+        if max_chars <= 0:
+            return {}
+        return {
+            "maxChars": max_chars,
+            "instruction": f"用户明确要求回答控制在 {max_chars} 字以内；必须优先满足该长度要求。",
+        }
+
+    async def _enforce_response_constraints(
+        self,
+        *,
+        llm_client: Any,
+        response_text: str,
+        constraints: dict[str, Any],
+        user_query: str,
+    ) -> str:
+        max_chars = int(constraints.get("maxChars") or 0) if constraints else 0
+        if max_chars <= 0 or len(response_text) <= max_chars:
+            return self._dedupe_repeated_paragraphs(response_text)
+        client = getattr(llm_client, "client", None)
+        if client is None or not hasattr(client, "chat_completion"):
+            raise RuntimeError("Tutor response exceeded explicit length constraint and no real LLM compressor is available")
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是学习辅导回答压缩器。只压缩已有答案，不新增事实；"
+                    f"输出必须不超过 {max_chars} 个中文字符，保留核心观点。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"用户问题：{user_query}\n\n待压缩答案：\n{response_text}",
+            },
+        ]
+        response = await client.chat_completion(messages=messages, max_tokens=max(64, max_chars * 2))
+        message = client.extract_message(response)
+        compressed = self._dedupe_repeated_paragraphs(client.extract_content(message).strip())
+        if len(compressed) > max_chars:
+            raise RuntimeError("Tutor LLM failed to satisfy explicit length constraint")
+        return compressed
+
+    def _dedupe_repeated_paragraphs(self, text: str) -> str:
+        paragraphs = [paragraph.strip() for paragraph in str(text or "").replace("\r\n", "\n").split("\n") if paragraph.strip()]
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for paragraph in paragraphs:
+            normalized = "".join(paragraph.split())
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(paragraph)
+        return "\n".join(deduped)
 
     def _describe_llm_client(self, llm_client: Any) -> dict[str, str]:
         client = getattr(llm_client, "client", llm_client)
@@ -480,6 +550,9 @@ class TutorAgent(PlaceholderAgent):
             parts.append(f"已知薄弱点：{', '.join(known_gaps)}")
         if unresolved:
             parts.append(f"未解决问题：{', '.join(unresolved)}")
+        response_constraints = profile.get("responseConstraints") or {}
+        if response_constraints.get("instruction"):
+            parts.append(str(response_constraints["instruction"]))
         if teaching_state:
             last_assistant_question = str(teaching_state.get("lastAssistantQuestion") or "").strip()
             current_user_intent = str(teaching_state.get("currentUserIntent") or "").strip()
@@ -960,6 +1033,7 @@ class TutorAgent(PlaceholderAgent):
             "learningPreference": profile.get("learningPreference") or profile.get("preferredStyle"),
             "cognitiveStyle": profile.get("cognitiveStyle"),
             "preferredResourceTypes": profile.get("preferredResourceTypes", []),
+            "responseConstraints": params.get("responseConstraints") or {},
         }
 
     def _tool_read_recent_dialogue_context(

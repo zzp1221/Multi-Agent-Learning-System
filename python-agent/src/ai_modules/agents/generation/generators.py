@@ -258,7 +258,8 @@ class _BaseGenerationAgent(PlaceholderAgent):
                     snapshot=snapshot,
                 )
             else:
-                asset_or_awaitable = self.generation_service.build_asset(
+                asset_or_awaitable = await asyncio.to_thread(
+                    self.generation_service.build_asset,
                     asset_type=self.asset_type,
                     params=build_params,
                     snapshot=snapshot,

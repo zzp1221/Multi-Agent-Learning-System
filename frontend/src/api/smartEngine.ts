@@ -169,10 +169,10 @@ export const smartEngineApi = {
         },
         signal,
       },
-      missingBodyMessage: '无法读取任务流',
+      missingBodyMessage: '无法读取实时任务连接',
       requestFailedMessage: (status) => status === 429
         ? '请求过于频繁 (429)，请稍后重试'
-        : `任务流请求失败 (${status})`,
+        : `实时任务连接请求失败 (${status})`,
       maxRetries: 2,
       defaultEvent: 'result_chunk',
       onEvent: (rawEvent) => {
@@ -186,7 +186,7 @@ export const smartEngineApi = {
           return true;
         }
         if (parsed.event === 'error') {
-          handlers.onError(new Error(parsed.data || '任务流执行失败'));
+          handlers.onError(new Error(parsed.data || '实时任务连接执行失败'));
           return true;
         }
         return false;

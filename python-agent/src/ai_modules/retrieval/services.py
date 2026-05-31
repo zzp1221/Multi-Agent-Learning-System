@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import inspect
+from threading import RLock
 from typing import Any, Protocol
 
 from src.ai_modules.config import get_settings
@@ -44,6 +45,7 @@ class LegacyHybridRetrieverAdapter:
             db_config=self._db_config,
             domain=self.domain,
         )
+        self._init_lock = RLock()
 
     def retrieve(
         self,
@@ -56,6 +58,7 @@ class LegacyHybridRetrieverAdapter:
 
         with psycopg2.connect(**self._db_config) as conn:
             with conn.cursor() as cur:
+                self._ensure_initialized(cur)
                 return self._retriever.retrieve(
                     cur,
                     query,
@@ -81,12 +84,23 @@ class LegacyHybridRetrieverAdapter:
             )
         with psycopg2.connect(**self._db_config) as conn:
             with conn.cursor() as cur:
+                self._ensure_initialized(cur)
                 return retrieve_grep_first(
                     cur,
                     query,
                     web_search_enabled=web_search_enabled,
                     graph_intent=graph_intent,
                 )
+
+    def _is_initialized(self) -> bool:
+        return bool(getattr(self._retriever, "_initialized", False))
+
+    def _ensure_initialized(self, cur: Any) -> None:
+        if self._is_initialized():
+            return
+        with self._init_lock:
+            if not self._is_initialized():
+                self._retriever._init(cur)
 
 
 class QueryRewriteService:
@@ -236,6 +250,7 @@ class HybridRetrievalService:
     ) -> None:
         self.domain = get_settings().retrieval_domain
         self.retriever = retriever
+        self._legacy_adapter: LegacyHybridRetrieverAdapter | None = None
 
     def retrieve(
         self,
@@ -318,7 +333,7 @@ class HybridRetrievalService:
             )
 
         try:
-            adapter = LegacyHybridRetrieverAdapter()
+            adapter = self._get_legacy_adapter()
             return adapter.retrieve_grep_first(
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
@@ -392,7 +407,7 @@ class HybridRetrievalService:
             )
 
         try:
-            adapter = LegacyHybridRetrieverAdapter()
+            adapter = self._get_legacy_adapter()
             return adapter.retrieve(
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
@@ -405,6 +420,11 @@ class HybridRetrievalService:
                 "channels": {},
                 "top": [],
             }
+
+    def _get_legacy_adapter(self) -> LegacyHybridRetrieverAdapter:
+        if self._legacy_adapter is None:
+            self._legacy_adapter = LegacyHybridRetrieverAdapter()
+        return self._legacy_adapter
 
     def _raw_result_cache_ttl_seconds(self) -> int:
         settings = get_settings()

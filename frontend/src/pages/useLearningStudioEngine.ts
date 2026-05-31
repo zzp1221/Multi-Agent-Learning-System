@@ -81,6 +81,19 @@ function createTaskMonitorRefs(): Record<EngineService, TaskMonitorRefs> {
   };
 }
 
+type ResourceFieldErrors = Partial<Record<'course' | 'keyPoints', string>>;
+
+function validateResourceForm(resourceForm: ResourceForm): ResourceFieldErrors {
+  const errors: ResourceFieldErrors = {};
+  if (!resourceForm.course.trim()) {
+    errors.course = '请填写课程名称';
+  }
+  if (!resourceForm.keyPoints.trim()) {
+    errors.keyPoints = '请填写重点知识点';
+  }
+  return errors;
+}
+
 export function useLearningStudioEngine({
   mode,
   isAuthenticated,
@@ -98,6 +111,7 @@ export function useLearningStudioEngine({
   const [selectedService, setSelectedService] = useState<EngineService | null>(DEFAULT_ENGINE_SERVICE);
   const [serviceSnapshots, setServiceSnapshots] = useState<Record<EngineService, EngineTaskSnapshot>>(createInitialEngineSnapshots);
   const [resourceForm, setResourceForm] = useState<ResourceForm>(defaultResourceForm);
+  const [resourceFieldErrors, setResourceFieldErrors] = useState<ResourceFieldErrors>({});
   const [pathForm, setPathForm] = useState<PathForm>({
     targetPeriod: '',
     weeklyHours: '',
@@ -154,9 +168,24 @@ export function useLearningStudioEngine({
     abortEngineTasks();
     setConversationId('');
     setSelectedService(DEFAULT_ENGINE_SERVICE);
+    setResourceFieldErrors({});
     setServiceSnapshots(createInitialEngineSnapshots());
     clearPersistedEngineSnapshot();
   }, [abortEngineTasks, clearPersistedEngineSnapshot, setConversationId]);
+
+  const updateResourceForm = useCallback((next: ResourceForm) => {
+    setResourceForm(next);
+    setResourceFieldErrors((current) => {
+      const nextErrors = { ...current };
+      if (next.course.trim()) {
+        delete nextErrors.course;
+      }
+      if (next.keyPoints.trim()) {
+        delete nextErrors.keyPoints;
+      }
+      return nextErrors;
+    });
+  }, []);
 
   const markFormEditing = useCallback(() => {
     if (!selectedService) {
@@ -265,6 +294,18 @@ export function useLearningStudioEngine({
             judgeResult: typeof value === 'function' ? value(current.judgeResult) : value,
           }));
         },
+        setLearningPlan: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            learningPlan: typeof value === 'function' ? value(current.learningPlan) : value,
+          }));
+        },
+        setCriticReview: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            criticReview: typeof value === 'function' ? value(current.criticReview) : value,
+          }));
+        },
         taskStreamAbortRef: refs.taskStreamAbortRef,
       });
 
@@ -364,6 +405,19 @@ export function useLearningStudioEngine({
     if (!selectedService || engineBusy || hasLockedTask(serviceSnapshots[selectedService])) {
       return;
     }
+    if (selectedService === 'resource') {
+      const errors = validateResourceForm(resourceForm);
+      if (Object.keys(errors).length > 0) {
+        setResourceFieldErrors(errors);
+        updateServiceSnapshot(selectedService, (current) => ({
+          ...current,
+          engineState: 'ENGINE_FORM_EDITING',
+          taskStatus: '请先补全必填项',
+          serviceResultLines: ['课程名称和重点知识点为必填项，补全后再提交。'],
+        }));
+        return;
+      }
+    }
 
     const refs = taskMonitorRefsRef.current[selectedService];
     refs.taskStreamAbortRef.current?.abort();
@@ -384,6 +438,8 @@ export function useLearningStudioEngine({
       practiceBatch: null,
       completedResources: [],
       judgeResult: null,
+      learningPlan: null,
+      criticReview: null,
       resultHistory: serviceSnapshots[selectedService].resultHistory,
       selectedResultTaskId: serviceSnapshots[selectedService].selectedResultTaskId,
     });
@@ -417,7 +473,7 @@ export function useLearningStudioEngine({
         ...current,
         engineState: 'ENGINE_FAILED',
         taskStatus: '任务失败',
-        serviceResultLines: [...current.serviceResultLines, `接口失败：${message}`],
+        serviceResultLines: [...current.serviceResultLines, `服务请求失败：${message}`],
       }));
     }
   };
@@ -451,6 +507,8 @@ export function useLearningStudioEngine({
       inlineResources: [],
       completedResources: [],
       judgeResult: null,
+      learningPlan: null,
+      criticReview: null,
       resultHistory: current.resultHistory,
       selectedResultTaskId: current.selectedResultTaskId,
     }));
@@ -494,7 +552,7 @@ export function useLearningStudioEngine({
         ...current,
         engineState: 'ENGINE_FAILED',
         taskStatus: '判题失败',
-        serviceResultLines: [...current.serviceResultLines, `判题失败：${message}`],
+        serviceResultLines: [...current.serviceResultLines, `提交答案失败：${message}`],
       }));
     }
   };
@@ -538,8 +596,8 @@ export function useLearningStudioEngine({
       const message = getErrorMessage(error);
       updateServiceSnapshot(service, (current) => ({
         ...current,
-        taskStatus: '取消失败',
-        serviceResultLines: [...current.serviceResultLines, `取消失败：${message}`],
+        taskStatus: '停止失败',
+        serviceResultLines: [...current.serviceResultLines, `停止任务失败：${message}`],
       }));
     }
   };
@@ -650,7 +708,8 @@ export function useLearningStudioEngine({
     videoResult: activeEngineSnapshot.videoResult,
     inlineResources,
     completedResources,
-    setResourceForm,
+    resourceFieldErrors,
+    setResourceForm: updateResourceForm,
     setPathForm,
     setPushForm,
     setAssessmentForm,

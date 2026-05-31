@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -25,6 +26,27 @@ from src.ai_modules.models import (
 from src.ai_modules.runtime.provenance import build_llm_provenance, validate_llm_provenance
 
 LOGGER = logging.getLogger(__name__)
+
+MIN_TOPIC_RELEVANCE_SCORE = 4
+GENERIC_RESOURCE_TERMS = {
+    "资源",
+    "讲解文档",
+    "代码案例",
+    "实操案例",
+    "拓展阅读",
+    "视频",
+    "教程",
+    "文章",
+    "文档",
+    "课程",
+    "官方文档",
+    "高质量学习资源",
+    "EXPLANATION",
+    "CODE_CASE",
+    "PRACTICAL_CASE",
+    "READING",
+    "VIDEO",
+}
 
 
 @dataclass(slots=True)
@@ -446,6 +468,20 @@ class ResourcePushAgent(PlaceholderAgent):
                 continue
             if not self._is_valid_external_result(preferred_type, item, url, raw_title):
                 continue
+            relevance = self._score_topic_relevance(
+                title=raw_title,
+                summary=raw_summary,
+                url=url,
+                profile_context=profile_context,
+            )
+            if relevance < MIN_TOPIC_RELEVANCE_SCORE:
+                LOGGER.info(
+                    "Skip weakly related pushed resource title=%s url=%s relevance=%s",
+                    raw_title,
+                    url,
+                    relevance,
+                )
+                continue
             title = self._truncate_display_text(self._clean_display_text(raw_title), 20)
             summary = self._truncate_display_text(
                 self._clean_display_text(raw_summary) or f"已通过 Tavily 检索到与当前画像匹配的{self._resource_type_label(preferred_type)}。",
@@ -458,11 +494,11 @@ class ResourcePushAgent(PlaceholderAgent):
                     summary_text=summary,
                     file_name="",
                     mime_type="text/html",
-                    score=max(1, 100 - index + self._source_preference_bonus(preferred_type, url)),
+                    score=max(1, 100 - index + self._source_preference_bonus(preferred_type, url) + relevance),
                     matched_terms=matched_terms,
                     download_url=url,
-                    rerank_reason=f"Tavily {self._resource_type_label(preferred_type)}搜索命中",
-                    rerank_score=round(max(0.1, 1 - (index - 1) * 0.1), 4),
+                    rerank_reason=f"主题相关性命中 {relevance} 分，匹配当前课程/薄弱点",
+                    rerank_score=round(min(1.0, max(0.1, relevance / 12)), 4),
                     thumbnail_url=self._extract_tavily_thumbnail(item, payload),
                     knowledge_point=knowledge_point or None,
                     source_name=self._extract_source_name(url),
@@ -592,6 +628,72 @@ class ResourcePushAgent(PlaceholderAgent):
         if preferred_type == "PRACTICAL_CASE" and source in {"github.com", "gitee.com", "gitlab.com"}:
             return 30
         return 0
+
+    def _score_topic_relevance(
+        self,
+        *,
+        title: str,
+        summary: str,
+        url: str,
+        profile_context: dict[str, Any],
+    ) -> int:
+        weighted_text = f"{title} {summary} {self._extract_source_name(url) or ''}".lower()
+        score = 0
+        for term, weight in self._topic_relevance_terms(profile_context):
+            if self._contains_topic_term(weighted_text, term):
+                score += weight
+        return score
+
+    def _topic_relevance_terms(self, profile_context: dict[str, Any]) -> list[tuple[str, int]]:
+        terms: list[tuple[str, int]] = []
+        for raw, weight in (
+            (profile_context.get("primaryWeakPoint"), 4),
+            (profile_context.get("currentChapter"), 4),
+            (" ".join(profile_context.get("weakPoints", [])), 4),
+            (profile_context.get("learningGoal"), 3),
+            (profile_context.get("currentCourse"), 1),
+        ):
+            for term in self._split_topic_terms(self._normalize_text(raw)):
+                if term and all(existing != term for existing, _ in terms):
+                    terms.append((term, weight))
+        return terms
+
+    def _split_topic_terms(self, text: str) -> list[str]:
+        if not text:
+            return []
+        parts = [
+            part.strip()
+            for part in re.split(r"[\s/、,，;；:：>《》()（）【】\[\]\"'“”]+", text)
+            if part.strip()
+        ]
+        terms: list[str] = []
+        for part in parts:
+            if part in GENERIC_RESOURCE_TERMS:
+                continue
+            terms.append(part)
+            terms.extend(self._topic_aliases(part))
+            if len(part) >= 4:
+                for size in (4, 3, 2):
+                    for index in range(0, len(part) - size + 1):
+                        piece = part[index:index + size]
+                        if piece not in GENERIC_RESOURCE_TERMS:
+                            terms.append(piece)
+        return terms
+
+    def _topic_aliases(self, term: str) -> list[str]:
+        aliases = {
+            "红黑树": ["red-black tree", "red black tree", "rbtree"],
+            "线程池": ["thread pool", "executorservice"],
+        }
+        return aliases.get(term, [])
+
+    def _contains_topic_term(self, text: str, term: str) -> bool:
+        lowered = term.lower().strip()
+        if not lowered:
+            return False
+        if re.fullmatch(r"[a-z0-9_+\-.#]+", lowered):
+            return re.search(rf"(?<![a-z0-9_+\-.#]){re.escape(lowered)}(?![a-z0-9_+\-.#])", text) is not None
+        return lowered in text
 
     def _resource_type_label(self, preferred_type: str) -> str:
         return {

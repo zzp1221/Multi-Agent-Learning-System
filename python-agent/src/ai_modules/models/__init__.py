@@ -19,6 +19,10 @@ from src.ai_modules.models.events import (
     VideoCompleteSSEEvent,
     VideoProgressSSEEvent,
 )
+from src.ai_modules.models.conversation_plan import (
+    ConversationPlan,
+    ConversationPlanStep,
+)
 from src.ai_modules.models.practice import (
     JudgeItemResult,
     JudgeResultPayload,
@@ -59,6 +63,8 @@ __all__ = [
     "DonePayload",
     "DoneSSEEvent",
     "EngineStreamRequest",
+    "ConversationPlan",
+    "ConversationPlanStep",
     "CriticReviewPayload",
     "EvaluationDimension",
     "EvaluationPayload",

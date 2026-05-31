@@ -1,4 +1,11 @@
-from src.ai_modules.llms import HeuristicSubjectiveJudgeEvaluator, OpenAICompatibleSubjectiveJudgeEvaluator
+import pytest
+
+from src.ai_modules.config import get_settings
+from src.ai_modules.llms import (
+    HeuristicSubjectiveJudgeEvaluator,
+    OpenAICompatibleSubjectiveJudgeEvaluator,
+    SubjectiveJudgeEvaluatorFactory,
+)
 from src.ai_modules.models import PracticeQuestion
 
 
@@ -13,9 +20,6 @@ def _build_question() -> PracticeQuestion:
         difficultyLevel="BASIC",
         explanation="回答应覆盖条件和场景。",
     )
-
-
-import pytest
 
 
 @pytest.mark.asyncio
@@ -40,3 +44,16 @@ def test_openai_compatible_subjective_evaluator_extracts_json_payload() -> None:
 
     assert payload["score"] == 16
     assert payload["isCorrect"] is True
+
+
+def test_subjective_evaluator_factory_requires_real_llm(monkeypatch) -> None:
+    get_settings.cache_clear()
+    monkeypatch.setenv("ENABLE_LOCAL_JUDGE", "false")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "")
+    monkeypatch.setenv("SPARK_API_KEY", "")
+    monkeypatch.setenv("MIMO_API_KEY", "")
+
+    with pytest.raises(RuntimeError, match="subjective questions require a real LLM judge"):
+        SubjectiveJudgeEvaluatorFactory.create()
+
+    get_settings.cache_clear()

@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
-from src.ai_modules.llms import LearningPathGenerator, PlanningLLMClientFactory
+from src.ai_modules.llms import LearningPathGenerator
 from src.ai_modules.memory import (
     InMemoryLearningPlanStore,
     LearningPlanStore,
@@ -37,7 +37,7 @@ class PathPlanningAgent(PlaceholderAgent):
         generator: Any | None = None,
     ) -> None:
         super().__init__("Path Planning Agent", "path_planning")
-        self.llm_client = llm_client or PlanningLLMClientFactory.create()
+        self.llm_client = llm_client
         self.learning_plan_store = learning_plan_store or PostgresLearningPlanStore()
         self.fallback_learning_plan_store = InMemoryLearningPlanStore()
         self.generator = generator

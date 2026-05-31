@@ -80,6 +80,9 @@ def test_practice_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> Non
 @pytest.mark.asyncio
 async def test_practice_agent_generates_question_batch() -> None:
     class FakeQuestionGenerator:
+        provider_name = "unit-test-provider"
+        model_name = "unit-test-practice-model"
+
         async def generate_batch(self, *, topic, difficulty, count, learning_context):
             del learning_context
             return QuestionBatchPayload.model_validate(
@@ -274,6 +277,9 @@ async def test_practice_agent_golden_eval_preserves_question_batch_contract() ->
 @pytest.mark.asyncio
 async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
     class FakeQuestionGenerator:
+        provider_name = "unit-test-provider"
+        model_name = "unit-test-practice-model"
+
         async def generate_batch(self, *, topic, difficulty, count, learning_context):
             del learning_context
             return QuestionBatchPayload.model_validate(
@@ -318,47 +324,8 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
 
     class FakeObjectiveJudgeGenerator:
         async def judge(self, *, questions, answers):
-            del questions
-            return {
-                "items": [
-                    {
-                        "questionId": "q1",
-                        "questionType": "SINGLE_CHOICE",
-                        "learnerAnswer": answers["q1"],
-                        "correctAnswer": "C",
-                        "isCorrect": True,
-                        "score": 20.0,
-                        "knowledgeTags": ["联合索引", "核心概念"],
-                        "reason": "LLM 判断答案正确。",
-                        "feedback": "继续保持。",
-                        "profileDelta": {"confidenceLevel": "MEDIUM"},
-                    },
-                    {
-                        "questionId": "q2",
-                        "questionType": "SINGLE_CHOICE",
-                        "learnerAnswer": answers["q2"],
-                        "correctAnswer": "A",
-                        "isCorrect": False,
-                        "score": 0.0,
-                        "knowledgeTags": ["联合索引", "易错点"],
-                        "reason": "LLM 判断答案遗漏了条件。",
-                        "feedback": "先判断条件再作答。",
-                        "profileDelta": {"confidenceLevel": "LOW", "weakPoints": ["易错点"]},
-                    },
-                ],
-                "pendingSubjective": [
-                    {
-                        "questionId": "q3",
-                        "questionType": "SHORT_ANSWER",
-                        "stem": "LLM 生成主观题 3",
-                        "options": [],
-                        "answer": "需要先判断条件",
-                        "knowledgeTags": ["联合索引", "使用条件"],
-                        "difficultyLevel": "BASIC",
-                        "explanation": "LLM 解析 3",
-                    }
-                ],
-            }
+            del questions, answers
+            raise AssertionError("objective questions should be graded deterministically")
 
     class FakeFeedbackGenerator:
         async def summarize(self, *, items, topic):
@@ -371,6 +338,17 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
                 ],
                 "weakKnowledgeTags": ["易错点", "使用条件"],
             }
+
+    class FakeSubjectiveEvaluator:
+        async def evaluate(self, *, question, learner_answer):
+            del question, learner_answer
+            return SubjectiveJudgeEvaluation(
+                score=8.0,
+                isCorrect=False,
+                reason="LLM 判断主观题要点不足。",
+                feedback="补充条件判断和错因分析。",
+                confidenceLevel="LOW",
+            )
 
     practice_agent = PracticeAgent(question_generator=FakeQuestionGenerator())
     params = {
@@ -401,6 +379,7 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
     }
     judge_agent = JudgeAgent(
         objective_judge_generator=FakeObjectiveJudgeGenerator(),
+        subjective_evaluator=FakeSubjectiveEvaluator(),
         feedback_generator=FakeFeedbackGenerator(),
     )
     judge_events = [
@@ -474,11 +453,120 @@ async def test_grade_objective_processes_all_questions() -> None:
 
 
 @pytest.mark.asyncio
+async def test_grade_objective_matches_option_labels_and_text() -> None:
+    agent = JudgeAgent()
+    params = {
+        "practiceQuestions": [
+            {
+                "questionId": "q1",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "?? 1",
+                "options": ["A. ???", "B. ???", "C. ???"],
+                "answer": "B",
+                "knowledgeTags": ["??1"],
+                "difficultyLevel": "BASIC",
+            },
+            {
+                "questionId": "q2",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "?? 2",
+                "options": ["A. ???", "B. B+ ?", "C. ?????"],
+                "answer": "C. ?????",
+                "knowledgeTags": ["??2"],
+                "difficultyLevel": "BASIC",
+            },
+            {
+                "questionId": "q3",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "?? 3",
+                "options": ["?-?-?", "?-?-?", "?-?-?"],
+                "answer": "?-?-?",
+                "knowledgeTags": ["??3"],
+                "difficultyLevel": "BASIC",
+            },
+            {
+                "questionId": "q4",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "?? 4",
+                "options": ["Alpha", "Beta", "Gamma"],
+                "answer": " beta ",
+                "knowledgeTags": ["??4"],
+                "difficultyLevel": "BASIC",
+            },
+        ],
+        "answers": {
+            "q1": " b ",
+            "q2": "??? ??",
+            "q3": "B. ?-?-?",
+            "q4": "B",
+        },
+    }
+
+    result = await agent._tool_grade_objective(tool_input={}, params=params)
+
+    assert len(result["items"]) == 4
+    assert all(item["isCorrect"] for item in result["items"])
+    assert result["pendingSubjective"] == []
+
+
+@pytest.mark.asyncio
+async def test_judge_agent_rejects_missing_question_batch_provenance() -> None:
+    params = {
+        "topic": "联合索引",
+        "practiceQuestionBatch": {
+            "title": "联合索引 练习题",
+            "topic": "联合索引",
+            "difficulty": "BASIC",
+            "questions": [
+                {
+                    "questionId": "q1",
+                    "questionType": "SINGLE_CHOICE",
+                    "stem": "联合索引最左匹配原则是什么？",
+                    "options": ["A", "B", "C", "D"],
+                    "answer": "B",
+                    "knowledgeTags": ["联合索引"],
+                    "difficultyLevel": "BASIC",
+                },
+            ],
+        },
+        "answers": {"q1": "B"},
+    }
+    agent = JudgeAgent()
+
+    with pytest.raises(RuntimeError, match="题批缺少 LLM 来源元数据"):
+        await agent._run_direct_judge_pipeline(
+            task_id="task-missing-provenance",
+            user_id="user-1",
+            params=params,
+        )
+
+
+def test_validate_complete_judge_items_rejects_empty_result() -> None:
+    agent = JudgeAgent()
+    params = {
+        "practiceQuestions": [
+            {
+                "questionId": "q1",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "联合索引最左匹配原则是什么？",
+                "options": ["A", "B", "C", "D"],
+                "answer": "B",
+                "knowledgeTags": ["联合索引"],
+                "difficultyLevel": "BASIC",
+            },
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="判题结果不完整"):
+        agent._validate_complete_judge_items(params=params, judge_items=[])
+
+
+@pytest.mark.asyncio
 async def test_judge_agent_golden_eval_preserves_scoring_contract() -> None:
     class BrokenObjectiveJudgeGenerator:
         async def judge(self, *, questions, answers):
             del questions, answers
-            raise RuntimeError("force deterministic objective fallback")
+            raise AssertionError("objective questions should be graded deterministically")
 
     class GoldenSubjectiveEvaluator:
         async def evaluate(self, *, question, learner_answer):
@@ -590,7 +678,7 @@ async def test_judge_agent_uses_subjective_evaluator_result_when_available() -> 
     class BrokenObjectiveJudgeGenerator:
         async def judge(self, *, questions, answers):
             del questions, answers
-            raise RuntimeError("force deterministic objective fallback")
+            raise AssertionError("objective questions should be graded deterministically")
 
     class FakeSubjectiveEvaluator:
         async def evaluate(self, *, question, learner_answer):
@@ -656,64 +744,58 @@ async def test_judge_agent_uses_subjective_evaluator_result_when_available() -> 
 
 
 @pytest.mark.asyncio
-async def test_judge_agent_falls_back_when_subjective_evaluator_fails() -> None:
+async def test_judge_agent_fails_when_subjective_evaluator_fails() -> None:
     class BrokenObjectiveJudgeGenerator:
         async def judge(self, *, questions, answers):
             del questions, answers
-            raise RuntimeError("force deterministic objective fallback")
+            raise AssertionError("objective questions should be graded deterministically")
 
     class BrokenSubjectiveEvaluator:
         async def evaluate(self, *, question, learner_answer):
             del question, learner_answer
             raise RuntimeError("rate limit")
 
-    practice_agent = PracticeAgent()
     params = {
         "topic": "联合索引",
-        "difficulty": "BASIC",
-        "count": 5,
+        "practiceQuestions": [
+            {
+                "questionId": "q1",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "联合索引最左匹配原则是什么？",
+                "options": ["A", "B", "C", "D"],
+                "answer": "C",
+                "knowledgeTags": ["联合索引"],
+                "difficultyLevel": "BASIC",
+            },
+            {
+                "questionId": "q2",
+                "questionType": "SHORT_ANSWER",
+                "stem": "说明联合索引失效场景。",
+                "answer": "需要先判断条件。",
+                "knowledgeTags": ["联合索引", "使用条件"],
+                "difficultyLevel": "BASIC",
+            },
+        ],
     }
-    _ = [
-        event
-        async for event in practice_agent.run(
-            task_id="task-practice",
-            trace_id="trace-practice",
-            seq=1,
-            service_type="PRACTICE_JUDGE",
-            params=params,
-            snapshot=_build_snapshot(),
-            system_prompt="test",
-        )
-    ]
     params["answers"] = {
         "q1": "C",
-        "q2": "B",
-        "q3": "",
-        "q4": "B",
-        "q5": "",
+        "q2": "我不确定。",
     }
 
     judge_agent = JudgeAgent(
         objective_judge_generator=BrokenObjectiveJudgeGenerator(),
         subjective_evaluator=BrokenSubjectiveEvaluator(),
     )
-    events = [
-        event
-        async for event in judge_agent.run(
-            task_id="task-judge-fallback",
-            trace_id="trace-judge-fallback",
-            seq=3,
-            service_type="PRACTICE_JUDGE",
-            params=params,
-            snapshot=_build_snapshot(),
-            system_prompt="test",
-        )
-    ]
-
-    judge_event = next(event for event in events if event.event == "judge_result")
-    subjective_items = [
-        item for item in judge_event.payload.items if item.question_type == "SHORT_ANSWER"
-    ]
-    assert subjective_items
-    assert subjective_items[0].score == 0.0
-    assert "未作答或答案为空" in subjective_items[0].reason
+    with pytest.raises(RuntimeError, match="rate limit"):
+        _ = [
+            event
+            async for event in judge_agent.run(
+                task_id="task-judge-fallback",
+                trace_id="trace-judge-fallback",
+                seq=3,
+                service_type="PRACTICE_JUDGE",
+                params=params,
+                snapshot=_build_snapshot(),
+                system_prompt="test",
+            )
+        ]

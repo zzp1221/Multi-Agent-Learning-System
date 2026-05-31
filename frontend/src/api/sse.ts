@@ -97,7 +97,7 @@ export async function streamSse(url: string, options: StreamSseOptions): Promise
       if (error instanceof DOMException && error.name === 'AbortError') {
         return;
       }
-      lastError = error instanceof Error ? error : new Error('SSE 流执行失败');
+      lastError = error instanceof Error ? error : new Error('实时连接执行失败');
 
       if (attempt < maxRetries) {
         continue;
@@ -105,7 +105,7 @@ export async function streamSse(url: string, options: StreamSseOptions): Promise
     }
   }
 
-  options.onError(lastError ?? new Error('SSE 流执行失败，已达最大重试次数'));
+  options.onError(lastError ?? new Error('实时连接执行失败，多次重试后仍未恢复'));
 }
 
 function parseSseEventBlock(block: string, defaultEvent = 'message'): RawSseEvent | null {

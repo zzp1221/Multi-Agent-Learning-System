@@ -6,6 +6,7 @@ from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.agents.practice_agent import PracticeAgent
 from src.ai_modules.agents.query_rewrite_agent import QueryRewriteAgent
 from src.ai_modules.models import (
+    CriticReviewPayload,
     EngineStreamRequest,
     QuestionBatchPayload,
     QuestionBatchSSEEvent,
@@ -117,12 +118,41 @@ class _StubResourceAgent(PlaceholderAgent):
         yield ResourceFileSSEEvent(taskId=task_id, traceId=trace_id, seq=seq + 1, payload=payload)
 
 
+class _StubCriticAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("critic", "critic")
+
+    async def run(self, *, params, **kwargs):
+        del kwargs
+        review = CriticReviewPayload(
+            verdict="PASS",
+            factConsistency="SUPPORTED",
+            difficultyMatch="MATCHED",
+            sourceCoverage="GOOD",
+            issues=[],
+            suggestions=["可发布。"],
+            summaryText="Critic OK",
+        )
+        params["criticReview"] = review.model_dump(by_alias=True)
+        if False:
+            yield
+
+
 class _FailingResourceAgent(PlaceholderAgent):
     def __init__(self) -> None:
         super().__init__("failing", "failing_generation")
 
     async def run(self, **kwargs):
         raise RuntimeError("llm unavailable")
+        yield  # pragma: no cover
+
+
+class _QualityGateFailingResourceAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("quality gate failing", "quality_gate_generation")
+
+    async def run(self, **kwargs):
+        raise RuntimeError("Critic review LLM failed; heuristic fallback is disabled")
         yield  # pragma: no cover
 
 
@@ -224,6 +254,7 @@ def _install_success_bundle(supervisor: PythonAgentSupervisor) -> None:
     supervisor.agent_registry["mindmap_generator"] = _StubResourceAgent("MINDMAP", "mindmap_generation")
     supervisor.agent_registry["reading_generator"] = _StubResourceAgent("READING", "reading_generation")
     supervisor.agent_registry["practice"] = _StubResourceAgent("QUIZ", "practice")
+    supervisor.agent_registry["critic"] = _StubCriticAgent()
 
 
 def test_resource_types_honor_requested_arbitrary_agents() -> None:
@@ -294,6 +325,7 @@ async def test_resource_bundle_runs_requested_generation_agents_concurrently() -
     probe = _ResourceStartProbe(expected_count=3)
     supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["critic"] = _StubCriticAgent()
     supervisor.agent_registry["document_generator"] = _OrderedResourceAgent("DOCUMENT", "document_generation", probe)
     supervisor.agent_registry["slide_generator"] = _OrderedResourceAgent("SLIDES", "slide_generation", probe)
     supervisor.agent_registry["mindmap_generator"] = _OrderedResourceAgent("MINDMAP", "mindmap_generation", probe)
@@ -319,6 +351,7 @@ async def test_resource_bundle_reports_assets_in_completion_order() -> None:
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["critic"] = _StubCriticAgent()
     supervisor.agent_registry["document_generator"] = _DelayedResourceAgent("DOCUMENT", "document_generation", 0.05)
     supervisor.agent_registry["slide_generator"] = _DelayedResourceAgent("SLIDES", "slide_generation", 0.0)
     request = EngineStreamRequest(
@@ -360,6 +393,7 @@ async def test_resource_bundle_rejects_mismatched_resource_type_events() -> None
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["critic"] = _StubCriticAgent()
     supervisor.agent_registry["document_generator"] = _WrongTypeResourceAgent("CODE", "document_generation")
     supervisor.agent_registry["mindmap_generator"] = _StubResourceAgent("MINDMAP", "mindmap_generation")
     request = EngineStreamRequest(
@@ -417,6 +451,27 @@ async def test_resource_bundle_fails_without_resource_file_when_llm_unavailable(
         for event in events
     )
     assert events[-1].payload.status == "FAILED"
+
+
+@pytest.mark.asyncio
+async def test_resource_bundle_quality_gate_failure_fails_whole_task() -> None:
+    supervisor = PythonAgentSupervisor()
+    _install_success_bundle(supervisor)
+    supervisor.agent_registry["slide_generator"] = _QualityGateFailingResourceAgent()
+    request = EngineStreamRequest(
+        serviceType="RESOURCE_GENERATION",
+        params={"resourceTypes": ["DOCUMENT", "SLIDES"], "query": "联合索引"},
+        taskId="task-quality-gate-fail",
+        traceId="trace-quality-gate-fail",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert events[-2].event == "error"
+    assert events[-2].payload.code == "RESOURCE_BUNDLE_FAILED"
+    assert events[-1].event == "done"
+    assert events[-1].payload.status == "FAILED"
+    assert [event.seq for event in events] == sorted({event.seq for event in events})
 
 
 @pytest.mark.asyncio

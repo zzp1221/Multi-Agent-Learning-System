@@ -28,6 +28,7 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -102,7 +103,12 @@ class ConversationAndProfileIntegrationTest {
             .andExpect(request().asyncStarted())
             .andReturn();
 
-        String responseBody = streamResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        streamResult.getAsyncResult(1000);
+        MvcResult asyncResult = mockMvc.perform(asyncDispatch(streamResult))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        String responseBody = asyncResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(responseBody).contains("event:result_chunk");
         assertThat(responseBody).contains("event:done");
         assertThat(responseBody).contains(conversationId);

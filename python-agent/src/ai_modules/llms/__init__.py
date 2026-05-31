@@ -51,7 +51,7 @@ from src.ai_modules.llms.spark_compatible import (
     SparkCompatibleClient,
     SparkCompatibleToolCallingLLM,
 )
-from src.ai_modules.llms.planning_llm import PlanningLLMClientFactory, RuleBasedPlanningLLM
+from src.ai_modules.llms.planning_llm import PlanningLLMClientFactory
 from src.ai_modules.llms.practice_llm import RuleBasedJudgeLLM, RuleBasedPracticeLLM
 from src.ai_modules.llms.profile_llm import RuleBasedProfileLLM
 from src.ai_modules.llms.review_llm import (
@@ -61,7 +61,6 @@ from src.ai_modules.llms.review_llm import (
     OpenAICompatibleCriticReviewer,
     OpenAICompatibleSafetyReviewer,
     ReviewLLMClientFactory,
-    RuleBasedReviewLLM,
     SafetyReviewer,
 )
 from src.ai_modules.llms.tutor_llm import (
@@ -130,11 +129,9 @@ __all__ = [
     "RetrievalSummaryGenerator",
     "RuleBasedGenerationLLM",
     "RuleBasedJudgeLLM",
-    "RuleBasedPlanningLLM",
     "RuleBasedPracticeLLM",
     "RuleBasedProfileLLM",
     "RuleBasedQueryRewriteLLM",
-    "RuleBasedReviewLLM",
     "RuleBasedTutorLLM",
     "SafetyReviewer",
     "SparkCompatibleClient",

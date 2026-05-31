@@ -77,13 +77,14 @@ class TestSseEventContracts:
             taskId=self.TASK_ID,
             traceId=self.TRACE_ID,
             seq=2,
-            payload=ResultChunkPayload(text="这是第一段生成内容"),
+            payload=ResultChunkPayload(text="这是第一段生成内容", stage="tutoring"),
         )
         wire = event.to_sse()
         evt_type, data = parse_sse_wire(wire)
         assert evt_type == "result_chunk"
         assert_common_fields(data, "result_chunk", min_seq=2)
         assert data["payload"]["text"] == "这是第一段生成内容"
+        assert data["payload"]["stage"] == "tutoring"
 
     def test_resource_file_event_wire_format(self) -> None:
         event = ResourceFileSSEEvent(

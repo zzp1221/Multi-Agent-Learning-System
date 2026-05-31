@@ -5,6 +5,8 @@ import type {
   EngineService,
   ConversationStreamEventPayload,
   InlineResourceView,
+  CriticReviewView,
+  LearningPlanView,
   ProfileCurrentGoal,
   ProfileDimensionScore,
   ProfileHistoryPoint,
@@ -83,6 +85,8 @@ export async function runByApiTask({
   setCompletedResources,
   setPracticeBatch,
   setJudgeResult,
+  setLearningPlan,
+  setCriticReview,
   taskStreamAbortRef,
 }: RunByApiTaskArgs): Promise<'completed' | 'running' | 'failed' | 'aborted' | 'unauthorized'> {
   const browserRenderState = {
@@ -151,6 +155,12 @@ export async function runByApiTask({
       setJudgeResult(item);
       setTaskSummary(item.summary);
     },
+    onLearningPlan: (item) => {
+      setLearningPlan(item);
+    },
+    onCriticReview: (item) => {
+      setCriticReview(item);
+    },
   };
 
   const streamAbortController = new AbortController();
@@ -197,7 +207,7 @@ export async function runByApiTask({
       handlers.onLine('任务结果读取需要重新登录，任务本身可能仍在后台继续执行。');
       return 'unauthorized';
     }
-    handlers.onLine(`任务流失败，尝试轮询兜底：${streamErrorMessage}`);
+    handlers.onLine(`实时连接中断，正在改用轮询方式读取结果：${streamErrorMessage}`);
   }
 
   try {
@@ -257,6 +267,14 @@ async function consumeTaskStreamEvent(
   if (event.event === 'progress') {
     const progress = readNumeric(envelope.payload?.percent) ?? readNumeric(envelope.payload?.progress) ?? 0;
     handlers.onProgress(progress, readStatusHint(envelope.payload));
+    const learningPlan = readLearningPlan(envelope.payload);
+    if (learningPlan) {
+      handlers.onLearningPlan(learningPlan);
+    }
+    const criticReview = readCriticReview(envelope.payload);
+    if (criticReview) {
+      handlers.onCriticReview(criticReview);
+    }
     return;
   }
 
@@ -349,6 +367,14 @@ async function consumeTaskStreamEvent(
 
   if (event.event === 'done') {
     const summary = readSummary(envelope.payload);
+    const learningPlan = readLearningPlan(envelope.payload);
+    if (learningPlan) {
+      handlers.onLearningPlan(learningPlan);
+    }
+    const criticReview = readCriticReview(envelope.payload);
+    if (criticReview) {
+      handlers.onCriticReview(criticReview);
+    }
     const status = readString(envelope.payload?.status).toUpperCase();
     const doneLabel = status === 'FAILED' || status === 'ERROR'
       ? '任务失败'
@@ -368,7 +394,7 @@ async function consumeTaskStreamEvent(
   }
 
   if (event.event === 'error') {
-    handlers.onLine(`任务流错误：${readSummary(envelope.payload) || '任务流执行失败'}`);
+    handlers.onLine(`实时任务连接出错：${readSummary(envelope.payload) || '任务执行失败'}`);
     return;
   }
 
@@ -400,6 +426,14 @@ async function applyTaskSnapshot(
 
   if (task.responseSummary) {
     const summary = readSummary(task.responseSummary);
+    const learningPlan = readLearningPlan(task.responseSummary);
+    if (learningPlan) {
+      handlers.onLearningPlan(learningPlan);
+    }
+    const criticReview = readCriticReview(task.responseSummary);
+    if (criticReview) {
+      handlers.onCriticReview(criticReview);
+    }
     if (summary) {
       handlers.onSummary(summary);
     }
@@ -461,7 +495,7 @@ async function maybeStartBrowserRender(
     return;
   }
   if (!ensureGeneratedPayloadProvenance(payload, handlers, '视频资源')) {
-    browserRenderState.errorMessage = '缺少真实 LLM 生成元数据';
+    browserRenderState.errorMessage = '缺少有效的智能生成校验信息';
     return;
   }
   browserRenderState.started = true;
@@ -568,8 +602,7 @@ export function readConversationChunk(data: ConversationStreamEventPayload, even
 
   const stage = readString(payload.stage);
   if (eventName === 'progress') {
-    const progressMessage = readString(payload.message);
-    return progressMessage ? `\n[处理中] ${progressMessage}\n` : '';
+    return '';
   }
   if (eventName === 'error') {
     const errorMessage = readString(payload.message) || readString(payload.text);
@@ -596,6 +629,11 @@ export function readConversationChunk(data: ConversationStreamEventPayload, even
 function looksLikeTutorChain(text: string): boolean {
   const normalized = text.replace(/\n/g, ' ').trim();
   return normalized.includes('历史摘要')
+    || normalized.includes('检索查询')
+    || normalized.includes('来源摘要')
+    || normalized.includes('查询处理')
+    || normalized.includes('协作计划')
+    || normalized.includes('质量复核')
     || normalized.includes('优先参考的来源')
     || normalized.includes('建议你这样学')
     || normalized.includes('接下来请你先回答')
@@ -1083,6 +1121,8 @@ function localizeExplanationPreference(value: string): string {
   switch (normalized) {
     case 'step_by_step':
       return '循序渐进';
+    case 'concept_first':
+      return '先讲原理';
     case 'concept_then_question':
       return '先概念后练习';
     case 'example_first':
@@ -1160,6 +1200,7 @@ function localizeNarrativeText(value: string): string {
     [/\bmixed\b/g, '混合型'],
     [/\breasoning_oriented\b/g, '偏原理推导'],
     [/\bprocedural_oriented\b/g, '偏步骤实操'],
+    [/\bconcept_first\b/g, '先讲原理'],
     [/\bconcept_then_question\b/g, '先概念后练习'],
     [/\bstep_by_step\b/g, '循序渐进'],
     [/\bexample_first\b/g, '先例子后原理'],
@@ -1391,7 +1432,7 @@ function formatLearningPathLines(learningPath: Record<string, unknown>): string[
     lines.push(`规划周期：${duration}`);
   }
   if (milestones.length > 0) {
-    lines.push(`阶段里程碑：${milestones.join(' -> ')}`);
+    lines.push(`阶段里程碑：${milestones.join(' → ')}`);
   }
 
   rawSteps.forEach((step, index) => {
@@ -1503,7 +1544,7 @@ function resourceTypeLabel(resourceType: string): string {
     case 'EXPLANATION':
       return '讲解文档';
     case 'SLIDES':
-      return 'PPT课件';
+      return '演示课件';
     case 'CODE_CASE':
       return '代码案例';
     case 'QUIZ':
@@ -1611,7 +1652,7 @@ function ensureGeneratedPayloadProvenance(
   if (hasRealLlmProvenance(payload)) {
     return true;
   }
-  handlers.onLine(`${label}生成失败：缺少真实 LLM 生成元数据`);
+  handlers.onLine(`${label}生成失败：缺少有效的智能生成校验信息`);
   return false;
 }
 
@@ -1622,7 +1663,7 @@ function ensureQuestionBatchProvenance(
   if (hasRealLlmProvenance(payload)) {
     return true;
   }
-  handlers.onLine('练习题生成失败：缺少真实 LLM 生成元数据');
+  handlers.onLine('练习题生成失败：缺少有效的智能生成校验信息');
   return false;
 }
 
@@ -1853,6 +1894,62 @@ function readPracticeJudgeResult(payload: Record<string, unknown> | undefined): 
         reason: readString(item.reason),
         feedback: readString(item.feedback),
       })),
+  };
+}
+
+function readLearningPlan(payload: Record<string, unknown> | undefined): LearningPlanView | null {
+  const record = readRecord(payload?.learningPlan);
+  if (!record) {
+    return null;
+  }
+  const rawSteps = Array.isArray(record.steps) ? record.steps : [];
+  const steps = rawSteps
+    .map((item) => readRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      stepId: readString(item.stepId),
+      title: readString(item.title),
+      intent: readString(item.intent) || undefined,
+      agentName: readString(item.agentName) || undefined,
+      serviceType: readString(item.serviceType) || undefined,
+      status: readString(item.status) || undefined,
+      qualityGate: readString(item.qualityGate) || undefined,
+    }))
+    .filter((step) => step.stepId || step.title);
+  if (!readString(record.planId) && !readString(record.goal) && steps.length === 0) {
+    return null;
+  }
+  return {
+    planId: readString(record.planId),
+    goal: readString(record.goal),
+    status: readString(record.status) || undefined,
+    createdBy: readString(record.createdBy) || undefined,
+    provider: readString(record.provider) || undefined,
+    model: readString(record.model) || undefined,
+    steps,
+  };
+}
+
+function readCriticReview(payload: Record<string, unknown> | undefined): CriticReviewView | null {
+  const record = readRecord(payload?.criticReview);
+  if (!record) {
+    return null;
+  }
+  const issues = readStringArray(record.issues);
+  const suggestions = readStringArray(record.suggestions);
+  const summaryText = readString(record.summaryText);
+  const verdict = readString(record.verdict);
+  if (!verdict && !summaryText && issues.length === 0 && suggestions.length === 0) {
+    return null;
+  }
+  return {
+    verdict: verdict || undefined,
+    factConsistency: readString(record.factConsistency) || undefined,
+    difficultyMatch: readString(record.difficultyMatch) || undefined,
+    sourceCoverage: readString(record.sourceCoverage) || undefined,
+    issues,
+    suggestions,
+    summaryText: summaryText || undefined,
   };
 }
 

@@ -239,6 +239,7 @@ class Settings(BaseSettings):
         alias="SMART_ENGINE_CALLBACK_TIMEOUT_SECONDS",
     )
     smart_engine_callback_retries: int = Field(default=2, alias="SMART_ENGINE_CALLBACK_RETRIES")
+    smart_engine_worker_concurrency: int = Field(default=2, alias="SMART_ENGINE_WORKER_CONCURRENCY")
     retrieval_domain: str = Field(
         default="COMPUTER_SCIENCE",
         alias="RETRIEVAL_DOMAIN",

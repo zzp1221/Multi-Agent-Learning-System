@@ -4,8 +4,10 @@ import pytest
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.models import (
+    ConversationPlan,
     DialogState,
     EngineStreamRequest,
+    CriticReviewPayload,
     JudgeResultPayload,
     JudgeResultSSEEvent,
     ProgressPayload,
@@ -18,7 +20,8 @@ from src.ai_modules.models import (
     ResultChunkSSEEvent,
     VideoProgressSSEEvent,
 )
-from src.ai_modules.supervisor import PythonAgentSupervisor
+from src.ai_modules.runtime import SystemSnapshot
+from src.ai_modules.supervisor import ExecutionState, PythonAgentSupervisor
 
 
 def test_supervisor_resolves_resource_generation_route() -> None:
@@ -232,6 +235,78 @@ class _StubProfileAgent(PlaceholderAgent):
         )
 
 
+class _FakePlanner:
+    def __init__(self, steps: list[dict] | None = None) -> None:
+        self.steps = steps or [
+            {
+                "stepId": "rewrite",
+                "title": "改写问题",
+                "intent": "标准化当前学习问题",
+                "agentName": "query_rewrite",
+            },
+            {
+                "stepId": "retrieve",
+                "title": "检索证据",
+                "intent": "检索课程相关证据",
+                "agentName": "retrieval",
+            },
+            {
+                "stepId": "tutor",
+                "title": "分层讲解",
+                "intent": "结合证据完成辅导",
+                "agentName": "tutor",
+                "qualityGate": "critic",
+            },
+        ]
+
+    async def plan(self, **kwargs) -> ConversationPlan:
+        return ConversationPlan.model_validate(
+            {
+                "planId": "test-plan",
+                "goal": kwargs.get("params", {}).get("query") or "测试学习目标",
+                "serviceType": kwargs.get("service_type") or "TUTORING",
+                "steps": self.steps,
+                "createdBy": "llm_planner",
+                "status": "PLANNED",
+                "provider": "test-provider",
+                "model": "test-model",
+            }
+        )
+
+
+class _StubCriticAgent(PlaceholderAgent):
+    def __init__(self, *, fail: bool = False) -> None:
+        super().__init__("stub critic", "critic")
+        self.fail = fail
+        self.seen_params: dict | None = None
+
+    async def run(self, *, params, **kwargs):
+        del kwargs
+        if self.fail:
+            raise RuntimeError("critic unavailable")
+        self.seen_params = dict(params)
+        review = CriticReviewPayload(
+            verdict="PASS",
+            factConsistency="SUPPORTED",
+            difficultyMatch="MATCHED",
+            sourceCoverage="GOOD",
+            issues=[],
+            suggestions=["可发布。"],
+            summaryText="Critic OK",
+        )
+        params["criticReview"] = review.model_dump(by_alias=True)
+        if False:
+            yield
+
+
+def _install_fake_planner(supervisor: PythonAgentSupervisor, steps: list[dict] | None = None) -> None:
+    supervisor.planner_factory = lambda allowed_agent_names: _FakePlanner(steps)
+
+
+def _install_stub_critic(supervisor: PythonAgentSupervisor, *, fail: bool = False) -> None:
+    supervisor.agent_registry["critic"] = _StubCriticAgent(fail=fail)
+
+
 class _FailingBackgroundProfileAgent(PlaceholderAgent):
     def __init__(self) -> None:
         super().__init__("failing profile", "profiling")
@@ -241,6 +316,20 @@ class _FailingBackgroundProfileAgent(PlaceholderAgent):
         del params, kwargs
         self.started.set()
         raise RuntimeError("画像构建失败")
+        if False:
+            yield
+
+
+class _RecordingBackgroundProfileAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("recording profile", "profiling")
+        self.started = asyncio.Event()
+        self.seen_params: dict | None = None
+
+    async def run(self, *, params, **kwargs):
+        del kwargs
+        self.seen_params = dict(params)
+        self.started.set()
         if False:
             yield
 
@@ -602,6 +691,7 @@ async def test_supervisor_streams_video_generation_events() -> None:
     supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["video_generator"] = _StubVideoGeneratorAgent()
+    _install_stub_critic(supervisor)
     request = EngineStreamRequest(
         serviceType="VIDEO_GENERATION",
         params={
@@ -745,6 +835,8 @@ async def test_supervisor_streams_tutoring_route_with_retrieval_then_tutor() -> 
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["tutor"] = _StubTutorAgent()
     supervisor.agent_registry["profile"] = _StubProfileAgent()
+    critic_agent = _StubCriticAgent()
+    supervisor.agent_registry["critic"] = critic_agent
     request = EngineStreamRequest(
         serviceType="TUTORING",
         params={
@@ -771,8 +863,188 @@ async def test_supervisor_streams_tutoring_route_with_retrieval_then_tutor() -> 
     assert events[-1].event == "done"
     tutor_progress = next(event for event in events if event.event == "progress" and event.dialog_state is not None)
     assert tutor_progress.dialog_state.next_action == "ask_follow_up"
-    tutor_result = next(event for event in events if event.event == "result_chunk" and "联合索引" in event.payload.text)
+    tutor_result = next(
+        event
+        for event in events
+        if event.event == "result_chunk"
+        and event.payload.stage == "tutoring"
+        and "联合索引" in event.payload.text
+    )
     assert "联合索引" in tutor_result.payload.text
+    assert tutor_result.payload.stage == "tutoring"
+    assert not any(event.event == "progress" and event.payload.stage == "planning" for event in events)
+    internal_result_stages = [
+        event.payload.stage
+        for event in events
+        if event.event == "result_chunk" and event.payload.stage != "tutoring"
+    ]
+    assert "query_rewrite" in internal_result_stages
+    assert "retrieval" in internal_result_stages
+    assert critic_agent.seen_params is None
+
+
+@pytest.mark.asyncio
+async def test_supervisor_marks_critic_result_chunks_internal() -> None:
+    class StreamingCriticAgent(_StubCriticAgent):
+        async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+            async for _ in super().run(params=params, **kwargs):
+                pass
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq,
+                payload=ResultChunkPayload(text="Critic OK"),
+            )
+
+    supervisor = PythonAgentSupervisor()
+    critic_agent = StreamingCriticAgent()
+    supervisor.agent_registry["critic"] = critic_agent
+    state = ExecutionState(
+        request=EngineStreamRequest(
+            serviceType="TUTORING",
+            params={
+                "query": "联合索引",
+                "finalAnswer": "联合索引需要先理解最左匹配规则。",
+            },
+            taskId="task-critic-stage",
+            traceId="trace-critic-stage",
+        ),
+        params={
+            "query": "联合索引",
+            "finalAnswer": "联合索引需要先理解最左匹配规则。",
+        },
+        snapshot=SystemSnapshot(
+            current_course="数据库原理",
+            current_chapter="索引",
+            course_progress=0.5,
+            student_name="测试学生",
+            student_level="BASIC",
+        ),
+    )
+
+    events = [event async for event in supervisor._run_critic_review(state=state, service_type="TUTORING")]
+
+    critic_chunk = next(event for event in events if event.event == "result_chunk")
+    assert critic_chunk.payload.stage == "critic"
+
+
+@pytest.mark.asyncio
+async def test_supervisor_skips_planner_for_explicit_length_limit() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["tutor"] = _StubTutorAgent()
+    supervisor.agent_registry["profile"] = _StubProfileAgent()
+    _install_fake_planner(
+        supervisor,
+        steps=[
+            {
+                "stepId": "tutor-1",
+                "title": "第一次回答",
+                "agentName": "tutor",
+                "qualityGate": "critic",
+            },
+            {
+                "stepId": "tutor-2",
+                "title": "第二次回答",
+                "agentName": "tutor",
+            },
+        ],
+    )
+    _install_stub_critic(supervisor)
+    request = EngineStreamRequest(
+        serviceType="TUTORING",
+        params={
+            "query": "请在80字内总结红黑树的核心思想",
+            "messages": [{"role": "user", "content": "请在80字内总结红黑树的核心思想"}],
+        },
+        taskId="task-length-planner",
+        traceId="trace-length-planner",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert not any(event.event == "progress" and event.payload.stage == "planning" for event in events)
+    tutor_chunks = [
+        event.payload.text
+        for event in events
+        if event.event == "result_chunk" and event.payload.stage == "tutoring"
+    ]
+    assert tutor_chunks == ["联合索引需要先理解最左匹配规则。"]
+
+
+@pytest.mark.asyncio
+async def test_supervisor_skips_conversation_planner_for_tutoring() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["tutor"] = _StubTutorAgent()
+    supervisor.agent_registry["profile"] = _StubProfileAgent()
+    _install_resource_bundle_stubs(supervisor)
+    critic_agent = _StubCriticAgent()
+    supervisor.agent_registry["critic"] = critic_agent
+    _install_fake_planner(
+        supervisor,
+        steps=[
+            {
+                "stepId": "resource",
+                "title": "生成专项学习包",
+                "intent": "复用资源生成服务",
+                "serviceType": "RESOURCE_GENERATION",
+                "qualityGate": "critic",
+            }
+        ],
+    )
+    request = EngineStreamRequest(
+        serviceType="TUTORING",
+        params={
+            "query": "我想系统学习联合索引",
+            "resourceType": "DOCUMENT",
+            "learningContext": {"course": "数据库原理", "chapter": "索引"},
+        },
+        taskId="task-planned-resource",
+        traceId="trace-planned-resource",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert events[-1].event == "done"
+    assert not any(event.event == "resource_file" for event in events)
+    assert not any(event.event == "progress" and event.payload.stage == "planning" for event in events)
+    assert any(
+        event.event == "result_chunk"
+        and event.payload.stage == "tutoring"
+        and "联合索引" in event.payload.text
+        for event in events
+    )
+    assert critic_agent.seen_params is None
+    assert request.params == {
+        "query": "我想系统学习联合索引",
+        "resourceType": "DOCUMENT",
+        "learningContext": {"course": "数据库原理", "chapter": "索引"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_supervisor_fails_when_critic_fails_after_key_result() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["evaluation"] = _StubEvaluationAgent()
+    _install_stub_critic(supervisor, fail=True)
+    request = EngineStreamRequest(
+        serviceType="EVALUATION",
+        params={
+            "profile": {"studentLevel": "BASIC"},
+            "learningContext": {"course": "数据库原理", "chapter": "索引"},
+        },
+        taskId="task-critic-fail",
+        traceId="trace-critic-fail",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert [event.event for event in events][-2:] == ["error", "done"]
+    assert events[-2].payload.code == "PLANNER_REVIEWER_FAILED"
+    assert events[-1].payload.status == "FAILED"
 
 
 @pytest.mark.asyncio
@@ -783,6 +1055,8 @@ async def test_supervisor_runs_tutoring_profile_in_background() -> None:
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["tutor"] = _StubTutorAgent()
     supervisor.agent_registry["profile"] = profile_agent
+    _install_fake_planner(supervisor)
+    _install_stub_critic(supervisor)
     request = EngineStreamRequest(
         serviceType="TUTORING",
         params={
@@ -821,6 +1095,8 @@ async def test_supervisor_skips_tutoring_profile_before_third_turn() -> None:
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["tutor"] = _StubTutorAgent()
     supervisor.agent_registry["profile"] = profile_agent
+    _install_fake_planner(supervisor)
+    _install_stub_critic(supervisor)
     request = EngineStreamRequest(
         serviceType="TUTORING",
         params={
@@ -849,8 +1125,13 @@ async def test_supervisor_skips_tutoring_profile_before_third_turn() -> None:
 async def test_supervisor_streams_evaluation_route() -> None:
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["evaluation"] = _StubEvaluationAgent()
+    profile_agent = _RecordingBackgroundProfileAgent()
+    supervisor.agent_registry["profile"] = profile_agent
+    _install_stub_critic(supervisor)
     request = EngineStreamRequest(
         serviceType="EVALUATION",
+        userId="user-evaluation-profile",
+        conversationId="conv-evaluation-profile",
         params={
             "profile": {
                 "studentLevel": "BASIC",
@@ -865,9 +1146,82 @@ async def test_supervisor_streams_evaluation_route() -> None:
     events = [event async for event in supervisor.stream(request)]
 
     assert events[-1].event == "done"
+    assert events[0].payload.stage == "evaluation"
     assert events[0].payload.message == "已完成能力评估"
     assert any(event.event == "result_chunk" and "已完成能力评估" in event.payload.text for event in events)
     assert events[-1].payload.summary == "EVALUATION 路由完成，执行链路: evaluation"
+    assert not any(
+        event.event == "progress" and getattr(event.payload, "stage", "") == "profiling"
+        for event in events
+    )
+    await asyncio.wait_for(profile_agent.started.wait(), timeout=1)
+    assert profile_agent.seen_params is not None
+    assert profile_agent.seen_params["profileSource"] == "EVALUATION"
+    assert profile_agent.seen_params["userId"] == "user-evaluation-profile"
+    assert profile_agent.seen_params["conversationId"] == "conv-evaluation-profile"
+
+
+@pytest.mark.asyncio
+async def test_supervisor_skips_evaluation_profile_without_result() -> None:
+    class EmptyEvaluationAgent(PlaceholderAgent):
+        def __init__(self) -> None:
+            super().__init__("empty evaluation", "evaluation")
+
+        async def run(self, *, task_id, trace_id, seq, **kwargs):
+            del kwargs
+            yield ProgressSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq,
+                payload=ProgressPayload(stage="evaluation", percent=45, message="评估完成但无结果"),
+            )
+
+    supervisor = PythonAgentSupervisor()
+    profile_agent = _RecordingBackgroundProfileAgent()
+    supervisor.agent_registry["evaluation"] = EmptyEvaluationAgent()
+    supervisor.agent_registry["profile"] = profile_agent
+    _install_stub_critic(supervisor)
+    request = EngineStreamRequest(
+        serviceType="EVALUATION",
+        userId="user-empty-evaluation",
+        conversationId="conv-empty-evaluation",
+        params={"learningContext": {"course": "数据库原理", "chapter": "索引"}},
+        taskId="task-empty-evaluation",
+        traceId="trace-empty-evaluation",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert events[-1].event == "done"
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(profile_agent.started.wait(), timeout=0.2)
+
+
+@pytest.mark.asyncio
+async def test_supervisor_keeps_existing_evaluation_profile_source() -> None:
+    supervisor = PythonAgentSupervisor()
+    profile_agent = _RecordingBackgroundProfileAgent()
+    supervisor.agent_registry["evaluation"] = _StubEvaluationAgent()
+    supervisor.agent_registry["profile"] = profile_agent
+    _install_stub_critic(supervisor)
+    request = EngineStreamRequest(
+        serviceType="LEARNING_EVALUATION",
+        userId="user-learning-evaluation-profile",
+        conversationId="conv-learning-evaluation-profile",
+        params={
+            "profileSource": "CUSTOM_SOURCE",
+            "learningContext": {"course": "数据库原理", "chapter": "联合索引"},
+        },
+        taskId="task-learning-evaluation-profile",
+        traceId="trace-learning-evaluation-profile",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert events[-1].event == "done"
+    await asyncio.wait_for(profile_agent.started.wait(), timeout=1)
+    assert profile_agent.seen_params is not None
+    assert profile_agent.seen_params["profileSource"] == "CUSTOM_SOURCE"
 
 
 @pytest.mark.asyncio

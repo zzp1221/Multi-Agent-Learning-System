@@ -79,7 +79,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
       {/* 语言标签和复制按钮 */}
       <div className="flex items-center justify-between px-4 py-2 bg-slate-700 rounded-t-xl border-b border-slate-600">
         <span className="text-xs text-slate-400 font-mono">
-          {language || 'code'}
+          {language || '代码'}
         </span>
         <button
           onClick={handleCopy}
@@ -103,7 +103,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
       {/* 代码内容 */}
       <div className="bg-[#282c34] rounded-b-xl text-sm leading-6 overflow-x-auto scrollbar-thin">
         <Suspense fallback={
-          <div className="p-4 text-slate-400 font-mono text-xs">Loading code...</div>
+          <div className="p-4 text-slate-400 font-mono text-xs">代码加载中…</div>
         }>
           <SyntaxHighlighter
             language={language || 'text'}

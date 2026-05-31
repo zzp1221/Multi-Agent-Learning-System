@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import threading
 
 import pytest
 
@@ -131,3 +132,38 @@ async def test_expand_content_uses_preview_text_for_binary_assets(tmp_path: Path
 
     assert result["generatedContent"] == "PPT 演示文稿 · 6 页 · 并发编程"
     assert result["asset"]["assetType"] == "SLIDES"
+
+
+@pytest.mark.asyncio
+async def test_expand_content_runs_sync_builder_off_event_loop() -> None:
+    event_loop_thread = threading.get_ident()
+    builder_thread: int | None = None
+
+    class FakeGenerationService:
+        def build_asset(self, *, asset_type, params, snapshot):
+            nonlocal builder_thread
+            del asset_type, params, snapshot
+            builder_thread = threading.get_ident()
+            return GeneratedAsset(
+                assetType="SLIDES",
+                title="Threaded slides",
+                summary="Generated",
+                displayMode="DOWNLOAD_CARD",
+                fileName="slides.pptx",
+                localPath=None,
+                previewText="Slides preview",
+                mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+
+    agent = SlideGeneratorAgent(generation_service=FakeGenerationService())
+
+    result = await agent._tool_expand_content(
+        tool_input={},
+        task_id="task-slides-threaded",
+        params={"query": "threaded slides"},
+        snapshot=_build_snapshot(),
+    )
+
+    assert result["asset"]["assetType"] == "SLIDES"
+    assert builder_thread is not None
+    assert builder_thread != event_loop_thread
