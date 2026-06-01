@@ -40,7 +40,7 @@ flowchart LR
 - **多智能体运行时**：Python `PythonAgentSupervisor` 当前注册 18 个 Agent，并通过 `supervisor_routes.json` 和 QueryClassifier 选择任务链路；`resource_bundle` 是资源生成的虚拟 Graph 节点。
 - **RAG 检索**：短语优先 grep、向量语义、知识图谱扩展和可选 Tavily Web 检索，经 RRF 融合；当前报告中基础 100 题 hit@3 98%，图谱型 100 题 hit@3 94%。
 - **资源包生成**：`RESOURCE_GENERATION` 使用 LangGraph `ResourceBundleWorkflow`，按 `resourceTypes[]` 并发 fan-out 到文档、PPT、思维导图、代码、练习、视频等资源 Agent。
-- **悬浮智能语音助手**：全局右下角麦克风入口，前端采集 16k PCM，Java `/api/voice/**` 作为唯一语音网关，支持百炼 Qwen 实时 ASR、流式 TTS、语音快捷指令解析，并复用现有聊天 SSE。
+- **悬浮智能语音助手**：全局右下角麦克风入口，前端通过 AudioWorklet 采集 16k PCM，Java `/api/voice/**` 作为唯一语音网关，支持百炼 Qwen 实时 ASR partial/final、流式 TTS、语音快捷指令解析和打断式 cancel，并复用现有聊天 SSE。
 - **无伪生成边界**：可发布生成资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 和 `fromCache`，Python、Java、前端三层共同校验。
 - **学习画像与错题本**：画像维度规则集中在 `profile_feature_registry.py`，错题本用 SM-2 间隔重复算法组织复习。
 
@@ -198,6 +198,8 @@ curl -s -N -X POST http://localhost:8081/api/voice/tts/stream \
 ```
 
 期望 `/api/voice/sessions` 返回 `provider/asrModel/ttsModel`，TTS SSE 返回 `event: audio` 和 `event: done`。ASR/TTS 密钥只允许放在服务端环境变量或容器外置配置，不要提交到仓库。
+
+实时语音 WebSocket 入口为 `/api/voice/ws?sessionId=<id>&token=<jwt>`。浏览器 WebSocket 无法稳定携带自定义 `Authorization` 头，因此该升级入口在 Spring Security 层放行，实际 JWT 和 voice session 归属由 Java WebSocket handler 校验。
 
 当前 RAG 报告文件：
 

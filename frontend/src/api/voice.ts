@@ -35,6 +35,28 @@ export interface VoiceTtsEvent {
   };
 }
 
+export type VoiceRealtimeEventType =
+  | 'ready'
+  | 'asr_ready'
+  | 'asr_connecting'
+  | 'asr_partial'
+  | 'asr_final'
+  | 'commit_ack'
+  | 'cancelled'
+  | 'error';
+
+export interface VoiceRealtimeEvent {
+  type: VoiceRealtimeEventType;
+  sessionId?: string;
+  turnId?: string;
+  cancelledTurnId?: string;
+  text?: string;
+  sampleRate?: number;
+  provider?: string;
+  model?: string;
+  message?: string;
+}
+
 export const voiceApi = {
   async transcribePcm(file: Blob): Promise<VoiceTranscribeResponse> {
     const formData = new FormData();

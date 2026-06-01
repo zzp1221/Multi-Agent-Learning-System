@@ -51,6 +51,7 @@ public class SecurityConfiguration {
                     "/internal/**",
                     "/api/auth/register",
                     "/api/auth/login",
+                    "/api/voice/ws",
                     "/api/conversations/images/*"
                 )
                 .permitAll()

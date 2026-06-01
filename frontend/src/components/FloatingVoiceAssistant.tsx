@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { conversationApi, type ConversationStreamEvent } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
-import { voiceApi } from '../api/voice';
+import { voiceApi, type VoiceRealtimeEvent } from '../api/voice';
 import { readConversationChunk } from '../pages/LearningStudioDemoPage.utils';
 
 type VoiceState = 'idle' | 'recording' | 'transcribing' | 'ready' | 'chatting' | 'speaking' | 'error';
@@ -25,6 +25,7 @@ interface FloatingVoiceAssistantProps {
 
 const TARGET_SAMPLE_RATE = 16000;
 const MAX_RECORDING_MS = 60_000;
+const VOICE_WORKLET_PATH = '/audio-worklet/voice-pcm-processor.js';
 
 export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal }: FloatingVoiceAssistantProps) {
   const [open, setOpen] = useState(false);
@@ -38,15 +39,19 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   const voiceStateRef = useRef<VoiceState>('idle');
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const chunksRef = useRef<Int16Array[]>([]);
+  const realtimeSocketRef = useRef<WebSocket | null>(null);
+  const currentTurnIdRef = useRef('');
+  const expectedRealtimeCloseRef = useRef(false);
+  const recognizedTextRef = useRef('');
   const recordStartedAtRef = useRef(0);
   const recordingTimerRef = useRef<number | null>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
   const playbackContextRef = useRef<AudioContext | null>(null);
   const playbackTimeRef = useRef(0);
+  const realtimeReadyRef = useRef(false);
 
   const statusLabel = useMemo(() => {
     switch (voiceState) {
@@ -77,6 +82,10 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     voiceStateRef.current = voiceState;
   }, [voiceState]);
 
+  useEffect(() => {
+    recognizedTextRef.current = recognizedText;
+  }, [recognizedText]);
+
   const requireLogin = useCallback(() => {
     if (isAuthenticated) {
       return true;
@@ -93,8 +102,13 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     setErrorMessage('');
     setAssistantText('');
     setRecognizedText('');
-    chunksRef.current = [];
+    recognizedTextRef.current = '';
+    interruptCurrentTurn();
+    realtimeReadyRef.current = false;
+    setRecordingMs(0);
+    setVoiceState('recording');
     try {
+      const voiceSession = await voiceApi.createSession();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -103,22 +117,37 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
           autoGainControl: true,
         },
       });
-      const audioContext = new AudioContext();
+      const audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+      if (!audioContext.audioWorklet) {
+        throw new Error('当前浏览器不支持实时语音采集，请使用新版 Chrome 或 Edge');
+      }
+      await audioContext.audioWorklet.addModule(VOICE_WORKLET_PATH);
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = (event) => {
-        const input = event.inputBuffer.getChannelData(0);
-        chunksRef.current.push(convertFloatToPcm16(input, audioContext.sampleRate, TARGET_SAMPLE_RATE));
+      const workletNode = new AudioWorkletNode(audioContext, 'voice-pcm-processor');
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0;
+
+      const socket = await connectRealtimeSocket(voiceSession.sessionId);
+      realtimeSocketRef.current = socket;
+      workletNode.port.onmessage = (event) => {
+        const turnId = currentTurnIdRef.current;
+        if (!turnId || !realtimeReadyRef.current || socket.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        socket.send(JSON.stringify({
+          type: 'audio_chunk',
+          turnId,
+          data: arrayBufferToBase64(event.data as ArrayBuffer),
+        }));
       };
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      source.connect(workletNode);
+      workletNode.connect(gainNode);
+      gainNode.connect(audioContext.destination);
       mediaStreamRef.current = stream;
       audioContextRef.current = audioContext;
-      processorRef.current = processor;
+      workletNodeRef.current = workletNode;
       sourceRef.current = source;
       recordStartedAtRef.current = Date.now();
-      setRecordingMs(0);
-      setVoiceState('recording');
       recordingTimerRef.current = window.setInterval(() => {
         const elapsed = Date.now() - recordStartedAtRef.current;
         setRecordingMs(elapsed);
@@ -137,25 +166,23 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (voiceStateRef.current !== 'recording') {
       return;
     }
-    const pcm = mergePcmChunks(chunksRef.current);
+    const socket = realtimeSocketRef.current;
     stopRecordingResources();
-    if (pcm.byteLength === 0) {
+    setVoiceState('transcribing');
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'commit', turnId: currentTurnIdRef.current }));
+      window.setTimeout(() => {
+        if (voiceStateRef.current === 'transcribing' && !recognizedTextRef.current.trim()) {
       setVoiceState('error');
-      setErrorMessage('没有录到有效语音');
+      setErrorMessage('没有识别到文字，请重试');
+      expectedRealtimeCloseRef.current = true;
+      socket.close();
+    }
+      }, 3000);
       return;
     }
-    setVoiceState('transcribing');
-    try {
-      const response = await voiceApi.transcribePcm(new Blob([pcm], { type: 'audio/pcm' }));
-      setRecognizedText(response.text);
-      setVoiceState(response.text.trim() ? 'ready' : 'error');
-      if (!response.text.trim()) {
-        setErrorMessage('没有识别到文字，请重试');
-      }
-    } catch (error) {
-      setVoiceState('error');
-      setErrorMessage(getErrorMessage(error));
-    }
+    setVoiceState('error');
+    setErrorMessage('实时语音连接已断开，请重试');
   }, []);
 
   const sendRecognizedText = useCallback(async () => {
@@ -252,12 +279,22 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
 
   const cancelCurrent = () => {
     if (voiceState === 'recording') {
-      stopRecordingResources();
+      realtimeSocketRef.current?.send(JSON.stringify({ type: 'cancel', turnId: currentTurnIdRef.current }));
     }
-    chatAbortRef.current?.abort();
-    stopSpeaking();
+    interruptCurrentTurn();
+    stopRecordingResources();
     setVoiceState('idle');
   };
+
+  function interruptCurrentTurn() {
+    realtimeSocketRef.current?.send(JSON.stringify({ type: 'cancel', turnId: currentTurnIdRef.current }));
+    expectedRealtimeCloseRef.current = true;
+    realtimeSocketRef.current?.close();
+    realtimeSocketRef.current = null;
+    realtimeReadyRef.current = false;
+    chatAbortRef.current?.abort();
+    stopSpeaking();
+  }
 
   return (
     <div className="voice-assistant-root">
@@ -292,7 +329,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
             </div>
 
             <div className="voice-assistant-body">
-              {recognizedText || voiceState === 'ready' ? (
+              {recognizedText || voiceState === 'recording' || voiceState === 'transcribing' || voiceState === 'ready' ? (
                 <label className="voice-assistant-field">
                   <span>识别文本</span>
                   <textarea
@@ -327,7 +364,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
                   type="button"
                   className="voice-assistant-primary"
                   onClick={() => void startRecording()}
-                  disabled={voiceState === 'transcribing' || voiceState === 'chatting' || voiceState === 'speaking'}
+                  disabled={voiceState === 'transcribing'}
                 >
                   {voiceState === 'transcribing' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
                   录音
@@ -379,14 +416,113 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       window.clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
-    processorRef.current?.disconnect();
+    workletNodeRef.current?.port.close();
+    workletNodeRef.current?.disconnect();
     sourceRef.current?.disconnect();
     audioContextRef.current?.close().catch(() => undefined);
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    processorRef.current = null;
+    workletNodeRef.current = null;
     sourceRef.current = null;
     audioContextRef.current = null;
     mediaStreamRef.current = null;
+  }
+
+  async function connectRealtimeSocket(sessionId: string): Promise<WebSocket> {
+    return new Promise((resolve, reject) => {
+      const socket = new WebSocket(voiceApi.buildRealtimeUrl(sessionId));
+      expectedRealtimeCloseRef.current = false;
+      let settled = false;
+      const timeout = window.setTimeout(() => {
+        expectedRealtimeCloseRef.current = true;
+        socket.close();
+        settled = true;
+        reject(new Error('实时语音连接超时'));
+      }, 8000);
+
+      socket.onmessage = (event) => {
+        const realtimeEvent = parseRealtimeEvent(event.data);
+        if (!realtimeEvent) {
+          return;
+        }
+        handleRealtimeEvent(realtimeEvent);
+        if (realtimeEvent.type === 'ready' && realtimeEvent.turnId) {
+          window.clearTimeout(timeout);
+          settled = true;
+          resolve(socket);
+        }
+      };
+      socket.onerror = () => {
+        window.clearTimeout(timeout);
+        if (!settled) {
+          settled = true;
+          reject(new Error('实时语音连接失败'));
+        }
+      };
+      socket.onclose = () => {
+        const expectedClose = expectedRealtimeCloseRef.current;
+        expectedRealtimeCloseRef.current = false;
+        const isCurrentSocket = realtimeSocketRef.current === socket;
+        if (isCurrentSocket) {
+          realtimeSocketRef.current = null;
+          realtimeReadyRef.current = false;
+        }
+        if (!settled) {
+          window.clearTimeout(timeout);
+          settled = true;
+          reject(new Error('实时语音连接已断开，请重试'));
+        }
+        if (isCurrentSocket && !expectedClose && (voiceStateRef.current === 'recording' || voiceStateRef.current === 'transcribing')) {
+          setVoiceState('error');
+          setErrorMessage('实时语音连接已断开，请重试');
+        }
+      };
+    });
+  }
+
+  function handleRealtimeEvent(event: VoiceRealtimeEvent) {
+    if (event.turnId && event.turnId !== currentTurnIdRef.current && event.type !== 'ready' && event.type !== 'cancelled') {
+      return;
+    }
+    if (event.type === 'ready') {
+      currentTurnIdRef.current = event.turnId ?? '';
+      realtimeReadyRef.current = true;
+      return;
+    }
+    if (event.type === 'asr_ready') {
+      realtimeReadyRef.current = true;
+      return;
+    }
+    if (event.type === 'asr_partial' && event.text) {
+      setRecognizedText(event.text);
+      recognizedTextRef.current = event.text;
+      return;
+    }
+    if (event.type === 'asr_final') {
+      const text = event.text?.trim() ?? '';
+      setRecognizedText(text);
+      recognizedTextRef.current = text;
+      const nextState = text ? 'ready' : 'error';
+      voiceStateRef.current = nextState;
+      setVoiceState(nextState);
+      if (!text) {
+        setErrorMessage('没有识别到文字，请重试');
+      }
+      expectedRealtimeCloseRef.current = true;
+      realtimeSocketRef.current?.close();
+      return;
+    }
+    if (event.type === 'cancelled') {
+      currentTurnIdRef.current = event.turnId ?? '';
+      realtimeReadyRef.current = true;
+      setRecognizedText('');
+      return;
+    }
+    if (event.type === 'error') {
+      setVoiceState('error');
+      setErrorMessage(event.message || '语音识别失败，请重试');
+      expectedRealtimeCloseRef.current = true;
+      realtimeSocketRef.current?.close();
+    }
   }
 
   function stopSpeaking() {
@@ -416,25 +552,20 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   }
 }
 
-function convertFloatToPcm16(input: Float32Array, inputSampleRate: number, targetSampleRate: number): Int16Array {
-  const ratio = inputSampleRate / targetSampleRate;
-  const outputLength = Math.floor(input.length / ratio);
-  const output = new Int16Array(outputLength);
-  for (let index = 0; index < outputLength; index += 1) {
-    const sourceIndex = Math.floor(index * ratio);
-    const value = Math.max(-1, Math.min(1, input[sourceIndex] ?? 0));
-    output[index] = value < 0 ? value * 0x8000 : value * 0x7fff;
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
   }
-  return output;
+  return btoa(binary);
 }
 
-function mergePcmChunks(chunks: Int16Array[]): ArrayBuffer {
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const merged = new Int16Array(totalLength);
-  let offset = 0;
-  chunks.forEach((chunk) => {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  });
-  return merged.buffer;
+function parseRealtimeEvent(raw: string): VoiceRealtimeEvent | null {
+  try {
+    return JSON.parse(raw) as VoiceRealtimeEvent;
+  } catch {
+    return null;
+  }
 }

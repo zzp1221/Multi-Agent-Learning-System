@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.application.common.ApplicationException;
 import com.project.application.voice.VoiceAsrClient;
 import com.project.application.voice.VoiceAsrResult;
+import com.project.application.voice.VoiceRealtimeAsrClient;
+import com.project.application.voice.VoiceRealtimeAsrListener;
+import com.project.application.voice.VoiceRealtimeAsrSession;
 import com.project.application.voice.VoiceTtsChunk;
 import com.project.application.voice.VoiceTtsClient;
 import com.project.config.AppProperties;
@@ -33,7 +36,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 @Component
-public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClient {
+public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClient, VoiceRealtimeAsrClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BailianRealtimeVoiceClient.class);
     private static final int ASR_CHUNK_BYTES = 6400;
@@ -83,6 +86,25 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
     }
 
     @Override
+    public VoiceRealtimeAsrSession start(String sessionKey, int sampleRate, VoiceRealtimeAsrListener listener) {
+        ensureConfigured();
+        RealtimeExchange exchange = openExchange(
+            appProperties.getVoice().getAsrWebsocketUrl(),
+            appProperties.getVoice().getAsrModel(),
+            "ASR-REALTIME",
+            event -> handleRealtimeAsrEvent(sessionKey, event, listener)
+        );
+        RealtimeAsrSession session = new RealtimeAsrSession(sessionKey, exchange);
+        try {
+            session.send(withEventId(buildAsrSessionUpdate(sampleRate)));
+            return session;
+        } catch (Exception ex) {
+            session.close();
+            throw ex;
+        }
+    }
+
+    @Override
     public void synthesize(String text, String voice, Consumer<VoiceTtsChunk> chunkConsumer) {
         ensureConfigured();
         RealtimeExchange exchange = openExchange(appProperties.getVoice().getTtsWebsocketUrl(), appProperties.getVoice().getTtsModel(), "TTS");
@@ -101,11 +123,16 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
         Map<String, Object> inputAudioTranscription = new LinkedHashMap<>();
         inputAudioTranscription.put("language", "zh");
 
+        Map<String, Object> turnDetection = new LinkedHashMap<>();
+        turnDetection.put("type", "server_vad");
+        turnDetection.put("threshold", 0.5D);
+        turnDetection.put("silence_duration_ms", 400);
+
         Map<String, Object> session = new LinkedHashMap<>();
         session.put("input_audio_format", "pcm");
         session.put("sample_rate", sampleRate);
         session.put("input_audio_transcription", inputAudioTranscription);
-        session.put("turn_detection", null);
+        session.put("turn_detection", turnDetection);
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "session.update");
@@ -131,8 +158,12 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
     }
 
     private RealtimeExchange openExchange(String endpoint, String model, String label) {
+        return openExchange(endpoint, model, label, null);
+    }
+
+    private RealtimeExchange openExchange(String endpoint, String model, String label, Consumer<JsonNode> eventConsumer) {
         try {
-            RealtimeListener listener = new RealtimeListener(label, objectMapper);
+            RealtimeListener listener = new RealtimeListener(label, objectMapper, eventConsumer);
             URI uri = URI.create(endpoint + (endpoint.contains("?") ? "&" : "?") + "model=" + model);
             WebSocket websocket = httpClient.newWebSocketBuilder()
                 .connectTimeout(appProperties.getVoice().getConnectTimeout())
@@ -174,6 +205,86 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
             }
         }
         return "";
+    }
+
+    private void handleRealtimeAsrEvent(String sessionKey, JsonNode event, VoiceRealtimeAsrListener listener) {
+        String type = event.path("type").asText("");
+        try {
+            if ("session.created".equals(type) || "session.updated".equals(type)) {
+                listener.onReady();
+                return;
+            }
+            if ("conversation.item.input_audio_transcription.completed".equals(type)) {
+                String text = extractTranscriptPayload(event);
+                listener.onFinal(text == null ? "" : text.trim());
+                return;
+            }
+            if ("conversation.item.input_audio_transcription.text".equals(type)
+                || "conversation.item.input_audio_transcription.delta".equals(type)) {
+                String text = extractTranscriptPayload(event);
+                if (text != null && !text.isBlank()) {
+                    listener.onPartial(text.trim());
+                }
+                return;
+            }
+            if ("error".equals(type)) {
+                listener.onError(new IllegalStateException(extractProviderError(event)));
+            }
+        } catch (Exception ex) {
+            LOGGER.warn("Realtime ASR event handling failed sessionKey={} type={}: {}", sessionKey, type, ex.getMessage());
+            listener.onError(ex);
+        }
+    }
+
+    private String extractTranscriptPayload(JsonNode event) {
+        String transcript = textField(event, "transcript");
+        if (!transcript.isBlank()) {
+            return transcript;
+        }
+
+        String text = textField(event, "text");
+        String stash = textField(event, "stash");
+        if (!text.isBlank() || !stash.isBlank()) {
+            return text + stash;
+        }
+
+        JsonNode delta = event.path("delta");
+        if (delta.isTextual()) {
+            return delta.asText();
+        }
+        if (delta.isObject()) {
+            String deltaText = textField(delta, "text");
+            if (!deltaText.isBlank()) {
+                return deltaText;
+            }
+            String deltaTranscript = textField(delta, "transcript");
+            if (!deltaTranscript.isBlank()) {
+                return deltaTranscript;
+            }
+        }
+
+        JsonNode item = event.path("item");
+        if (item.isObject()) {
+            String itemTranscript = textField(item, "transcript");
+            if (!itemTranscript.isBlank()) {
+                return itemTranscript;
+            }
+        }
+        return findText(event);
+    }
+
+    private String textField(JsonNode node, String fieldName) {
+        JsonNode value = node.path(fieldName);
+        return value.isTextual() ? value.asText() : "";
+    }
+
+    private String extractProviderError(JsonNode event) {
+        JsonNode error = event.path("error");
+        String message = textField(error, "message");
+        if (!message.isBlank()) {
+            return message;
+        }
+        return "语音识别服务返回错误";
     }
 
     private void ensureConfigured() {
@@ -233,9 +344,79 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
         }
     }
 
+    private final class RealtimeAsrSession implements VoiceRealtimeAsrSession {
+        private final String sessionKey;
+        private final RealtimeExchange exchange;
+        private final Object sendLock = new Object();
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+
+        private RealtimeAsrSession(String sessionKey, RealtimeExchange exchange) {
+            this.sessionKey = sessionKey;
+            this.exchange = exchange;
+        }
+
+        @Override
+        public void appendAudio(byte[] pcmAudio) {
+            if (pcmAudio == null || pcmAudio.length == 0 || closed.get()) {
+                return;
+            }
+            String chunk = Base64.getEncoder().encodeToString(pcmAudio);
+            send(withEventId(Map.of("type", "input_audio_buffer.append", "audio", chunk)));
+        }
+
+        @Override
+        public void commit() {
+            if (!closed.get()) {
+                send(withEventId(Map.of("type", "input_audio_buffer.commit")));
+            }
+        }
+
+        @Override
+        public void cancel() {
+            if (!closed.get()) {
+                try {
+                    send(withEventId(Map.of("type", "input_audio_buffer.clear")));
+                } catch (Exception ex) {
+                    LOGGER.debug("Realtime ASR clear skipped sessionKey={}: {}", sessionKey, ex.getMessage());
+                }
+            }
+        }
+
+        @Override
+        public void close() {
+            if (closed.get()) {
+                return;
+            }
+            try {
+                sendAllowingClose(withEventId(Map.of("type", "session.finish")));
+            } catch (Exception ex) {
+                LOGGER.debug("Realtime ASR finish skipped sessionKey={}: {}", sessionKey, ex.getMessage());
+            } finally {
+                closed.set(true);
+                exchange.close();
+            }
+        }
+
+        private void send(Map<String, ?> payload) {
+            synchronized (sendLock) {
+                if (closed.get()) {
+                    return;
+                }
+                sendJson(exchange.websocket(), payload);
+            }
+        }
+
+        private void sendAllowingClose(Map<String, ?> payload) {
+            synchronized (sendLock) {
+                sendJson(exchange.websocket(), payload);
+            }
+        }
+    }
+
     private static final class RealtimeListener implements WebSocket.Listener {
         private final String label;
         private final ObjectMapper objectMapper;
+        private final Consumer<JsonNode> eventConsumer;
         private final CountDownLatch doneLatch = new CountDownLatch(1);
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final AtomicReference<JsonNode> lastEvent = new AtomicReference<>();
@@ -244,9 +425,10 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
         private final StringBuilder buffer = new StringBuilder();
         private volatile WebSocket websocket;
 
-        private RealtimeListener(String label, ObjectMapper objectMapper) {
+        private RealtimeListener(String label, ObjectMapper objectMapper, Consumer<JsonNode> eventConsumer) {
             this.label = label;
             this.objectMapper = objectMapper;
+            this.eventConsumer = eventConsumer;
         }
 
         @Override
@@ -289,6 +471,9 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
                 lastEvent.set(event);
                 events.offer(event);
                 updateText(event);
+                if (eventConsumer != null) {
+                    eventConsumer.accept(event);
+                }
                 String type = event.path("type").asText("");
                 if (type.endsWith(".done")
                     || "conversation.item.input_audio_transcription.completed".equals(type)

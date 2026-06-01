@@ -2,12 +2,15 @@ package com.project.api.voice;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.project.application.voice.VoiceAsrClient;
-import com.project.application.voice.VoiceAsrResult;
+import com.project.application.voice.VoiceRealtimeAsrClient;
+import com.project.application.voice.VoiceRealtimeAsrListener;
+import com.project.application.voice.VoiceRealtimeAsrSession;
 import com.project.application.voice.VoiceSessionService;
 import com.project.config.AppProperties;
 import com.project.security.JwtAuthenticatedUser;
 import com.project.security.JwtProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -16,14 +19,16 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.time.OffsetDateTime;
+import java.util.ArrayDeque;
 import java.util.Base64;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
@@ -32,23 +37,26 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private final JwtProvider jwtProvider;
     private final VoiceSessionService sessionService;
-    private final VoiceAsrClient asrClient;
+    private final VoiceRealtimeAsrClient realtimeAsrClient;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
-    private final Map<String, VoiceSocketBuffer> buffers = new ConcurrentHashMap<>();
+    private final TaskExecutor voiceTaskExecutor;
+    private final Map<String, VoiceSocketState> states = new ConcurrentHashMap<>();
 
     public VoiceRealtimeWebSocketHandler(
         JwtProvider jwtProvider,
         VoiceSessionService sessionService,
-        VoiceAsrClient asrClient,
+        VoiceRealtimeAsrClient realtimeAsrClient,
         AppProperties appProperties,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        @Qualifier("voiceTaskExecutor") TaskExecutor voiceTaskExecutor
     ) {
         this.jwtProvider = jwtProvider;
         this.sessionService = sessionService;
-        this.asrClient = asrClient;
+        this.realtimeAsrClient = realtimeAsrClient;
         this.appProperties = appProperties;
         this.objectMapper = objectMapper;
+        this.voiceTaskExecutor = voiceTaskExecutor;
     }
 
     @Override
@@ -59,58 +67,154 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             session.close(CloseStatus.NOT_ACCEPTABLE.withReason("invalid voice session"));
             return;
         }
-        buffers.put(session.getId(), new VoiceSocketBuffer(user.userId(), voiceSessionId));
+        session.setTextMessageSizeLimit(256 * 1024);
+        session.setBinaryMessageSizeLimit(256 * 1024);
+        VoiceSocketState state = new VoiceSocketState(user.userId(), voiceSessionId);
+        states.put(session.getId(), state);
         send(session, "ready", Map.of(
             "sessionId", voiceSessionId.toString(),
-            "sampleRate", appProperties.getVoice().getSampleRate()
+            "sampleRate", appProperties.getVoice().getSampleRate(),
+            "turnId", state.turnId()
         ));
+        startAsrAsync(session, state, state.turnId());
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        VoiceSocketBuffer buffer = buffers.get(session.getId());
-        if (buffer == null) {
+        VoiceSocketState state = states.get(session.getId());
+        if (state == null) {
             session.close(CloseStatus.NOT_ACCEPTABLE);
             return;
         }
         JsonNode event = objectMapper.readTree(message.getPayload());
         String type = event.path("type").asText("");
         if ("audio_chunk".equals(type)) {
-            appendAudio(buffer, event.path("data").asText(""));
-            send(session, "asr_partial", Map.of("text", "", "seq", event.path("seq").asInt(0)));
+            appendAudio(session, state, event.path("data").asText(""), event.path("turnId").asText(""));
             return;
         }
         if ("commit".equals(type)) {
-            VoiceAsrResult result = asrClient.transcribePcm16(buffer.toByteArray(), appProperties.getVoice().getSampleRate());
-            send(session, "asr_final", Map.of(
-                "text", result.text(),
-                "durationMs", result.durationMs(),
-                "provider", result.provider(),
-                "model", result.model()
-            ));
-            buffer.reset();
+            String requestedTurnId = event.path("turnId").asText("");
+            if (!requestedTurnId.isBlank() && !requestedTurnId.equals(state.turnId())) {
+                return;
+            }
+            state.commit();
+            send(session, "commit_ack", Map.of("turnId", state.turnId()));
             return;
         }
         if ("cancel".equals(type)) {
-            buffer.reset();
-            send(session, "cancelled", Map.of("sessionId", buffer.sessionId().toString()));
+            cancelTurn(session, state);
         }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        buffers.remove(session.getId());
+        VoiceSocketState state = states.remove(session.getId());
+        if (state != null) {
+            state.close();
+            sessionService.close(state.sessionId(), state.userId());
+        }
     }
 
-    private void appendAudio(VoiceSocketBuffer buffer, String base64) {
+    private void appendAudio(WebSocketSession session, VoiceSocketState state, String base64, String requestedTurnId) throws Exception {
         if (base64 == null || base64.isBlank()) {
             return;
         }
+        if (!requestedTurnId.isBlank() && !requestedTurnId.equals(state.turnId())) {
+            return;
+        }
         byte[] chunk = Base64.getDecoder().decode(base64);
-        if (buffer.size() + chunk.length > appProperties.getVoice().getMaxAudioBytes()) {
+        int currentBytes = state.addAudioBytes(chunk.length);
+        if (currentBytes > appProperties.getVoice().getMaxAudioBytes()) {
             throw new IllegalArgumentException("voice audio too large");
         }
-        buffer.write(chunk);
+        try {
+            state.appendAudio(chunk);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Realtime ASR append failed sessionId={} turnId={}: {}", state.sessionId(), state.turnId(), ex.getMessage());
+            send(session, "error", Map.of("turnId", state.turnId(), "message", "语音识别连接异常，请重试"));
+            cancelTurn(session, state);
+        }
+    }
+
+    private void cancelTurn(WebSocketSession session, VoiceSocketState state) throws Exception {
+        String cancelledTurnId = state.turnId();
+        state.closeCurrentTurn();
+        state.nextTurn();
+        send(session, "cancelled", Map.of(
+            "sessionId", state.sessionId().toString(),
+            "cancelledTurnId", cancelledTurnId,
+            "turnId", state.turnId()
+        ));
+        startAsrAsync(session, state, state.turnId());
+    }
+
+    private void startAsrAsync(WebSocketSession session, VoiceSocketState state, String turnId) {
+        voiceTaskExecutor.execute(() -> {
+            VoiceRealtimeAsrSession asrSession = null;
+            try {
+                if (!isActive(session, state, turnId)) {
+                    return;
+                }
+                asrSession = newAsrSession(session, state, turnId);
+                if (!state.attachAsr(turnId, asrSession)) {
+                    asrSession.close();
+                    return;
+                }
+                safeSend(session, "asr_ready", Map.of("turnId", turnId));
+            } catch (Exception ex) {
+                if (asrSession != null) {
+                    asrSession.close();
+                }
+                if (isActive(session, state, turnId)) {
+                    LOGGER.warn("Realtime ASR start failed sessionId={} turnId={}: {}", state.sessionId(), turnId, ex.getMessage());
+                    safeSend(session, "error", Map.of("turnId", turnId, "message", "语音识别连接失败，请重试"));
+                    closeQuietly(session, CloseStatus.SERVER_ERROR.withReason("asr start failed"));
+                }
+            }
+        });
+    }
+
+    private boolean isActive(WebSocketSession session, VoiceSocketState state, String turnId) {
+        return session.isOpen() && states.get(session.getId()) == state && state.isCurrentTurn(turnId);
+    }
+
+    private VoiceRealtimeAsrSession newAsrSession(WebSocketSession session, VoiceSocketState state, String turnId) {
+        String sessionKey = state.sessionId() + ":" + turnId;
+        return realtimeAsrClient.start(sessionKey, appProperties.getVoice().getSampleRate(), new VoiceRealtimeAsrListener() {
+            @Override
+            public void onReady() {
+                if (isActive(session, state, turnId)) {
+                    safeSend(session, "asr_ready", Map.of("turnId", turnId));
+                }
+            }
+
+            @Override
+            public void onPartial(String text) {
+                if (!text.isBlank() && isActive(session, state, turnId)) {
+                    safeSend(session, "asr_partial", Map.of("turnId", turnId, "text", text));
+                }
+            }
+
+            @Override
+            public void onFinal(String text) {
+                if (isActive(session, state, turnId)) {
+                    safeSend(session, "asr_final", Map.of(
+                        "turnId", turnId,
+                        "text", text,
+                        "provider", appProperties.getVoice().getProvider(),
+                        "model", appProperties.getVoice().getAsrModel()
+                    ));
+                }
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                LOGGER.warn("Realtime ASR failed sessionId={} turnId={}: {}", state.sessionId(), turnId, error.getMessage());
+                if (isActive(session, state, turnId)) {
+                    safeSend(session, "error", Map.of("turnId", turnId, "message", "语音识别失败，请重试"));
+                }
+            }
+        });
     }
 
     private JwtAuthenticatedUser authenticate(WebSocketSession session) {
@@ -159,34 +263,118 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(event)));
     }
 
-    private static final class VoiceSocketBuffer {
+    private void safeSend(WebSocketSession session, String type, Map<String, Object> payload) {
+        try {
+            synchronized (session) {
+                send(session, type, payload);
+            }
+        } catch (Exception ex) {
+            LOGGER.debug("Voice realtime send skipped type={}: {}", type, ex.getMessage());
+        }
+    }
+
+    private void closeQuietly(WebSocketSession session, CloseStatus status) {
+        try {
+            session.close(status);
+        } catch (Exception ex) {
+            LOGGER.debug("Voice realtime close skipped: {}", ex.getMessage());
+        }
+    }
+
+    private static final class VoiceSocketState {
+        private final Object lock = new Object();
         private final UUID userId;
         private final UUID sessionId;
-        private final ByteArrayOutputStream audio = new ByteArrayOutputStream();
+        private final AtomicInteger turnSequence = new AtomicInteger(1);
+        private final AtomicInteger audioBytes = new AtomicInteger(0);
+        private final Deque<byte[]> pendingAudio = new ArrayDeque<>();
+        private volatile VoiceRealtimeAsrSession asrSession;
+        private volatile String turnId;
+        private boolean pendingCommit;
 
-        private VoiceSocketBuffer(UUID userId, UUID sessionId) {
+        private VoiceSocketState(UUID userId, UUID sessionId) {
             this.userId = userId;
             this.sessionId = sessionId;
+            this.turnId = "turn-" + turnSequence.get();
+        }
+
+        private UUID userId() {
+            return userId;
         }
 
         private UUID sessionId() {
             return sessionId;
         }
 
-        private int size() {
-            return audio.size();
+        private String turnId() {
+            return turnId;
         }
 
-        private void write(byte[] chunk) {
-            audio.writeBytes(chunk);
+        private boolean isCurrentTurn(String requestedTurnId) {
+            return turnId.equals(requestedTurnId);
         }
 
-        private byte[] toByteArray() {
-            return audio.toByteArray();
+        private boolean attachAsr(String requestedTurnId, VoiceRealtimeAsrSession nextSession) {
+            synchronized (lock) {
+                if (!isCurrentTurn(requestedTurnId)) {
+                    return false;
+                }
+                asrSession = nextSession;
+                while (!pendingAudio.isEmpty()) {
+                    nextSession.appendAudio(pendingAudio.removeFirst());
+                }
+                if (pendingCommit) {
+                    nextSession.commit();
+                    pendingCommit = false;
+                }
+                return true;
+            }
         }
 
-        private void reset() {
-            audio.reset();
+        private void appendAudio(byte[] chunk) {
+            synchronized (lock) {
+                if (asrSession == null) {
+                    pendingAudio.addLast(chunk);
+                    return;
+                }
+                asrSession.appendAudio(chunk);
+            }
+        }
+
+        private void commit() {
+            synchronized (lock) {
+                if (asrSession == null) {
+                    pendingCommit = true;
+                    return;
+                }
+                asrSession.commit();
+            }
+        }
+
+        private int addAudioBytes(int bytes) {
+            return audioBytes.addAndGet(bytes);
+        }
+
+        private void nextTurn() {
+            audioBytes.set(0);
+            turnId = "turn-" + turnSequence.incrementAndGet();
+        }
+
+        private void closeCurrentTurn() {
+            VoiceRealtimeAsrSession current = asrSession;
+            synchronized (lock) {
+                current = asrSession;
+                asrSession = null;
+                pendingAudio.clear();
+                pendingCommit = false;
+            }
+            if (current != null) {
+                current.close();
+            }
+        }
+
+        private void close() {
+            closeCurrentTurn();
         }
     }
 }

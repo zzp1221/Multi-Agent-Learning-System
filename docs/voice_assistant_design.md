@@ -130,6 +130,36 @@ MVP 不包含：
 
 第三阶段需要更严格的状态机和取消语义，不能在 MVP 中混入。
 
+### 4.4 后续完善优先级
+
+基于当前热更新环境的延时测试结果，后续不应继续堆功能，应该先把实时链路做稳。当前 Java 控制层接口是毫秒级，但百炼 ASR/TTS WebSocket 建连和首包延迟存在明显波动。P1/P2 已完成第一轮工程化：前端改为 AudioWorklet 持续采集 16k PCM，`/api/voice/ws` 改为实时转发 ASR 音频 chunk 并回传 partial/final，同时加入 turnId、cancel、ASR 异步建连和 ASR 未就绪音频缓冲。
+
+| 优先级 | 目标 | 主要工作 | 验收标准 |
+|---|---|---|---|
+| P1 真正实时化 | 从“录完再传”升级为边说边识别、边生成边播放 | 前端使用 AudioWorklet 持续采集 16k PCM chunk；通过 `/api/voice/ws` 上传；Java 为每个 session 维持百炼 ASR WebSocket；ASR partial 实时回前端；停顿后 final transcript 进入现有聊天 SSE；TTS 按 chunk 播放 | ASR partial 首字延迟 `< 800ms`；TTS 首个音频 chunk `< 1000ms`；说话结束到助手开始说话 `< 1500ms`；P95 `< 2500ms` |
+| P2 打断能力 | 用户重新开口时立即停止当前朗读和回答 | 前端检测重新开口后停止本地 TTS 播放；通过 WebSocket `cancel` 或后续取消接口通知 Java；Java 取消当前 TTS provider 连接和聊天流；状态机支持 `speaking -> listening -> transcribing` | 用户开口后 `< 300ms` 停止播放；取消后不再追加旧回答或旧音频；新一轮语音可继续识别 |
+| P3 稳定性 | 降低第三方语音服务波动对体验的影响 | ASR/TTS 建连超时重试；TTS 首包超时降级为文字回答；provider 错误结构化日志；采集 `asr_first_partial_ms`、`tts_first_audio_ms`、`voice_round_trip_ms`；限制单用户并发 voice session；session TTL 清理 | provider 超时不阻塞 UI；错误有可定位日志；并发和 TTL 不造成会话泄漏；降级路径可用 |
+| P4 功能完善 | 在实时链路稳定后补齐学习助手能力 | 页面上下文问答；语音快捷指令扩展；朗读暂停/继续/换音色；ASR 低置信度确认；历史语音文本记录；学习动作控制 | 不破坏现有聊天 SSE；不存储原始音频；快捷指令和页面上下文在主要页面可用 |
+
+推荐下一步继续验证 P1/P2 的运行效果：用真实麦克风测试 ASR partial 首字延迟、final transcript 延迟和打断后旧 turn 是否被丢弃。P1/P2 验收通过后，再进入 P3 稳定性治理。
+
+### 4.5 P1/P2 当前落地状态
+
+已落地：
+
+- `/api/voice/ws` 握手先返回 `ready`，百炼 ASR WebSocket 在 `voiceTaskExecutor` 中异步建连，避免 provider 建连慢导致浏览器 WebSocket 握手失败。
+- `/api/voice/ws` 作为浏览器 WebSocket 升级入口在 Spring Security 层放行，实际 JWT query token 和 voice session 归属仍由 `VoiceRealtimeWebSocketHandler` 校验；已补回归测试避免 401 握手问题复发。
+- ASR 未 ready 时，Java 会按 turn 缓存已到达的 PCM chunk 和 commit；ASR session 建好后按顺序 flush，减少开头语音丢失。
+- 每轮语音都有 `turnId`，cancel 后递增新 turn；旧 turn 的 partial/final/error 回调会被丢弃，避免旧识别结果污染新一轮。
+- 前端重新录音会先停止 TTS 播放、取消当前聊天流、关闭旧 realtime socket，然后创建新 session 开始录音。
+- 前端区分预期关闭和异常断开，ASR final 后主动关闭 WebSocket 不再误报“连接已断开”。
+
+仍需真实浏览器验收：
+
+- 麦克风授权后 ASR partial 首字延迟是否稳定低于 800ms。
+- 用户在 `chatting/speaking` 中重新录音时，旧回答和旧音频是否立即停止且不再追加。
+- 百炼 provider 偶发建连超时下，UI 是否能给出可重试错误，不阻塞下一轮录音。
+
 ## 5. 推荐模型与服务
 
 语音助手必须优先选择支持流式能力的服务。
@@ -543,13 +573,13 @@ MVP：
 | Java Voice Gateway | 已完成 | 新增 `/api/voice/**`，Java 作为唯一前端入口 |
 | ASR 转文字 | 已完成 | `/api/voice/transcribe` 接收 16k 单声道 PCM，调用百炼实时语音 WebSocket |
 | TTS 流式合成 | 已完成 | `/api/voice/tts/stream` 通过 SSE 返回 base64 PCM 音频 chunk |
-| 语音 session | 已完成 | `/api/voice/sessions` 创建 TTL session，供实时 WebSocket 骨架使用 |
-| 实时 WebSocket 骨架 | 已完成 | `/api/voice/ws` 支持音频 chunk、commit、cancel；当前为分片收集后提交识别 |
+| 语音 session | 已完成 | `/api/voice/sessions` 创建 TTL session，供实时 WebSocket 使用 |
+| 实时 WebSocket ASR | 已完成 | `/api/voice/ws` 支持音频 chunk 实时转发百炼 ASR、partial/final 回传、commit、cancel 和 turnId |
 | 语音快捷指令解析 | 已完成 | `/api/voice/commands/parse` 支持停止朗读、继续、解释、总结、类似题等 intent |
-| 前端悬浮助手 | 已完成 | 全局右下角麦克风按钮、录音、识别、可编辑确认、发送 |
+| 前端悬浮助手 | 已完成 | 全局右下角麦克风按钮、AudioWorklet 实时 PCM 采集、partial 识别展示、可编辑确认、发送 |
 | 复用聊天 SSE | 已完成 | 识别文本创建会话后走现有 `/api/conversations/{id}/messages/stream` |
 | 自动朗读开关 | 已完成 | 前端可开启回答后自动 TTS 播放，支持停止当前任务 |
-| 安全配置 | 已完成 | 所有 `/api/voice/**` 受 JWT 保护，第三方 key 仅服务端环境变量读取 |
+| 安全配置 | 已完成 | 语音 REST 接口走 Spring Security JWT；`/api/voice/ws` 放行浏览器升级握手，但 handler 校验 query token 和 session 归属；第三方 key 仅服务端环境变量读取 |
 
 配置项：
 
@@ -575,18 +605,22 @@ VOICE_SESSION_TTL=300s
 
 ```text
 docker compose ps -> app/frontend/python-agent/postgres/mongo/redis 均 Up，数据服务 healthy
-project: mvn test -> 77 tests passed
+project: mvn test -> 81 tests passed
 frontend: npx tsc --noEmit -> passed
 frontend: npx vite build -> passed
-pytest tests/ -v -> 当前 shell 无 pytest/python 可执行文件，未能运行
-pytest python-agent/tests/ -k rag -v -> 当前 shell 无 pytest/python 可执行文件，未能运行
+pytest tests/ -v -> 当前宿主 shell 无 pytest/python 可执行文件，未能运行；python-agent 容器有 pytest 但镜像内未包含 tests 目录
+pytest python-agent/tests/ -k rag -v -> 当前宿主 shell 无 pytest/python 可执行文件，未能运行；python-agent 容器有 pytest 但镜像内未包含 tests 目录
+docker compose ps -> app/frontend/python-agent/postgres/mongo/redis 均 Up，数据服务 healthy
+curl http://localhost:8081/api/health -> {"status":"UP"}
+authenticated /api/voice/commands/parse 停止朗读 -> STOP_SPEAKING
+authenticated /api/voice/ws smoke -> ready 36ms, cancel 4ms, sampleRate 16000, turn-1 -> turn-2
 ```
 
 当前限制：
 
 - 浏览器端录音使用 16k PCM 上传，MVP 不是直接上传 webm 容器。
-- `/api/voice/ws` 已具备实时接口形态，但当前是收集 chunk 后 commit 识别，不是逐 chunk 转发百炼 partial。
-- 未在本轮启动 docker compose，也未做真实麦克风 + 百炼 API 联调；需要在运行环境配置 `VOICE_API_KEY` 或 `BAILIAN_API_KEY` 后进行人工验收。
+- `/api/voice/ws` 已从分片收集后提交识别升级为实时 ASR 通道；自动化 smoke 已验证 ready/cancel 链路，仍需用真实麦克风验证 ASR partial 首字延迟和 final transcript 延迟。
+- 本轮未执行真实麦克风 + 百炼 API 端到端延迟验收；需要浏览器授权麦克风后人工确认。
 - 用户提供过的百炼 API Key 未写入代码、配置或文档；建议在百炼控制台轮换该 key。
 
 ## 17. 参考资料
