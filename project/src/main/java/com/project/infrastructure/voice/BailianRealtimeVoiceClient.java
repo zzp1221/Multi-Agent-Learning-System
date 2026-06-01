@@ -56,20 +56,20 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
         ensureConfigured();
         RealtimeExchange exchange = openExchange(appProperties.getVoice().getAsrWebsocketUrl(), appProperties.getVoice().getAsrModel(), "ASR");
         try {
-            sendJson(exchange.websocket(), buildAsrSessionUpdate(sampleRate));
+            sendJson(exchange.websocket(), withEventId(buildAsrSessionUpdate(sampleRate)));
             for (int offset = 0; offset < pcmAudio.length; offset += ASR_CHUNK_BYTES) {
                 int length = Math.min(ASR_CHUNK_BYTES, pcmAudio.length - offset);
                 byte[] chunkBytes = java.util.Arrays.copyOfRange(pcmAudio, offset, offset + length);
                 String chunk = Base64.getEncoder().encodeToString(chunkBytes);
-                sendJson(exchange.websocket(), Map.of("type", "input_audio_buffer.append", "audio", chunk));
+                sendJson(exchange.websocket(), withEventId(Map.of("type", "input_audio_buffer.append", "audio", chunk)));
             }
-            sendJson(exchange.websocket(), Map.of("type", "input_audio_buffer.commit"));
-            sendJson(exchange.websocket(), Map.of("type", "response.create"));
+            sendJson(exchange.websocket(), withEventId(Map.of("type", "input_audio_buffer.commit")));
+            sendJson(exchange.websocket(), withEventId(Map.of("type", "session.finish")));
 
             JsonNode completed = exchange.awaitEvent(
                 appProperties.getVoice().getRequestTimeout(),
                 "conversation.item.input_audio_transcription.completed",
-                "response.done"
+                "session.finished"
             );
             String text = findText(completed);
             if (text.isBlank()) {
@@ -87,35 +87,25 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
         ensureConfigured();
         RealtimeExchange exchange = openExchange(appProperties.getVoice().getTtsWebsocketUrl(), appProperties.getVoice().getTtsModel(), "TTS");
         try {
-            sendJson(exchange.websocket(), buildTtsSessionUpdate(voice));
-            sendJson(exchange.websocket(), Map.of(
-                "type", "conversation.item.create",
-                "item", Map.of(
-                    "type", "message",
-                    "role", "user",
-                    "content", new Object[] { Map.of("type", "input_text", "text", text) }
-                )
-            ));
-            sendJson(exchange.websocket(), Map.of("type", "response.create"));
+            sendJson(exchange.websocket(), withEventId(buildTtsSessionUpdate(voice)));
+            sendJson(exchange.websocket(), withEventId(Map.of("type", "input_text_buffer.append", "text", text)));
+            sendJson(exchange.websocket(), withEventId(Map.of("type", "input_text_buffer.commit")));
             exchange.forwardAudio(appProperties.getVoice().getRequestTimeout(), chunkConsumer);
+            sendJson(exchange.websocket(), withEventId(Map.of("type", "session.finish")));
         } finally {
             exchange.close();
         }
     }
 
     private Map<String, Object> buildAsrSessionUpdate(int sampleRate) {
-        Map<String, Object> turnDetection = new LinkedHashMap<>();
-        turnDetection.put("type", "server_vad");
-
         Map<String, Object> inputAudioTranscription = new LinkedHashMap<>();
-        inputAudioTranscription.put("model", appProperties.getVoice().getAsrModel());
+        inputAudioTranscription.put("language", "zh");
 
         Map<String, Object> session = new LinkedHashMap<>();
-        session.put("modalities", new String[] {"text"});
-        session.put("input_audio_format", "pcm16");
+        session.put("input_audio_format", "pcm");
         session.put("sample_rate", sampleRate);
         session.put("input_audio_transcription", inputAudioTranscription);
-        session.put("turn_detection", turnDetection);
+        session.put("turn_detection", null);
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "session.update");
@@ -128,11 +118,11 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
             ? appProperties.getVoice().getTtsVoice()
             : requestedVoice.trim();
         Map<String, Object> session = new LinkedHashMap<>();
-        session.put("modalities", new String[] {"audio"});
         session.put("voice", voice);
-        session.put("output_audio_format", "pcm16");
+        session.put("mode", "commit");
+        session.put("language_type", "Auto");
+        session.put("response_format", "pcm");
         session.put("sample_rate", appProperties.getVoice().getSampleRate());
-        session.put("model", appProperties.getVoice().getTtsModel());
 
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "session.update");
@@ -147,6 +137,7 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
             WebSocket websocket = httpClient.newWebSocketBuilder()
                 .connectTimeout(appProperties.getVoice().getConnectTimeout())
                 .header("Authorization", "Bearer " + resolvedApiKey())
+                .header("User-Agent", "zhixue-voice-java")
                 .header("X-DashScope-DataInspection", "enable")
                 .buildAsync(uri, listener)
                 .join();
@@ -164,6 +155,12 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
         } catch (JsonProcessingException ex) {
             throw new ApplicationException("VOICE_PAYLOAD_INVALID", "语音请求构造失败", HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private Map<String, Object> withEventId(Map<String, ?> event) {
+        Map<String, Object> copy = new LinkedHashMap<>(event);
+        copy.putIfAbsent("event_id", "event_" + UUID.randomUUID());
+        return copy;
     }
 
     private String findText(JsonNode node) {
@@ -352,7 +349,7 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
                     if (type.contains("audio") && delta != null && delta.isTextual() && !delta.asText().isBlank()) {
                         chunkConsumer.accept(new VoiceTtsChunk(delta.asText(), 16000, "pcm16", false));
                     }
-                    if ("response.done".equals(type) || type.endsWith(".done")) {
+                    if ("response.audio.done".equals(type) || "response.done".equals(type)) {
                         chunkConsumer.accept(new VoiceTtsChunk("", 16000, "pcm16", true));
                         return true;
                     }
