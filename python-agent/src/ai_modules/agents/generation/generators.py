@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-import inspect
 import logging
 from pathlib import Path
 from typing import Any
@@ -258,16 +257,10 @@ class _BaseGenerationAgent(PlaceholderAgent):
                     snapshot=snapshot,
                 )
             else:
-                asset_or_awaitable = await asyncio.to_thread(
-                    self.generation_service.build_asset,
+                asset = await self.generation_service.build_asset(
                     asset_type=self.asset_type,
                     params=build_params,
                     snapshot=snapshot,
-                )
-                asset = (
-                    await asset_or_awaitable
-                    if inspect.isawaitable(asset_or_awaitable)
-                    else asset_or_awaitable
                 )
             generated_content = (
                 asset.preview_text

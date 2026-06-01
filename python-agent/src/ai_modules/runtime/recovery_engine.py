@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from enum import Enum
 from typing import Any, Awaitable, Callable
 
@@ -31,7 +32,7 @@ class RecoveryEngine:
 
     def __init__(self, sleep_seconds: float = 0.0) -> None:
         self.sleep_seconds = sleep_seconds
-        self.audit_log: list[dict[str, Any]] = []
+        self.audit_log: deque[dict[str, Any]] = deque(maxlen=200)
 
     async def call_with_recovery(
         self,

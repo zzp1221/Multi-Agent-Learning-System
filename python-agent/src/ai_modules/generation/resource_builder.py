@@ -95,7 +95,7 @@ class ResourceGenerationService:
             return head[: sentence_end + 1].strip()
         return head.rstrip("，,；;、 ") + "。"
 
-    def build_asset(
+    async def build_asset(
         self,
         *,
         asset_type: str,
@@ -113,7 +113,7 @@ class ResourceGenerationService:
         builder = builder_map.get(asset_type)
         if builder is None:
             raise ValueError(f"Unsupported assetType: {asset_type}")
-        return builder(params=params, snapshot=snapshot)
+        return await builder(params=params, snapshot=snapshot)
 
     async def build_video_asset(
         self,
@@ -235,7 +235,7 @@ class ResourceGenerationService:
             knowledgePoint=topic,
         )
 
-    def _build_document(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    async def _build_document(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习资源')}导学文档"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
@@ -245,7 +245,7 @@ class ResourceGenerationService:
             snapshot=snapshot,
             sources=sources,
         )
-        generated_sections = self.content_chain.generate_document_sections(
+        generated_sections = await self.content_chain.generate_document_sections(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=generation_snapshot,
@@ -468,12 +468,12 @@ class ResourceGenerationService:
         )
         return base
 
-    def _build_reading(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    async def _build_reading(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}延伸阅读"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        generated_reading = self.content_chain.generate_reading_asset(
+        generated_reading = await self.content_chain.generate_reading_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=generation_snapshot,
@@ -495,7 +495,7 @@ class ResourceGenerationService:
             inlineContent=content,
         )
 
-    def _build_slides(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    async def _build_slides(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}PPT大纲"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
@@ -522,7 +522,7 @@ class ResourceGenerationService:
             )
 
         # ── 回退到 LLM + markdown ──
-        generated_slides = self.content_chain.generate_slides_asset(
+        generated_slides = await self.content_chain.generate_slides_asset(
             title=title,
             topic=topic,
             snapshot=generation_snapshot,
@@ -708,12 +708,12 @@ class ResourceGenerationService:
         path.write_bytes(data)
         return path
 
-    def _build_mindmap(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    async def _build_mindmap(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}思维导图"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        generated_mindmap = self.content_chain.generate_mindmap_asset(
+        generated_mindmap = await self.content_chain.generate_mindmap_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=generation_snapshot,
@@ -763,12 +763,12 @@ class ResourceGenerationService:
             .strip()
         )
 
-    def _build_code(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    async def _build_code(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         title = f"{params.get('query', '学习主题')}代码案例"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        generated_code = self.content_chain.generate_code_asset(
+        generated_code = await self.content_chain.generate_code_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=generation_snapshot,
@@ -792,7 +792,7 @@ class ResourceGenerationService:
             explanation=generated_code.explanation,
         )
 
-    def _build_video(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    async def _build_video(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         topic = str(params.get("topic") or params.get("query") or "教学主题")
         task_id = str(params.get("taskId") or "video-task")
         style = str(params.get("style") or "hybrid")
@@ -800,7 +800,7 @@ class ResourceGenerationService:
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", []) if isinstance(retrieval, dict) else []
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        script_payload = self.content_chain.generate_video_script(
+        script_payload = await self.content_chain.generate_video_script(
             title=f"{topic}教学视频",
             topic=topic,
             snapshot=generation_snapshot,

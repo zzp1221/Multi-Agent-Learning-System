@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Any, ClassVar, Protocol, TypeVar
 
 import httpx
@@ -114,7 +113,7 @@ class GeneratedCodeAsset(BaseModel):
 class SupportsStructuredGenerator(Protocol):
     """主结构化内容生成器的协议。"""
 
-    def generate_document_sections(
+    async def generate_document_sections(
         self,
         *,
         title: str,
@@ -124,7 +123,7 @@ class SupportsStructuredGenerator(Protocol):
         sources: list[dict[str, Any]],
     ) -> GeneratedSectionBundle: ...
 
-    def generate_reading_asset(
+    async def generate_reading_asset(
         self,
         *,
         title: str,
@@ -133,7 +132,7 @@ class SupportsStructuredGenerator(Protocol):
         sources: list[dict[str, Any]],
     ) -> GeneratedTextAsset: ...
 
-    def generate_slides_asset(
+    async def generate_slides_asset(
         self,
         *,
         title: str,
@@ -142,7 +141,7 @@ class SupportsStructuredGenerator(Protocol):
         sources: list[dict[str, Any]],
     ) -> GeneratedSlideDeck: ...
 
-    def generate_mindmap_asset(
+    async def generate_mindmap_asset(
         self,
         *,
         title: str,
@@ -151,7 +150,7 @@ class SupportsStructuredGenerator(Protocol):
         sources: list[dict[str, Any]],
     ) -> GeneratedMindMap: ...
 
-    def generate_code_asset(
+    async def generate_code_asset(
         self,
         *,
         title: str,
@@ -160,7 +159,7 @@ class SupportsStructuredGenerator(Protocol):
         sources: list[dict[str, Any]],
     ) -> GeneratedCodeAsset: ...
 
-    def generate_video_script(
+    async def generate_video_script(
         self,
         *,
         title: str,
@@ -326,7 +325,7 @@ class OpenAICompatibleStructuredGenerator:
                 prompt_tokens,
             )
 
-    def generate_document_sections(
+    async def generate_document_sections(
         self,
         *,
         title: str,
@@ -335,7 +334,7 @@ class OpenAICompatibleStructuredGenerator:
         section_plans: list[dict[str, Any]],
         sources: list[dict[str, Any]],
     ) -> GeneratedSectionBundle:
-        return self._call_and_validate_json(
+        return await self._call_and_validate_json(
             span_name=f"{self.provider_name}.generate_document_sections",
             system_prompt=build_document_system_prompt(),
             user_prompt=build_document_user_prompt(
@@ -350,7 +349,7 @@ class OpenAICompatibleStructuredGenerator:
             schema_hint='{"sections":[{"title":"...","body":"...","tips":["..."],"citations":["..."]}]}',
         )
 
-    def generate_reading_asset(
+    async def generate_reading_asset(
         self,
         *,
         title: str,
@@ -358,7 +357,7 @@ class OpenAICompatibleStructuredGenerator:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedTextAsset:
-        return self._call_and_validate_json(
+        return await self._call_and_validate_json(
             span_name=f"{self.provider_name}.generate_reading_asset",
             system_prompt=build_reading_system_prompt(),
             user_prompt=build_reading_user_prompt(
@@ -372,7 +371,7 @@ class OpenAICompatibleStructuredGenerator:
             schema_hint='{"title":"...","summary":"...","body":"..."}',
         )
 
-    def generate_slides_asset(
+    async def generate_slides_asset(
         self,
         *,
         title: str,
@@ -381,7 +380,7 @@ class OpenAICompatibleStructuredGenerator:
         sources: list[dict[str, Any]],
     ) -> GeneratedSlideDeck:
         return GeneratedSlideDeck.model_validate(
-            self._call_and_parse_json(
+            await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_slides_asset",
                 system_prompt=build_slides_system_prompt(),
                 user_prompt=build_slides_user_prompt(
@@ -394,7 +393,7 @@ class OpenAICompatibleStructuredGenerator:
             )
         )
 
-    def generate_mindmap_asset(
+    async def generate_mindmap_asset(
         self,
         *,
         title: str,
@@ -402,7 +401,7 @@ class OpenAICompatibleStructuredGenerator:
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> GeneratedMindMap:
-        mermaid = self._call_and_extract_text(
+        mermaid = await self._call_and_extract_text(
             span_name=f"{self.provider_name}.generate_mindmap_asset",
             system_prompt=build_mindmap_system_prompt(),
             user_prompt=build_mindmap_user_prompt(
@@ -415,7 +414,7 @@ class OpenAICompatibleStructuredGenerator:
         )
         return self._parse_mindmap_mermaid(title=title, topic=topic, mermaid=mermaid)
 
-    def generate_code_asset(
+    async def generate_code_asset(
         self,
         *,
         title: str,
@@ -424,7 +423,7 @@ class OpenAICompatibleStructuredGenerator:
         sources: list[dict[str, Any]],
     ) -> GeneratedCodeAsset:
         return GeneratedCodeAsset.model_validate(
-            self._call_and_parse_json(
+            await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_code_asset",
                 system_prompt=build_code_system_prompt(),
                 user_prompt=build_code_user_prompt(
@@ -437,7 +436,7 @@ class OpenAICompatibleStructuredGenerator:
             )
         )
 
-    def generate_video_script(
+    async def generate_video_script(
         self,
         *,
         title: str,
@@ -448,7 +447,7 @@ class OpenAICompatibleStructuredGenerator:
         style: str,
     ) -> VideoScriptPayload:
         return VideoScriptPayload.model_validate(
-            self._call_and_parse_json(
+            await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_video_script",
                 system_prompt=build_video_script_system_prompt(),
                 user_prompt=build_video_script_user_prompt(
@@ -489,7 +488,7 @@ class OpenAICompatibleStructuredGenerator:
             )
         )
 
-    def _call_and_validate_json(
+    async def _call_and_validate_json(
         self,
         *,
         span_name: str,
@@ -507,7 +506,7 @@ class OpenAICompatibleStructuredGenerator:
             payload: dict[str, Any] | None = None
             try:
                 with TRACER.start_as_current_span(span_name):
-                    response = self._post_chat_completion(
+                    response = await self._post_chat_completion_async(
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": attempt_user_prompt},
@@ -526,7 +525,7 @@ class OpenAICompatibleStructuredGenerator:
                 )
                 if attempt >= self.max_retries:
                     raise RuntimeError(f"{self.provider_name} structured generation failed: {exc}") from exc
-                time.sleep(self.backoff_seconds * (2**attempt))
+                await asyncio.sleep(self.backoff_seconds * (2**attempt))
                 continue
 
             try:
@@ -557,14 +556,14 @@ class OpenAICompatibleStructuredGenerator:
                     last_error=exc,
                     last_payload=last_payload or {},
                 )
-                time.sleep(self.backoff_seconds * (2**attempt))
+                await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
         raise GenerationOutputInvalidError(
             f"{self.provider_name} structured generation produced invalid "
             f"{model_type.__name__} after {attempts} attempts: {last_output_error}"
         )
 
-    def _call_and_parse_json_once(
+    async def _call_and_parse_json_once(
         self,
         *,
         span_name: str,
@@ -573,7 +572,7 @@ class OpenAICompatibleStructuredGenerator:
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         with TRACER.start_as_current_span(span_name):
-            response = self._post_chat_completion(
+            response = await self._post_chat_completion_async(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -612,7 +611,7 @@ class OpenAICompatibleStructuredGenerator:
             return value
         return value[:limit] + "...<truncated>"
 
-    def _call_and_parse_json(
+    async def _call_and_parse_json(
         self,
         *,
         span_name: str,
@@ -623,7 +622,7 @@ class OpenAICompatibleStructuredGenerator:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
-                return self._call_and_parse_json_once(
+                return await self._call_and_parse_json_once(
                     span_name=span_name,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
@@ -639,7 +638,7 @@ class OpenAICompatibleStructuredGenerator:
                 )
                 if attempt >= self.max_retries:
                     break
-                time.sleep(self.backoff_seconds * (2**attempt))
+                await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
         raise RuntimeError(f"{self.provider_name} structured generation failed: {last_error}")
 
@@ -680,7 +679,7 @@ class OpenAICompatibleStructuredGenerator:
 
         raise RuntimeError(f"{self.provider_name} structured generation failed: {last_error}")
 
-    def _call_and_extract_text(
+    async def _call_and_extract_text(
         self,
         *,
         span_name: str,
@@ -692,7 +691,7 @@ class OpenAICompatibleStructuredGenerator:
         for attempt in range(self.max_retries + 1):
             try:
                 with TRACER.start_as_current_span(span_name):
-                    response = self._post_chat_completion(
+                    response = await self._post_chat_completion_async(
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
@@ -711,7 +710,7 @@ class OpenAICompatibleStructuredGenerator:
                 )
                 if attempt >= self.max_retries:
                     break
-                time.sleep(self.backoff_seconds * (2**attempt))
+                await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
         raise RuntimeError(f"{self.provider_name} text generation failed: {last_error}")
 
@@ -828,7 +827,7 @@ class ContentGenerationChain:
     ) -> None:
         self.primary_generator = primary_generator or OpenAICompatibleStructuredGenerator()
 
-    def generate_document_sections(
+    async def generate_document_sections(
         self,
         *,
         title: str,
@@ -840,7 +839,7 @@ class ContentGenerationChain:
     ) -> GeneratedSectionBundle:
         with TRACER.start_as_current_span("content_chain.generate_document_sections"):
             del fallback_builder
-            return self.primary_generator.generate_document_sections(
+            return await self.primary_generator.generate_document_sections(
                 title=title,
                 topic=topic,
                 snapshot=snapshot,
@@ -848,7 +847,7 @@ class ContentGenerationChain:
                 sources=sources,
             )
 
-    def generate_reading_asset(
+    async def generate_reading_asset(
         self,
         *,
         title: str,
@@ -859,14 +858,14 @@ class ContentGenerationChain:
     ) -> GeneratedTextAsset:
         with TRACER.start_as_current_span("content_chain.generate_reading_asset"):
             del fallback_builder
-            return self.primary_generator.generate_reading_asset(
+            return await self.primary_generator.generate_reading_asset(
                 title=title,
                 topic=topic,
                 snapshot=snapshot,
                 sources=sources,
             )
 
-    def generate_slides_asset(
+    async def generate_slides_asset(
         self,
         *,
         title: str,
@@ -877,14 +876,14 @@ class ContentGenerationChain:
     ) -> GeneratedSlideDeck:
         with TRACER.start_as_current_span("content_chain.generate_slides_asset"):
             del fallback_builder
-            return self.primary_generator.generate_slides_asset(
+            return await self.primary_generator.generate_slides_asset(
                 title=title,
                 topic=topic,
                 snapshot=snapshot,
                 sources=sources,
             )
 
-    def generate_mindmap_asset(
+    async def generate_mindmap_asset(
         self,
         *,
         title: str,
@@ -895,14 +894,14 @@ class ContentGenerationChain:
     ) -> GeneratedMindMap:
         with TRACER.start_as_current_span("content_chain.generate_mindmap_asset"):
             del fallback_builder
-            return self.primary_generator.generate_mindmap_asset(
+            return await self.primary_generator.generate_mindmap_asset(
                 title=title,
                 topic=topic,
                 snapshot=snapshot,
                 sources=sources,
             )
 
-    def generate_code_asset(
+    async def generate_code_asset(
         self,
         *,
         title: str,
@@ -913,14 +912,14 @@ class ContentGenerationChain:
     ) -> GeneratedCodeAsset:
         with TRACER.start_as_current_span("content_chain.generate_code_asset"):
             del fallback_builder
-            return self.primary_generator.generate_code_asset(
+            return await self.primary_generator.generate_code_asset(
                 title=title,
                 topic=topic,
                 snapshot=snapshot,
                 sources=sources,
             )
 
-    def generate_video_script(
+    async def generate_video_script(
         self,
         *,
         title: str,
@@ -933,7 +932,7 @@ class ContentGenerationChain:
     ) -> VideoScriptPayload:
         with TRACER.start_as_current_span("content_chain.generate_video_script"):
             del fallback_builder
-            return self.primary_generator.generate_video_script(
+            return await self.primary_generator.generate_video_script(
                 title=title,
                 topic=topic,
                 snapshot=snapshot,

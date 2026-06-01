@@ -331,6 +331,10 @@ public class AppProperties {
         private Duration connectTimeout = Duration.ofSeconds(5);
         private Duration requestTimeout = Duration.ofSeconds(90);
         private Duration sessionTtl = Duration.ofSeconds(300);
+        private Duration ttsFirstAudioTimeout = Duration.ofSeconds(3);
+        private int providerMaxRetries = 1;
+        private Duration providerRetryBackoff = Duration.ofMillis(300);
+        private int maxConcurrentSessionsPerUser = 2;
 
         public boolean isEnabled() {
             return enabled;
@@ -442,6 +446,38 @@ public class AppProperties {
 
         public void setSessionTtl(Duration sessionTtl) {
             this.sessionTtl = sessionTtl;
+        }
+
+        public Duration getTtsFirstAudioTimeout() {
+            return ttsFirstAudioTimeout;
+        }
+
+        public void setTtsFirstAudioTimeout(Duration ttsFirstAudioTimeout) {
+            this.ttsFirstAudioTimeout = ttsFirstAudioTimeout;
+        }
+
+        public int getProviderMaxRetries() {
+            return providerMaxRetries;
+        }
+
+        public void setProviderMaxRetries(int providerMaxRetries) {
+            this.providerMaxRetries = providerMaxRetries;
+        }
+
+        public Duration getProviderRetryBackoff() {
+            return providerRetryBackoff;
+        }
+
+        public void setProviderRetryBackoff(Duration providerRetryBackoff) {
+            this.providerRetryBackoff = providerRetryBackoff;
+        }
+
+        public int getMaxConcurrentSessionsPerUser() {
+            return maxConcurrentSessionsPerUser;
+        }
+
+        public void setMaxConcurrentSessionsPerUser(int maxConcurrentSessionsPerUser) {
+            this.maxConcurrentSessionsPerUser = maxConcurrentSessionsPerUser;
         }
     }
 }

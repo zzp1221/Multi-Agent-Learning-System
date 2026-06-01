@@ -57,7 +57,12 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
     @Override
     public VoiceAsrResult transcribePcm16(byte[] pcmAudio, int sampleRate) {
         ensureConfigured();
-        RealtimeExchange exchange = openExchange(appProperties.getVoice().getAsrWebsocketUrl(), appProperties.getVoice().getAsrModel(), "ASR");
+        RealtimeExchange exchange = openExchangeWithRetry(
+            appProperties.getVoice().getAsrWebsocketUrl(),
+            appProperties.getVoice().getAsrModel(),
+            "ASR",
+            null
+        );
         try {
             sendJson(exchange.websocket(), withEventId(buildAsrSessionUpdate(sampleRate)));
             for (int offset = 0; offset < pcmAudio.length; offset += ASR_CHUNK_BYTES) {
@@ -88,7 +93,7 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
     @Override
     public VoiceRealtimeAsrSession start(String sessionKey, int sampleRate, VoiceRealtimeAsrListener listener) {
         ensureConfigured();
-        RealtimeExchange exchange = openExchange(
+        RealtimeExchange exchange = openExchangeWithRetry(
             appProperties.getVoice().getAsrWebsocketUrl(),
             appProperties.getVoice().getAsrModel(),
             "ASR-REALTIME",
@@ -107,12 +112,21 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
     @Override
     public void synthesize(String text, String voice, Consumer<VoiceTtsChunk> chunkConsumer) {
         ensureConfigured();
-        RealtimeExchange exchange = openExchange(appProperties.getVoice().getTtsWebsocketUrl(), appProperties.getVoice().getTtsModel(), "TTS");
+        RealtimeExchange exchange = openExchangeWithRetry(
+            appProperties.getVoice().getTtsWebsocketUrl(),
+            appProperties.getVoice().getTtsModel(),
+            "TTS",
+            null
+        );
         try {
             sendJson(exchange.websocket(), withEventId(buildTtsSessionUpdate(voice)));
             sendJson(exchange.websocket(), withEventId(Map.of("type", "input_text_buffer.append", "text", text)));
             sendJson(exchange.websocket(), withEventId(Map.of("type", "input_text_buffer.commit")));
-            exchange.forwardAudio(appProperties.getVoice().getRequestTimeout(), chunkConsumer);
+            exchange.forwardAudio(
+                appProperties.getVoice().getRequestTimeout(),
+                appProperties.getVoice().getTtsFirstAudioTimeout(),
+                chunkConsumer
+            );
             sendJson(exchange.websocket(), withEventId(Map.of("type", "session.finish")));
         } finally {
             exchange.close();
@@ -159,6 +173,40 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
 
     private RealtimeExchange openExchange(String endpoint, String model, String label) {
         return openExchange(endpoint, model, label, null);
+    }
+
+    private RealtimeExchange openExchangeWithRetry(
+        String endpoint,
+        String model,
+        String label,
+        Consumer<JsonNode> eventConsumer
+    ) {
+        int attempts = Math.max(1, appProperties.getVoice().getProviderMaxRetries() + 1);
+        RuntimeException lastError = null;
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                return openExchange(endpoint, model, label, eventConsumer);
+            } catch (RuntimeException ex) {
+                lastError = ex;
+                if (attempt >= attempts) {
+                    break;
+                }
+                LOGGER.warn("{} websocket open attempt {}/{} failed: {}", label, attempt, attempts, ex.getMessage());
+                sleepBeforeRetry();
+            }
+        }
+        throw lastError == null
+            ? new ApplicationException("VOICE_PROVIDER_UNAVAILABLE", "语音服务连接失败，请稍后重试", HttpStatus.BAD_GATEWAY)
+            : lastError;
+    }
+
+    private void sleepBeforeRetry() {
+        try {
+            Thread.sleep(Math.max(0L, appProperties.getVoice().getProviderRetryBackoff().toMillis()));
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new ApplicationException("VOICE_PROVIDER_INTERRUPTED", "语音服务调用已中断", HttpStatus.BAD_GATEWAY);
+        }
     }
 
     private RealtimeExchange openExchange(String endpoint, String model, String label, Consumer<JsonNode> eventConsumer) {
@@ -325,8 +373,8 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
             return event;
         }
 
-        private void forwardAudio(Duration timeout, Consumer<VoiceTtsChunk> chunkConsumer) {
-            if (!listener.forwardAudio(timeout, chunkConsumer)) {
+        private void forwardAudio(Duration timeout, Duration firstAudioTimeout, Consumer<VoiceTtsChunk> chunkConsumer) {
+            if (!listener.forwardAudio(timeout, firstAudioTimeout, chunkConsumer)) {
                 throw new ApplicationException("VOICE_PROVIDER_TIMEOUT", "语音合成响应超时", HttpStatus.GATEWAY_TIMEOUT);
             }
         }
@@ -523,15 +571,22 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
             return lastText.get();
         }
 
-        private boolean forwardAudio(Duration timeout, Consumer<VoiceTtsChunk> chunkConsumer) {
+        private boolean forwardAudio(Duration timeout, Duration firstAudioTimeout, Consumer<VoiceTtsChunk> chunkConsumer) {
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeout.toMillis());
+            long firstAudioDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(firstAudioTimeout.toMillis());
+            boolean hasAudio = false;
             while (System.nanoTime() < deadline && !closed.get()) {
+                if (!hasAudio && System.nanoTime() >= firstAudioDeadline) {
+                    LOGGER.warn("{} first audio chunk timed out after {}ms", label, firstAudioTimeout.toMillis());
+                    return false;
+                }
                 long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
                 JsonNode event = pollEvent(Math.min(Math.max(remainingMs, 1), 100));
                 if (event != null) {
                     String type = event.path("type").asText("");
                     JsonNode delta = event.findValue("delta");
                     if (type.contains("audio") && delta != null && delta.isTextual() && !delta.asText().isBlank()) {
+                        hasAudio = true;
                         chunkConsumer.accept(new VoiceTtsChunk(delta.asText(), 16000, "pcm16", false));
                     }
                     if ("response.audio.done".equals(type) || "response.done".equals(type)) {

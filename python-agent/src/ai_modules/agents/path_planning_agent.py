@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
+
+LOGGER = logging.getLogger(__name__)
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.llms import LearningPathGenerator
 from src.ai_modules.memory import (
     InMemoryLearningPlanStore,
+    LearnerKnowledgeGraphStore,
     LearningPlanStore,
     PostgresLearningPlanStore,
 )
@@ -35,12 +39,14 @@ class PathPlanningAgent(PlaceholderAgent):
         llm_client: Any | None = None,
         learning_plan_store: LearningPlanStore | None = None,
         generator: Any | None = None,
+        knowledge_graph_store: LearnerKnowledgeGraphStore | None = None,
     ) -> None:
         super().__init__("Path Planning Agent", "path_planning")
         self.llm_client = llm_client
         self.learning_plan_store = learning_plan_store or PostgresLearningPlanStore()
         self.fallback_learning_plan_store = InMemoryLearningPlanStore()
         self.generator = generator
+        self.knowledge_graph_store = knowledge_graph_store or LearnerKnowledgeGraphStore()
         self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
@@ -111,6 +117,7 @@ class PathPlanningAgent(PlaceholderAgent):
             plan=plan,
             trigger_source=self._resolve_trigger_source(params),
         )
+        await self._sync_plan_to_graph(user_id=user_id, plan=plan)
         return {
             "learningPath": plan.model_dump(by_alias=True),
             "persistence": metadata,
@@ -349,3 +356,34 @@ class PathPlanningAgent(PlaceholderAgent):
         normalized = [item for item in normalized if item[0]]
         normalized.sort(key=lambda item: item[1])
         return [name for name, score in normalized[:3] if score < 0.75]
+
+    async def _sync_plan_to_graph(self, *, user_id: str, plan: LearningPlanPayload) -> None:
+        """把 LLM 生成的学习计划步骤写入用户知识图谱节点和 PREREQUISITE 边。"""
+        if not plan.steps:
+            LOGGER.warning("_sync_plan_to_graph: plan.steps is empty, skipping user=%s", user_id)
+            return
+        LOGGER.info("_sync_plan_to_graph: writing %d steps for user=%s", len(plan.steps), user_id)
+        try:
+            prev_key: str | None = None
+            for step in plan.steps:
+                topic = step.title.strip()
+                if not topic:
+                    continue
+                await self.knowledge_graph_store.upsert_node(
+                    user_id=user_id,
+                    canonical_key=topic,
+                    topic=topic,
+                    mastery_score=0.0,
+                    source="PROFILE",
+                )
+                if prev_key:
+                    await self.knowledge_graph_store.upsert_edge(
+                        user_id=user_id,
+                        from_key=prev_key,
+                        to_key=topic,
+                        relation_type="PREREQUISITE",
+                    )
+                prev_key = topic
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("_sync_plan_to_graph failed user=%s: %s", user_id, exc)

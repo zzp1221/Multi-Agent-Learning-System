@@ -1,7 +1,9 @@
 package com.project.api.profile;
 
+import com.project.api.profile.dto.KnowledgeGraphResponse;
 import com.project.api.profile.dto.UserProfileResponse;
 import com.project.api.profile.dto.UserProfileAnalyticsResponse;
+import com.project.application.profile.LearnerKnowledgeGraphService;
 import com.project.application.profile.UserProfileAnalyticsService;
 import com.project.application.profile.UserProfileQueryService;
 import com.project.security.AuthenticatedUserResolver;
@@ -27,13 +29,16 @@ public class UserController {
 
     private final UserProfileQueryService userProfileQueryService;
     private final UserProfileAnalyticsService userProfileAnalyticsService;
+    private final LearnerKnowledgeGraphService learnerKnowledgeGraphService;
 
     public UserController(
         UserProfileQueryService userProfileQueryService,
-        UserProfileAnalyticsService userProfileAnalyticsService
+        UserProfileAnalyticsService userProfileAnalyticsService,
+        LearnerKnowledgeGraphService learnerKnowledgeGraphService
     ) {
         this.userProfileQueryService = userProfileQueryService;
         this.userProfileAnalyticsService = userProfileAnalyticsService;
+        this.learnerKnowledgeGraphService = learnerKnowledgeGraphService;
     }
 
     @GetMapping("/{userId}/profile/current")
@@ -58,4 +63,16 @@ public class UserController {
             userProfileAnalyticsService.getAnalytics(AuthenticatedUserResolver.require(authentication), userId, days)
         );
     }
+
+    @GetMapping("/{userId}/knowledge-graph")
+    @Operation(summary = "Get the learner knowledge graph for a user")
+    public ResponseEntity<KnowledgeGraphResponse> getKnowledgeGraph(
+        Authentication authentication,
+        @PathVariable UUID userId
+    ) {
+        return ResponseEntity.ok(
+            learnerKnowledgeGraphService.getGraph(AuthenticatedUserResolver.require(authentication), userId)
+        );
+    }
 }
+

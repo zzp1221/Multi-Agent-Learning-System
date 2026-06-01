@@ -24,6 +24,14 @@ export interface VoiceCommandResponse {
   context: Record<string, string>;
 }
 
+export interface VoicePageContext {
+  pageType?: string;
+  questionId?: string;
+  courseId?: string;
+  knowledgePointId?: string;
+  pageTitle?: string;
+}
+
 export interface VoiceTtsEvent {
   event: string;
   payload: {
@@ -72,8 +80,8 @@ export const voiceApi = {
     return request.post<VoiceSessionResponse>('/api/voice/sessions');
   },
 
-  async parseCommand(text: string): Promise<VoiceCommandResponse> {
-    return request.post<VoiceCommandResponse>('/api/voice/commands/parse', { text });
+  async parseCommand(text: string, context?: VoicePageContext): Promise<VoiceCommandResponse> {
+    return request.post<VoiceCommandResponse>('/api/voice/commands/parse', { text, ...context });
   },
 
   async streamTts(

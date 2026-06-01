@@ -8,6 +8,7 @@ import com.project.api.voice.dto.VoiceTtsRequest;
 import com.project.application.common.ApplicationException;
 import com.project.application.common.ClientDisconnectDetector;
 import com.project.application.voice.VoiceGatewayService;
+import com.project.application.voice.VoiceMetricLogger;
 import com.project.application.voice.VoiceTtsClient;
 import com.project.application.voice.VoiceTtsChunk;
 import com.project.config.AppProperties;
@@ -35,7 +36,10 @@ import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 @RequestMapping("/api/voice")
@@ -49,17 +53,20 @@ public class VoiceController {
     private final VoiceTtsClient voiceTtsClient;
     private final AppProperties appProperties;
     private final TaskExecutor voiceTaskExecutor;
+    private final VoiceMetricLogger voiceMetricLogger;
 
     public VoiceController(
         VoiceGatewayService voiceGatewayService,
         VoiceTtsClient voiceTtsClient,
         AppProperties appProperties,
-        @Qualifier("voiceTaskExecutor") TaskExecutor voiceTaskExecutor
+        @Qualifier("voiceTaskExecutor") TaskExecutor voiceTaskExecutor,
+        VoiceMetricLogger voiceMetricLogger
     ) {
         this.voiceGatewayService = voiceGatewayService;
         this.voiceTtsClient = voiceTtsClient;
         this.appProperties = appProperties;
         this.voiceTaskExecutor = voiceTaskExecutor;
+        this.voiceMetricLogger = voiceMetricLogger;
     }
 
     @PostMapping(path = "/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -105,13 +112,22 @@ public class VoiceController {
         }
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         AtomicInteger sequence = new AtomicInteger(0);
+        AtomicBoolean firstAudioSent = new AtomicBoolean(false);
+        String streamId = UUID.randomUUID().toString();
+        long startedAtNanos = System.nanoTime();
         emitter.onCompletion(() -> LOGGER.debug("Voice TTS SSE completed"));
         emitter.onTimeout(() -> LOGGER.debug("Voice TTS SSE timed out"));
         emitter.onError(ex -> LOGGER.debug("Voice TTS SSE error", ex));
 
         voiceTaskExecutor.execute(() -> {
             try {
-                voiceTtsClient.synthesize(text, request.normalizedVoice(), chunk -> sendTtsChunk(emitter, sequence, chunk));
+                voiceTtsClient.synthesize(text, request.normalizedVoice(), chunk -> {
+                    if (!chunk.finished() && firstAudioSent.compareAndSet(false, true)) {
+                        recordTtsMetric("tts_first_audio_ms", streamId, startedAtNanos, "success");
+                    }
+                    sendTtsChunk(emitter, sequence, chunk);
+                });
+                recordTtsMetric("tts_total_ms", streamId, startedAtNanos, "success");
                 sendEvent(emitter, "done", sequence, Map.of("finished", true));
                 emitter.complete();
             } catch (Exception ex) {
@@ -120,11 +136,27 @@ public class VoiceController {
                     return;
                 }
                 LOGGER.warn("Voice TTS stream failed", ex);
-                sendEvent(emitter, "error", sequence, Map.of("message", "语音合成失败，请稍后重试"));
+                recordTtsMetric("tts_error_ms", streamId, startedAtNanos, firstAudioSent.get() ? "error" : "fallback_text_only");
+                sendEvent(emitter, "error", sequence, Map.of(
+                    "message", "语音合成暂不可用，已保留文字回答",
+                    "fallback", "TEXT_ONLY"
+                ));
                 safeComplete(emitter);
             }
         });
         return emitter;
+    }
+
+    private void recordTtsMetric(String metric, String streamId, long startedAtNanos, String outcome) {
+        voiceMetricLogger.record(
+            metric,
+            null,
+            streamId,
+            TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos),
+            appProperties.getVoice().getProvider(),
+            appProperties.getVoice().getTtsModel(),
+            outcome
+        );
     }
 
     private void sendTtsChunk(SseEmitter emitter, AtomicInteger sequence, VoiceTtsChunk chunk) {

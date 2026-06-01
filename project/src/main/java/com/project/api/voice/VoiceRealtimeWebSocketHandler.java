@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.application.voice.VoiceRealtimeAsrClient;
 import com.project.application.voice.VoiceRealtimeAsrListener;
 import com.project.application.voice.VoiceRealtimeAsrSession;
+import com.project.application.voice.VoiceMetricLogger;
 import com.project.application.voice.VoiceSessionService;
 import com.project.config.AppProperties;
 import com.project.security.JwtAuthenticatedUser;
@@ -28,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
@@ -41,6 +43,7 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
     private final TaskExecutor voiceTaskExecutor;
+    private final VoiceMetricLogger voiceMetricLogger;
     private final Map<String, VoiceSocketState> states = new ConcurrentHashMap<>();
 
     public VoiceRealtimeWebSocketHandler(
@@ -49,7 +52,8 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         VoiceRealtimeAsrClient realtimeAsrClient,
         AppProperties appProperties,
         ObjectMapper objectMapper,
-        @Qualifier("voiceTaskExecutor") TaskExecutor voiceTaskExecutor
+        @Qualifier("voiceTaskExecutor") TaskExecutor voiceTaskExecutor,
+        VoiceMetricLogger voiceMetricLogger
     ) {
         this.jwtProvider = jwtProvider;
         this.sessionService = sessionService;
@@ -57,6 +61,7 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         this.appProperties = appProperties;
         this.objectMapper = objectMapper;
         this.voiceTaskExecutor = voiceTaskExecutor;
+        this.voiceMetricLogger = voiceMetricLogger;
     }
 
     @Override
@@ -184,6 +189,7 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             @Override
             public void onReady() {
                 if (isActive(session, state, turnId)) {
+                    recordMetric("asr_ready_ms", state, turnId, "success");
                     safeSend(session, "asr_ready", Map.of("turnId", turnId));
                 }
             }
@@ -191,6 +197,9 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             @Override
             public void onPartial(String text) {
                 if (!text.isBlank() && isActive(session, state, turnId)) {
+                    if (state.markFirstPartial(turnId)) {
+                        recordMetric("asr_first_partial_ms", state, turnId, "success");
+                    }
                     safeSend(session, "asr_partial", Map.of("turnId", turnId, "text", text));
                 }
             }
@@ -198,6 +207,7 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             @Override
             public void onFinal(String text) {
                 if (isActive(session, state, turnId)) {
+                    recordMetric("asr_final_ms", state, turnId, "success");
                     safeSend(session, "asr_final", Map.of(
                         "turnId", turnId,
                         "text", text,
@@ -211,10 +221,23 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             public void onError(Throwable error) {
                 LOGGER.warn("Realtime ASR failed sessionId={} turnId={}: {}", state.sessionId(), turnId, error.getMessage());
                 if (isActive(session, state, turnId)) {
+                    recordMetric("asr_error_ms", state, turnId, "error");
                     safeSend(session, "error", Map.of("turnId", turnId, "message", "语音识别失败，请重试"));
                 }
             }
         });
+    }
+
+    private void recordMetric(String metric, VoiceSocketState state, String turnId, String outcome) {
+        voiceMetricLogger.record(
+            metric,
+            state.sessionId(),
+            turnId,
+            state.elapsedMs(turnId),
+            appProperties.getVoice().getProvider(),
+            appProperties.getVoice().getAsrModel(),
+            outcome
+        );
     }
 
     private JwtAuthenticatedUser authenticate(WebSocketSession session) {
@@ -290,12 +313,15 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         private final Deque<byte[]> pendingAudio = new ArrayDeque<>();
         private volatile VoiceRealtimeAsrSession asrSession;
         private volatile String turnId;
+        private volatile long turnStartedAtNanos;
+        private volatile boolean firstPartialLogged;
         private boolean pendingCommit;
 
         private VoiceSocketState(UUID userId, UUID sessionId) {
             this.userId = userId;
             this.sessionId = sessionId;
             this.turnId = "turn-" + turnSequence.get();
+            this.turnStartedAtNanos = System.nanoTime();
         }
 
         private UUID userId() {
@@ -358,6 +384,25 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         private void nextTurn() {
             audioBytes.set(0);
             turnId = "turn-" + turnSequence.incrementAndGet();
+            turnStartedAtNanos = System.nanoTime();
+            firstPartialLogged = false;
+        }
+
+        private long elapsedMs(String requestedTurnId) {
+            if (!isCurrentTurn(requestedTurnId)) {
+                return -1L;
+            }
+            return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - turnStartedAtNanos);
+        }
+
+        private boolean markFirstPartial(String requestedTurnId) {
+            synchronized (lock) {
+                if (!isCurrentTurn(requestedTurnId) || firstPartialLogged) {
+                    return false;
+                }
+                firstPartialLogged = true;
+                return true;
+            }
         }
 
         private void closeCurrentTurn() {

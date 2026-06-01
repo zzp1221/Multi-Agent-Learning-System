@@ -91,6 +91,14 @@ class OpenAICompatibleClient:
             self._shared_clients[client_key] = client
         return client
 
+    @classmethod
+    async def close_shared_clients(cls) -> None:
+        """在应用关闭时关闭所有共享的异步 HTTP 客户端。"""
+        clients = list(cls._shared_clients.values())
+        cls._shared_clients.clear()
+        for client in clients:
+            await client.aclose()
+
     def _extract_cached_tokens(self, usage: dict[str, Any]) -> int:
         details = usage.get("prompt_tokens_details", {})
         if isinstance(details, dict):

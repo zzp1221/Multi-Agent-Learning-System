@@ -8,7 +8,8 @@ public record VoiceCommandRequest(
     String pageType,
     String questionId,
     String courseId,
-    String knowledgePointId
+    String knowledgePointId,
+    String pageTitle
 ) {
     public String normalizedText() {
         return text == null ? "" : text.trim();

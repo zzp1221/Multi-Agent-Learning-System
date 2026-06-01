@@ -27,6 +27,7 @@ from src.ai_modules.memory.practice_store import (
     PostgresPracticeStore,
     PracticeStore,
 )
+from src.ai_modules.memory.knowledge_graph_store import LearnerKnowledgeGraphStore
 
 __all__ = [
     "ConversationMessageDocument",
@@ -46,4 +47,5 @@ __all__ = [
     "ProfileStore",
     "PracticeStore",
     "InMemoryPracticeStore",
+    "LearnerKnowledgeGraphStore",
 ]

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.application.voice.VoiceRealtimeAsrClient;
 import com.project.application.voice.VoiceRealtimeAsrListener;
 import com.project.application.voice.VoiceRealtimeAsrSession;
+import com.project.application.voice.VoiceMetricLogger;
 import com.project.application.voice.VoiceSessionService;
 import com.project.config.AppProperties;
 import com.project.security.JwtAuthenticatedUser;
@@ -145,7 +146,8 @@ class VoiceRealtimeWebSocketHandlerTest {
             asrClient,
             appProperties,
             objectMapper,
-            executor
+            executor,
+            new VoiceMetricLogger()
         );
     }
 

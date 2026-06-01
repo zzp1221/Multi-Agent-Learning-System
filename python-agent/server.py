@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.generation.content_chain import OpenAICompatibleStructuredGenerator
+from src.ai_modules.llms.openai_compatible import OpenAICompatibleClient
 from src.ai_modules.memory import ConversationMessageDocument, MongoConversationMessageStore
 from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, ErrorPayload, ErrorSSEEvent
 from src.ai_modules.observability import configure_observability
@@ -143,6 +144,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception:
         LOGGER.exception("SmartEngine Redis Streams worker stopped with an error")
     await OpenAICompatibleStructuredGenerator.close_async_clients()
+    await OpenAICompatibleClient.close_shared_clients()
 
 
 async def _sandbox_cleanup_loop() -> None:

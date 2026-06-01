@@ -65,6 +65,10 @@ class ConversationAndProfileIntegrationTest {
         doAnswer(invocation -> {
             SmartEngineInvocation agentInvocation = invocation.getArgument(0, SmartEngineInvocation.class);
             assertThat(agentInvocation.params()).containsEntry("webSearchEnabled", true);
+            assertThat(agentInvocation.params()).containsKey("voiceContext");
+            @SuppressWarnings("unchecked")
+            Map<String, String> voiceContext = (Map<String, String>) agentInvocation.params().get("voiceContext");
+            assertThat(voiceContext).containsEntry("pageType", "qna_chat");
             @SuppressWarnings("unchecked")
             Consumer<PythonStreamEvent> consumer = invocation.getArgument(1, Consumer.class);
             consumer.accept(new PythonStreamEvent(
@@ -97,7 +101,11 @@ class ConversationAndProfileIntegrationTest {
                     {
                       "message": "请给我讲一下数据库联合索引",
                       "serviceType": "TUTORING",
-                      "webSearchEnabled": true
+                      "webSearchEnabled": true,
+                      "voiceContext": {
+                        "pageType": "qna_chat",
+                        "pageTitle": "智能对话"
+                      }
                     }
                     """))
             .andExpect(request().asyncStarted())

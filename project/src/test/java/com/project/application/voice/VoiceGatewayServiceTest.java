@@ -43,4 +43,21 @@ class VoiceGatewayServiceTest {
 
         assertThat(service.transcribe(user, file).text()).isEqualTo("解释这道题");
     }
+
+    @Test
+    void limitsConcurrentVoiceSessionsPerUser() {
+        appProperties.getVoice().setMaxConcurrentSessionsPerUser(1);
+        VoiceGatewayService service = new VoiceGatewayService(
+            appProperties,
+            (audio, sampleRate) -> new VoiceAsrResult("", 0, "test", "test"),
+            new VoiceSessionService(appProperties),
+            new VoiceCommandParser()
+        );
+
+        service.createSession(user);
+
+        assertThatThrownBy(() -> service.createSession(user))
+            .isInstanceOf(ApplicationException.class)
+            .hasMessageContaining("语音会话过多");
+    }
 }

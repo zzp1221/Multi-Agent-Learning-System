@@ -107,3 +107,7 @@ app:
     connect-timeout: ${VOICE_CONNECT_TIMEOUT:5s}
     request-timeout: ${VOICE_REQUEST_TIMEOUT:90s}
     session-ttl: ${VOICE_SESSION_TTL:300s}
+    tts-first-audio-timeout: ${VOICE_TTS_FIRST_AUDIO_TIMEOUT:3s}
+    provider-max-retries: ${VOICE_PROVIDER_MAX_RETRIES:1}
+    provider-retry-backoff: ${VOICE_PROVIDER_RETRY_BACKOFF:300ms}
+    max-concurrent-sessions-per-user: ${VOICE_MAX_CONCURRENT_SESSIONS_PER_USER:2}
