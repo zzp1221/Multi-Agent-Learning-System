@@ -139,9 +139,9 @@ MVP 不包含：
 | P1 真正实时化 | 从“录完再传”升级为边说边识别、边生成边播放 | 前端使用 AudioWorklet 持续采集 16k PCM chunk；通过 `/api/voice/ws` 上传；Java 为每个 session 维持百炼 ASR WebSocket；ASR partial 实时回前端；停顿后 final transcript 进入现有聊天 SSE；TTS 按 chunk 播放 | ASR partial 首字延迟 `< 800ms`；TTS 首个音频 chunk `< 1000ms`；说话结束到助手开始说话 `< 1500ms`；P95 `< 2500ms` |
 | P2 打断能力 | 用户重新开口时立即停止当前朗读和回答 | 前端检测重新开口后停止本地 TTS 播放；通过 WebSocket `cancel` 或后续取消接口通知 Java；Java 取消当前 TTS provider 连接和聊天流；状态机支持 `speaking -> listening -> transcribing` | 用户开口后 `< 300ms` 停止播放；取消后不再追加旧回答或旧音频；新一轮语音可继续识别 |
 | P3 稳定性 | 降低第三方语音服务波动对体验的影响 | ASR/TTS 建连超时重试；TTS 首包超时降级为文字回答；provider 错误结构化日志；采集 `asr_first_partial_ms`、`tts_first_audio_ms`、`voice_round_trip_ms`；限制单用户并发 voice session；session TTL 清理 | provider 超时不阻塞 UI；错误有可定位日志；并发和 TTL 不造成会话泄漏；降级路径可用 |
-| P4 功能完善 | 在实时链路稳定后补齐学习助手能力 | 页面上下文问答；语音快捷指令扩展；朗读暂停/继续/换音色；ASR 低置信度确认；历史语音文本记录；学习动作控制 | 不破坏现有聊天 SSE；不存储原始音频；快捷指令和页面上下文在主要页面可用 |
+| P4 功能完善 | 在实时链路稳定后补齐学习助手能力 | 页面上下文问答；语音快捷指令扩展；朗读暂停/继续；历史语音文本记录；学习动作控制；换音色和 ASR 低置信度确认本轮明确不做 | 不破坏现有聊天 SSE；不存储原始音频；快捷指令和页面上下文在主要页面可用 |
 
-推荐下一步继续验证 P1/P2 的运行效果：用真实麦克风测试 ASR partial 首字延迟、final transcript 延迟和打断后旧 turn 是否被丢弃。P1/P2 验收通过后，再进入 P3 稳定性治理。
+P3/P4 已完成代码侧落地：provider 建连重试、TTS 首包超时降级、结构化指标日志、单用户 voice session 并发限制、页面上下文传入现有聊天链路、停止/暂停/继续朗读、本地语音文本历史、错题本/个人画像/问答页跳转、今日复习触发、学习路径规划触发和文字回答降级提示。下一步重点仍是真实浏览器 + 麦克风验收：确认 ASR partial/final 延迟、TTS 降级提示、旧 turn 丢弃、页面上下文问答效果和页面动作控制效果。
 
 ### 4.5 P1/P2 当前落地状态
 
@@ -153,6 +153,8 @@ MVP 不包含：
 - 每轮语音都有 `turnId`，cancel 后递增新 turn；旧 turn 的 partial/final/error 回调会被丢弃，避免旧识别结果污染新一轮。
 - 前端重新录音会先停止 TTS 播放、取消当前聊天流、关闭旧 realtime socket，然后创建新 session 开始录音。
 - 前端区分预期关闭和异常断开，ASR final 后主动关闭 WebSocket 不再误报“连接已断开”。
+- P3 稳定性已补齐：百炼 ASR/TTS WebSocket 建连按配置重试，TTS 首包超时返回 `TEXT_ONLY` 降级，Java 记录 `asr_first_partial_ms`、`asr_final_ms`、`tts_first_audio_ms`、`tts_total_ms` 等 `voice_metric` 日志，voice session 按用户限制并发并继续 TTL 清理。
+- P4 功能已补齐：前端按当前路由携带 `voiceContext`，Java 将其作为 `voiceContext`/`learningContext` 传入现有聊天参数；快捷指令支持停止/暂停/继续朗读，TTS 失败时保留文字回答并在面板提示；最近语音文本和回答摘要仅存浏览器 `localStorage`，不保存原始音频；学习动作支持打开错题本、打开个人画像、回到问答、开始今日复习和生成学习路径规划。换音色、ASR 低置信度确认本轮按需求不做。
 
 仍需真实浏览器验收：
 
@@ -579,6 +581,14 @@ MVP：
 | 前端悬浮助手 | 已完成 | 全局右下角麦克风按钮、AudioWorklet 实时 PCM 采集、partial 识别展示、可编辑确认、发送 |
 | 复用聊天 SSE | 已完成 | 识别文本创建会话后走现有 `/api/conversations/{id}/messages/stream` |
 | 自动朗读开关 | 已完成 | 前端可开启回答后自动 TTS 播放，支持停止当前任务 |
+| P3 稳定性治理 | 已完成 | provider 建连重试、TTS 首包超时文字降级、结构化指标日志、单用户 session 并发限制 |
+| 页面上下文问答 | 已完成 | 前端传 `voiceContext`，Java 透传到现有聊天参数并映射 `learningContext` |
+| 朗读暂停/继续 | 已完成 | 本地 `AudioContext.suspend/resume`，支持暂停首包未到场景 |
+| 语音文本历史 | 已完成 | 最近 5 条语音文本和回答摘要保存在浏览器 `localStorage`，可点击重发，不保存原始音频 |
+| 学习动作控制 | 已完成 | 支持打开错题本、开始今日复习、打开个人画像、回到问答、生成学习路径规划 |
+| 后端语音指令扩展 | 已完成 | Java `VoiceCommandParser` 新增暂停、错题本、画像、复习、问答、学习计划等本地 intent |
+| 换音色 | 不做 | 已按当前需求排除，继续使用服务端默认 `VOICE_TTS_VOICE` |
+| ASR 低置信度确认 | 不做 | 已按当前需求排除，ASR final 仍走现有可编辑文本确认 |
 | 安全配置 | 已完成 | 语音 REST 接口走 Spring Security JWT；`/api/voice/ws` 放行浏览器升级握手，但 handler 校验 query token 和 session 归属；第三方 key 仅服务端环境变量读取 |
 
 配置项：
@@ -599,15 +609,20 @@ VOICE_MAX_AUDIO_BYTES=10485760
 VOICE_CONNECT_TIMEOUT=5s
 VOICE_REQUEST_TIMEOUT=90s
 VOICE_SESSION_TTL=300s
+VOICE_TTS_FIRST_AUDIO_TIMEOUT=3s
+VOICE_PROVIDER_MAX_RETRIES=1
+VOICE_PROVIDER_RETRY_BACKOFF=300ms
+VOICE_MAX_CONCURRENT_SESSIONS_PER_USER=2
 ```
 
 验收结果：
 
 ```text
 docker compose ps -> app/frontend/python-agent/postgres/mongo/redis 均 Up，数据服务 healthy
-project: mvn test -> 81 tests passed
+project: mvn test -> 82 tests passed
 frontend: npx tsc --noEmit -> passed
 frontend: npx vite build -> passed
+focused: VoiceGatewayServiceTest, VoiceCommandParserTest, VoiceRealtimeWebSocketHandlerTest, ConversationAndProfileIntegrationTest, AppPropertiesTest -> 11 tests passed
 pytest tests/ -v -> 当前宿主 shell 无 pytest/python 可执行文件，未能运行；python-agent 容器有 pytest 但镜像内未包含 tests 目录
 pytest python-agent/tests/ -k rag -v -> 当前宿主 shell 无 pytest/python 可执行文件，未能运行；python-agent 容器有 pytest 但镜像内未包含 tests 目录
 docker compose ps -> app/frontend/python-agent/postgres/mongo/redis 均 Up，数据服务 healthy
@@ -619,8 +634,8 @@ authenticated /api/voice/ws smoke -> ready 36ms, cancel 4ms, sampleRate 16000, t
 当前限制：
 
 - 浏览器端录音使用 16k PCM 上传，MVP 不是直接上传 webm 容器。
-- `/api/voice/ws` 已从分片收集后提交识别升级为实时 ASR 通道；自动化 smoke 已验证 ready/cancel 链路，仍需用真实麦克风验证 ASR partial 首字延迟和 final transcript 延迟。
-- 本轮未执行真实麦克风 + 百炼 API 端到端延迟验收；需要浏览器授权麦克风后人工确认。
+- `/api/voice/ws` 已从分片收集后提交识别升级为实时 ASR 通道；自动化 smoke 已验证 ready/cancel 链路，仍需用真实麦克风验证 ASR partial 首字延迟、final transcript 延迟、页面上下文问答、TTS 降级提示和学习动作控制。
+- 本轮未执行真实麦克风 + 百炼 API 端到端延迟验收；需要浏览器授权麦克风后人工确认。当前代码已提供 `voice_metric` 日志辅助定位。
 - 用户提供过的百炼 API Key 未写入代码、配置或文档；建议在百炼控制台轮换该 key。
 
 ## 17. 参考资料

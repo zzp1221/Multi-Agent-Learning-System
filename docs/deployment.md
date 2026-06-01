@@ -174,6 +174,8 @@ curl -s -N -X POST http://localhost:8081/api/voice/tts/stream \
 - `/api/voice/transcribe` 上传 16k mono PCM 时返回 `text/durationMs/provider/model`。
 - `/api/voice/ws` 建连后返回 `ready` 和 `turnId`，上传 16k mono PCM chunk 时应返回 `asr_partial`，停顿或发送 `commit` 后返回 `asr_final`；发送 `cancel` 后返回新的 `turnId`，前端不应继续展示旧 turn 的字幕或音频。
 - `/api/voice/ws` 的浏览器 WebSocket 鉴权使用 query token：Spring Security 放行升级入口，`VoiceRealtimeWebSocketHandler` 校验 JWT 和 voice session 归属。不要把它改成仅依赖 `Authorization` 头，否则浏览器 WebSocket 会在握手阶段被 401 拦截。
+- `/api/voice/commands/parse` 应能解析 `停止朗读`、`暂停朗读`、`继续朗读`、`打开错题本`、`开始今日复习`、`打开个人画像`、`回到问答`、`生成学习计划`；其中页面动作由前端消费本地 intent，不新增后端写接口。
+- 前端悬浮面板应展示最近 5 条语音文本历史，可点击重发；只保存识别文本和回答摘要到浏览器 `localStorage`，不保存原始音频。
 - 前端 Console 无 CORS、401、`ERR_CONNECTION_REFUSED`。
 
 ## 7. 可选：本地 Judge 模型

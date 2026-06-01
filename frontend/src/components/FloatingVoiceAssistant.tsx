@@ -1,22 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  History,
   LoaderCircle,
   Mic,
   MicOff,
   Pause,
+  Play,
+  RotateCcw,
   SendHorizontal,
   Square,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { conversationApi, type ConversationStreamEvent } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
-import { voiceApi, type VoiceRealtimeEvent } from '../api/voice';
+import { voiceApi, type VoicePageContext, type VoiceRealtimeEvent } from '../api/voice';
 import { readConversationChunk } from '../pages/LearningStudioDemoPage.utils';
+import { queueVoicePageAction } from '../utils/voicePageActions';
 
 type VoiceState = 'idle' | 'recording' | 'transcribing' | 'ready' | 'chatting' | 'speaking' | 'error';
+type VoiceHistoryItem = {
+  id: string;
+  text: string;
+  answerPreview: string;
+  pageType?: string;
+  pageTitle?: string;
+  createdAt: string;
+};
 
 interface FloatingVoiceAssistantProps {
   isAuthenticated: boolean;
@@ -26,14 +39,21 @@ interface FloatingVoiceAssistantProps {
 const TARGET_SAMPLE_RATE = 16000;
 const MAX_RECORDING_MS = 60_000;
 const VOICE_WORKLET_PATH = '/audio-worklet/voice-pcm-processor.js';
+const VOICE_HISTORY_STORAGE_KEY = 'voice_assistant_history';
+const MAX_VOICE_HISTORY_ITEMS = 5;
 
 export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal }: FloatingVoiceAssistantProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [recognizedText, setRecognizedText] = useState('');
   const [assistantText, setAssistantText] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [noticeMessage, setNoticeMessage] = useState('');
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [playbackPaused, setPlaybackPaused] = useState(false);
+  const [voiceHistory, setVoiceHistory] = useState<VoiceHistoryItem[]>(() => readVoiceHistory());
   const [recordingMs, setRecordingMs] = useState(0);
 
   const voiceStateRef = useRef<VoiceState>('idle');
@@ -45,13 +65,20 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   const currentTurnIdRef = useRef('');
   const expectedRealtimeCloseRef = useRef(false);
   const recognizedTextRef = useRef('');
+  const assistantTextRef = useRef('');
   const recordStartedAtRef = useRef(0);
   const recordingTimerRef = useRef<number | null>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
   const playbackContextRef = useRef<AudioContext | null>(null);
+  const playbackSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const playbackSourceCountRef = useRef(0);
+  const playbackGenerationRef = useRef(0);
+  const playbackPausedRef = useRef(false);
+  const ttsStreamDoneRef = useRef(false);
   const playbackTimeRef = useRef(0);
   const realtimeReadyRef = useRef(false);
+  const currentHistoryDraftRef = useRef<Omit<VoiceHistoryItem, 'answerPreview'> | null>(null);
 
   const statusLabel = useMemo(() => {
     switch (voiceState) {
@@ -64,13 +91,15 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       case 'chatting':
         return '回答中';
       case 'speaking':
-        return '朗读中';
+        return playbackPaused ? '朗读已暂停' : '朗读中';
       case 'error':
         return '出错了';
       default:
         return '待机';
     }
-  }, [recordingMs, voiceState]);
+  }, [playbackPaused, recordingMs, voiceState]);
+
+  const pageContext = useMemo(() => buildVoicePageContext(location.pathname), [location.pathname]);
 
   useEffect(() => () => {
     stopRecordingResources();
@@ -86,6 +115,14 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     recognizedTextRef.current = recognizedText;
   }, [recognizedText]);
 
+  useEffect(() => {
+    assistantTextRef.current = assistantText;
+  }, [assistantText]);
+
+  useEffect(() => {
+    playbackPausedRef.current = playbackPaused;
+  }, [playbackPaused]);
+
   const requireLogin = useCallback(() => {
     if (isAuthenticated) {
       return true;
@@ -100,6 +137,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     }
     setOpen(true);
     setErrorMessage('');
+    setNoticeMessage('');
     setAssistantText('');
     setRecognizedText('');
     recognizedTextRef.current = '';
@@ -185,17 +223,14 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     setErrorMessage('实时语音连接已断开，请重试');
   }, []);
 
-  const sendRecognizedText = useCallback(async () => {
-    const text = recognizedText.trim();
+  const sendVoiceText = useCallback(async (rawText: string) => {
+    const text = rawText.trim();
     if (!text || !requireLogin()) {
       return;
     }
     try {
-      const command = await voiceApi.parseCommand(text);
-      if (command.intent === 'STOP_SPEAKING') {
-        stopSpeaking();
-        setAssistantText('');
-        setVoiceState('idle');
+      const command = await voiceApi.parseCommand(text, pageContext);
+      if (handleLocalVoiceCommand(command.intent)) {
         return;
       }
     } catch {
@@ -206,7 +241,10 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     const abortController = new AbortController();
     chatAbortRef.current = abortController;
     setAssistantText('');
+    assistantTextRef.current = '';
+    setNoticeMessage('');
     setVoiceState('chatting');
+    beginHistoryTurn(text);
     try {
       const conversationId = (await conversationApi.createConversation()).conversationId;
       await conversationApi.streamMessage(
@@ -216,6 +254,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
           serviceType: 'TUTORING',
           webSearchEnabled: false,
           reasoningMode: 'NORMAL',
+          voiceContext: pageContext,
         },
         {
           onEvent: (event: ConversationStreamEvent) => {
@@ -223,15 +262,21 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
             if (!chunk) {
               return;
             }
-            setAssistantText((prev) => prev + chunk);
+            setAssistantText((prev) => {
+              const next = prev + chunk;
+              assistantTextRef.current = next;
+              return next;
+            });
           },
           onDone: () => {
             chatAbortRef.current = null;
+            finishHistoryTurn(assistantTextRef.current);
             setVoiceState(autoSpeak ? 'speaking' : 'idle');
             window.dispatchEvent(new Event('app:conversation-updated'));
           },
           onError: (error) => {
             chatAbortRef.current = null;
+            cancelHistoryTurn();
             setVoiceState('error');
             setErrorMessage(getErrorMessage(error));
           },
@@ -240,16 +285,28 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       );
     } catch (error) {
       chatAbortRef.current = null;
+      cancelHistoryTurn();
       setVoiceState('error');
       setErrorMessage(getErrorMessage(error));
     }
-  }, [autoSpeak, recognizedText, requireLogin]);
+  }, [autoSpeak, pageContext, requireLogin]);
+
+  const sendRecognizedText = useCallback(async () => {
+    await sendVoiceText(recognizedText);
+  }, [recognizedText, sendVoiceText]);
 
   useEffect(() => {
     if (!autoSpeak || voiceState !== 'speaking' || !assistantText.trim()) {
       return;
     }
     const abortController = new AbortController();
+    const playbackGeneration = playbackGenerationRef.current + 1;
+    playbackGenerationRef.current = playbackGeneration;
+    playbackSourceCountRef.current = 0;
+    playbackSourcesRef.current.clear();
+    playbackTimeRef.current = 0;
+    ttsStreamDoneRef.current = false;
+    setPlaybackPaused(false);
     ttsAbortRef.current = abortController;
     void voiceApi.streamTts(
       assistantText,
@@ -262,12 +319,14 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
         },
         onDone: () => {
           ttsAbortRef.current = null;
-          setVoiceState('idle');
+          ttsStreamDoneRef.current = true;
+          finishSpeakingIfPlaybackComplete(playbackGeneration);
         },
         onError: (error) => {
           ttsAbortRef.current = null;
-          setVoiceState('error');
-          setErrorMessage(getErrorMessage(error));
+          setNoticeMessage(getErrorMessage(error));
+          ttsStreamDoneRef.current = true;
+          setVoiceState('idle');
         },
       },
       abortController.signal,
@@ -283,6 +342,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     }
     interruptCurrentTurn();
     stopRecordingResources();
+    setNoticeMessage('');
     setVoiceState('idle');
   };
 
@@ -317,7 +377,10 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
                 <button
                   type="button"
                   className={`voice-assistant-icon ${autoSpeak ? 'is-active' : ''}`}
-                  onClick={() => setAutoSpeak((prev) => !prev)}
+                  onClick={() => {
+                    setNoticeMessage('');
+                    setAutoSpeak((prev) => !prev);
+                  }}
                   title={autoSpeak ? '关闭自动朗读' : '开启自动朗读'}
                 >
                   {autoSpeak ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
@@ -351,6 +414,35 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
               {errorMessage ? (
                 <div className="voice-assistant-error">{errorMessage}</div>
               ) : null}
+              {noticeMessage ? (
+                <div className="voice-assistant-notice">{noticeMessage}</div>
+              ) : null}
+
+              {voiceHistory.length > 0 ? (
+                <div className="voice-assistant-history">
+                  <div className="voice-assistant-history-title">
+                    <History className="h-3.5 w-3.5" />
+                    最近语音
+                  </div>
+                  <div className="voice-assistant-history-list">
+                    {voiceHistory.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="voice-assistant-history-item"
+                        onClick={() => void sendVoiceText(item.text)}
+                        title="重新发送"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        <span>
+                          <strong>{item.text}</strong>
+                          {item.answerPreview ? <small>{item.answerPreview}</small> : null}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="voice-assistant-actions">
@@ -381,9 +473,22 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
               </button>
               {(voiceState === 'recording' || voiceState === 'chatting' || voiceState === 'speaking') ? (
                 <button type="button" className="voice-assistant-secondary" onClick={cancelCurrent}>
-                  <Pause className="h-4 w-4" />
+                  <Square className="h-4 w-4" />
                   停止当前
                 </button>
+              ) : null}
+              {voiceState === 'speaking' ? (
+                playbackPaused ? (
+                  <button type="button" className="voice-assistant-secondary" onClick={() => void resumeSpeaking()}>
+                    <Play className="h-4 w-4" />
+                    继续
+                  </button>
+                ) : (
+                  <button type="button" className="voice-assistant-secondary" onClick={() => void pauseSpeaking()}>
+                    <Pause className="h-4 w-4" />
+                    暂停
+                  </button>
+                )
               ) : null}
             </div>
           </motion.section>
@@ -528,16 +633,33 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   function stopSpeaking() {
     ttsAbortRef.current?.abort();
     ttsAbortRef.current = null;
+    playbackGenerationRef.current += 1;
+    playbackSourcesRef.current.forEach((source) => {
+      try {
+        source.stop();
+      } catch {
+        // 已结束的 source 再 stop 会抛错，忽略即可。
+      }
+      source.disconnect();
+    });
+    playbackSourcesRef.current.clear();
+    playbackSourceCountRef.current = 0;
+    ttsStreamDoneRef.current = true;
     playbackContextRef.current?.close().catch(() => undefined);
     playbackContextRef.current = null;
     playbackTimeRef.current = 0;
+    setPlaybackPaused(false);
   }
 
   async function playPcmBase64(base64: string, sampleRate: number) {
+    const generation = playbackGenerationRef.current;
     const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
     const samples = new Int16Array(bytes.buffer);
     const audioContext = playbackContextRef.current ?? new AudioContext({ sampleRate });
     playbackContextRef.current = audioContext;
+    if (playbackPausedRef.current && audioContext.state === 'running') {
+      await audioContext.suspend().catch(() => undefined);
+    }
     const buffer = audioContext.createBuffer(1, samples.length, sampleRate);
     const output = buffer.getChannelData(0);
     for (let index = 0; index < samples.length; index += 1) {
@@ -547,8 +669,149 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     source.buffer = buffer;
     source.connect(audioContext.destination);
     const startAt = Math.max(audioContext.currentTime, playbackTimeRef.current);
+    playbackSourcesRef.current.add(source);
+    playbackSourceCountRef.current += 1;
+    source.onended = () => {
+      source.disconnect();
+      playbackSourcesRef.current.delete(source);
+      playbackSourceCountRef.current = Math.max(0, playbackSourceCountRef.current - 1);
+      finishSpeakingIfPlaybackComplete(generation);
+    };
     source.start(startAt);
     playbackTimeRef.current = startAt + buffer.duration;
+  }
+
+  async function pauseSpeaking() {
+    const audioContext = playbackContextRef.current;
+    if (audioContext && audioContext.state === 'running') {
+      await audioContext.suspend();
+    }
+    setPlaybackPaused(true);
+    setNoticeMessage('朗读已暂停');
+  }
+
+  async function resumeSpeaking() {
+    const audioContext = playbackContextRef.current;
+    if (audioContext && audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+    setPlaybackPaused(false);
+    setNoticeMessage('继续朗读');
+  }
+
+  function finishSpeakingIfPlaybackComplete(generation: number) {
+    if (generation !== playbackGenerationRef.current) {
+      return;
+    }
+    if (!ttsStreamDoneRef.current || playbackSourceCountRef.current > 0) {
+      return;
+    }
+    setPlaybackPaused(false);
+    setVoiceState('idle');
+  }
+
+  function handleLocalVoiceCommand(intent: string) {
+    if (intent === 'STOP_SPEAKING') {
+      chatAbortRef.current?.abort();
+      chatAbortRef.current = null;
+      cancelHistoryTurn();
+      stopSpeaking();
+      setAssistantText('');
+      assistantTextRef.current = '';
+      setNoticeMessage('已停止朗读');
+      setVoiceState('idle');
+      return true;
+    }
+    if (intent === 'PAUSE_SPEAKING') {
+      if (voiceStateRef.current === 'speaking') {
+        void pauseSpeaking();
+      } else {
+        setNoticeMessage('当前没有正在朗读的内容');
+      }
+      return true;
+    }
+    if (intent === 'CONTINUE') {
+      if (playbackPausedRef.current) {
+        void resumeSpeaking();
+        return true;
+      }
+      if (assistantTextRef.current.trim()) {
+        setAutoSpeak(true);
+        setNoticeMessage('继续朗读上一段回答');
+        setVoiceState('speaking');
+        return true;
+      }
+    }
+    if (intent === 'OPEN_MISTAKE_BOOK') {
+      navigate('/mistakes');
+      setOpen(true);
+      setNoticeMessage('已打开错题本');
+      setVoiceState('idle');
+      return true;
+    }
+    if (intent === 'OPEN_PROFILE') {
+      navigate('/profile');
+      setOpen(true);
+      setNoticeMessage('已打开个人画像');
+      setVoiceState('idle');
+      return true;
+    }
+    if (intent === 'START_REVIEW') {
+      queueVoicePageAction('start_review');
+      navigate('/mistakes');
+      setOpen(true);
+      setNoticeMessage('已开始今日复习');
+      setVoiceState('idle');
+      return true;
+    }
+    if (intent === 'OPEN_QNA') {
+      navigate('/');
+      setOpen(true);
+      setNoticeMessage('已回到智能问答');
+      setVoiceState('idle');
+      return true;
+    }
+    if (intent === 'GENERATE_STUDY_PLAN') {
+      queueVoicePageAction('generate_study_plan');
+      navigate('/engine');
+      setOpen(true);
+      setNoticeMessage('已提交学习路径规划');
+      setVoiceState('idle');
+      return true;
+    }
+    return false;
+  }
+
+  function beginHistoryTurn(text: string) {
+    currentHistoryDraftRef.current = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      text,
+      pageType: pageContext.pageType,
+      pageTitle: pageContext.pageTitle,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  function finishHistoryTurn(answer: string) {
+    const draft = currentHistoryDraftRef.current;
+    currentHistoryDraftRef.current = null;
+    if (!draft) {
+      return;
+    }
+    const item: VoiceHistoryItem = {
+      ...draft,
+      answerPreview: answer.trim().slice(0, 120),
+    };
+    setVoiceHistory((prev) => {
+      const next = [item, ...prev.filter((history) => history.text !== item.text)]
+        .slice(0, MAX_VOICE_HISTORY_ITEMS);
+      writeVoiceHistory(next);
+      return next;
+    });
+  }
+
+  function cancelHistoryTurn() {
+    currentHistoryDraftRef.current = null;
   }
 }
 
@@ -568,4 +831,61 @@ function parseRealtimeEvent(raw: string): VoiceRealtimeEvent | null {
   } catch {
     return null;
   }
+}
+
+function buildVoicePageContext(pathname: string): VoicePageContext {
+  if (pathname.startsWith('/engine')) {
+    return {
+      pageType: 'learning_service',
+      pageTitle: readDocumentTitle('学习服务'),
+    };
+  }
+  if (pathname.startsWith('/mistakes')) {
+    return {
+      pageType: 'mistake_book',
+      pageTitle: readDocumentTitle('错题本'),
+    };
+  }
+  if (pathname.startsWith('/profile')) {
+    return {
+      pageType: 'learner_profile',
+      pageTitle: readDocumentTitle('个人画像'),
+    };
+  }
+  return {
+    pageType: 'qna_chat',
+    pageTitle: readDocumentTitle('智能对话'),
+  };
+}
+
+function readDocumentTitle(fallback: string): string {
+  if (typeof document === 'undefined') {
+    return fallback;
+  }
+  return document.title?.trim() || fallback;
+}
+
+function readVoiceHistory(): VoiceHistoryItem[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(VOICE_HISTORY_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as VoiceHistoryItem[];
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item && typeof item.text === 'string' && item.text.trim()).slice(0, MAX_VOICE_HISTORY_ITEMS)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeVoiceHistory(items: VoiceHistoryItem[]) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.setItem(VOICE_HISTORY_STORAGE_KEY, JSON.stringify(items.slice(0, MAX_VOICE_HISTORY_ITEMS)));
 }

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { CheckCircle2, FileText, GraduationCap, X } from 'lucide-react';
 import type { LayoutOutletContext } from '../components/Layout';
@@ -19,6 +19,11 @@ import {
 } from './LearningStudioDemoPage.shell-components';
 import { useLearningStudioEngine } from './useLearningStudioEngine';
 import { useLearningStudioQna } from './useLearningStudioQna';
+import {
+  VOICE_PAGE_ACTION_EVENT,
+  consumeQueuedVoicePageAction,
+  isVoicePageActionEvent,
+} from '../utils/voicePageActions';
 
 const ServiceDynamicForm = lazy(() =>
   import('./LearningStudioDemoPage.components').then((module) => ({ default: module.ServiceDynamicForm }))
@@ -58,6 +63,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const mountedRef = useRef(true);
 
   const [conversationId, setConversationId] = useState('');
+  const [voicePlanSubmitPending, setVoicePlanSubmitPending] = useState(false);
   const { resetQnaConversation, viewProps: qnaViewProps } = useLearningStudioQna({
     mode,
     isAuthenticated,
@@ -154,14 +160,60 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     }
   }, [isAuthenticated]);
 
-  const withAuth = (action: () => void) => {
+  const withAuth = useCallback((action: () => void) => {
     if (isAuthenticated) {
       action();
       return;
     }
     pendingActionRef.current = action;
     openAuthModal('login', '请先登录');
-  };
+  }, [isAuthenticated, openAuthModal]);
+
+  const prepareVoiceStudyPlan = useCallback(() => {
+    if (mode !== 'engine') {
+      return;
+    }
+    withAuth(() => {
+      handleSelectService('path');
+      setPathForm((current) => ({
+        targetPeriod: current.targetPeriod.trim() ? current.targetPeriod : '4 周',
+        weeklyHours: current.weeklyHours.trim() ? current.weeklyHours : '6',
+        currentProgress: current.currentProgress.trim()
+          ? current.currentProgress
+          : '根据当前学习记录、错题本和页面上下文生成学习路径。',
+      }));
+      setVoicePlanSubmitPending(true);
+    });
+  }, [handleSelectService, mode, setPathForm, withAuth]);
+
+  useEffect(() => {
+    if (mode !== 'engine') {
+      return;
+    }
+    if (consumeQueuedVoicePageAction('generate_study_plan')) {
+      prepareVoiceStudyPlan();
+    }
+    const handleVoiceAction = (event: Event) => {
+      if (isVoicePageActionEvent(event, 'generate_study_plan')) {
+        prepareVoiceStudyPlan();
+      }
+    };
+    window.addEventListener(VOICE_PAGE_ACTION_EVENT, handleVoiceAction);
+    return () => {
+      window.removeEventListener(VOICE_PAGE_ACTION_EVENT, handleVoiceAction);
+    };
+  }, [mode, prepareVoiceStudyPlan]);
+
+  useEffect(() => {
+    if (!voicePlanSubmitPending || mode !== 'engine') {
+      return;
+    }
+    if (selectedService !== 'path' || engineBusy) {
+      return;
+    }
+    setVoicePlanSubmitPending(false);
+    void handleSubmitService();
+  }, [engineBusy, handleSubmitService, mode, selectedService, voicePlanSubmitPending]);
 
   if (mode === 'qna') {
     return <QnaChatView {...qnaViewProps} />;
