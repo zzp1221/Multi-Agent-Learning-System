@@ -112,6 +112,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const realtimeSocketRef = useRef<WebSocket | null>(null);
   const currentVoiceSessionIdRef = useRef('');
+  const realtimeSessionClosedRef = useRef(false);
   const currentTurnIdRef = useRef('');
   const currentCommandIntentRef = useRef('ASK');
   const prewarmInFlightRef = useRef(false);
@@ -447,8 +448,13 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
           onDone: () => {
             chatAbortRef.current = null;
             finishHistoryTurn(assistantTextRef.current);
-            flushTtsSentenceBuffer(true);
-            setVoiceState(autoSpeak ? 'speaking' : 'idle');
+            if (autoSpeak) {
+              flushTtsSentenceBuffer(true);
+              setVoiceState('speaking');
+            } else {
+              void sendVoiceTurnCompletionMarker();
+              setVoiceState('idle');
+            }
             dispatchVoiceConversationStream({
               conversationId: activeConversationId,
               streamId,
@@ -582,13 +588,18 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (voiceStateRef.current === 'idle' || voiceStateRef.current === 'error') {
       releasePrewarmedAsr();
       currentVoiceSessionIdRef.current = '';
+      realtimeSessionClosedRef.current = true;
     }
   }
 
   function interruptCurrentTurn() {
-    realtimeSocketRef.current?.send(JSON.stringify({ type: 'cancel', turnId: currentTurnIdRef.current }));
+    const socket = realtimeSocketRef.current;
+    socket?.send(JSON.stringify({ type: 'cancel', turnId: currentTurnIdRef.current }));
     expectedRealtimeCloseRef.current = true;
-    realtimeSocketRef.current?.close();
+    socket?.close();
+    if (socket) {
+      realtimeSessionClosedRef.current = true;
+    }
     realtimeSocketRef.current = null;
     realtimeReadyRef.current = false;
     chatAbortRef.current?.abort();
@@ -596,11 +607,12 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   }
 
   async function ensureVoiceSession(): Promise<{ sessionId: string }> {
-    if (currentVoiceSessionIdRef.current) {
+    if (currentVoiceSessionIdRef.current && !realtimeSessionClosedRef.current) {
       return { sessionId: currentVoiceSessionIdRef.current };
     }
     const voiceSession = await voiceApi.createSession();
     currentVoiceSessionIdRef.current = voiceSession.sessionId;
+    realtimeSessionClosedRef.current = false;
     return voiceSession;
   }
 
@@ -612,9 +624,11 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     try {
       const voiceSession = await voiceApi.createSession();
       currentVoiceSessionIdRef.current = voiceSession.sessionId;
+      realtimeSessionClosedRef.current = false;
       await voiceApi.prewarmSession(voiceSession.sessionId);
     } catch {
       currentVoiceSessionIdRef.current = '';
+      realtimeSessionClosedRef.current = true;
     } finally {
       prewarmInFlightRef.current = false;
     }
@@ -849,6 +863,9 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
         const expectedClose = expectedRealtimeCloseRef.current;
         expectedRealtimeCloseRef.current = false;
         const isCurrentSocket = realtimeSocketRef.current === socket;
+        if (currentVoiceSessionIdRef.current === sessionId) {
+          realtimeSessionClosedRef.current = true;
+        }
         if (isCurrentSocket) {
           realtimeSocketRef.current = null;
           realtimeReadyRef.current = false;
@@ -1099,6 +1116,29 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       },
       abortController.signal,
     );
+  }
+
+  async function sendVoiceTurnCompletionMarker() {
+    const voiceSessionId = currentVoiceSessionIdRef.current;
+    const voiceTurnId = currentTurnIdRef.current;
+    if (!voiceSessionId || !voiceTurnId) {
+      return;
+    }
+    await voiceApi.streamTts(
+      '',
+      buildVoicePageContext(location.pathname, {
+        conversationId: readActiveVoiceConversationId(),
+        commandIntent: currentCommandIntentRef.current,
+        voiceSessionId,
+        voiceTurnId,
+      }),
+      true,
+      {
+        onEvent: () => undefined,
+        onDone: () => undefined,
+        onError: () => undefined,
+      },
+    ).catch(() => undefined);
   }
 
   function findSentenceBoundary(text: string): number {

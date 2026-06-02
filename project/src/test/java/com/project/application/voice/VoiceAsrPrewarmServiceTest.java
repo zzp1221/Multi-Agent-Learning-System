@@ -9,6 +9,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -56,6 +58,55 @@ class VoiceAsrPrewarmServiceTest {
         assertThat(asrClient.sessions.get(0).closed).isTrue();
     }
 
+    @Test
+    void takeWaitsForAsyncPrewarmStartup() throws Exception {
+        appProperties.getVoice().setConnectTimeout(Duration.ofSeconds(1));
+        BlockingRealtimeAsrClient asrClient = new BlockingRealtimeAsrClient();
+        VoiceAsrPrewarmService service = new VoiceAsrPrewarmService(
+            asrClient,
+            appProperties,
+            command -> new Thread(command, "voice-prewarm-test").start(),
+            new VoiceMetricLogger()
+        );
+        UUID voiceSessionId = UUID.randomUUID();
+
+        service.prewarm(voiceSessionId, user);
+        assertThat(asrClient.started.await(1, TimeUnit.SECONDS)).isTrue();
+        Thread releaser = new Thread(() -> {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+            asrClient.releaseStartup.countDown();
+        }, "voice-prewarm-release-test");
+        releaser.start();
+        VoiceRealtimeAsrSession session = service.take(voiceSessionId, user.userId(), "turn-1", listener());
+        releaser.join(1_000);
+
+        assertThat(session).isNotNull();
+        assertThat(asrClient.sessions).hasSize(1);
+    }
+
+    @Test
+    void releaseByDifferentUserDoesNotDropPrewarm() {
+        CapturingRealtimeAsrClient asrClient = new CapturingRealtimeAsrClient();
+        VoiceAsrPrewarmService service = new VoiceAsrPrewarmService(
+            asrClient,
+            appProperties,
+            new SyncTaskExecutor(),
+            new VoiceMetricLogger()
+        );
+        UUID voiceSessionId = UUID.randomUUID();
+
+        service.prewarm(voiceSessionId, user);
+        service.release(voiceSessionId, UUID.randomUUID());
+        VoiceRealtimeAsrSession session = service.take(voiceSessionId, user.userId(), "turn-1", listener());
+
+        assertThat(session).isNotNull();
+        assertThat(asrClient.sessions.get(0).closed).isFalse();
+    }
+
     private VoiceRealtimeAsrListener listener() {
         return new VoiceRealtimeAsrListener() {
             @Override
@@ -81,6 +132,26 @@ class VoiceAsrPrewarmServiceTest {
 
         @Override
         public VoiceRealtimeAsrSession start(String sessionKey, int sampleRate, VoiceRealtimeAsrListener listener) {
+            FakeRealtimeAsrSession session = new FakeRealtimeAsrSession();
+            sessions.add(session);
+            listener.onReady();
+            return session;
+        }
+    }
+
+    private static final class BlockingRealtimeAsrClient implements VoiceRealtimeAsrClient {
+        private final List<FakeRealtimeAsrSession> sessions = new ArrayList<>();
+        private final CountDownLatch started = new CountDownLatch(1);
+        private final CountDownLatch releaseStartup = new CountDownLatch(1);
+
+        @Override
+        public VoiceRealtimeAsrSession start(String sessionKey, int sampleRate, VoiceRealtimeAsrListener listener) {
+            started.countDown();
+            try {
+                releaseStartup.await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
             FakeRealtimeAsrSession session = new FakeRealtimeAsrSession();
             sessions.add(session);
             listener.onReady();

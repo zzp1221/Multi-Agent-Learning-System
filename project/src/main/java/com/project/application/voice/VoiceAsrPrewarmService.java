@@ -13,6 +13,8 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -73,7 +75,7 @@ public class VoiceAsrPrewarmService {
             }
             return null;
         }
-        VoiceRealtimeAsrSession session = prewarmed.take(listener);
+        VoiceRealtimeAsrSession session = prewarmed.take(listener, appProperties.getVoice().getConnectTimeout());
         if (session == null) {
             prewarmed.close();
         }
@@ -81,10 +83,13 @@ public class VoiceAsrPrewarmService {
     }
 
     public void release(UUID voiceSessionId, UUID userId) {
-        PrewarmedAsrSession prewarmed = sessions.remove(voiceSessionId);
-        if (prewarmed != null && prewarmed.userId().equals(userId)) {
-            prewarmed.close();
-        }
+        sessions.computeIfPresent(voiceSessionId, (ignored, prewarmed) -> {
+            if (prewarmed.userId().equals(userId)) {
+                prewarmed.close();
+                return null;
+            }
+            return prewarmed;
+        });
     }
 
     @Scheduled(fixedDelay = 15_000)
@@ -140,7 +145,9 @@ public class VoiceAsrPrewarmService {
         private final String turnId;
         private final Instant expiresAt;
         private final AtomicBoolean taken = new AtomicBoolean(false);
+        private final AtomicBoolean closed = new AtomicBoolean(false);
         private final AtomicReference<VoiceRealtimeAsrListener> activeListener = new AtomicReference<>();
+        private final CountDownLatch startupLatch = new CountDownLatch(1);
         private volatile VoiceRealtimeAsrSession session;
         private volatile Throwable startupError;
 
@@ -200,23 +207,27 @@ public class VoiceAsrPrewarmService {
         }
 
         private boolean attach(VoiceRealtimeAsrSession nextSession) {
-            if (isExpired() || taken.get() || startupError != null) {
+            if (closed.get() || isExpired() || startupError != null) {
+                startupLatch.countDown();
                 return false;
             }
             session = nextSession;
+            startupLatch.countDown();
             return true;
         }
 
-        private VoiceRealtimeAsrSession take(VoiceRealtimeAsrListener listener) {
-            if (!taken.compareAndSet(false, true) || isExpired() || startupError != null) {
+        private VoiceRealtimeAsrSession take(VoiceRealtimeAsrListener listener, java.time.Duration waitTimeout) {
+            if (!taken.compareAndSet(false, true) || closed.get() || isExpired() || startupError != null) {
                 return null;
             }
             activeListener.set(listener);
+            awaitStartup(waitTimeout);
             return session;
         }
 
         private void fail(Throwable error) {
             startupError = error;
+            startupLatch.countDown();
         }
 
         private boolean isOwnedBy(UUID requestedUserId, String requestedTurnId) {
@@ -228,9 +239,25 @@ public class VoiceAsrPrewarmService {
         }
 
         private void close() {
+            if (!closed.compareAndSet(false, true)) {
+                return;
+            }
             VoiceRealtimeAsrSession current = session;
+            startupLatch.countDown();
             if (current != null) {
                 current.close();
+            }
+        }
+
+        private void awaitStartup(java.time.Duration waitTimeout) {
+            try {
+                long timeoutMs = waitTimeout == null ? 0L : Math.max(0L, waitTimeout.toMillis());
+                if (timeoutMs <= 0L) {
+                    return;
+                }
+                startupLatch.await(timeoutMs, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
             }
         }
     }
