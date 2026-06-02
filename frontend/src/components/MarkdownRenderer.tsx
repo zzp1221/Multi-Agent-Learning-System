@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import CodeBlock from './CodeBlock';
+import MermaidDiagram from './MermaidDiagram';
 
 interface MarkdownRendererProps {
   content: string;
@@ -13,6 +14,21 @@ function extractLanguage(className?: string): string {
   if (!className) return '';
   const match = className.match(/language-(\w+)/);
   return match ? match[1] : '';
+}
+
+function isMermaidLanguage(language: string): boolean {
+  return language.toLowerCase() === 'mermaid';
+}
+
+function isStandaloneMermaidChart(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (/^```mermaid\b/i.test(trimmed)) {
+    return true;
+  }
+  return /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|C4Context|sankey-beta|xychart-beta|block-beta|packet-beta|architecture-beta)\b/i.test(trimmed);
 }
 
 const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }: MarkdownRendererProps) {
@@ -39,6 +55,10 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
     );
   }
 
+  if (isStandaloneMermaidChart(safeContent)) {
+    return <MermaidDiagram chart={safeContent} />;
+  }
+
   return (
     <>
       <div className="prose prose-slate max-w-none dark:prose-invert prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:text-[15px] prose-p:leading-7 prose-pre:my-0 prose-pre:bg-transparent prose-code:text-[13px] prose-code:before:content-none prose-code:after:content-none prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-table:text-sm prose-table:overflow-x-auto prose-img:rounded-xl prose-li:text-[15px]">
@@ -59,6 +79,10 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
                     {children}
                   </code>
                 );
+              }
+
+              if (isMermaidLanguage(language)) {
+                return <MermaidDiagram chart={codeText} />;
               }
 
               return <CodeBlock language={language}>{codeText}</CodeBlock>;

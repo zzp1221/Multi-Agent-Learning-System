@@ -23,6 +23,11 @@ public class TaskExecutionConfiguration {
         return buildExecutor("conversation-", 8);
     }
 
+    @Bean
+    public TaskExecutor voiceTaskExecutor() {
+        return buildExecutor("voice-", 8);
+    }
+
     private TaskExecutor buildExecutor(String threadNamePrefix, int concurrencyLimit) {
         SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor();
         executor.setVirtualThreads(true);

@@ -92,3 +92,24 @@ app:
     consumer-group: ${SMART_ENGINE_TASK_CONSUMER_GROUP:smart-engine-python}
     cancel-key-prefix: ${SMART_ENGINE_TASK_CANCEL_KEY_PREFIX:zhixue:smart-engine:cancel:}
     cancel-ttl: ${SMART_ENGINE_TASK_CANCEL_TTL:24h}
+  voice:
+    enabled: ${VOICE_ENABLED:true}
+    provider: ${VOICE_PROVIDER:bailian}
+    api-key: ${VOICE_API_KEY:${BAILIAN_API_KEY:}}
+    asr-model: ${VOICE_ASR_MODEL:qwen3-asr-flash-realtime}
+    asr-websocket-url: ${VOICE_ASR_WEBSOCKET_URL:wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
+    tts-model: ${VOICE_TTS_MODEL:qwen3-tts-flash-realtime}
+    tts-websocket-url: ${VOICE_TTS_WEBSOCKET_URL:wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
+    tts-voice: ${VOICE_TTS_VOICE:Cherry}
+    sample-rate: ${VOICE_SAMPLE_RATE:16000}
+    max-audio-seconds: ${VOICE_MAX_AUDIO_SECONDS:60}
+    max-audio-bytes: ${VOICE_MAX_AUDIO_BYTES:10485760}
+    connect-timeout: ${VOICE_CONNECT_TIMEOUT:5s}
+    request-timeout: ${VOICE_REQUEST_TIMEOUT:90s}
+    session-ttl: ${VOICE_SESSION_TTL:300s}
+    tts-first-audio-timeout: ${VOICE_TTS_FIRST_AUDIO_TIMEOUT:3s}
+    asr-vad-silence-duration-ms: ${VOICE_ASR_VAD_SILENCE_DURATION_MS:1200}
+    asr-vad-threshold: ${VOICE_ASR_VAD_THRESHOLD:0.5}
+    provider-max-retries: ${VOICE_PROVIDER_MAX_RETRIES:1}
+    provider-retry-backoff: ${VOICE_PROVIDER_RETRY_BACKOFF:300ms}
+    max-concurrent-sessions-per-user: ${VOICE_MAX_CONCURRENT_SESSIONS_PER_USER:2}

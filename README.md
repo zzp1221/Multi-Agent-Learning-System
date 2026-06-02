@@ -40,6 +40,7 @@ flowchart LR
 - **多智能体运行时**：Python `PythonAgentSupervisor` 当前注册 18 个 Agent，并通过 `supervisor_routes.json` 和 QueryClassifier 选择任务链路；`resource_bundle` 是资源生成的虚拟 Graph 节点。
 - **RAG 检索**：短语优先 grep、向量语义、知识图谱扩展和可选 Tavily Web 检索，经 RRF 融合；当前报告中基础 100 题 hit@3 98%，图谱型 100 题 hit@3 94%。
 - **资源包生成**：`RESOURCE_GENERATION` 使用 LangGraph `ResourceBundleWorkflow`，按 `resourceTypes[]` 并发 fan-out 到文档、PPT、思维导图、代码、练习、视频等资源 Agent。
+- **悬浮智能语音助手**：全局右下角麦克风入口，前端通过 AudioWorklet 采集 16k PCM，Java `/api/voice/**` 作为唯一语音网关，支持百炼 Qwen 实时 ASR partial/final、流式 TTS、停止/暂停/继续朗读、最近语音文本历史、页面上下文问答、学习动作控制和打断式 cancel，并复用现有聊天 SSE。
 - **无伪生成边界**：可发布生成资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 和 `fromCache`，Python、Java、前端三层共同校验。
 - **学习画像与错题本**：画像维度规则集中在 `profile_feature_registry.py`，错题本用 SM-2 间隔重复算法组织复习。
 
@@ -78,6 +79,7 @@ Java `ServiceType` 与 Python `supervisor_routes.json` 对齐：
 | 健康检查 | `GET /api/health` |
 | 认证 | `POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me` |
 | 对话 | `POST /api/conversations`、`GET /api/conversations`、`GET /api/conversations/{id}/messages`、`POST /api/conversations/{id}/messages/stream` |
+| 语音助手 | `POST /api/voice/sessions`、`POST /api/voice/transcribe`、`POST /api/voice/tts/stream`、`POST /api/voice/commands/parse`、`GET /api/voice/ws` |
 | 图片 | `POST /api/conversations/images/upload`、`GET /api/conversations/images/{token}` |
 | SmartEngine | `POST /api/smart-engine/submit`、`GET /api/smart-engine/tasks/{taskId}`、`GET /api/smart-engine/tasks/{taskId}/stream`、`POST /api/smart-engine/tasks/{taskId}/cancel` |
 | 下载 | `GET /api/assets/download/{token}` |
@@ -130,6 +132,7 @@ Nginx 对 `/api/smart-engine/tasks/{taskId}/stream` 和 `/api/conversations/{con
 cp .env.example .env
 # 编辑 .env，至少配置 POSTGRES_PASSWORD、APP_JWT_SECRET、
 # PYTHON_AGENT_INTERNAL_TOKEN、AI_OPENAI_COMPATIBLE_API_KEY 和 EMBEDDING_API_KEY
+# 如需启用语音助手，再配置 VOICE_API_KEY 或 BAILIAN_API_KEY
 docker compose up -d --build
 docker compose ps
 curl -s http://localhost:8081/api/health
@@ -184,6 +187,20 @@ cd python-agent && pytest tests/ -v
 cd python-agent && pytest tests/ -k rag -v
 ```
 
+语音助手专项验收需要先登录获取 JWT，再检查：
+
+```bash
+curl -s -X POST http://localhost:8081/api/voice/sessions -H "Authorization: Bearer <jwt>"
+curl -s -N -X POST http://localhost:8081/api/voice/tts/stream \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Content-Type: application/json" \
+  --data '{"text":"hello","voice":"Cherry"}'
+```
+
+期望 `/api/voice/sessions` 返回 `provider/asrModel/ttsModel`，TTS SSE 返回 `event: audio` 和 `event: done`。实时 ASR 中途 `asr_final` 只代表 provider 分段定稿，前端应继续录音，直到用户点停止后发送 `commit` 才进入可发送状态。`/api/voice/commands/parse` 应能解析停止/暂停/继续朗读、打开错题本、开始今日复习、打开个人画像、回到问答、生成学习计划等本地 intent。ASR/TTS 密钥只允许放在服务端环境变量或容器外置配置，不要提交到仓库。
+
+实时语音 WebSocket 入口为 `/api/voice/ws?sessionId=<id>&token=<jwt>`。浏览器 WebSocket 无法稳定携带自定义 `Authorization` 头，因此该升级入口在 Spring Security 层放行，实际 JWT 和 voice session 归属由 Java WebSocket handler 校验。
+
 当前 RAG 报告文件：
 
 - `python-agent/reports/rag_100_after.json`：基础 100 题 hit@3 98%。
@@ -211,6 +228,7 @@ cd python-agent && pytest tests/ -k rag -v
 
 - `.env` 不提交真实密钥。
 - `APP_JWT_SECRET` 至少 32 字节，`PYTHON_AGENT_INTERNAL_TOKEN` 与 JWT secret 分离。
+- `VOICE_API_KEY`/`BAILIAN_API_KEY` 只在 Java 服务端读取，前端不得直连百炼或暴露 key。
 - Java 外部业务 API 默认 JWT 鉴权；内部回调接口由控制器校验 internal token。
 - Redis 幂等使用 `SETNX + TTL`，限流和任务取消标记也必须有 TTL。
 - 生成资源下载由 Java 签名 token 控制，默认 30 分钟过期。

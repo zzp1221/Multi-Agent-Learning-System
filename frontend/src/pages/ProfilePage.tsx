@@ -8,14 +8,17 @@ import {
   LineChart,
   LoaderCircle,
   Lock,
+  Network,
   Target,
   TriangleAlert,
   UserRoundSearch,
 } from 'lucide-react';
 import RadarChart from '../components/RadarChart';
+import MermaidDiagram from '../components/MermaidDiagram';
 import { getErrorMessage } from '../api/request';
 import {
   smartEngineApi,
+  type KnowledgeGraphResponse,
   type ProfileBehaviorTrendPoint,
   type ProfileResourcePreference,
   type UserProfileAnalyticsResponse,
@@ -33,6 +36,7 @@ const navItems = [
   { id: 'overview', label: '当前阶段' },
   { id: 'key-weak', label: '关键薄弱点' },
   { id: 'next-actions', label: '下一步行动' },
+  { id: 'knowledge-graph', label: '知识图谱' },
   { id: 'more-details', label: '更多分析' },
 ];
 
@@ -55,6 +59,9 @@ export default function ProfilePage() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState('');
   const [showAllWeakPoints, setShowAllWeakPoints] = useState(false);
+  const [knowledgeGraph, setKnowledgeGraph] = useState<KnowledgeGraphResponse | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState('');
 
   const loadProfile = useCallback(async () => {
     if (!isAuthenticated || !currentUser) {
@@ -97,10 +104,30 @@ export default function ProfilePage() {
     }
   }, [currentUser, isAuthenticated]);
 
+  const loadKnowledgeGraph = useCallback(async () => {
+    if (!isAuthenticated || !currentUser) {
+      setKnowledgeGraph(null);
+      setGraphError('');
+      return;
+    }
+    setGraphLoading(true);
+    setGraphError('');
+    try {
+      const response = await smartEngineApi.getKnowledgeGraph(String(currentUser.id));
+      setKnowledgeGraph(response);
+    } catch (loadError) {
+      setKnowledgeGraph(null);
+      setGraphError(getErrorMessage(loadError));
+    } finally {
+      setGraphLoading(false);
+    }
+  }, [currentUser, isAuthenticated]);
+
   useEffect(() => {
     void loadProfile();
     void loadAnalytics();
-  }, [loadAnalytics, loadProfile]);
+    void loadKnowledgeGraph();
+  }, [loadAnalytics, loadKnowledgeGraph, loadProfile]);
 
   const displayName = currentUser?.fullName || currentUser?.loginId || currentUser?.username || '同学';
 
@@ -219,6 +246,7 @@ export default function ProfilePage() {
               onClick={() => {
                 void loadProfile();
                 void loadAnalytics();
+                void loadKnowledgeGraph();
               }}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-blue-100 bg-white px-4 text-sm font-medium text-primary-600 shadow-sm shadow-blue-100/60 transition-colors hover:bg-primary-50 dark:border-slate-700 dark:bg-slate-900 dark:text-primary-300 dark:hover:bg-slate-800"
             >
@@ -276,10 +304,27 @@ export default function ProfilePage() {
                   {recommendations.map((item, index) => (
                     <RecommendationCard key={`${item}-${index}`} index={index + 1} text={item} />
                   ))}
-                </div>
-              ) : (
+                </div>              ) : (
                 <EmptyInline text="当前画像暂无学习建议。" />
               )}
+            </section>
+
+            <section id="knowledge-graph" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+              <div className="flex items-start justify-between gap-4">
+                <SectionTitle title="知识掌握图谱" subtitle="按掌握状态整理当前知识点，优先展示薄弱项和下一步建议" />
+                <button
+                  type="button"
+                  onClick={() => void loadKnowledgeGraph()}
+                  className="shrink-0 rounded-xl border border-blue-100 px-3 py-1.5 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:border-slate-700 dark:text-primary-300 dark:hover:bg-slate-800"
+                >
+                  刷新
+                </button>
+              </div>
+              <KnowledgeGraphPanel
+                graph={knowledgeGraph}
+                loading={graphLoading}
+                error={graphError}
+              />
             </section>
 
             <details id="more-details" className="group rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
@@ -1005,4 +1050,198 @@ function formatPercent(value: number | null): string {
     return EMPTY_VALUE;
   }
   return `${Math.round(value)}%`;
+}
+
+const NODE_STATUS_COLORS: Record<string, { bg: string; border: string; text: string; label: string }> = {
+  MASTERED:    { bg: 'bg-emerald-50 dark:bg-emerald-900/30', border: 'border-emerald-300 dark:border-emerald-700', text: 'text-emerald-700 dark:text-emerald-300', label: '已掌握' },
+  IN_PROGRESS: { bg: 'bg-blue-50 dark:bg-blue-900/30',    border: 'border-blue-300 dark:border-blue-700',    text: 'text-blue-700 dark:text-blue-300',    label: '学习中' },
+  WEAK:        { bg: 'bg-amber-50 dark:bg-amber-900/30',  border: 'border-amber-300 dark:border-amber-700',  text: 'text-amber-700 dark:text-amber-300',  label: '薄弱' },
+  NOT_STARTED: { bg: 'bg-slate-50 dark:bg-slate-800/60',  border: 'border-slate-200 dark:border-slate-700',  text: 'text-slate-500 dark:text-slate-400',  label: '未开始' },
+};
+const KNOWLEDGE_STATUS_ORDER: Array<KnowledgeGraphResponse['nodes'][number]['status']> = ['WEAK', 'IN_PROGRESS', 'NOT_STARTED', 'MASTERED'];
+
+function escapeMermaidLabel(value: string): string {
+  return value
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .trim();
+}
+
+function buildKnowledgeGraphMermaid(graph: KnowledgeGraphResponse): string {
+  const nodeIds = new Map<string, string>();
+  const mermaidLines = ['flowchart TD'];
+
+  graph.nodes.forEach((node, index) => {
+    const nodeId = `node_${index}`;
+    nodeIds.set(node.key, nodeId);
+    const label = node.topic.length > 12 ? `${node.topic.slice(0, 12)}…` : node.topic;
+    const pct = Math.round(node.mastery * 100);
+    mermaidLines.push(`  ${nodeId}["${escapeMermaidLabel(`${label}\n${pct}%`)}"]`);
+  });
+
+  graph.edges.forEach((edge) => {
+    const from = nodeIds.get(edge.from);
+    const to = nodeIds.get(edge.to);
+    if (from && to) {
+      mermaidLines.push(`  ${from} --> ${to}`);
+    }
+  });
+
+  return mermaidLines.join('\n');
+}
+
+function KnowledgeGraphPanel(props: {
+  graph: KnowledgeGraphResponse | null;
+  loading: boolean;
+  error: string;
+}) {
+  if (props.loading) {
+    return (
+      <div className="mt-4 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+        <LoaderCircle className="h-4 w-4 animate-spin text-primary-500" />
+        正在读取知识掌握图谱
+      </div>
+    );
+  }
+  if (props.error) {
+    return (
+      <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/60 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
+        读取失败：{props.error}
+      </div>
+    );
+  }
+  if (!props.graph || props.graph.nodes.length === 0) {
+    return (
+      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-500">
+        <Network className="mx-auto mb-2 h-8 w-8 opacity-40" />
+        暂无知识掌握图谱数据。完成练习、评估或路径规划后，系统会自动整理知识点。
+      </div>
+    );
+  }
+
+  const { nodes, edges, nextRecommended } = props.graph;
+  const mermaidCode = buildKnowledgeGraphMermaid(props.graph);
+  const nodeByKey = new Map(nodes.map((node) => [node.key, node]));
+  const recommendedNodes = nextRecommended
+    .map((key) => nodeByKey.get(key))
+    .filter((node): node is KnowledgeGraphResponse['nodes'][number] => Boolean(node));
+  const recommendedRankOf = (key: string) => {
+    const index = nextRecommended.indexOf(key);
+    return index >= 0 ? index + 1 : undefined;
+  };
+  const groupedNodes = KNOWLEDGE_STATUS_ORDER
+    .map((status) => ({ status, nodes: nodes.filter((node) => node.status === status) }))
+    .filter((group) => group.nodes.length > 0);
+
+  return (
+    <div className="mt-4 space-y-4">
+      {/* 图例 */}
+      <div className="flex flex-wrap gap-3">
+        {Object.entries(NODE_STATUS_COLORS).map(([status, style]) => (
+          <span key={status} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${style.bg} ${style.border} ${style.text}`}>
+            <span className={`h-2 w-2 rounded-full ${status === 'MASTERED' ? 'bg-emerald-500' : status === 'IN_PROGRESS' ? 'bg-blue-500' : status === 'WEAK' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+            {style.label}
+          </span>
+        ))}
+      </div>
+
+      <MermaidDiagram chart={mermaidCode} />
+
+      {recommendedNodes.length > 0 && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 dark:border-blue-900/40 dark:bg-blue-950/30">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-blue-700 dark:text-blue-300">下一步优先关注</div>
+            <div className="text-xs text-blue-500 dark:text-blue-400">按薄弱程度和前置依赖自动排序</div>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {recommendedNodes.slice(0, 5).map((node, index) => (
+              <KnowledgeNodeCard key={node.key} node={node} recommendedRank={index + 1} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {groupedNodes.map((group) => {
+          const style = NODE_STATUS_COLORS[group.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
+          return (
+            <section key={group.status} className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/40">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className={`text-sm font-semibold ${style.text}`}>{style.label}</div>
+                <div className="text-xs text-slate-400 dark:text-slate-500">{group.nodes.length} 个知识点</div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {group.nodes.map((node) => (
+                  <KnowledgeNodeCard
+                    key={node.key}
+                    node={node}
+                    recommendedRank={recommendedRankOf(node.key)}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      {/* 依赖关系 */}
+      {edges.length > 0 && (
+        <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/40">
+          <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">前置依赖关系</div>
+          <div className="flex flex-wrap gap-2">
+            {edges.filter((e) => e.type === 'PREREQUISITE').map((edge, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">
+                {nodeByKey.get(edge.from)?.topic ?? edge.from} <span className="text-slate-400">→</span> {nodeByKey.get(edge.to)?.topic ?? edge.to}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Mermaid 源码（折叠） */}
+      <details className="group">
+        <summary className="cursor-pointer text-xs text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300">
+          查看 Mermaid 图谱源码
+        </summary>
+        <pre className="mt-2 overflow-x-auto rounded-xl bg-slate-900 p-3 text-xs text-slate-300">
+          {mermaidCode}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function KnowledgeNodeCard(props: {
+  node: KnowledgeGraphResponse['nodes'][number];
+  recommendedRank?: number;
+}) {
+  const { node, recommendedRank } = props;
+  const style = NODE_STATUS_COLORS[node.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
+  const pct = Math.round(node.mastery * 100);
+  const barColor = node.status === 'MASTERED'
+    ? 'bg-emerald-500'
+    : node.status === 'IN_PROGRESS'
+      ? 'bg-blue-500'
+      : node.status === 'WEAK'
+        ? 'bg-amber-500'
+        : 'bg-slate-300';
+
+  return (
+    <div className={`relative rounded-xl border px-3 py-3 text-sm ${style.bg} ${style.border}`}>
+      {recommendedRank && recommendedRank > 0 && (
+        <span className="absolute right-2 top-2 rounded-full bg-primary-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          推荐 {recommendedRank}
+        </span>
+      )}
+      <div className={`pr-14 font-medium leading-6 ${style.text}`}>{node.topic}</div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/60 dark:bg-slate-700/60">
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{pct}%</span>
+      </div>
+      <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{style.label}</div>
+    </div>
+  );
 }

@@ -1,4 +1,4 @@
-"""辅导对话流的会话压缩工具。"""
+﻿"""辅导对话流的会话压缩工具。"""
 
 from __future__ import annotations
 
@@ -149,7 +149,7 @@ class ConversationCompactor:
         if result.was_compacted and compacted_messages:
             compacted_messages[0] = {
                 **compacted_messages[0],
-                "content": f"鍘嗗彶瀵硅瘽鎽樿: {refined_summary.summary_text}",
+                "content": f"历史对话摘要: {refined_summary.summary_text}",
             }
         estimated_after = self.estimate_tokens(compacted_messages)
         return CompactionResult(

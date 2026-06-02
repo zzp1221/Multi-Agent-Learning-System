@@ -25,6 +25,7 @@ public class AppProperties {
     private final Download download = new Download();
     private final Upload upload = new Upload();
     private final SmartEngineQueue smartEngineQueue = new SmartEngineQueue();
+    private final Voice voice = new Voice();
 
     public PythonAgent getPythonAgent() {
         return pythonAgent;
@@ -56,6 +57,10 @@ public class AppProperties {
 
     public SmartEngineQueue getSmartEngineQueue() {
         return smartEngineQueue;
+    }
+
+    public Voice getVoice() {
+        return voice;
     }
 
     public static class PythonAgent {
@@ -308,6 +313,189 @@ public class AppProperties {
 
         public void setCancelTtl(Duration cancelTtl) {
             this.cancelTtl = cancelTtl;
+        }
+    }
+
+    public static class Voice {
+        private boolean enabled = true;
+        private String provider = "bailian";
+        private String apiKey = "";
+        private String asrModel = "qwen3-asr-flash-realtime";
+        private String asrWebsocketUrl = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
+        private String ttsModel = "qwen3-tts-flash-realtime";
+        private String ttsWebsocketUrl = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
+        private String ttsVoice = "Cherry";
+        private int sampleRate = 16000;
+        private int maxAudioSeconds = 60;
+        private long maxAudioBytes = 10 * 1024 * 1024L;
+        private Duration connectTimeout = Duration.ofSeconds(5);
+        private Duration requestTimeout = Duration.ofSeconds(90);
+        private Duration sessionTtl = Duration.ofSeconds(300);
+        private Duration ttsFirstAudioTimeout = Duration.ofSeconds(3);
+        private int asrVadSilenceDurationMs = 1200;
+        private double asrVadThreshold = 0.5D;
+        private int providerMaxRetries = 1;
+        private Duration providerRetryBackoff = Duration.ofMillis(300);
+        private int maxConcurrentSessionsPerUser = 2;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getProvider() {
+            return provider;
+        }
+
+        public void setProvider(String provider) {
+            this.provider = provider;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getAsrModel() {
+            return asrModel;
+        }
+
+        public void setAsrModel(String asrModel) {
+            this.asrModel = asrModel;
+        }
+
+        public String getAsrWebsocketUrl() {
+            return asrWebsocketUrl;
+        }
+
+        public void setAsrWebsocketUrl(String asrWebsocketUrl) {
+            this.asrWebsocketUrl = asrWebsocketUrl;
+        }
+
+        public String getTtsModel() {
+            return ttsModel;
+        }
+
+        public void setTtsModel(String ttsModel) {
+            this.ttsModel = ttsModel;
+        }
+
+        public String getTtsWebsocketUrl() {
+            return ttsWebsocketUrl;
+        }
+
+        public void setTtsWebsocketUrl(String ttsWebsocketUrl) {
+            this.ttsWebsocketUrl = ttsWebsocketUrl;
+        }
+
+        public String getTtsVoice() {
+            return ttsVoice;
+        }
+
+        public void setTtsVoice(String ttsVoice) {
+            this.ttsVoice = ttsVoice;
+        }
+
+        public int getSampleRate() {
+            return sampleRate;
+        }
+
+        public void setSampleRate(int sampleRate) {
+            this.sampleRate = sampleRate;
+        }
+
+        public int getMaxAudioSeconds() {
+            return maxAudioSeconds;
+        }
+
+        public void setMaxAudioSeconds(int maxAudioSeconds) {
+            this.maxAudioSeconds = maxAudioSeconds;
+        }
+
+        public long getMaxAudioBytes() {
+            return maxAudioBytes;
+        }
+
+        public void setMaxAudioBytes(long maxAudioBytes) {
+            this.maxAudioBytes = maxAudioBytes;
+        }
+
+        public Duration getConnectTimeout() {
+            return connectTimeout;
+        }
+
+        public void setConnectTimeout(Duration connectTimeout) {
+            this.connectTimeout = connectTimeout;
+        }
+
+        public Duration getRequestTimeout() {
+            return requestTimeout;
+        }
+
+        public void setRequestTimeout(Duration requestTimeout) {
+            this.requestTimeout = requestTimeout;
+        }
+
+        public Duration getSessionTtl() {
+            return sessionTtl;
+        }
+
+        public void setSessionTtl(Duration sessionTtl) {
+            this.sessionTtl = sessionTtl;
+        }
+
+        public Duration getTtsFirstAudioTimeout() {
+            return ttsFirstAudioTimeout;
+        }
+
+        public void setTtsFirstAudioTimeout(Duration ttsFirstAudioTimeout) {
+            this.ttsFirstAudioTimeout = ttsFirstAudioTimeout;
+        }
+
+        public int getAsrVadSilenceDurationMs() {
+            return asrVadSilenceDurationMs;
+        }
+
+        public void setAsrVadSilenceDurationMs(int asrVadSilenceDurationMs) {
+            this.asrVadSilenceDurationMs = asrVadSilenceDurationMs;
+        }
+
+        public double getAsrVadThreshold() {
+            return asrVadThreshold;
+        }
+
+        public void setAsrVadThreshold(double asrVadThreshold) {
+            this.asrVadThreshold = asrVadThreshold;
+        }
+
+        public int getProviderMaxRetries() {
+            return providerMaxRetries;
+        }
+
+        public void setProviderMaxRetries(int providerMaxRetries) {
+            this.providerMaxRetries = providerMaxRetries;
+        }
+
+        public Duration getProviderRetryBackoff() {
+            return providerRetryBackoff;
+        }
+
+        public void setProviderRetryBackoff(Duration providerRetryBackoff) {
+            this.providerRetryBackoff = providerRetryBackoff;
+        }
+
+        public int getMaxConcurrentSessionsPerUser() {
+            return maxConcurrentSessionsPerUser;
+        }
+
+        public void setMaxConcurrentSessionsPerUser(int maxConcurrentSessionsPerUser) {
+            this.maxConcurrentSessionsPerUser = maxConcurrentSessionsPerUser;
         }
     }
 }

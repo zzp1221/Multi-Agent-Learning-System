@@ -13,6 +13,18 @@ export interface ConversationMessageStreamRequest {
   serviceType?: string;
   webSearchEnabled?: boolean;
   reasoningMode?: 'NORMAL' | 'DEEP';
+  voiceContext?: {
+    pageType?: string;
+    questionId?: string;
+    courseId?: string;
+    knowledgePointId?: string;
+    pageTitle?: string;
+    currentPath?: string;
+    source?: string;
+    conversationId?: string;
+    recentMessagesSummary?: string;
+    commandIntent?: string;
+  };
 }
 
 export interface ConversationHistoryItem {

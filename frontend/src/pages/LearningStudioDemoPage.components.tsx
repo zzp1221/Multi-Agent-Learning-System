@@ -287,6 +287,60 @@ function InlineResourcePanel(props: { resource: InlineResourceView }) {
   );
 }
 
+function sanitizeResourceDisplayText(value: string): string {
+  if (!value.trim()) {
+    return '';
+  }
+  const cleanedLines: string[] = [];
+  let skippingSourceBlock = false;
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    const compact = line.trim();
+    if (/^#{1,6}\s*(参考来源|引用依据)\s*$/.test(compact) || /^参考来源[:：]?\s*$/.test(compact)) {
+      skippingSourceBlock = true;
+      continue;
+    }
+    if (skippingSourceBlock) {
+      if (/^#{1,6}\s+/.test(compact) && !/^#{1,6}\s*(参考来源|引用依据)\s*$/.test(compact)) {
+        skippingSourceBlock = false;
+      } else {
+        continue;
+      }
+    }
+    if (/^[-*]\s*(课程|章节|学生水平|学习风格)[:：]/.test(compact)) {
+      continue;
+    }
+    if (/^证据说明[:：]/.test(compact) || /^\[?来源\d+\]?/.test(compact) || /^[-*]\s*\[?来源\d+\]?/.test(compact)) {
+      continue;
+    }
+    cleanedLines.push(
+      line
+        .replace(/真实\s*LLM\s*产物[:：]?/gi, '资源')
+        .replace(/真实LLM产物[:：]?/gi, '资源'),
+    );
+  }
+  return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function sanitizeResourceInlineResource(resource: InlineResourceView): InlineResourceView {
+  return {
+    ...resource,
+    summary: resource.summary ? sanitizeResourceDisplayText(resource.summary) : resource.summary,
+    content: sanitizeResourceDisplayText(resource.content),
+    explanation: resource.explanation ? sanitizeResourceDisplayText(resource.explanation) : resource.explanation,
+  };
+}
+
+function sanitizeResourceCompletedItem(item: CompletedResourceView): CompletedResourceView {
+  if (item.kind !== 'inline') {
+    return item;
+  }
+  return {
+    ...item,
+    resource: sanitizeResourceInlineResource(item.resource),
+  };
+}
+
 function PracticeQuestionPanel(props: {
   batch: PracticeQuestionBatch;
   judgeResult: PracticeJudgeResult | null;
@@ -455,6 +509,15 @@ export function TaskResultPanel(props: {
             : []),
         ];
   const visibleJudgeResult = selectedRecord?.judgeResult ?? props.judgeResult;
+  const cleanedTaskSummary = props.service === 'resource'
+    ? sanitizeResourceDisplayText(visibleTaskSummary)
+    : visibleTaskSummary;
+  const cleanedResultLines = props.service === 'resource'
+    ? visibleResultLines.map(sanitizeResourceDisplayText).filter(Boolean)
+    : visibleResultLines;
+  const cleanedCompletedResources = props.service === 'resource'
+    ? visibleCompletedResources.map(sanitizeResourceCompletedItem)
+    : visibleCompletedResources;
   const externalRecommendations = props.service === 'push'
     ? visibleDownloadLinks.filter(isExternalRecommendation)
     : [];
@@ -503,10 +566,10 @@ export function TaskResultPanel(props: {
   }
 
   const hasContent = Boolean(props.taskSummary)
-    || visibleResultLines.length > 0
+    || cleanedResultLines.length > 0
     || visibleDownloadLinks.length > 0
     || Boolean(visibleVideoResult)
-    || visibleCompletedResources.length > 0
+    || cleanedCompletedResources.length > 0
     || Boolean(visiblePracticeBatch)
     || Boolean(visibleJudgeResult)
     || props.resultHistory.length > 0;
@@ -603,7 +666,7 @@ export function TaskResultPanel(props: {
               onSubmitAnswers={props.onSubmitPracticeAnswers}
             />
           ) : null}
-          {visibleCompletedResources.map((item, index) => (
+          {cleanedCompletedResources.map((item, index) => (
             item.kind === 'inline' ? (
               <InlineResourcePanel key={`${item.key}-${index}`} resource={item.resource} />
             ) : props.service !== 'assessment' ? (
@@ -616,14 +679,14 @@ export function TaskResultPanel(props: {
               />
             ) : null
           ))}
-          {visibleTaskSummary ? (
+          {cleanedTaskSummary ? (
             <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
-              <DeferredMarkdownRenderer content={visibleTaskSummary} />
+              <DeferredMarkdownRenderer content={cleanedTaskSummary} />
             </div>
           ) : null}
-          {visibleResultLines.length > 0 ? (
+          {cleanedResultLines.length > 0 ? (
             <ul className="space-y-2">
-              {visibleResultLines.map((line, index) => (
+              {cleanedResultLines.map((line, index) => (
                 <li key={`${index}-${line}`} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-primary-400" />
                   {line}

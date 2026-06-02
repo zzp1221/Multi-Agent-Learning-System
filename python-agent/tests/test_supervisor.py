@@ -54,6 +54,25 @@ def test_supervisor_keeps_resource_generation_on_bundle_when_resource_types_incl
     ]
 
 
+def test_resource_generation_done_summary_hides_internal_generation_details() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    payload = supervisor._build_done_payload(
+        service_type="RESOURCE_GENERATION",
+        agent_names=["query_rewrite", "retrieval", "resource_bundle"],
+        params={
+            "generatedAssets": [
+                {"title": "java Bean 中等 讲解文档导学文档", "assetType": "DOCUMENT"},
+            ],
+        },
+    )
+
+    assert payload.status == "SUCCESS"
+    assert payload.summary == "资源包生成完成，共生成 1 个资源"
+    assert "真实 LLM 产物" not in payload.summary
+    assert "java Bean" not in payload.summary
+
+
 def test_supervisor_resolves_video_generation_route() -> None:
     supervisor = PythonAgentSupervisor()
 

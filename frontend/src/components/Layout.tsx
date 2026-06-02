@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpenCheck, Clock3, Compass, History, LayoutGrid, Menu, MessageCirclePlus, Search, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
+import FloatingVoiceAssistant from './FloatingVoiceAssistant';
 import ThemeToggle from './ThemeToggle';
 
 import { authApi, type AuthUser } from '../api/auth';
@@ -580,6 +581,7 @@ export default function Layout() {
           void loadRecentConversations();
         }}
       />
+      <FloatingVoiceAssistant isAuthenticated={isAuthenticated} openAuthModal={openAuthModal} />
     </div>
   );
 }

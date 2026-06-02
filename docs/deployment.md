@@ -47,6 +47,22 @@ AI_OPENAI_COMPATIBLE_API_KEY=replace-with-openai-compatible-api-key
 EMBEDDING_API_KEY=replace-with-embedding-api-key
 ```
 
+如果启用悬浮智能语音助手，还需要配置百炼语音服务密钥。两个变量二选一即可，推荐统一使用 `VOICE_API_KEY`：
+
+```env
+VOICE_API_KEY=replace-with-bailian-api-key
+# 或兼容旧部署：
+BAILIAN_API_KEY=replace-with-bailian-api-key
+VOICE_ASR_MODEL=qwen3-asr-flash-realtime
+VOICE_TTS_MODEL=qwen3-tts-flash-realtime
+VOICE_TTS_VOICE=Cherry
+VOICE_SAMPLE_RATE=16000
+VOICE_MAX_AUDIO_SECONDS=60
+VOICE_MAX_AUDIO_BYTES=10485760
+VOICE_ASR_VAD_SILENCE_DURATION_MS=1200
+VOICE_ASR_VAD_THRESHOLD=0.5
+```
+
 随机值生成示例：
 
 ```bash
@@ -65,6 +81,7 @@ PowerShell：
 - `PYTHON_AGENT_INTERNAL_TOKEN` 是 Java 与 Python 内部接口共享密钥。
 - `AI_OPENAI_COMPATIBLE_BASE_URL` 默认来自 `.env.example`，可按厂商替换。
 - `EMBEDDING_API_KEY` 与 `DASHSCOPE_API_KEY` 互为兼容入口；RAG 质量验证依赖 embedding。
+- `VOICE_API_KEY`/`BAILIAN_API_KEY` 只注入 Java 控制平面，用于 `/api/voice/**` 调用百炼实时 ASR/TTS；前端不得持有或直连第三方语音服务。
 - `POSTGRES_PASSWORD` 首次启动后写入 `./data/postgres`，后续修改需要同步数据库密码或清空数据目录重建。
 - Compose 文件中数据服务目标绑定是 `127.0.0.1`；如果旧容器仍显示 `0.0.0.0`，说明容器尚未按新 Compose 配置重建。
 
@@ -140,6 +157,29 @@ docker exec zhixue-redis redis-cli XINFO GROUPS zhixue:smart-engine:tasks
 
 如果尚未提交过任务，该命令可能返回空或 no such key；提交一次 `/engine` 任务后再看。
 
+语音助手专项验收需要先通过 `/api/auth/login` 获取 JWT，然后检查：
+
+```bash
+curl -s -X POST http://localhost:8081/api/voice/sessions \
+  -H "Authorization: Bearer <jwt>"
+
+curl -s -N -X POST http://localhost:8081/api/voice/tts/stream \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Content-Type: application/json" \
+  --data '{"text":"hello","voice":"Cherry"}'
+```
+
+期望：
+
+- `/api/voice/sessions` 返回 `provider=bailian`、`asrModel`、`ttsModel` 和 `sampleRate=16000`。
+- `/api/voice/tts/stream` 返回 `event: audio`，最后返回 `event: done`。
+- `/api/voice/transcribe` 上传 16k mono PCM 时返回 `text/durationMs/provider/model`。
+- `/api/voice/ws` 建连后返回 `ready` 和 `turnId`，上传 16k mono PCM chunk 时应返回 `asr_partial`；provider 在说话中途可能返回分段 `asr_final`，前端只更新识别文本，不应停止录音；用户点停止后发送 `commit`，收到最终 `asr_final` 后进入可发送状态；发送 `cancel` 后返回新的 `turnId`，前端不应继续展示旧 turn 的字幕或音频。
+- `/api/voice/ws` 的浏览器 WebSocket 鉴权使用 query token：Spring Security 放行升级入口，`VoiceRealtimeWebSocketHandler` 校验 JWT 和 voice session 归属。不要把它改成仅依赖 `Authorization` 头，否则浏览器 WebSocket 会在握手阶段被 401 拦截。
+- `/api/voice/commands/parse` 应能解析 `停止朗读`、`暂停朗读`、`继续朗读`、`打开错题本`、`开始今日复习`、`打开个人画像`、`回到问答`、`生成学习计划`；其中页面动作由前端消费本地 intent，不新增后端写接口。
+- 前端悬浮面板应展示最近 5 条语音文本历史，可点击重发；只保存识别文本和回答摘要到浏览器 `localStorage`，不保存原始音频。
+- 前端 Console 无 CORS、401、`ERR_CONNECTION_REFUSED`。
+
 ## 7. 可选：本地 Judge 模型
 
 本地主观题 Judge 使用 GGUF 模型，默认关闭，不影响标准部署。
@@ -201,6 +241,27 @@ mvn.cmd -q -DskipTests package
 docker cp target/zhixue-control-plane-0.0.1-SNAPSHOT.jar zhixue-app:/app/app.jar
 docker restart zhixue-app
 ```
+
+当前热更新环境如需临时注入语音助手密钥，不要重建容器，也不要把 key 写入仓库。可通过 Spring Boot 外置配置覆盖容器内 `/app/config/application.yml`：
+
+```yaml
+app:
+  upload:
+    image-token-ttl-seconds: 1800
+    image-storage-dir: /data/sandbox-temp/chat-images
+  voice:
+    api-key: "<bailian-api-key>"
+```
+
+建议先备份容器内现有配置，再用 `docker cp` 覆盖并重启 Java 容器：
+
+```bash
+docker exec zhixue-app cp /app/config/application.yml /app/config/application.yml.before-voice-key
+docker cp application.yml zhixue-app:/app/config/application.yml
+docker restart zhixue-app
+```
+
+该方式只适合联调/演示热更新环境。正式环境应把 `VOICE_API_KEY` 放入 `.env`、密钥管理系统或部署平台 Secret，并在维护窗口重建或滚动发布注入。
 
 维护窗口中，保留数据并重新应用端口绑定/环境变量：
 
@@ -287,6 +348,19 @@ Python Agent 调 LLM 失败：
 - 检查 `EMBEDDING_API_KEY` 或 `DASHSCOPE_API_KEY`。
 - `curl http://localhost:8000/health` 可看到 runtimeProvider 和 resolved model。
 
+语音助手返回 `VOICE_API_KEY_MISSING`：
+
+- Java 容器没有读取到 `VOICE_API_KEY` 或 `BAILIAN_API_KEY`。
+- 热更新环境检查 `/app/config/application.yml` 是否包含 `app.voice.api-key`。
+- 修改容器外置配置后必须 `docker restart zhixue-app`，同一容器重启可以读取外置配置；新增环境变量则通常需要重建容器。
+
+语音助手 TTS SSE 返回 `event:error` 或 ASR 返回 `VOICE_PROVIDER_UNAVAILABLE`：
+
+- 检查 Java 容器到 `https://dashscope.aliyuncs.com` 的网络连通性。
+- 检查模型名是否为 `qwen3-asr-flash-realtime` / `qwen3-tts-flash-realtime`。
+- 检查 API key 是否有效、是否已开通对应百炼实时语音模型。
+- 查看 `docker logs --tail 200 zhixue-app` 中的 `BailianRealtimeVoiceClient` 警告。
+
 RAG 测试因 SSL/EOF 中断：
 
 - 通常是外部 embedding API 网络波动。
@@ -308,6 +382,7 @@ SmartEngine 提交后一直 `PENDING`：
 ## 11. 安全检查清单
 
 - 不提交真实 `.env`。
+- 不提交真实 `VOICE_API_KEY`、`BAILIAN_API_KEY` 或容器外置配置中的语音 key。
 - 不保留示例占位值或弱密码。
 - `APP_JWT_SECRET`、`PYTHON_AGENT_INTERNAL_TOKEN` 使用不同随机值。
 - 生产环境只开放前端入口，Java/Python 端口按需限制来源。

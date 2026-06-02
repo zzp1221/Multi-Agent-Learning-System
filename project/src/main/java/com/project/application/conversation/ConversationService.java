@@ -5,6 +5,7 @@ import com.project.api.conversation.dto.ConversationHistoryItemResponse;
 import com.project.api.conversation.dto.ConversationMessageItemResponse;
 import com.project.api.conversation.dto.CreateConversationResponse;
 import com.project.application.common.ApplicationException;
+import com.project.application.common.ClientDisconnectDetector;
 import com.project.application.smartengine.PythonAgentClient;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
@@ -13,7 +14,6 @@ import com.project.domain.conversation.QnaSession;
 import com.project.domain.conversation.QnaSessionRepository;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.security.JwtAuthenticatedUser;
-import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,7 +22,6 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -31,7 +30,6 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -170,7 +168,7 @@ public class ConversationService {
                 appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), List.of(), false);
                 emitter.complete();
             } catch (Exception ex) {
-                if (isClientDisconnect(ex)) {
+                if (ClientDisconnectDetector.isClientDisconnect(ex)) {
                     LOGGER.info("Conversation stream closed by client conversationId={}", conversationId);
                     safeComplete(emitter);
                     return;
@@ -186,40 +184,6 @@ public class ConversationService {
         });
 
         return emitter;
-    }
-
-    private boolean isClientDisconnect(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (
-                current instanceof ConversationClientDisconnectedException
-                    || current instanceof AsyncRequestNotUsableException
-                    || current instanceof ClientAbortException
-            ) {
-                return true;
-            }
-            if (current instanceof IOException && isClientDisconnectMessage(current.getMessage())) {
-                return true;
-            }
-            if (current instanceof IllegalStateException && isClientDisconnectMessage(current.getMessage())) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
-    }
-
-    private boolean isClientDisconnectMessage(String message) {
-        if (message == null || message.isBlank()) {
-            return false;
-        }
-        String normalized = message.toLowerCase(Locale.ROOT);
-        return normalized.contains("broken pipe")
-            || normalized.contains("connection reset")
-            || normalized.contains("connection aborted")
-            || normalized.contains("connection has been closed")
-            || normalized.contains("asyncrequestnotusableexception")
-            || normalized.contains("responsebodyemitter has already completed");
     }
 
     private void sendConversationEvent(
@@ -405,6 +369,11 @@ public class ConversationService {
         params.put("conversationId", conversationId.toString());
         params.put("userId", currentUser.userId().toString());
         params.put("conversationLength", history.size());
+        Map<String, String> voiceContext = request.voiceContextMap();
+        if (!voiceContext.isEmpty()) {
+            params.put("voiceContext", voiceContext);
+            params.put("learningContext", buildLearningContext(voiceContext));
+        }
 
         List<Map<String, Object>> messages = new java.util.ArrayList<>();
         for (ConversationMessageItemResponse msg : history) {
@@ -421,6 +390,27 @@ public class ConversationService {
                 params.put("profileSummary", profile.getSummaryText());
             });
         return params;
+    }
+
+    private Map<String, Object> buildLearningContext(Map<String, String> voiceContext) {
+        Map<String, Object> learningContext = new LinkedHashMap<>();
+        putLearningContext(learningContext, "pageType", voiceContext.get("pageType"));
+        putLearningContext(learningContext, "questionId", voiceContext.get("questionId"));
+        putLearningContext(learningContext, "course", voiceContext.get("courseId"));
+        putLearningContext(learningContext, "knowledgePoint", voiceContext.get("knowledgePointId"));
+        putLearningContext(learningContext, "pageTitle", voiceContext.get("pageTitle"));
+        putLearningContext(learningContext, "currentPath", voiceContext.get("currentPath"));
+        putLearningContext(learningContext, "source", voiceContext.get("source"));
+        putLearningContext(learningContext, "conversationId", voiceContext.get("conversationId"));
+        putLearningContext(learningContext, "recentMessagesSummary", voiceContext.get("recentMessagesSummary"));
+        putLearningContext(learningContext, "commandIntent", voiceContext.get("commandIntent"));
+        return learningContext;
+    }
+
+    private void putLearningContext(Map<String, Object> target, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            target.put(key, value.trim());
+        }
     }
 
     private String truncate(String message, int maxLength) {
