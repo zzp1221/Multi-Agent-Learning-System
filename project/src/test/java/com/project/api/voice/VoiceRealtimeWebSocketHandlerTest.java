@@ -5,8 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.application.voice.VoiceRealtimeAsrClient;
 import com.project.application.voice.VoiceRealtimeAsrListener;
 import com.project.application.voice.VoiceRealtimeAsrSession;
+import com.project.application.voice.VoiceAsrPrewarmService;
 import com.project.application.voice.VoiceMetricLogger;
+import com.project.application.voice.VoicePartialDraftService;
 import com.project.application.voice.VoiceSessionService;
+import com.project.application.voice.VoiceTurnMetricsService;
 import com.project.config.AppProperties;
 import com.project.security.JwtAuthenticatedUser;
 import com.project.security.JwtProvider;
@@ -32,8 +35,11 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class VoiceRealtimeWebSocketHandlerTest {
@@ -157,10 +163,44 @@ class VoiceRealtimeWebSocketHandlerTest {
         });
     }
 
+    @Test
+    void usesPrewarmedAsrSessionWhenAvailable() throws Exception {
+        UUID voiceSessionId = UUID.randomUUID();
+        List<String> outbound = new CopyOnWriteArrayList<>();
+        WebSocketSession socket = socket(voiceSessionId, outbound);
+        ManualTaskExecutor executor = new ManualTaskExecutor();
+        VoiceRealtimeAsrClient asrClient = mock(VoiceRealtimeAsrClient.class);
+        VoiceAsrPrewarmService prewarmService = mock(VoiceAsrPrewarmService.class);
+        FakeAsrSession prewarmedSession = new FakeAsrSession();
+        when(prewarmService.take(eq(voiceSessionId), eq(user.userId()), eq("turn-1"), any()))
+            .thenReturn(prewarmedSession);
+        VoiceRealtimeWebSocketHandler handler = handler(voiceSessionId, asrClient, executor, prewarmService);
+
+        handler.afterConnectionEstablished(socket);
+        executor.runNext();
+        handler.handleTextMessage(socket, jsonMessage(Map.of(
+            "type", "audio_chunk",
+            "turnId", "turn-1",
+            "data", base64(new byte[] {9})
+        )));
+
+        verify(asrClient, never()).start(any(), any(Integer.class), any());
+        assertThat(prewarmedSession.appended).hasSize(1);
+    }
+
     private VoiceRealtimeWebSocketHandler handler(
         UUID voiceSessionId,
         VoiceRealtimeAsrClient asrClient,
         TaskExecutor executor
+    ) {
+        return handler(voiceSessionId, asrClient, executor, mock(VoiceAsrPrewarmService.class));
+    }
+
+    private VoiceRealtimeWebSocketHandler handler(
+        UUID voiceSessionId,
+        VoiceRealtimeAsrClient asrClient,
+        TaskExecutor executor,
+        VoiceAsrPrewarmService prewarmService
     ) {
         JwtProvider jwtProvider = mock(JwtProvider.class);
         VoiceSessionService sessionService = mock(VoiceSessionService.class);
@@ -173,7 +213,10 @@ class VoiceRealtimeWebSocketHandlerTest {
             appProperties,
             objectMapper,
             executor,
-            new VoiceMetricLogger()
+            new VoiceMetricLogger(),
+            new VoiceTurnMetricsService(),
+            prewarmService,
+            mock(VoicePartialDraftService.class)
         );
     }
 

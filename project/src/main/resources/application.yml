@@ -107,6 +107,7 @@ app:
     connect-timeout: ${VOICE_CONNECT_TIMEOUT:5s}
     request-timeout: ${VOICE_REQUEST_TIMEOUT:90s}
     session-ttl: ${VOICE_SESSION_TTL:300s}
+    asr-prewarm-ttl: ${VOICE_ASR_PREWARM_TTL:60s}
     tts-first-audio-timeout: ${VOICE_TTS_FIRST_AUDIO_TIMEOUT:3s}
     asr-vad-silence-duration-ms: ${VOICE_ASR_VAD_SILENCE_DURATION_MS:1200}
     asr-vad-threshold: ${VOICE_ASR_VAD_THRESHOLD:0.5}

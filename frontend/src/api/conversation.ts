@@ -24,6 +24,19 @@ export interface ConversationMessageStreamRequest {
     conversationId?: string;
     recentMessagesSummary?: string;
     commandIntent?: string;
+    voiceSessionId?: string;
+    voiceTurnId?: string;
+    selectedService?: string;
+    formParametersSummary?: string;
+    taskStatus?: string;
+    currentMistakeSummary?: string;
+    reviewStatus?: string;
+    weakPointsSummary?: string;
+    currentGoal?: string;
+    lowestMasteryKnowledge?: string;
+    resourceResultSummary?: string;
+    downloadResourceSummary?: string;
+    recommendedAction?: string;
   };
 }
 

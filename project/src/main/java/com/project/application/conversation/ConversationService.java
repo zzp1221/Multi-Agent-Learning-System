@@ -9,6 +9,9 @@ import com.project.application.common.ClientDisconnectDetector;
 import com.project.application.smartengine.PythonAgentClient;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
+import com.project.application.voice.VoiceMetricContext;
+import com.project.application.voice.VoiceMetricLogger;
+import com.project.application.voice.VoiceTurnMetricsService;
 import com.project.domain.conversation.ConversationMode;
 import com.project.domain.conversation.QnaSession;
 import com.project.domain.conversation.QnaSessionRepository;
@@ -50,19 +53,25 @@ public class ConversationService {
     private final PythonConversationMessageClient pythonConversationMessageClient;
     private final TaskExecutor conversationTaskExecutor;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
+    private final VoiceMetricLogger voiceMetricLogger;
+    private final VoiceTurnMetricsService voiceTurnMetricsService;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
         PythonAgentClient pythonAgentClient,
         PythonConversationMessageClient pythonConversationMessageClient,
         @Qualifier("conversationTaskExecutor") TaskExecutor conversationTaskExecutor,
-        UserProfileCurrentRepository userProfileCurrentRepository
+        UserProfileCurrentRepository userProfileCurrentRepository,
+        VoiceMetricLogger voiceMetricLogger,
+        VoiceTurnMetricsService voiceTurnMetricsService
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
         this.pythonConversationMessageClient = pythonConversationMessageClient;
         this.conversationTaskExecutor = conversationTaskExecutor;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
+        this.voiceMetricLogger = voiceMetricLogger;
+        this.voiceTurnMetricsService = voiceTurnMetricsService;
     }
 
     @Transactional
@@ -148,9 +157,30 @@ public class ConversationService {
         emitter.onError(ex -> LOGGER.debug("Conversation SSE emitter error conversationId={}", conversationId, ex));
         AtomicInteger sequence = new AtomicInteger(0);
         StringBuilder assistantReply = new StringBuilder();
+        VoiceTurnRef voiceTurn = resolveVoiceTurn(request.voiceContextMap());
+        if (voiceTurn.isPresent()) {
+            voiceTurnMetricsService.attachConversation(
+                voiceTurn.voiceSessionId(),
+                voiceTurn.turnId(),
+                conversationId,
+                request.voiceContextMap().get("pageType"),
+                request.voiceContextMap().get("commandIntent")
+            );
+        }
 
         conversationTaskExecutor.execute(() -> {
             try {
+                recordVoiceMetric(
+                    "llm_request_start_ms",
+                    voiceTurn,
+                    voiceTurn.isPresent() ? voiceTurnMetricsService.elapsedMs(voiceTurn.voiceSessionId(), voiceTurn.turnId()) : -1L,
+                    "success",
+                    request.normalizedMessage().length(),
+                    null,
+                    ""
+                );
+                long llmStartedAtNanos = System.nanoTime();
+                java.util.concurrent.atomic.AtomicBoolean firstTokenLogged = new java.util.concurrent.atomic.AtomicBoolean(false);
                 pythonAgentClient.stream(
                     new SmartEngineInvocation(
                         currentUser.userId(),
@@ -162,8 +192,29 @@ public class ConversationService {
                     ),
                     event -> {
                         collectAssistantReply(assistantReply, event);
+                        String chunk = extractVisibleAssistantChunk(event);
+                        if (!chunk.isEmpty() && firstTokenLogged.compareAndSet(false, true)) {
+                            recordVoiceMetric(
+                                "llm_first_token_ms",
+                                voiceTurn,
+                                elapsedMs(llmStartedAtNanos),
+                                "success",
+                                request.normalizedMessage().length(),
+                                chunk.length(),
+                                ""
+                            );
+                        }
                         sendConversationEvent(emitter, conversationId, sequence, event);
                     }
+                );
+                recordVoiceMetric(
+                    "llm_done_ms",
+                    voiceTurn,
+                    elapsedMs(llmStartedAtNanos),
+                    "success",
+                    request.normalizedMessage().length(),
+                    assistantReply.length(),
+                    ""
                 );
                 appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), List.of(), false);
                 emitter.complete();
@@ -173,6 +224,15 @@ public class ConversationService {
                     safeComplete(emitter);
                     return;
                 }
+                recordVoiceMetric(
+                    "llm_error_ms",
+                    voiceTurn,
+                    voiceTurn.isPresent() ? voiceTurnMetricsService.elapsedMs(voiceTurn.voiceSessionId(), voiceTurn.turnId()) : -1L,
+                    "error",
+                    request.normalizedMessage().length(),
+                    assistantReply.length(),
+                    ex.getClass().getSimpleName()
+                );
                 if (assistantReply.isEmpty()) {
                     appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", List.of(), false);
                 }
@@ -184,6 +244,42 @@ public class ConversationService {
         });
 
         return emitter;
+    }
+
+    private VoiceTurnRef resolveVoiceTurn(Map<String, String> voiceContext) {
+        if (voiceContext == null || voiceContext.isEmpty()) {
+            return VoiceTurnRef.empty();
+        }
+        try {
+            String voiceSessionId = voiceContext.get("voiceSessionId");
+            String turnId = voiceContext.get("voiceTurnId");
+            if (voiceSessionId == null || voiceSessionId.isBlank() || turnId == null || turnId.isBlank()) {
+                return VoiceTurnRef.empty();
+            }
+            return new VoiceTurnRef(UUID.fromString(voiceSessionId.trim()), turnId.trim());
+        } catch (IllegalArgumentException ex) {
+            return VoiceTurnRef.empty();
+        }
+    }
+
+    private void recordVoiceMetric(
+        String metric,
+        VoiceTurnRef voiceTurn,
+        long durationMs,
+        String outcome,
+        Integer inputLength,
+        Integer outputLength,
+        String errorCode
+    ) {
+        if (!voiceTurn.isPresent() || voiceMetricLogger == null || voiceTurnMetricsService == null) {
+            return;
+        }
+        VoiceMetricContext context = voiceTurnMetricsService.context(voiceTurn.voiceSessionId(), voiceTurn.turnId());
+        voiceMetricLogger.record(metric, context, durationMs, "python-agent", "conversation-stream", outcome, inputLength, outputLength, errorCode);
+    }
+
+    private long elapsedMs(long startedAtNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
     }
 
     private void sendConversationEvent(
@@ -404,6 +500,19 @@ public class ConversationService {
         putLearningContext(learningContext, "conversationId", voiceContext.get("conversationId"));
         putLearningContext(learningContext, "recentMessagesSummary", voiceContext.get("recentMessagesSummary"));
         putLearningContext(learningContext, "commandIntent", voiceContext.get("commandIntent"));
+        putLearningContext(learningContext, "voiceSessionId", voiceContext.get("voiceSessionId"));
+        putLearningContext(learningContext, "voiceTurnId", voiceContext.get("voiceTurnId"));
+        putLearningContext(learningContext, "selectedService", voiceContext.get("selectedService"));
+        putLearningContext(learningContext, "formParametersSummary", voiceContext.get("formParametersSummary"));
+        putLearningContext(learningContext, "taskStatus", voiceContext.get("taskStatus"));
+        putLearningContext(learningContext, "currentMistakeSummary", voiceContext.get("currentMistakeSummary"));
+        putLearningContext(learningContext, "reviewStatus", voiceContext.get("reviewStatus"));
+        putLearningContext(learningContext, "weakPointsSummary", voiceContext.get("weakPointsSummary"));
+        putLearningContext(learningContext, "currentGoal", voiceContext.get("currentGoal"));
+        putLearningContext(learningContext, "lowestMasteryKnowledge", voiceContext.get("lowestMasteryKnowledge"));
+        putLearningContext(learningContext, "resourceResultSummary", voiceContext.get("resourceResultSummary"));
+        putLearningContext(learningContext, "downloadResourceSummary", voiceContext.get("downloadResourceSummary"));
+        putLearningContext(learningContext, "recommendedAction", voiceContext.get("recommendedAction"));
         return learningContext;
     }
 
@@ -453,5 +562,15 @@ public class ConversationService {
         }
         int imageCount = imageUrls == null ? 0 : imageUrls.size();
         return imageCount <= 1 ? "[图片]" : "[图片] 共 " + imageCount + " 张";
+    }
+
+    private record VoiceTurnRef(UUID voiceSessionId, String turnId) {
+        private static VoiceTurnRef empty() {
+            return new VoiceTurnRef(null, "");
+        }
+
+        private boolean isPresent() {
+            return voiceSessionId != null && turnId != null && !turnId.isBlank();
+        }
     }
 }

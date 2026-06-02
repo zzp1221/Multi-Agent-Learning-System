@@ -34,7 +34,46 @@ public record VoiceContextRequest(
     String recentMessagesSummary,
 
     @Size(max = 60, message = "语音意图不能超过 60 字")
-    String commandIntent
+    String commandIntent,
+
+    @Size(max = 80, message = "语音会话 ID 不能超过 80 字")
+    String voiceSessionId,
+
+    @Size(max = 40, message = "语音轮次 ID 不能超过 40 字")
+    String voiceTurnId,
+
+    @Size(max = 80, message = "当前服务不能超过 80 字")
+    String selectedService,
+
+    @Size(max = 800, message = "表单参数摘要不能超过 800 字")
+    String formParametersSummary,
+
+    @Size(max = 120, message = "任务状态不能超过 120 字")
+    String taskStatus,
+
+    @Size(max = 800, message = "当前错题摘要不能超过 800 字")
+    String currentMistakeSummary,
+
+    @Size(max = 120, message = "复习状态不能超过 120 字")
+    String reviewStatus,
+
+    @Size(max = 800, message = "薄弱点摘要不能超过 800 字")
+    String weakPointsSummary,
+
+    @Size(max = 240, message = "当前目标不能超过 240 字")
+    String currentGoal,
+
+    @Size(max = 240, message = "最低掌握知识点不能超过 240 字")
+    String lowestMasteryKnowledge,
+
+    @Size(max = 800, message = "资源结果摘要不能超过 800 字")
+    String resourceResultSummary,
+
+    @Size(max = 500, message = "下载资源摘要不能超过 500 字")
+    String downloadResourceSummary,
+
+    @Size(max = 240, message = "推荐操作不能超过 240 字")
+    String recommendedAction
 ) {
     public Map<String, String> normalizedMap() {
         Map<String, String> context = new LinkedHashMap<>();
@@ -48,6 +87,19 @@ public record VoiceContextRequest(
         putIfPresent(context, "conversationId", conversationId);
         putIfPresent(context, "recentMessagesSummary", recentMessagesSummary);
         putIfPresent(context, "commandIntent", commandIntent);
+        putIfPresent(context, "voiceSessionId", voiceSessionId);
+        putIfPresent(context, "voiceTurnId", voiceTurnId);
+        putIfPresent(context, "selectedService", selectedService);
+        putIfPresent(context, "formParametersSummary", formParametersSummary);
+        putIfPresent(context, "taskStatus", taskStatus);
+        putIfPresent(context, "currentMistakeSummary", currentMistakeSummary);
+        putIfPresent(context, "reviewStatus", reviewStatus);
+        putIfPresent(context, "weakPointsSummary", weakPointsSummary);
+        putIfPresent(context, "currentGoal", currentGoal);
+        putIfPresent(context, "lowestMasteryKnowledge", lowestMasteryKnowledge);
+        putIfPresent(context, "resourceResultSummary", resourceResultSummary);
+        putIfPresent(context, "downloadResourceSummary", downloadResourceSummary);
+        putIfPresent(context, "recommendedAction", recommendedAction);
         return context;
     }
 

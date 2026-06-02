@@ -40,7 +40,7 @@ class VoiceCommandParserTest {
 
     @Test
     void parsesLearningCommandWithContext() {
-        VoiceCommandResponse response = parser.parse(new VoiceCommandRequest(
+        VoiceCommandResponse response = parser.parse(commandRequest(
             "解释这道题",
             "question_detail",
             "q1",
@@ -51,13 +51,16 @@ class VoiceCommandParserTest {
             "voice_assistant",
             "conversation-1",
             "用户：刚才那题不会",
-            "EXPLAIN_CURRENT"
+            "EXPLAIN_CURRENT",
+            "8a4ef8e1-1f0c-44c4-bf7a-c07b76ef2d77",
+            "turn-1"
         ));
 
         assertThat(response.intent()).isEqualTo("EXPLAIN_CURRENT");
         assertThat(response.context()).containsEntry("questionId", "q1");
         assertThat(response.context()).containsEntry("pageTitle", "一元一次方程");
         assertThat(response.context()).containsEntry("recentMessagesSummary", "用户：刚才那题不会");
+        assertThat(response.context()).containsEntry("voiceTurnId", "turn-1");
     }
 
     private void assertLocalIntent(String text, String intent) {
@@ -75,6 +78,49 @@ class VoiceCommandParserTest {
     }
 
     private VoiceCommandRequest request(String text) {
-        return new VoiceCommandRequest(text, null, null, null, null, null, null, null, null, null, null);
+        return commandRequest(text, null, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    private VoiceCommandRequest commandRequest(
+        String text,
+        String pageType,
+        String questionId,
+        String courseId,
+        String knowledgePointId,
+        String pageTitle,
+        String currentPath,
+        String source,
+        String conversationId,
+        String recentMessagesSummary,
+        String commandIntent,
+        String voiceSessionId,
+        String voiceTurnId
+    ) {
+        return new VoiceCommandRequest(
+            text,
+            pageType,
+            questionId,
+            courseId,
+            knowledgePointId,
+            pageTitle,
+            currentPath,
+            source,
+            conversationId,
+            recentMessagesSummary,
+            commandIntent,
+            voiceSessionId,
+            voiceTurnId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
     }
 }

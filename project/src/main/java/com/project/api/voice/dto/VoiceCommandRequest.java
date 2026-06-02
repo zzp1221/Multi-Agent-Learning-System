@@ -19,7 +19,22 @@ public record VoiceCommandRequest(
     @Size(max = 800, message = "最近对话摘要不能超过 800 字")
     String recentMessagesSummary,
     @Size(max = 60, message = "语音意图不能超过 60 字")
-    String commandIntent
+    String commandIntent,
+    @Size(max = 80, message = "语音会话 ID 不能超过 80 字")
+    String voiceSessionId,
+    @Size(max = 40, message = "语音轮次 ID 不能超过 40 字")
+    String voiceTurnId,
+    String selectedService,
+    String formParametersSummary,
+    String taskStatus,
+    String currentMistakeSummary,
+    String reviewStatus,
+    String weakPointsSummary,
+    String currentGoal,
+    String lowestMasteryKnowledge,
+    String resourceResultSummary,
+    String downloadResourceSummary,
+    String recommendedAction
 ) {
     public String normalizedText() {
         return text == null ? "" : text.trim();

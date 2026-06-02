@@ -43,6 +43,7 @@ public final class ClientDisconnectDetector {
             || normalized.contains("connection aborted")
             || normalized.contains("connection has been closed")
             || normalized.contains("forcibly closed")
+            || normalized.contains("failed to send")
             || normalized.contains("asyncrequestnotusableexception")
             || normalized.contains("responsebodyemitter has already completed");
     }

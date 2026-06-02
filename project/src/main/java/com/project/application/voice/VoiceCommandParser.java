@@ -107,6 +107,19 @@ public class VoiceCommandParser {
         putIfPresent(context, "conversationId", request.conversationId());
         putIfPresent(context, "recentMessagesSummary", request.recentMessagesSummary());
         putIfPresent(context, "commandIntent", request.commandIntent());
+        putIfPresent(context, "voiceSessionId", request.voiceSessionId());
+        putIfPresent(context, "voiceTurnId", request.voiceTurnId());
+        putIfPresent(context, "selectedService", request.selectedService());
+        putIfPresent(context, "formParametersSummary", request.formParametersSummary());
+        putIfPresent(context, "taskStatus", request.taskStatus());
+        putIfPresent(context, "currentMistakeSummary", request.currentMistakeSummary());
+        putIfPresent(context, "reviewStatus", request.reviewStatus());
+        putIfPresent(context, "weakPointsSummary", request.weakPointsSummary());
+        putIfPresent(context, "currentGoal", request.currentGoal());
+        putIfPresent(context, "lowestMasteryKnowledge", request.lowestMasteryKnowledge());
+        putIfPresent(context, "resourceResultSummary", request.resourceResultSummary());
+        putIfPresent(context, "downloadResourceSummary", request.downloadResourceSummary());
+        putIfPresent(context, "recommendedAction", request.recommendedAction());
         return context;
     }
 
