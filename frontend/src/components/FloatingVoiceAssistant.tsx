@@ -18,6 +18,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { conversationApi, type ConversationStreamEvent } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
 import { voiceApi, type VoicePageContext, type VoiceRealtimeEvent } from '../api/voice';
+import {
+  ACTIVE_CONVERSATION_ID_STORAGE_KEY,
+  SELECTED_CONVERSATION_STORAGE_KEY,
+  type SelectedConversationSnapshot,
+} from '../pages/LearningStudioDemoPage.model';
 import { readConversationChunk } from '../pages/LearningStudioDemoPage.utils';
 import { queueVoicePageAction } from '../utils/voicePageActions';
 
@@ -347,6 +352,13 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     } catch {
       // 指令解析失败不阻断普通问答。
     }
+    const activeConversationId = readActiveVoiceConversationId();
+    if (!activeConversationId) {
+      setOpen(true);
+      setNoticeMessage('请先在左侧选择一个已有会话，再用语音继续对话');
+      setVoiceState('idle');
+      return;
+    }
     stopSpeaking();
     chatAbortRef.current?.abort();
     const abortController = new AbortController();
@@ -357,9 +369,8 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     setVoiceState('chatting');
     beginHistoryTurn(text);
     try {
-      const conversationId = (await conversationApi.createConversation()).conversationId;
       await conversationApi.streamMessage(
-        conversationId,
+        activeConversationId,
         {
           message: text,
           serviceType: 'TUTORING',
@@ -383,13 +394,14 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
             chatAbortRef.current = null;
             finishHistoryTurn(assistantTextRef.current);
             setVoiceState(autoSpeak ? 'speaking' : 'idle');
-            window.dispatchEvent(new Event('app:conversation-updated'));
+            dispatchVoiceConversationUpdated(activeConversationId);
           },
           onError: (error) => {
             chatAbortRef.current = null;
             cancelHistoryTurn();
             setVoiceState('error');
             setErrorMessage(getErrorMessage(error));
+            dispatchVoiceConversationUpdated(activeConversationId);
           },
         },
         abortController.signal,
@@ -399,6 +411,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       cancelHistoryTurn();
       setVoiceState('error');
       setErrorMessage(getErrorMessage(error));
+      dispatchVoiceConversationUpdated(activeConversationId);
     }
   }, [autoSpeak, pageContext, requireLogin]);
 
@@ -1067,6 +1080,38 @@ function readDocumentTitle(fallback: string): string {
     return fallback;
   }
   return document.title?.trim() || fallback;
+}
+
+function readActiveVoiceConversationId(): string {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  const activeConversationId = window.sessionStorage.getItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY)?.trim() ?? '';
+  if (activeConversationId) {
+    return activeConversationId;
+  }
+  try {
+    const raw = window.sessionStorage.getItem(SELECTED_CONVERSATION_STORAGE_KEY);
+    if (!raw) {
+      return '';
+    }
+    const selected = JSON.parse(raw) as SelectedConversationSnapshot;
+    return selected.conversationId?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function dispatchVoiceConversationUpdated(conversationId: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.dispatchEvent(new Event('app:conversation-updated'));
+  window.dispatchEvent(new CustomEvent('app:open-conversation', {
+    detail: {
+      conversationId,
+    },
+  }));
 }
 
 function readViewportSize(): VoiceAssistantSize {
