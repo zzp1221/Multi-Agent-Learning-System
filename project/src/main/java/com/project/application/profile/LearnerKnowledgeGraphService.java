@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -28,6 +29,14 @@ import java.util.UUID;
 public class LearnerKnowledgeGraphService {
 
     private static final Logger log = LoggerFactory.getLogger(LearnerKnowledgeGraphService.class);
+    private static final List<String> NON_KNOWLEDGE_PREFIXES = List.of(
+        "学习主动性：",
+        "学习主动性:",
+        "复盘闭环：",
+        "复盘闭环:",
+        "案例迁移：",
+        "案例迁移:"
+    );
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -48,6 +57,12 @@ public class LearnerKnowledgeGraphService {
             SELECT canonical_key, topic, mastery_score, node_status, source
             FROM app.learner_knowledge_node
             WHERE user_id = :userId
+              AND topic NOT LIKE '学习主动性：%'
+              AND topic NOT LIKE '学习主动性:%'
+              AND topic NOT LIKE '复盘闭环：%'
+              AND topic NOT LIKE '复盘闭环:%'
+              AND topic NOT LIKE '案例迁移：%'
+              AND topic NOT LIKE '案例迁移:%'
             ORDER BY updated_at DESC
             LIMIT 60
             """,
@@ -60,6 +75,8 @@ public class LearnerKnowledgeGraphService {
                 rs.getString("source")
             )
         );
+
+        nodes = sortNodesForMasteryGraph(nodes);
 
         if (nodes.isEmpty()) {
             return new KnowledgeGraphResponse(List.of(), List.of(), List.of());
@@ -95,20 +112,45 @@ public class LearnerKnowledgeGraphService {
         return new KnowledgeGraphResponse(nodes, edges, nextRecommended);
     }
 
+    private List<KnowledgeNodeDto> sortNodesForMasteryGraph(List<KnowledgeNodeDto> nodes) {
+        return nodes.stream()
+            .filter(node -> !isNonKnowledgeDimension(node.topic()))
+            .sorted(
+                Comparator
+                    .comparingInt((KnowledgeNodeDto node) -> statusRank(node.status()))
+                    .thenComparing(KnowledgeNodeDto::mastery)
+                    .thenComparing(KnowledgeNodeDto::topic, String.CASE_INSENSITIVE_ORDER)
+            )
+            .toList();
+    }
+
+    private boolean isNonKnowledgeDimension(String topic) {
+        if (topic == null) {
+            return true;
+        }
+        String trimmed = topic.trim();
+        return trimmed.isEmpty() || NON_KNOWLEDGE_PREFIXES.stream().anyMatch(trimmed::startsWith);
+    }
+
+    private int statusRank(String status) {
+        return switch (status) {
+            case "WEAK" -> 0;
+            case "IN_PROGRESS" -> 1;
+            case "NOT_STARTED" -> 2;
+            case "MASTERED" -> 3;
+            default -> 4;
+        };
+    }
+
     private List<String> computeNextRecommended(
         List<KnowledgeNodeDto> nodes,
         List<KnowledgeEdgeDto> edges
     ) {
         Set<String> mastered = new HashSet<>();
-        Set<String> notMastered = new HashSet<>();
-        Map<String, String> statusMap = new HashMap<>();
 
         for (var node : nodes) {
-            statusMap.put(node.key(), node.status());
             if ("MASTERED".equals(node.status())) {
                 mastered.add(node.key());
-            } else {
-                notMastered.add(node.key());
             }
         }
 
@@ -121,20 +163,15 @@ public class LearnerKnowledgeGraphService {
         }
 
         List<String> recommended = new ArrayList<>();
-        for (String key : notMastered) {
-            Set<String> prereqs = prerequisites.getOrDefault(key, Set.of());
+        for (var node : nodes) {
+            if ("MASTERED".equals(node.status())) {
+                continue;
+            }
+            Set<String> prereqs = prerequisites.getOrDefault(node.key(), Set.of());
             if (prereqs.isEmpty() || mastered.containsAll(prereqs)) {
-                recommended.add(key);
+                recommended.add(node.key());
             }
         }
-
-        // 排序：WEAK > IN_PROGRESS > NOT_STARTED
-        Map<String, Integer> order = Map.of("WEAK", 0, "IN_PROGRESS", 1, "NOT_STARTED", 2);
-        recommended.sort((a, b) -> {
-            int oa = order.getOrDefault(statusMap.getOrDefault(a, "NOT_STARTED"), 3);
-            int ob = order.getOrDefault(statusMap.getOrDefault(b, "NOT_STARTED"), 3);
-            return Integer.compare(oa, ob);
-        });
 
         return recommended.size() > 5 ? recommended.subList(0, 5) : recommended;
     }

@@ -36,7 +36,7 @@ const navItems = [
   { id: 'overview', label: '当前阶段' },
   { id: 'key-weak', label: '关键薄弱点' },
   { id: 'next-actions', label: '下一步行动' },
-  { id: 'knowledge-graph', label: '学习路径图' },
+  { id: 'knowledge-graph', label: '知识图谱' },
   { id: 'more-details', label: '更多分析' },
 ];
 
@@ -311,7 +311,7 @@ export default function ProfilePage() {
 
             <section id="knowledge-graph" className="rounded-2xl border border-blue-100/80 bg-white/85 p-5 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
               <div className="flex items-start justify-between gap-4">
-                <SectionTitle title="学习路径图" subtitle="基于路径规划和练习结果自动构建，节点颜色反映掌握状态" />
+                <SectionTitle title="知识掌握图谱" subtitle="按掌握状态整理当前知识点，优先展示薄弱项和下一步建议" />
                 <button
                   type="button"
                   onClick={() => void loadKnowledgeGraph()}
@@ -1058,6 +1058,7 @@ const NODE_STATUS_COLORS: Record<string, { bg: string; border: string; text: str
   WEAK:        { bg: 'bg-amber-50 dark:bg-amber-900/30',  border: 'border-amber-300 dark:border-amber-700',  text: 'text-amber-700 dark:text-amber-300',  label: '薄弱' },
   NOT_STARTED: { bg: 'bg-slate-50 dark:bg-slate-800/60',  border: 'border-slate-200 dark:border-slate-700',  text: 'text-slate-500 dark:text-slate-400',  label: '未开始' },
 };
+const KNOWLEDGE_STATUS_ORDER: Array<KnowledgeGraphResponse['nodes'][number]['status']> = ['WEAK', 'IN_PROGRESS', 'NOT_STARTED', 'MASTERED'];
 
 function escapeMermaidLabel(value: string): string {
   return value
@@ -1099,7 +1100,7 @@ function KnowledgeGraphPanel(props: {
     return (
       <div className="mt-4 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
         <LoaderCircle className="h-4 w-4 animate-spin text-primary-500" />
-        正在读取学习路径图
+        正在读取知识掌握图谱
       </div>
     );
   }
@@ -1114,13 +1115,24 @@ function KnowledgeGraphPanel(props: {
     return (
       <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-6 text-center text-sm text-slate-400 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-500">
         <Network className="mx-auto mb-2 h-8 w-8 opacity-40" />
-        暂无学习路径图数据。完成一次路径规划后，系统会自动构建知识图谱。
+        暂无知识掌握图谱数据。完成练习、评估或路径规划后，系统会自动整理知识点。
       </div>
     );
   }
 
   const { nodes, edges, nextRecommended } = props.graph;
   const mermaidCode = buildKnowledgeGraphMermaid(props.graph);
+  const nodeByKey = new Map(nodes.map((node) => [node.key, node]));
+  const recommendedNodes = nextRecommended
+    .map((key) => nodeByKey.get(key))
+    .filter((node): node is KnowledgeGraphResponse['nodes'][number] => Boolean(node));
+  const recommendedRankOf = (key: string) => {
+    const index = nextRecommended.indexOf(key);
+    return index >= 0 ? index + 1 : undefined;
+  };
+  const groupedNodes = KNOWLEDGE_STATUS_ORDER
+    .map((status) => ({ status, nodes: nodes.filter((node) => node.status === status) }))
+    .filter((group) => group.nodes.length > 0);
 
   return (
     <div className="mt-4 space-y-4">
@@ -1136,35 +1148,39 @@ function KnowledgeGraphPanel(props: {
 
       <MermaidDiagram chart={mermaidCode} />
 
-      {/* 节点卡片列表 */}
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {nodes.map((node) => {
-          const style = NODE_STATUS_COLORS[node.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
-          const isRecommended = nextRecommended.includes(node.key);
+      {recommendedNodes.length > 0 && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 dark:border-blue-900/40 dark:bg-blue-950/30">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-blue-700 dark:text-blue-300">下一步优先关注</div>
+            <div className="text-xs text-blue-500 dark:text-blue-400">按薄弱程度和前置依赖自动排序</div>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {recommendedNodes.slice(0, 5).map((node, index) => (
+              <KnowledgeNodeCard key={node.key} node={node} recommendedRank={index + 1} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {groupedNodes.map((group) => {
+          const style = NODE_STATUS_COLORS[group.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
           return (
-            <div
-              key={node.key}
-              className={`relative rounded-xl border px-3 py-3 text-sm ${style.bg} ${style.border}`}
-            >
-              {isRecommended && (
-                <span className="absolute right-2 top-2 rounded-full bg-primary-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  推荐
-                </span>
-              )}
-              <div className={`font-medium ${style.text}`}>{node.topic}</div>
-              <div className="mt-1 flex items-center gap-2">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/60 dark:bg-slate-700/60">
-                  <div
-                    className={`h-full rounded-full ${node.status === 'MASTERED' ? 'bg-emerald-500' : node.status === 'IN_PROGRESS' ? 'bg-blue-500' : node.status === 'WEAK' ? 'bg-amber-500' : 'bg-slate-300'}`}
-                    style={{ width: `${Math.round(node.mastery * 100)}%` }}
-                  />
-                </div>
-                <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                  {Math.round(node.mastery * 100)}%
-                </span>
+            <section key={group.status} className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/40">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className={`text-sm font-semibold ${style.text}`}>{style.label}</div>
+                <div className="text-xs text-slate-400 dark:text-slate-500">{group.nodes.length} 个知识点</div>
               </div>
-              <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{style.label}</div>
-            </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {group.nodes.map((node) => (
+                  <KnowledgeNodeCard
+                    key={node.key}
+                    node={node}
+                    recommendedRank={recommendedRankOf(node.key)}
+                  />
+                ))}
+              </div>
+            </section>
           );
         })}
       </div>
@@ -1176,7 +1192,7 @@ function KnowledgeGraphPanel(props: {
           <div className="flex flex-wrap gap-2">
             {edges.filter((e) => e.type === 'PREREQUISITE').map((edge, i) => (
               <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-xs text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">
-                {edge.from} <span className="text-slate-400">→</span> {edge.to}
+                {nodeByKey.get(edge.from)?.topic ?? edge.from} <span className="text-slate-400">→</span> {nodeByKey.get(edge.to)?.topic ?? edge.to}
               </span>
             ))}
           </div>
@@ -1192,6 +1208,40 @@ function KnowledgeGraphPanel(props: {
           {mermaidCode}
         </pre>
       </details>
+    </div>
+  );
+}
+
+function KnowledgeNodeCard(props: {
+  node: KnowledgeGraphResponse['nodes'][number];
+  recommendedRank?: number;
+}) {
+  const { node, recommendedRank } = props;
+  const style = NODE_STATUS_COLORS[node.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
+  const pct = Math.round(node.mastery * 100);
+  const barColor = node.status === 'MASTERED'
+    ? 'bg-emerald-500'
+    : node.status === 'IN_PROGRESS'
+      ? 'bg-blue-500'
+      : node.status === 'WEAK'
+        ? 'bg-amber-500'
+        : 'bg-slate-300';
+
+  return (
+    <div className={`relative rounded-xl border px-3 py-3 text-sm ${style.bg} ${style.border}`}>
+      {recommendedRank && recommendedRank > 0 && (
+        <span className="absolute right-2 top-2 rounded-full bg-primary-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          推荐 {recommendedRank}
+        </span>
+      )}
+      <div className={`pr-14 font-medium leading-6 ${style.text}`}>{node.topic}</div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/60 dark:bg-slate-700/60">
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{pct}%</span>
+      </div>
+      <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{style.label}</div>
     </div>
   );
 }
