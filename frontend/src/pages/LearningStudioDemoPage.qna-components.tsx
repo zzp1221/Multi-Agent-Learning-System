@@ -158,7 +158,7 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
   };
 
   return (
-    <div className="relative flex-1">
+    <div className="relative min-h-0 flex-1">
       <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto px-2 py-4 scrollbar-thin md:px-8">
         <div ref={contentRef} className="space-y-6 md:space-y-8">
           <AnimatePresence>

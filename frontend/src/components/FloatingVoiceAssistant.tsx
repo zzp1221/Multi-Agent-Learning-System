@@ -104,6 +104,8 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
 
   const voiceStateRef = useRef<VoiceState>('idle');
   const panelRef = useRef<HTMLElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const answerRef = useRef<HTMLParagraphElement | null>(null);
   const dragStateRef = useRef<VoiceAssistantDragState | null>(null);
   const suppressFabClickRef = useRef(false);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -173,6 +175,24 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     '--voice-assistant-panel-top': `${Math.round(panelPosition.y)}px`,
   }) as CSSProperties, [panelPosition, visibleAssistantPosition]);
 
+  const scrollVoiceContentToBottom = useCallback(() => {
+    const scroll = () => {
+      const body = bodyRef.current;
+      const answer = answerRef.current;
+      if (body) {
+        body.scrollTop = body.scrollHeight;
+      }
+      if (answer) {
+        answer.scrollTop = answer.scrollHeight;
+      }
+    };
+    scroll();
+    requestAnimationFrame(() => {
+      scroll();
+      requestAnimationFrame(scroll);
+    });
+  }, []);
+
   useEffect(() => () => {
     stopRecordingResources();
     releasePrewarmedAsr();
@@ -235,6 +255,12 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   useEffect(() => {
     assistantTextRef.current = assistantText;
   }, [assistantText]);
+
+  useEffect(() => {
+    if (open) {
+      scrollVoiceContentToBottom();
+    }
+  }, [assistantText, recognizedText, noticeMessage, errorMessage, voiceHistory.length, open, scrollVoiceContentToBottom]);
 
   useEffect(() => {
     playbackPausedRef.current = playbackPaused;
@@ -678,7 +704,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
               </div>
             </div>
 
-            <div className="voice-assistant-body">
+            <div ref={bodyRef} className="voice-assistant-body">
               {recognizedText || voiceState === 'recording' || voiceState === 'transcribing' || voiceState === 'ready' ? (
                 <label className="voice-assistant-field">
                   <span>识别文本</span>
@@ -694,7 +720,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
               {assistantText ? (
                 <div className="voice-assistant-answer">
                   <span>回答</span>
-                  <p>{assistantText}</p>
+                  <p ref={answerRef}>{assistantText}</p>
                 </div>
               ) : null}
 
