@@ -191,7 +191,8 @@ async def test_generation_service_writes_document_asset(tmp_path: Path) -> None:
         asset_type="DOCUMENT",
         params={
             "taskId": "task-doc",
-            "query": "联合索引",
+            "query": "数据库原理 联合索引 中等 讲解文档",
+            "keyPoints": "联合索引",
             "rewrittenQuery": "数据库原理 联合索引",
             "retrievalResult": {
                 "documents": [
@@ -204,15 +205,23 @@ async def test_generation_service_writes_document_asset(tmp_path: Path) -> None:
     )
 
     assert asset.asset_type == "DOCUMENT"
+    assert asset.title == "联合索引导学文档"
+    assert "中等" not in asset.title
+    assert "讲解文档" not in asset.title
     assert asset.file_name == "document_guide_task-doc.md"
     assert Path(asset.local_path).exists()
     content = Path(asset.local_path).read_text(encoding="utf-8")
     assert content.startswith("# ")
     assert "## 生成大纲" in content
     assert "## 一、核心概念与学习目标" in content
-    assert "### 引用依据" in content
-    assert "[来源1]" in content
     assert "这里是百炼生成的正文。" in content
+    assert "课程:" not in content
+    assert "章节:" not in content
+    assert "学生水平:" not in content
+    assert "学习风格:" not in content
+    assert "### 引用依据" not in content
+    assert "## 参考来源" not in content
+    assert "证据说明" not in content
 
 
 @pytest.mark.asyncio

@@ -197,7 +197,7 @@ curl -s -N -X POST http://localhost:8081/api/voice/tts/stream \
   --data '{"text":"hello","voice":"Cherry"}'
 ```
 
-期望 `/api/voice/sessions` 返回 `provider/asrModel/ttsModel`，TTS SSE 返回 `event: audio` 和 `event: done`。`/api/voice/commands/parse` 应能解析停止/暂停/继续朗读、打开错题本、开始今日复习、打开个人画像、回到问答、生成学习计划等本地 intent。ASR/TTS 密钥只允许放在服务端环境变量或容器外置配置，不要提交到仓库。
+期望 `/api/voice/sessions` 返回 `provider/asrModel/ttsModel`，TTS SSE 返回 `event: audio` 和 `event: done`。实时 ASR 中途 `asr_final` 只代表 provider 分段定稿，前端应继续录音，直到用户点停止后发送 `commit` 才进入可发送状态。`/api/voice/commands/parse` 应能解析停止/暂停/继续朗读、打开错题本、开始今日复习、打开个人画像、回到问答、生成学习计划等本地 intent。ASR/TTS 密钥只允许放在服务端环境变量或容器外置配置，不要提交到仓库。
 
 实时语音 WebSocket 入口为 `/api/voice/ws?sessionId=<id>&token=<jwt>`。浏览器 WebSocket 无法稳定携带自定义 `Authorization` 头，因此该升级入口在 Spring Security 层放行，实际 JWT 和 voice session 归属由 Java WebSocket handler 校验。
 

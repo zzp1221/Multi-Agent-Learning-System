@@ -131,6 +131,32 @@ class VoiceRealtimeWebSocketHandlerTest {
         assertThat(outbound).noneMatch(payload -> payload.contains("旧回答"));
     }
 
+    @Test
+    void keepsRecordingAfterProviderSegmentFinalAndMergesNextPartial() throws Exception {
+        UUID voiceSessionId = UUID.randomUUID();
+        List<String> outbound = new CopyOnWriteArrayList<>();
+        WebSocketSession socket = socket(voiceSessionId, outbound);
+        ManualTaskExecutor executor = new ManualTaskExecutor();
+        CapturingAsrClient asrClient = new CapturingAsrClient();
+        VoiceRealtimeWebSocketHandler handler = handler(voiceSessionId, asrClient, executor);
+
+        handler.afterConnectionEstablished(socket);
+        executor.runNext();
+        VoiceRealtimeAsrListener listener = asrClient.listeners.get(voiceSessionId + ":turn-1");
+
+        listener.onFinal("第一句");
+        listener.onPartial("第二句");
+
+        assertThat(outbound).anySatisfy(payload -> {
+            assertThat(readType(payload)).isEqualTo("asr_final");
+            assertThat(readText(payload)).isEqualTo("第一句");
+        });
+        assertThat(outbound).anySatisfy(payload -> {
+            assertThat(readType(payload)).isEqualTo("asr_partial");
+            assertThat(readText(payload)).isEqualTo("第一句第二句");
+        });
+    }
+
     private VoiceRealtimeWebSocketHandler handler(
         UUID voiceSessionId,
         VoiceRealtimeAsrClient asrClient,
@@ -172,6 +198,15 @@ class VoiceRealtimeWebSocketHandlerTest {
         try {
             JsonNode event = objectMapper.readTree(payload);
             return event.path("type").asText();
+        } catch (Exception ex) {
+            return "";
+        }
+    }
+
+    private String readText(String payload) {
+        try {
+            JsonNode event = objectMapper.readTree(payload);
+            return event.path("text").asText();
         } catch (Exception ex) {
             return "";
         }

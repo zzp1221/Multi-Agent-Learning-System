@@ -38,6 +38,8 @@ interface FloatingVoiceAssistantProps {
 
 const TARGET_SAMPLE_RATE = 16000;
 const MAX_RECORDING_MS = 60_000;
+const COMMIT_TEXT_READY_FALLBACK_MS = 1_500;
+const FINAL_TRANSCRIPT_TIMEOUT_MS = 8_000;
 const VOICE_WORKLET_PATH = '/audio-worklet/voice-pcm-processor.js';
 const VOICE_HISTORY_STORAGE_KEY = 'voice_assistant_history';
 const MAX_VOICE_HISTORY_ITEMS = 5;
@@ -64,6 +66,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   const realtimeSocketRef = useRef<WebSocket | null>(null);
   const currentTurnIdRef = useRef('');
   const expectedRealtimeCloseRef = useRef(false);
+  const recordingCommitRequestedRef = useRef(false);
   const recognizedTextRef = useRef('');
   const assistantTextRef = useRef('');
   const recordStartedAtRef = useRef(0);
@@ -143,6 +146,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     recognizedTextRef.current = '';
     interruptCurrentTurn();
     realtimeReadyRef.current = false;
+    recordingCommitRequestedRef.current = false;
     setRecordingMs(0);
     setVoiceState('recording');
     try {
@@ -206,17 +210,39 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     }
     const socket = realtimeSocketRef.current;
     stopRecordingResources();
+    recordingCommitRequestedRef.current = true;
     setVoiceState('transcribing');
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'commit', turnId: currentTurnIdRef.current }));
       window.setTimeout(() => {
-        if (voiceStateRef.current === 'transcribing' && !recognizedTextRef.current.trim()) {
-      setVoiceState('error');
-      setErrorMessage('没有识别到文字，请重试');
-      expectedRealtimeCloseRef.current = true;
-      socket.close();
-    }
-      }, 3000);
+        if (
+          voiceStateRef.current === 'transcribing'
+          && recordingCommitRequestedRef.current
+          && recognizedTextRef.current.trim()
+        ) {
+          recordingCommitRequestedRef.current = false;
+          voiceStateRef.current = 'ready';
+          setVoiceState('ready');
+          expectedRealtimeCloseRef.current = true;
+          socket.close();
+        }
+      }, COMMIT_TEXT_READY_FALLBACK_MS);
+      window.setTimeout(() => {
+        if (voiceStateRef.current !== 'transcribing') {
+          return;
+        }
+        recordingCommitRequestedRef.current = false;
+        if (recognizedTextRef.current.trim()) {
+          voiceStateRef.current = 'ready';
+          setVoiceState('ready');
+        } else {
+          voiceStateRef.current = 'error';
+          setVoiceState('error');
+          setErrorMessage('没有识别到文字，请重试');
+        }
+        expectedRealtimeCloseRef.current = true;
+        socket.close();
+      }, FINAL_TRANSCRIPT_TIMEOUT_MS);
       return;
     }
     setVoiceState('error');
@@ -591,6 +617,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (event.type === 'ready') {
       currentTurnIdRef.current = event.turnId ?? '';
       realtimeReadyRef.current = true;
+      recordingCommitRequestedRef.current = false;
       return;
     }
     if (event.type === 'asr_ready') {
@@ -598,36 +625,51 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       return;
     }
     if (event.type === 'asr_partial' && event.text) {
-      setRecognizedText(event.text);
-      recognizedTextRef.current = event.text;
+      updateRecognizedText(event.text);
       return;
     }
     if (event.type === 'asr_final') {
       const text = event.text?.trim() ?? '';
-      setRecognizedText(text);
-      recognizedTextRef.current = text;
-      const nextState = text ? 'ready' : 'error';
-      voiceStateRef.current = nextState;
-      setVoiceState(nextState);
-      if (!text) {
-        setErrorMessage('没有识别到文字，请重试');
+      if (text) {
+        updateRecognizedText(text);
       }
-      expectedRealtimeCloseRef.current = true;
-      realtimeSocketRef.current?.close();
+      if (recordingCommitRequestedRef.current) {
+        recordingCommitRequestedRef.current = false;
+        const finalText = (text || recognizedTextRef.current).trim();
+        const nextState = finalText ? 'ready' : 'error';
+        voiceStateRef.current = nextState;
+        setVoiceState(nextState);
+        if (!finalText) {
+          setErrorMessage('没有识别到文字，请重试');
+        }
+        expectedRealtimeCloseRef.current = true;
+        realtimeSocketRef.current?.close();
+      }
       return;
     }
     if (event.type === 'cancelled') {
       currentTurnIdRef.current = event.turnId ?? '';
       realtimeReadyRef.current = true;
+      recordingCommitRequestedRef.current = false;
       setRecognizedText('');
       return;
     }
     if (event.type === 'error') {
       setVoiceState('error');
       setErrorMessage(event.message || '语音识别失败，请重试');
+      recordingCommitRequestedRef.current = false;
       expectedRealtimeCloseRef.current = true;
       realtimeSocketRef.current?.close();
     }
+  }
+
+  function updateRecognizedText(text: string) {
+    const next = text.trim();
+    if (!next) {
+      return;
+    }
+    setRecognizedText(next);
+    recognizedTextRef.current = next;
   }
 
   function stopSpeaking() {

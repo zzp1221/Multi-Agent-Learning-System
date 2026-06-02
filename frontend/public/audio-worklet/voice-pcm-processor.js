@@ -2,7 +2,7 @@ class VoicePcmProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.targetSampleRate = 16000;
-    this.samplesPerChunk = 3200;
+    this.samplesPerChunk = 1600;
     this.pending = [];
     this.pendingLength = 0;
   }
@@ -65,7 +65,7 @@ class VoicePcmProcessor extends AudioWorkletProcessor {
         offset += take;
         this.pendingLength -= take;
       }
-      this.port.postMessage(chunk.buffer);
+      this.port.postMessage(chunk.buffer, [chunk.buffer]);
     }
   }
 }

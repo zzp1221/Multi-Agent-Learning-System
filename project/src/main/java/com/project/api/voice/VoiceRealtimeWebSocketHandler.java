@@ -200,7 +200,8 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
                     if (state.markFirstPartial(turnId)) {
                         recordMetric("asr_first_partial_ms", state, turnId, "success");
                     }
-                    safeSend(session, "asr_partial", Map.of("turnId", turnId, "text", text));
+                    String preview = state.previewTranscript(turnId, text);
+                    safeSend(session, "asr_partial", Map.of("turnId", turnId, "text", preview));
                 }
             }
 
@@ -208,9 +209,10 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             public void onFinal(String text) {
                 if (isActive(session, state, turnId)) {
                     recordMetric("asr_final_ms", state, turnId, "success");
+                    String transcript = state.commitTranscript(turnId, text);
                     safeSend(session, "asr_final", Map.of(
                         "turnId", turnId,
-                        "text", text,
+                        "text", transcript,
                         "provider", appProperties.getVoice().getProvider(),
                         "model", appProperties.getVoice().getAsrModel()
                     ));
@@ -311,6 +313,7 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         private final AtomicInteger turnSequence = new AtomicInteger(1);
         private final AtomicInteger audioBytes = new AtomicInteger(0);
         private final Deque<byte[]> pendingAudio = new ArrayDeque<>();
+        private final StringBuilder transcript = new StringBuilder();
         private volatile VoiceRealtimeAsrSession asrSession;
         private volatile String turnId;
         private volatile long turnStartedAtNanos;
@@ -382,10 +385,13 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         }
 
         private void nextTurn() {
-            audioBytes.set(0);
-            turnId = "turn-" + turnSequence.incrementAndGet();
-            turnStartedAtNanos = System.nanoTime();
-            firstPartialLogged = false;
+            synchronized (lock) {
+                audioBytes.set(0);
+                transcript.setLength(0);
+                turnId = "turn-" + turnSequence.incrementAndGet();
+                turnStartedAtNanos = System.nanoTime();
+                firstPartialLogged = false;
+            }
         }
 
         private long elapsedMs(String requestedTurnId) {
@@ -403,6 +409,68 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
                 firstPartialLogged = true;
                 return true;
             }
+        }
+
+        private String previewTranscript(String requestedTurnId, String text) {
+            synchronized (lock) {
+                if (!isCurrentTurn(requestedTurnId)) {
+                    return "";
+                }
+                String normalized = text == null ? "" : text.trim();
+                String current = transcript.toString().trim();
+                if (normalized.isBlank()) {
+                    return current;
+                }
+                if (current.isBlank() || normalized.startsWith(current)) {
+                    return normalized;
+                }
+                return joinTranscript(current, normalized);
+            }
+        }
+
+        private String commitTranscript(String requestedTurnId, String text) {
+            synchronized (lock) {
+                if (!isCurrentTurn(requestedTurnId)) {
+                    return "";
+                }
+                String normalized = text == null ? "" : text.trim();
+                String current = transcript.toString().trim();
+                if (normalized.isBlank()) {
+                    return current;
+                }
+                if (current.isBlank() || normalized.startsWith(current)) {
+                    transcript.setLength(0);
+                    transcript.append(normalized);
+                    return normalized;
+                }
+                if (current.endsWith(normalized)) {
+                    return current;
+                }
+                transcript.setLength(0);
+                transcript.append(joinTranscript(current, normalized));
+                return transcript.toString().trim();
+            }
+        }
+
+        private String joinTranscript(String first, String second) {
+            if (first.isBlank()) {
+                return second;
+            }
+            if (second.isBlank()) {
+                return first;
+            }
+            char last = first.charAt(first.length() - 1);
+            char next = second.charAt(0);
+            if (isAsciiLetterOrDigit(last) && isAsciiLetterOrDigit(next)) {
+                return first + " " + second;
+            }
+            return first + second;
+        }
+
+        private boolean isAsciiLetterOrDigit(char value) {
+            return (value >= 'a' && value <= 'z')
+                || (value >= 'A' && value <= 'Z')
+                || (value >= '0' && value <= '9');
         }
 
         private void closeCurrentTurn() {

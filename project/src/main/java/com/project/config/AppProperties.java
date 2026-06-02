@@ -332,6 +332,8 @@ public class AppProperties {
         private Duration requestTimeout = Duration.ofSeconds(90);
         private Duration sessionTtl = Duration.ofSeconds(300);
         private Duration ttsFirstAudioTimeout = Duration.ofSeconds(3);
+        private int asrVadSilenceDurationMs = 1200;
+        private double asrVadThreshold = 0.5D;
         private int providerMaxRetries = 1;
         private Duration providerRetryBackoff = Duration.ofMillis(300);
         private int maxConcurrentSessionsPerUser = 2;
@@ -454,6 +456,22 @@ public class AppProperties {
 
         public void setTtsFirstAudioTimeout(Duration ttsFirstAudioTimeout) {
             this.ttsFirstAudioTimeout = ttsFirstAudioTimeout;
+        }
+
+        public int getAsrVadSilenceDurationMs() {
+            return asrVadSilenceDurationMs;
+        }
+
+        public void setAsrVadSilenceDurationMs(int asrVadSilenceDurationMs) {
+            this.asrVadSilenceDurationMs = asrVadSilenceDurationMs;
+        }
+
+        public double getAsrVadThreshold() {
+            return asrVadThreshold;
+        }
+
+        public void setAsrVadThreshold(double asrVadThreshold) {
+            this.asrVadThreshold = asrVadThreshold;
         }
 
         public int getProviderMaxRetries() {

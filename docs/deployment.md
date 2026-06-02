@@ -59,6 +59,8 @@ VOICE_TTS_VOICE=Cherry
 VOICE_SAMPLE_RATE=16000
 VOICE_MAX_AUDIO_SECONDS=60
 VOICE_MAX_AUDIO_BYTES=10485760
+VOICE_ASR_VAD_SILENCE_DURATION_MS=1200
+VOICE_ASR_VAD_THRESHOLD=0.5
 ```
 
 随机值生成示例：
@@ -172,7 +174,7 @@ curl -s -N -X POST http://localhost:8081/api/voice/tts/stream \
 - `/api/voice/sessions` 返回 `provider=bailian`、`asrModel`、`ttsModel` 和 `sampleRate=16000`。
 - `/api/voice/tts/stream` 返回 `event: audio`，最后返回 `event: done`。
 - `/api/voice/transcribe` 上传 16k mono PCM 时返回 `text/durationMs/provider/model`。
-- `/api/voice/ws` 建连后返回 `ready` 和 `turnId`，上传 16k mono PCM chunk 时应返回 `asr_partial`，停顿或发送 `commit` 后返回 `asr_final`；发送 `cancel` 后返回新的 `turnId`，前端不应继续展示旧 turn 的字幕或音频。
+- `/api/voice/ws` 建连后返回 `ready` 和 `turnId`，上传 16k mono PCM chunk 时应返回 `asr_partial`；provider 在说话中途可能返回分段 `asr_final`，前端只更新识别文本，不应停止录音；用户点停止后发送 `commit`，收到最终 `asr_final` 后进入可发送状态；发送 `cancel` 后返回新的 `turnId`，前端不应继续展示旧 turn 的字幕或音频。
 - `/api/voice/ws` 的浏览器 WebSocket 鉴权使用 query token：Spring Security 放行升级入口，`VoiceRealtimeWebSocketHandler` 校验 JWT 和 voice session 归属。不要把它改成仅依赖 `Authorization` 头，否则浏览器 WebSocket 会在握手阶段被 401 拦截。
 - `/api/voice/commands/parse` 应能解析 `停止朗读`、`暂停朗读`、`继续朗读`、`打开错题本`、`开始今日复习`、`打开个人画像`、`回到问答`、`生成学习计划`；其中页面动作由前端消费本地 intent，不新增后端写接口。
 - 前端悬浮面板应展示最近 5 条语音文本历史，可点击重发；只保存识别文本和回答摘要到浏览器 `localStorage`，不保存原始音频。

@@ -152,7 +152,9 @@ P3/P4 已完成代码侧落地：provider 建连重试、TTS 首包超时降级�
 - ASR 未 ready 时，Java 会按 turn 缓存已到达的 PCM chunk 和 commit；ASR session 建好后按顺序 flush，减少开头语音丢失。
 - 每轮语音都有 `turnId`，cancel 后递增新 turn；旧 turn 的 partial/final/error 回调会被丢弃，避免旧识别结果污染新一轮。
 - 前端重新录音会先停止 TTS 播放、取消当前聊天流、关闭旧 realtime socket，然后创建新 session 开始录音。
-- 前端区分预期关闭和异常断开，ASR final 后主动关闭 WebSocket 不再误报“连接已断开”。
+- 前端区分预期关闭和异常断开，用户点“停止”或达到最长录音后才发送 commit 并关闭 WebSocket；provider 在录音中途返回的 `asr_final` 只作为分段定稿，不再提前结束录音。
+- 前端 AudioWorklet 采集 chunk 从 200ms 降到 100ms，发送时使用 transferable ArrayBuffer，减少首字延迟和主线程拷贝。
+- 百炼 ASR `server_vad` 静音窗口从 400ms 提高到默认 1200ms，并暴露 `VOICE_ASR_VAD_SILENCE_DURATION_MS` / `VOICE_ASR_VAD_THRESHOLD`，降低短暂停顿被误判成说完的概率。
 - P3 稳定性已补齐：百炼 ASR/TTS WebSocket 建连按配置重试，TTS 首包超时返回 `TEXT_ONLY` 降级，Java 记录 `asr_first_partial_ms`、`asr_final_ms`、`tts_first_audio_ms`、`tts_total_ms` 等 `voice_metric` 日志，voice session 按用户限制并发并继续 TTL 清理。
 - P4 功能已补齐：前端按当前路由携带 `voiceContext`，Java 将其作为 `voiceContext`/`learningContext` 传入现有聊天参数；快捷指令支持停止/暂停/继续朗读，TTS 失败时保留文字回答并在面板提示；最近语音文本和回答摘要仅存浏览器 `localStorage`，不保存原始音频；学习动作支持打开错题本、打开个人画像、回到问答、开始今日复习和生成学习路径规划。换音色、ASR 低置信度确认本轮按需求不做。
 
@@ -576,7 +578,7 @@ MVP：
 | ASR 转文字 | 已完成 | `/api/voice/transcribe` 接收 16k 单声道 PCM，调用百炼实时语音 WebSocket |
 | TTS 流式合成 | 已完成 | `/api/voice/tts/stream` 通过 SSE 返回 base64 PCM 音频 chunk |
 | 语音 session | 已完成 | `/api/voice/sessions` 创建 TTL session，供实时 WebSocket 使用 |
-| 实时 WebSocket ASR | 已完成 | `/api/voice/ws` 支持音频 chunk 实时转发百炼 ASR、partial/final 回传、commit、cancel 和 turnId |
+| 实时 WebSocket ASR | 已完成 | `/api/voice/ws` 支持 100ms 音频 chunk 实时转发百炼 ASR、partial/final 回传、commit、cancel 和 turnId；录音中途 final 只做分段合并 |
 | 语音快捷指令解析 | 已完成 | `/api/voice/commands/parse` 支持停止朗读、继续、解释、总结、类似题等 intent |
 | 前端悬浮助手 | 已完成 | 全局右下角麦克风按钮、AudioWorklet 实时 PCM 采集、partial 识别展示、可编辑确认、发送 |
 | 复用聊天 SSE | 已完成 | 识别文本创建会话后走现有 `/api/conversations/{id}/messages/stream` |
@@ -610,6 +612,8 @@ VOICE_CONNECT_TIMEOUT=5s
 VOICE_REQUEST_TIMEOUT=90s
 VOICE_SESSION_TTL=300s
 VOICE_TTS_FIRST_AUDIO_TIMEOUT=3s
+VOICE_ASR_VAD_SILENCE_DURATION_MS=1200
+VOICE_ASR_VAD_THRESHOLD=0.5
 VOICE_PROVIDER_MAX_RETRIES=1
 VOICE_PROVIDER_RETRY_BACKOFF=300ms
 VOICE_MAX_CONCURRENT_SESSIONS_PER_USER=2
@@ -634,7 +638,7 @@ authenticated /api/voice/ws smoke -> ready 36ms, cancel 4ms, sampleRate 16000, t
 当前限制：
 
 - 浏览器端录音使用 16k PCM 上传，MVP 不是直接上传 webm 容器。
-- `/api/voice/ws` 已从分片收集后提交识别升级为实时 ASR 通道；自动化 smoke 已验证 ready/cancel 链路，仍需用真实麦克风验证 ASR partial 首字延迟、final transcript 延迟、页面上下文问答、TTS 降级提示和学习动作控制。
+- `/api/voice/ws` 已从分片收集后提交识别升级为实时 ASR 通道；自动化 smoke 已验证 ready/cancel 链路，focused test 覆盖 provider 分段 final 后继续录音并合并后续 partial；仍需用真实麦克风验证 ASR partial 首字延迟、final transcript 延迟、页面上下文问答、TTS 降级提示和学习动作控制。
 - 本轮未执行真实麦克风 + 百炼 API 端到端延迟验收；需要浏览器授权麦克风后人工确认。当前代码已提供 `voice_metric` 日志辅助定位。
 - 用户提供过的百炼 API Key 未写入代码、配置或文档；建议在百炼控制台轮换该 key。
 

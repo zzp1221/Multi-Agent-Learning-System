@@ -139,8 +139,8 @@ public class BailianRealtimeVoiceClient implements VoiceAsrClient, VoiceTtsClien
 
         Map<String, Object> turnDetection = new LinkedHashMap<>();
         turnDetection.put("type", "server_vad");
-        turnDetection.put("threshold", 0.5D);
-        turnDetection.put("silence_duration_ms", 400);
+        turnDetection.put("threshold", appProperties.getVoice().getAsrVadThreshold());
+        turnDetection.put("silence_duration_ms", appProperties.getVoice().getAsrVadSilenceDurationMs());
 
         Map<String, Object> session = new LinkedHashMap<>();
         session.put("input_audio_format", "pcm");
