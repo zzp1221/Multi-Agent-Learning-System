@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   History,
@@ -30,6 +30,22 @@ type VoiceHistoryItem = {
   pageTitle?: string;
   createdAt: string;
 };
+type VoiceAssistantPosition = {
+  x: number;
+  y: number;
+};
+type VoiceAssistantSize = {
+  width: number;
+  height: number;
+};
+type VoiceAssistantDragState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startX: number;
+  startY: number;
+  dragging: boolean;
+};
 
 interface FloatingVoiceAssistantProps {
   isAuthenticated: boolean;
@@ -42,7 +58,15 @@ const COMMIT_TEXT_READY_FALLBACK_MS = 1_500;
 const FINAL_TRANSCRIPT_TIMEOUT_MS = 8_000;
 const VOICE_WORKLET_PATH = '/audio-worklet/voice-pcm-processor.js';
 const VOICE_HISTORY_STORAGE_KEY = 'voice_assistant_history';
+const VOICE_POSITION_STORAGE_KEY = 'voice_assistant_position';
 const MAX_VOICE_HISTORY_ITEMS = 5;
+const VOICE_FAB_SIZE = 54;
+const VOICE_EDGE_GAP = 16;
+const VOICE_DEFAULT_EDGE_GAP = 22;
+const VOICE_PANEL_GAP = 14;
+const VOICE_PANEL_DEFAULT_WIDTH = 380;
+const VOICE_PANEL_DEFAULT_HEIGHT = 520;
+const VOICE_DRAG_THRESHOLD_PX = 6;
 
 export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal }: FloatingVoiceAssistantProps) {
   const location = useLocation();
@@ -57,8 +81,18 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   const [playbackPaused, setPlaybackPaused] = useState(false);
   const [voiceHistory, setVoiceHistory] = useState<VoiceHistoryItem[]>(() => readVoiceHistory());
   const [recordingMs, setRecordingMs] = useState(0);
+  const [viewportSize, setViewportSize] = useState<VoiceAssistantSize>(() => readViewportSize());
+  const [assistantPosition, setAssistantPosition] = useState<VoiceAssistantPosition>(() => readVoiceAssistantPosition());
+  const [assistantDragging, setAssistantDragging] = useState(false);
+  const [panelSize, setPanelSize] = useState<VoiceAssistantSize>({
+    width: VOICE_PANEL_DEFAULT_WIDTH,
+    height: VOICE_PANEL_DEFAULT_HEIGHT,
+  });
 
   const voiceStateRef = useRef<VoiceState>('idle');
+  const panelRef = useRef<HTMLElement | null>(null);
+  const dragStateRef = useRef<VoiceAssistantDragState | null>(null);
+  const suppressFabClickRef = useRef(false);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
@@ -103,12 +137,63 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   }, [playbackPaused, recordingMs, voiceState]);
 
   const pageContext = useMemo(() => buildVoicePageContext(location.pathname), [location.pathname]);
+  const visibleAssistantPosition = useMemo(
+    () => clampVoiceAssistantPosition(assistantPosition, viewportSize),
+    [assistantPosition, viewportSize],
+  );
+  const panelPosition = useMemo(
+    () => calculateVoicePanelPosition(visibleAssistantPosition, panelSize, viewportSize),
+    [panelSize, viewportSize, visibleAssistantPosition],
+  );
+  const assistantRootStyle = useMemo(() => ({
+    '--voice-assistant-left': `${Math.round(visibleAssistantPosition.x)}px`,
+    '--voice-assistant-top': `${Math.round(visibleAssistantPosition.y)}px`,
+    '--voice-assistant-panel-left': `${Math.round(panelPosition.x)}px`,
+    '--voice-assistant-panel-top': `${Math.round(panelPosition.y)}px`,
+  }) as CSSProperties, [panelPosition, visibleAssistantPosition]);
 
   useEffect(() => () => {
     stopRecordingResources();
     stopSpeaking();
     chatAbortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    const handleResize = () => setViewportSize(readViewportSize());
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    setAssistantPosition((prev) => {
+      const next = clampVoiceAssistantPosition(prev, viewportSize);
+      if (positionsEqual(prev, next)) {
+        return prev;
+      }
+      writeVoiceAssistantPosition(next);
+      return next;
+    });
+  }, [viewportSize]);
+
+  useEffect(() => {
+    if (!open || !panelRef.current) {
+      return undefined;
+    }
+    const panelElement = panelRef.current;
+    const updatePanelSize = () => {
+      setPanelSize({
+        width: Math.ceil(panelElement.offsetWidth),
+        height: Math.ceil(panelElement.offsetHeight),
+      });
+    };
+    updatePanelSize();
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const observer = new ResizeObserver(updatePanelSize);
+    observer.observe(panelElement);
+    return () => observer.disconnect();
+  }, [open]);
 
   useEffect(() => {
     voiceStateRef.current = voiceState;
@@ -321,6 +406,73 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     await sendVoiceText(recognizedText);
   }, [recognizedText, sendVoiceText]);
 
+  const handleFabPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: visibleAssistantPosition.x,
+      startY: visibleAssistantPosition.y,
+      dragging: false,
+    };
+    suppressFabClickRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, [visibleAssistantPosition]);
+
+  const handleFabPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+    const deltaX = event.clientX - dragState.startClientX;
+    const deltaY = event.clientY - dragState.startClientY;
+    if (!dragState.dragging && Math.hypot(deltaX, deltaY) < VOICE_DRAG_THRESHOLD_PX) {
+      return;
+    }
+    if (!dragState.dragging) {
+      dragState.dragging = true;
+      suppressFabClickRef.current = true;
+      setAssistantDragging(true);
+    }
+    const next = clampVoiceAssistantPosition({
+      x: dragState.startX + deltaX,
+      y: dragState.startY + deltaY,
+    }, viewportSize);
+    setAssistantPosition(next);
+  }, [viewportSize]);
+
+  const finishFabDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+    const deltaX = event.clientX - dragState.startClientX;
+    const deltaY = event.clientY - dragState.startClientY;
+    const finalPosition = clampVoiceAssistantPosition({
+      x: dragState.startX + deltaX,
+      y: dragState.startY + deltaY,
+    }, viewportSize);
+    if (dragState.dragging) {
+      event.preventDefault();
+      suppressFabClickRef.current = true;
+      window.setTimeout(() => {
+        suppressFabClickRef.current = false;
+      }, 300);
+      setAssistantPosition(finalPosition);
+      writeVoiceAssistantPosition(finalPosition);
+    }
+    dragStateRef.current = null;
+    setAssistantDragging(false);
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // 指针捕获可能已被浏览器释放，忽略即可。
+    }
+  }, [viewportSize]);
+
   useEffect(() => {
     if (!autoSpeak || voiceState !== 'speaking' || !assistantText.trim()) {
       return;
@@ -383,10 +535,11 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   }
 
   return (
-    <div className="voice-assistant-root">
+    <div className="voice-assistant-root" style={assistantRootStyle}>
       <AnimatePresence>
         {open ? (
           <motion.section
+            ref={panelRef}
             initial={{ opacity: 0, y: 18, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.98 }}
@@ -523,8 +676,17 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
 
       <button
         type="button"
-        className={`voice-assistant-fab ${voiceState === 'recording' ? 'is-recording' : ''}`}
-        onClick={() => {
+        className={`voice-assistant-fab ${voiceState === 'recording' ? 'is-recording' : ''} ${assistantDragging ? 'is-dragging' : ''}`}
+        onPointerDown={handleFabPointerDown}
+        onPointerMove={handleFabPointerMove}
+        onPointerUp={finishFabDrag}
+        onPointerCancel={finishFabDrag}
+        onClick={(event) => {
+          if (suppressFabClickRef.current) {
+            event.preventDefault();
+            suppressFabClickRef.current = false;
+            return;
+          }
           if (!open) {
             setOpen(true);
             return;
@@ -905,6 +1067,84 @@ function readDocumentTitle(fallback: string): string {
     return fallback;
   }
   return document.title?.trim() || fallback;
+}
+
+function readViewportSize(): VoiceAssistantSize {
+  if (typeof window === 'undefined') {
+    return { width: 1280, height: 720 };
+  }
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  };
+}
+
+function readVoiceAssistantPosition(): VoiceAssistantPosition {
+  const viewport = readViewportSize();
+  const fallback = getDefaultVoiceAssistantPosition(viewport);
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
+  try {
+    const raw = window.localStorage.getItem(VOICE_POSITION_STORAGE_KEY);
+    if (!raw) {
+      return fallback;
+    }
+    const parsed = JSON.parse(raw) as Partial<VoiceAssistantPosition>;
+    if (!Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)) {
+      return fallback;
+    }
+    return clampVoiceAssistantPosition({
+      x: Number(parsed.x),
+      y: Number(parsed.y),
+    }, viewport);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeVoiceAssistantPosition(position: VoiceAssistantPosition) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.setItem(VOICE_POSITION_STORAGE_KEY, JSON.stringify(position));
+}
+
+function getDefaultVoiceAssistantPosition(viewport: VoiceAssistantSize): VoiceAssistantPosition {
+  return clampVoiceAssistantPosition({
+    x: viewport.width - VOICE_FAB_SIZE - VOICE_DEFAULT_EDGE_GAP,
+    y: viewport.height - VOICE_FAB_SIZE - VOICE_DEFAULT_EDGE_GAP,
+  }, viewport);
+}
+
+function clampVoiceAssistantPosition(position: VoiceAssistantPosition, viewport: VoiceAssistantSize): VoiceAssistantPosition {
+  return {
+    x: clamp(position.x, VOICE_EDGE_GAP, Math.max(VOICE_EDGE_GAP, viewport.width - VOICE_FAB_SIZE - VOICE_EDGE_GAP)),
+    y: clamp(position.y, VOICE_EDGE_GAP, Math.max(VOICE_EDGE_GAP, viewport.height - VOICE_FAB_SIZE - VOICE_EDGE_GAP)),
+  };
+}
+
+function calculateVoicePanelPosition(
+  buttonPosition: VoiceAssistantPosition,
+  panelSize: VoiceAssistantSize,
+  viewport: VoiceAssistantSize,
+): VoiceAssistantPosition {
+  const fitsAbove = buttonPosition.y >= panelSize.height + VOICE_PANEL_GAP + VOICE_EDGE_GAP;
+  const top = fitsAbove
+    ? buttonPosition.y - panelSize.height - VOICE_PANEL_GAP
+    : buttonPosition.y + VOICE_FAB_SIZE + VOICE_PANEL_GAP;
+  return {
+    x: clamp(buttonPosition.x + VOICE_FAB_SIZE - panelSize.width, VOICE_EDGE_GAP, Math.max(VOICE_EDGE_GAP, viewport.width - panelSize.width - VOICE_EDGE_GAP)),
+    y: clamp(top, VOICE_EDGE_GAP, Math.max(VOICE_EDGE_GAP, viewport.height - panelSize.height - VOICE_EDGE_GAP)),
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function positionsEqual(left: VoiceAssistantPosition, right: VoiceAssistantPosition): boolean {
+  return Math.round(left.x) === Math.round(right.x) && Math.round(left.y) === Math.round(right.y);
 }
 
 function readVoiceHistory(): VoiceHistoryItem[] {
