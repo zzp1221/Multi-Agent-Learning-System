@@ -50,6 +50,15 @@ public class VoiceCommandParser {
         if (containsAny(text, "学习计划", "路径规划", "学习路径", "规划路径")) {
             return "GENERATE_STUDY_PLAN";
         }
+        if (containsAny(text, "加入错题本", "加入错题", "放进错题本", "记到错题本", "保存为错题")) {
+            return "ADD_CURRENT_TO_MISTAKE_BOOK";
+        }
+        if (containsAny(text, "总结当前会话", "总结这段对话", "总结一下当前", "总结一下这段")) {
+            return "SUMMARIZE_CURRENT";
+        }
+        if (containsAny(text, "继续这道题", "继续刚才那道题", "接着这道题", "继续刚才的问题")) {
+            return "CONTINUE_CURRENT_QUESTION";
+        }
         if (text.contains("错题本") || containsAny(text, "打开错题", "查看错题", "看看错题", "去错题")) {
             return "OPEN_MISTAKE_BOOK";
         }
@@ -65,10 +74,10 @@ public class VoiceCommandParser {
         if (text.contains("解释") || text.contains("讲解")) {
             return "EXPLAIN_CURRENT";
         }
-        if (text.contains("总结")) {
+        if (containsAny(text, "总结", "概括")) {
             return "SUMMARIZE_CURRENT";
         }
-        if (text.contains("类似题") || text.contains("同类题")) {
+        if (containsAny(text, "类似题", "同类题", "变式题", "再出一题")) {
             return "GENERATE_SIMILAR_QUESTIONS";
         }
         if (text.contains("简单") || text.contains("听不懂")) {
@@ -93,6 +102,11 @@ public class VoiceCommandParser {
         putIfPresent(context, "courseId", request.courseId());
         putIfPresent(context, "knowledgePointId", request.knowledgePointId());
         putIfPresent(context, "pageTitle", request.pageTitle());
+        putIfPresent(context, "currentPath", request.currentPath());
+        putIfPresent(context, "source", request.source());
+        putIfPresent(context, "conversationId", request.conversationId());
+        putIfPresent(context, "recentMessagesSummary", request.recentMessagesSummary());
+        putIfPresent(context, "commandIntent", request.commandIntent());
         return context;
     }
 

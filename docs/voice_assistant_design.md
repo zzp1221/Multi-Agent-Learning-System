@@ -579,12 +579,14 @@ MVP：
 | TTS 流式合成 | 已完成 | `/api/voice/tts/stream` 通过 SSE 返回 base64 PCM 音频 chunk |
 | 语音 session | 已完成 | `/api/voice/sessions` 创建 TTL session，供实时 WebSocket 使用 |
 | 实时 WebSocket ASR | 已完成 | `/api/voice/ws` 支持 100ms 音频 chunk 实时转发百炼 ASR、partial/final 回传、commit、cancel 和 turnId；录音中途 final 只做分段合并 |
-| 语音快捷指令解析 | 已完成 | `/api/voice/commands/parse` 支持停止朗读、继续、解释、总结、类似题等 intent |
+| 语音快捷指令解析 | 已完成 | `/api/voice/commands/parse` 支持停止朗读、继续、解释、总结、类似题、加入错题本、总结当前会话、继续当前题等 intent |
 | 前端悬浮助手 | 已完成 | 全局右下角麦克风按钮、AudioWorklet 实时 PCM 采集、partial 识别展示、可编辑确认、发送 |
 | 复用聊天 SSE | 已完成 | 识别文本创建会话后走现有 `/api/conversations/{id}/messages/stream` |
 | 自动朗读开关 | 已完成 | 前端可开启回答后自动 TTS 播放，支持停止当前任务 |
 | P3 稳定性治理 | 已完成 | provider 建连重试、TTS 首包超时文字降级、结构化指标日志、单用户 session 并发限制 |
 | 页面上下文问答 | 已完成 | 前端传 `voiceContext`，Java 透传到现有聊天参数并映射 `learningContext` |
+| 语音消息同步当前会话 | 已完成 | 语音问答复用当前选中的 `conversationId`，通过前端桥接事件把 user/chunk/done/error 实时写入当前 QNA 消息和会话缓存，不新开会话 |
+| 学习上下文记忆 | 已完成 | `voiceContext` 新增 `currentPath/source/conversationId/recentMessagesSummary/commandIntent`，Java 同步传入 `voiceContext` 与 `learningContext`，供后续 Agent 理解当前学习会话 |
 | 朗读暂停/继续 | 已完成 | 本地 `AudioContext.suspend/resume`，支持暂停首包未到场景 |
 | 语音文本历史 | 已完成 | 最近 5 条语音文本和回答摘要保存在浏览器 `localStorage`，可点击重发，不保存原始音频 |
 | 学习动作控制 | 已完成 | 支持打开错题本、开始今日复习、打开个人画像、回到问答、生成学习路径规划 |

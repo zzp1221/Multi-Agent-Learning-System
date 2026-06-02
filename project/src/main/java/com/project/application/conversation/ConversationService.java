@@ -399,6 +399,11 @@ public class ConversationService {
         putLearningContext(learningContext, "course", voiceContext.get("courseId"));
         putLearningContext(learningContext, "knowledgePoint", voiceContext.get("knowledgePointId"));
         putLearningContext(learningContext, "pageTitle", voiceContext.get("pageTitle"));
+        putLearningContext(learningContext, "currentPath", voiceContext.get("currentPath"));
+        putLearningContext(learningContext, "source", voiceContext.get("source"));
+        putLearningContext(learningContext, "conversationId", voiceContext.get("conversationId"));
+        putLearningContext(learningContext, "recentMessagesSummary", voiceContext.get("recentMessagesSummary"));
+        putLearningContext(learningContext, "commandIntent", voiceContext.get("commandIntent"));
         return learningContext;
     }
 

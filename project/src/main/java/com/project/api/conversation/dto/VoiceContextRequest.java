@@ -19,7 +19,22 @@ public record VoiceContextRequest(
     String knowledgePointId,
 
     @Size(max = 120, message = "页面标题不能超过 120 字")
-    String pageTitle
+    String pageTitle,
+
+    @Size(max = 160, message = "当前路径不能超过 160 字")
+    String currentPath,
+
+    @Size(max = 40, message = "来源不能超过 40 字")
+    String source,
+
+    @Size(max = 80, message = "会话 ID 不能超过 80 字")
+    String conversationId,
+
+    @Size(max = 800, message = "最近对话摘要不能超过 800 字")
+    String recentMessagesSummary,
+
+    @Size(max = 60, message = "语音意图不能超过 60 字")
+    String commandIntent
 ) {
     public Map<String, String> normalizedMap() {
         Map<String, String> context = new LinkedHashMap<>();
@@ -28,6 +43,11 @@ public record VoiceContextRequest(
         putIfPresent(context, "courseId", courseId);
         putIfPresent(context, "knowledgePointId", knowledgePointId);
         putIfPresent(context, "pageTitle", pageTitle);
+        putIfPresent(context, "currentPath", currentPath);
+        putIfPresent(context, "source", source);
+        putIfPresent(context, "conversationId", conversationId);
+        putIfPresent(context, "recentMessagesSummary", recentMessagesSummary);
+        putIfPresent(context, "commandIntent", commandIntent);
         return context;
     }
 

@@ -10,6 +10,10 @@ import {
 } from './LearningStudioDemoPage.types';
 import { readConversationChunk } from './LearningStudioDemoPage.utils';
 import {
+  VOICE_CONVERSATION_STREAM_EVENT,
+  readVoiceConversationStreamDetail,
+} from '../utils/voiceConversationBridge';
+import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
   QNA_CONVERSATION_CACHE_STORAGE_KEY,
   QNA_SNAPSHOT_STORAGE_KEY,
@@ -550,6 +554,105 @@ export function useLearningStudioQna({
       window.removeEventListener('app:open-conversation', onOpenConversation as EventListener);
     };
   }, [mode, openExistingConversation]);
+
+  useEffect(() => {
+    const handleVoiceConversationStream = (event: Event) => {
+      const detail = readVoiceConversationStreamDetail(event);
+      if (!detail) {
+        return;
+      }
+      const conversationId = detail.conversationId.trim();
+      const streamId = detail.streamId.trim();
+      const userMessageId = `voice-user-${streamId}`;
+      const assistantMessageId = `voice-assistant-${streamId}`;
+
+      if (detail.phase === 'start') {
+        const userText = detail.userText?.trim();
+        if (!userText) {
+          return;
+        }
+        updateQnaConversationMessages(
+          conversationId,
+          (messages) => {
+            if (messages.some((item) => item.id === userMessageId)) {
+              return messages;
+            }
+            const baseMessages = messages.length
+              ? messages
+              : [{ id: 'qna-greeting', role: 'assistant' as const, content: QNA_GREETING }];
+            return [
+              ...baseMessages,
+              { id: userMessageId, role: 'user' as const, content: userText },
+              { id: assistantMessageId, role: 'assistant' as const, content: '' },
+            ];
+          },
+          { qnaInput: '', qnaState: 'QNA_STREAMING' },
+        );
+        return;
+      }
+
+      if (detail.phase === 'chunk') {
+        const chunk = detail.chunk ?? '';
+        if (!chunk) {
+          return;
+        }
+        updateQnaConversationMessages(
+          conversationId,
+          (messages) => {
+            let updatedAssistant = false;
+            const nextMessages = messages.map((item) => {
+              if (item.id !== assistantMessageId) {
+                return item;
+              }
+              updatedAssistant = true;
+              return { ...item, content: (item.content ?? '') + chunk };
+            });
+            return updatedAssistant
+              ? nextMessages
+              : [...messages, { id: assistantMessageId, role: 'assistant' as const, content: chunk }];
+          },
+          { qnaState: 'QNA_STREAMING' },
+        );
+        return;
+      }
+
+      if (detail.phase === 'done') {
+        updateQnaConversationMessages(conversationId, (messages) => messages, { qnaState: 'QNA_IDLE' });
+        return;
+      }
+
+      if (detail.phase === 'error') {
+        const errorText = `语音对话失败：${detail.errorMessage || '请稍后重试'}`;
+        updateQnaConversationMessages(
+          conversationId,
+          (messages) => {
+            let updatedAssistant = false;
+            const nextMessages = messages.map((item) => {
+              if (item.id !== assistantMessageId) {
+                return item;
+              }
+              updatedAssistant = true;
+              return {
+                ...item,
+                content: item.content && !isProcessingOnlyAssistantContent(item.content)
+                  ? item.content
+                  : errorText,
+              };
+            });
+            return updatedAssistant
+              ? nextMessages
+              : [...messages, { id: assistantMessageId, role: 'assistant' as const, content: errorText }];
+          },
+          { qnaState: 'QNA_IDLE' },
+        );
+      }
+    };
+
+    window.addEventListener(VOICE_CONVERSATION_STREAM_EVENT, handleVoiceConversationStream);
+    return () => {
+      window.removeEventListener(VOICE_CONVERSATION_STREAM_EVENT, handleVoiceConversationStream);
+    };
+  }, [updateQnaConversationMessages]);
 
   const handleQnaSend = async () => {
     const text = qnaInput.trim();

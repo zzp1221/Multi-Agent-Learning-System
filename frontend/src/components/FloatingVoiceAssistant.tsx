@@ -20,10 +20,14 @@ import { getErrorMessage } from '../api/request';
 import { voiceApi, type VoicePageContext, type VoiceRealtimeEvent } from '../api/voice';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
+  QNA_CONVERSATION_CACHE_STORAGE_KEY,
   SELECTED_CONVERSATION_STORAGE_KEY,
+  conversationCacheKey,
+  type PersistedQnaConversationCache,
   type SelectedConversationSnapshot,
 } from '../pages/LearningStudioDemoPage.model';
 import { readConversationChunk } from '../pages/LearningStudioDemoPage.utils';
+import { dispatchVoiceConversationStream } from '../utils/voiceConversationBridge';
 import { queueVoicePageAction } from '../utils/voicePageActions';
 
 type VoiceState = 'idle' | 'recording' | 'transcribing' | 'ready' | 'chatting' | 'speaking' | 'error';
@@ -72,6 +76,8 @@ const VOICE_PANEL_GAP = 14;
 const VOICE_PANEL_DEFAULT_WIDTH = 380;
 const VOICE_PANEL_DEFAULT_HEIGHT = 520;
 const VOICE_DRAG_THRESHOLD_PX = 6;
+const VOICE_RECENT_CONTEXT_MESSAGE_LIMIT = 6;
+const VOICE_RECENT_CONTEXT_MAX_LENGTH = 600;
 
 export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal }: FloatingVoiceAssistantProps) {
   const location = useLocation();
@@ -344,15 +350,19 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (!text || !requireLogin()) {
       return;
     }
+    const activeConversationId = readActiveVoiceConversationId();
+    let commandIntent = 'ASK';
     try {
-      const command = await voiceApi.parseCommand(text, pageContext);
+      const command = await voiceApi.parseCommand(text, buildVoicePageContext(location.pathname, {
+        conversationId: activeConversationId,
+      }));
+      commandIntent = command.intent || 'ASK';
       if (handleLocalVoiceCommand(command.intent)) {
         return;
       }
     } catch {
       // 指令解析失败不阻断普通问答。
     }
-    const activeConversationId = readActiveVoiceConversationId();
     if (!activeConversationId) {
       setOpen(true);
       setNoticeMessage('请先在左侧选择一个已有会话，再用语音继续对话');
@@ -368,6 +378,13 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     setNoticeMessage('');
     setVoiceState('chatting');
     beginHistoryTurn(text);
+    const streamId = `voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    dispatchVoiceConversationStream({
+      conversationId: activeConversationId,
+      streamId,
+      phase: 'start',
+      userText: text,
+    });
     try {
       await conversationApi.streamMessage(
         activeConversationId,
@@ -376,7 +393,10 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
           serviceType: 'TUTORING',
           webSearchEnabled: false,
           reasoningMode: 'NORMAL',
-          voiceContext: pageContext,
+          voiceContext: buildVoicePageContext(location.pathname, {
+            conversationId: activeConversationId,
+            commandIntent,
+          }),
         },
         {
           onEvent: (event: ConversationStreamEvent) => {
@@ -384,6 +404,12 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
             if (!chunk) {
               return;
             }
+            dispatchVoiceConversationStream({
+              conversationId: activeConversationId,
+              streamId,
+              phase: 'chunk',
+              chunk,
+            });
             setAssistantText((prev) => {
               const next = prev + chunk;
               assistantTextRef.current = next;
@@ -394,13 +420,25 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
             chatAbortRef.current = null;
             finishHistoryTurn(assistantTextRef.current);
             setVoiceState(autoSpeak ? 'speaking' : 'idle');
+            dispatchVoiceConversationStream({
+              conversationId: activeConversationId,
+              streamId,
+              phase: 'done',
+            });
             dispatchVoiceConversationUpdated(activeConversationId);
           },
           onError: (error) => {
+            const message = getErrorMessage(error);
             chatAbortRef.current = null;
             cancelHistoryTurn();
             setVoiceState('error');
-            setErrorMessage(getErrorMessage(error));
+            setErrorMessage(message);
+            dispatchVoiceConversationStream({
+              conversationId: activeConversationId,
+              streamId,
+              phase: 'error',
+              errorMessage: message,
+            });
             dispatchVoiceConversationUpdated(activeConversationId);
           },
         },
@@ -410,10 +448,17 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       chatAbortRef.current = null;
       cancelHistoryTurn();
       setVoiceState('error');
-      setErrorMessage(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setErrorMessage(message);
+      dispatchVoiceConversationStream({
+        conversationId: activeConversationId,
+        streamId,
+        phase: 'error',
+        errorMessage: message,
+      });
       dispatchVoiceConversationUpdated(activeConversationId);
     }
-  }, [autoSpeak, pageContext, requireLogin]);
+  }, [autoSpeak, location.pathname, requireLogin]);
 
   const sendRecognizedText = useCallback(async () => {
     await sendVoiceText(recognizedText);
@@ -1050,7 +1095,19 @@ function parseRealtimeEvent(raw: string): VoiceRealtimeEvent | null {
   }
 }
 
-function buildVoicePageContext(pathname: string): VoicePageContext {
+function buildVoicePageContext(pathname: string, overrides: Partial<VoicePageContext> = {}): VoicePageContext {
+  const baseContext = buildBaseVoicePageContext(pathname);
+  return {
+    ...baseContext,
+    currentPath: pathname,
+    source: 'voice_assistant',
+    ...overrides,
+    recentMessagesSummary: overrides.recentMessagesSummary
+      ?? readRecentConversationSummary(overrides.conversationId),
+  };
+}
+
+function buildBaseVoicePageContext(pathname: string): VoicePageContext {
   if (pathname.startsWith('/engine')) {
     return {
       pageType: 'learning_service',
@@ -1073,6 +1130,28 @@ function buildVoicePageContext(pathname: string): VoicePageContext {
     pageType: 'qna_chat',
     pageTitle: readDocumentTitle('智能对话'),
   };
+}
+
+function readRecentConversationSummary(conversationId?: string): string {
+  if (typeof window === 'undefined' || !conversationId) {
+    return '';
+  }
+  try {
+    const raw = window.sessionStorage.getItem(QNA_CONVERSATION_CACHE_STORAGE_KEY);
+    if (!raw) {
+      return '';
+    }
+    const cache = JSON.parse(raw) as PersistedQnaConversationCache;
+    const messages = cache[conversationCacheKey(conversationId)]?.qnaMessages ?? [];
+    return messages
+      .filter((item) => item.content?.trim() && item.id !== 'qna-greeting')
+      .slice(-VOICE_RECENT_CONTEXT_MESSAGE_LIMIT)
+      .map((item) => `${item.role === 'user' ? '用户' : '助手'}：${item.content.trim().replace(/\s+/g, ' ')}`)
+      .join('\n')
+      .slice(0, VOICE_RECENT_CONTEXT_MAX_LENGTH);
+  } catch {
+    return '';
+  }
 }
 
 function readDocumentTitle(fallback: string): string {

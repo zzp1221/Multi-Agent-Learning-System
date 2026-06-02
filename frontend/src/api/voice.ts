@@ -30,6 +30,11 @@ export interface VoicePageContext {
   courseId?: string;
   knowledgePointId?: string;
   pageTitle?: string;
+  currentPath?: string;
+  source?: string;
+  conversationId?: string;
+  recentMessagesSummary?: string;
+  commandIntent?: string;
 }
 
 export interface VoiceTtsEvent {

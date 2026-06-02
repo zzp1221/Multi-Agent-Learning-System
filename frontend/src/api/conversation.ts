@@ -19,6 +19,11 @@ export interface ConversationMessageStreamRequest {
     courseId?: string;
     knowledgePointId?: string;
     pageTitle?: string;
+    currentPath?: string;
+    source?: string;
+    conversationId?: string;
+    recentMessagesSummary?: string;
+    commandIntent?: string;
   };
 }
 
