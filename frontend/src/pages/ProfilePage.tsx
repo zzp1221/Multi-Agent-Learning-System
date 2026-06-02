@@ -14,6 +14,7 @@ import {
   UserRoundSearch,
 } from 'lucide-react';
 import RadarChart from '../components/RadarChart';
+import MermaidDiagram from '../components/MermaidDiagram';
 import { getErrorMessage } from '../api/request';
 import {
   smartEngineApi,
@@ -1058,6 +1059,37 @@ const NODE_STATUS_COLORS: Record<string, { bg: string; border: string; text: str
   NOT_STARTED: { bg: 'bg-slate-50 dark:bg-slate-800/60',  border: 'border-slate-200 dark:border-slate-700',  text: 'text-slate-500 dark:text-slate-400',  label: '未开始' },
 };
 
+function escapeMermaidLabel(value: string): string {
+  return value
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .trim();
+}
+
+function buildKnowledgeGraphMermaid(graph: KnowledgeGraphResponse): string {
+  const nodeIds = new Map<string, string>();
+  const mermaidLines = ['flowchart TD'];
+
+  graph.nodes.forEach((node, index) => {
+    const nodeId = `node_${index}`;
+    nodeIds.set(node.key, nodeId);
+    const label = node.topic.length > 12 ? `${node.topic.slice(0, 12)}…` : node.topic;
+    const pct = Math.round(node.mastery * 100);
+    mermaidLines.push(`  ${nodeId}["${escapeMermaidLabel(`${label}\n${pct}%`)}"]`);
+  });
+
+  graph.edges.forEach((edge) => {
+    const from = nodeIds.get(edge.from);
+    const to = nodeIds.get(edge.to);
+    if (from && to) {
+      mermaidLines.push(`  ${from} --> ${to}`);
+    }
+  });
+
+  return mermaidLines.join('\n');
+}
+
 function KnowledgeGraphPanel(props: {
   graph: KnowledgeGraphResponse | null;
   loading: boolean;
@@ -1088,21 +1120,7 @@ function KnowledgeGraphPanel(props: {
   }
 
   const { nodes, edges, nextRecommended } = props.graph;
-
-  // 构建 Mermaid flowchart 语法
-  const mermaidLines = ['flowchart TD'];
-  for (const node of nodes) {
-    const safeKey = node.key.replace(/[^a-zA-Z0-9一-鿿_]/g, '_');
-    const label = node.topic.length > 12 ? `${node.topic.slice(0, 12)}…` : node.topic;
-    const pct = Math.round(node.mastery * 100);
-    mermaidLines.push(`  ${safeKey}["${label}\\n${pct}%"]`);
-  }
-  for (const edge of edges) {
-    const fk = edge.from.replace(/[^a-zA-Z0-9一-鿿_]/g, '_');
-    const tk = edge.to.replace(/[^a-zA-Z0-9一-鿿_]/g, '_');
-    mermaidLines.push(`  ${fk} --> ${tk}`);
-  }
-  const mermaidCode = mermaidLines.join('\n');
+  const mermaidCode = buildKnowledgeGraphMermaid(props.graph);
 
   return (
     <div className="mt-4 space-y-4">
@@ -1115,6 +1133,8 @@ function KnowledgeGraphPanel(props: {
           </span>
         ))}
       </div>
+
+      <MermaidDiagram chart={mermaidCode} />
 
       {/* 节点卡片列表 */}
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
