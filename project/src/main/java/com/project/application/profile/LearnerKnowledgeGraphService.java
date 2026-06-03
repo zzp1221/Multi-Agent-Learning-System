@@ -17,7 +17,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -113,7 +115,7 @@ public class LearnerKnowledgeGraphService {
     }
 
     private List<KnowledgeNodeDto> sortNodesForMasteryGraph(List<KnowledgeNodeDto> nodes) {
-        return nodes.stream()
+        List<KnowledgeNodeDto> sortedNodes = nodes.stream()
             .filter(node -> !isNonKnowledgeDimension(node.topic()))
             .sorted(
                 Comparator
@@ -122,6 +124,79 @@ public class LearnerKnowledgeGraphService {
                     .thenComparing(KnowledgeNodeDto::topic, String.CASE_INSENSITIVE_ORDER)
             )
             .toList();
+        return compactDuplicateTopics(sortedNodes);
+    }
+
+    private List<KnowledgeNodeDto> compactDuplicateTopics(List<KnowledgeNodeDto> nodes) {
+        Map<String, KnowledgeNodeDto> compacted = new LinkedHashMap<>();
+        for (KnowledgeNodeDto node : nodes) {
+            String topicKey = normalizeTopicKey(node.topic());
+            if (topicKey.isBlank()) {
+                continue;
+            }
+            KnowledgeNodeDto existing = compacted.get(topicKey);
+            if (existing == null || shouldReplaceTopicRepresentative(node, existing)) {
+                compacted.put(topicKey, node);
+            }
+        }
+        return new ArrayList<>(compacted.values());
+    }
+
+    private boolean shouldReplaceTopicRepresentative(KnowledgeNodeDto candidate, KnowledgeNodeDto existing) {
+        int statusComparison = Integer.compare(statusRank(candidate.status()), statusRank(existing.status()));
+        if (statusComparison != 0) {
+            return statusComparison < 0;
+        }
+        int masteryComparison = Double.compare(candidate.mastery(), existing.mastery());
+        if (masteryComparison != 0) {
+            return masteryComparison < 0;
+        }
+        return candidate.topic().length() < existing.topic().length();
+    }
+
+    private String normalizeTopicKey(String topic) {
+        String normalized = topic == null ? "" : topic.trim().toLowerCase(Locale.ROOT);
+        normalized = normalized
+            .replace('\uFF1A', ':')
+            .replace('\u3002', '.')
+            .replace('\u00B7', '.')
+            .replace('\u30FB', '.')
+            .replace('\uFF0F', '/')
+            .replace('\uFF0D', '-');
+        int splitIndex = firstTopicDelimiter(normalized);
+        if (splitIndex > 0) {
+            normalized = normalized.substring(0, splitIndex);
+        }
+        normalized = normalized.replaceAll("[\\s_]+", "");
+        return stripGenericTopicSuffix(normalized);
+    }
+
+    private int firstTopicDelimiter(String topic) {
+        int first = -1;
+        for (char delimiter : new char[] { ':', '.', '/', '\\', '-', '|' }) {
+            int index = topic.indexOf(delimiter);
+            if (index >= 0 && (first < 0 || index < first)) {
+                first = index;
+            }
+        }
+        return first;
+    }
+
+    private String stripGenericTopicSuffix(String topic) {
+        String[] suffixes = {
+            "\u57fa\u7840\u8bed\u6cd5\u5165\u95e8",
+            "\u57fa\u7840\u8bed\u6cd5",
+            "\u57fa\u7840\u5165\u95e8",
+            "\u5165\u95e8",
+            "\u57fa\u7840",
+            "\u6982\u8ff0"
+        };
+        for (String suffix : suffixes) {
+            if (topic.endsWith(suffix) && topic.length() > suffix.length()) {
+                return topic.substring(0, topic.length() - suffix.length());
+            }
+        }
+        return topic;
     }
 
     private boolean isNonKnowledgeDimension(String topic) {

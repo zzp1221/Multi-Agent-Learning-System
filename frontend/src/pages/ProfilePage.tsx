@@ -1058,6 +1058,7 @@ const NODE_STATUS_COLORS: Record<string, { bg: string; border: string; text: str
   NOT_STARTED: { bg: 'bg-slate-50 dark:bg-slate-800/60',  border: 'border-slate-200 dark:border-slate-700',  text: 'text-slate-500 dark:text-slate-400',  label: '未开始' },
 };
 const KNOWLEDGE_STATUS_ORDER: Array<KnowledgeGraphResponse['nodes'][number]['status']> = ['WEAK', 'IN_PROGRESS', 'NOT_STARTED', 'MASTERED'];
+type KnowledgeGraphNodeView = KnowledgeGraphResponse['nodes'][number];
 
 function KnowledgeGraphPanel(props: {
   graph: KnowledgeGraphResponse | null;
@@ -1088,120 +1089,220 @@ function KnowledgeGraphPanel(props: {
     );
   }
 
-  const { nodes, nextRecommended } = props.graph;
+  const { nextRecommended } = props.graph;
+  const nodes = compactKnowledgeGraphNodes(props.graph.nodes);
   const nodeByKey = new Map(nodes.map((node) => [node.key, node]));
   const recommendedNodes = nextRecommended
     .map((key) => nodeByKey.get(key))
-    .filter((node): node is KnowledgeGraphResponse['nodes'][number] => Boolean(node));
-  const recommendedRankOf = (key: string) => {
-    const index = nextRecommended.indexOf(key);
-    return index >= 0 ? index + 1 : undefined;
-  };
-  const groupedNodes = KNOWLEDGE_STATUS_ORDER
-    .map((status) => ({ status, nodes: nodes.filter((node) => node.status === status) }))
-    .filter((group) => group.nodes.length > 0);
+    .filter((node): node is KnowledgeGraphNodeView => Boolean(node));
   const focusNodes = recommendedNodes.length > 0
     ? recommendedNodes.slice(0, 3)
     : nodes
       .filter((node) => node.status === 'WEAK' || node.status === 'IN_PROGRESS')
       .sort((a, b) => a.mastery - b.mastery)
       .slice(0, 3);
+  const focusKeySet = new Set(focusNodes.map((node) => node.key));
+  const groupedNodes = KNOWLEDGE_STATUS_ORDER
+    .map((status) => ({
+      status,
+      nodes: nodes
+        .filter((node) => node.status === status && !focusKeySet.has(node.key))
+        .sort((a, b) => a.mastery - b.mastery),
+    }))
+    .filter((group) => group.nodes.length > 0);
   const visibleGroups = groupedNodes.map((group) => ({
     ...group,
-    nodes: group.status === 'MASTERED'
-      ? group.nodes.slice(0, 6)
-      : group.nodes.slice(0, 8),
+    nodes: group.nodes.slice(0, group.status === 'MASTERED' ? 4 : 6),
   }));
-  const hiddenMasteredCount = Math.max(0, (groupedNodes.find((group) => group.status === 'MASTERED')?.nodes.length ?? 0) - 6);
+  const hiddenCount = groupedNodes.reduce(
+    (total, group) => total + Math.max(0, group.nodes.length - (group.status === 'MASTERED' ? 4 : 6)),
+    0,
+  );
+  const statusCounts = KNOWLEDGE_STATUS_ORDER.map((status) => ({
+    status,
+    count: nodes.filter((node) => node.status === status).length,
+  }));
 
   return (
     <div className="mt-4 space-y-4">
-      {/* 图例 */}
-      <div className="flex flex-wrap gap-3">
-        {Object.entries(NODE_STATUS_COLORS).map(([status, style]) => (
-          <span key={status} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${style.bg} ${style.border} ${style.text}`}>
-            <span className={`h-2 w-2 rounded-full ${status === 'MASTERED' ? 'bg-emerald-500' : status === 'IN_PROGRESS' ? 'bg-blue-500' : status === 'WEAK' ? 'bg-amber-500' : 'bg-slate-400'}`} />
-            {style.label}
-          </span>
-        ))}
+      <div className="grid gap-2 sm:grid-cols-4">
+        {statusCounts.map(({ status, count }) => {
+          const style = NODE_STATUS_COLORS[status] ?? NODE_STATUS_COLORS.NOT_STARTED;
+          return (
+            <div key={status} className={`rounded-xl border px-3 py-2 ${style.bg} ${style.border}`}>
+              <div className={`text-xs font-medium ${style.text}`}>{style.label}</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{count}</div>
+            </div>
+          );
+        })}
       </div>
 
       {focusNodes.length > 0 && (
         <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-4 dark:border-blue-900/40 dark:bg-blue-950/30">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-blue-700 dark:text-blue-300">下一步优先关注</div>
-            <div className="text-xs text-blue-500 dark:text-blue-400">优先处理掌握度较低的知识点</div>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <div className="text-sm font-semibold text-blue-700 dark:text-blue-300">下一步优先关注</div>
+              <div className="mt-1 text-xs text-blue-500 dark:text-blue-400">先处理这几个低掌握度知识点，下方列表不再重复展示。</div>
+            </div>
+            <span className="rounded-full bg-white/70 px-2.5 py-1 text-xs font-medium text-blue-600 ring-1 ring-blue-100 dark:bg-slate-900/50 dark:text-blue-300 dark:ring-blue-900/50">
+              {focusNodes.length} 个重点
+            </span>
           </div>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-2 lg:grid-cols-3">
             {focusNodes.map((node, index) => (
-              <KnowledgeNodeCard key={node.key} node={node} recommendedRank={index + 1} />
+              <KnowledgeFocusCard key={node.key} node={node} rank={index + 1} />
             ))}
           </div>
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        {visibleGroups.map((group) => {
-          const style = NODE_STATUS_COLORS[group.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
-          return (
-            <section key={group.status} className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/40">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className={`text-sm font-semibold ${style.text}`}>{style.label}</div>
-                <div className="text-xs text-slate-400 dark:text-slate-500">{group.nodes.length} 个知识点</div>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {group.nodes.map((node) => (
-                  <KnowledgeNodeCard
-                    key={node.key}
-                    node={node}
-                    recommendedRank={recommendedRankOf(node.key)}
-                  />
-                ))}
-              </div>
-            </section>
-          );
-        })}
-      </div>
+      {visibleGroups.length > 0 ? (
+        <div className="rounded-xl border border-slate-100 bg-white/70 px-4 py-4 dark:border-slate-800 dark:bg-slate-900/40">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">其余知识点概览</div>
+            <div className="text-xs text-slate-400 dark:text-slate-500">按状态归类，低掌握度在前</div>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {visibleGroups.map((group) => {
+              const style = NODE_STATUS_COLORS[group.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
+              return (
+                <section key={group.status} className="min-w-0">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className={`text-sm font-semibold ${style.text}`}>{style.label}</div>
+                    <div className="text-xs text-slate-400 dark:text-slate-500">{group.nodes.length} 个</div>
+                  </div>
+                  <div className="space-y-2">
+                    {group.nodes.map((node) => (
+                      <KnowledgeNodeRow key={node.key} node={node} />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
+          当前只有优先关注项，其余知识点会在继续学习后补充。
+        </div>
+      )}
 
-      {hiddenMasteredCount > 0 && (
+      {hiddenCount > 0 && (
         <div className="text-xs text-slate-400 dark:text-slate-500">
-          已隐藏 {hiddenMasteredCount} 个已掌握知识点，页面优先保留当前更需要关注的内容。
+          已收起 {hiddenCount} 个低优先级知识点，页面优先保留当前更需要关注的内容。
         </div>
       )}
     </div>
   );
 }
 
-function KnowledgeNodeCard(props: {
-  node: KnowledgeGraphResponse['nodes'][number];
-  recommendedRank?: number;
+function KnowledgeFocusCard(props: {
+  node: KnowledgeGraphNodeView;
+  rank: number;
 }) {
-  const { node, recommendedRank } = props;
+  const { node, rank } = props;
   const style = NODE_STATUS_COLORS[node.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
   const pct = Math.round(node.mastery * 100);
-  const barColor = node.status === 'MASTERED'
-    ? 'bg-emerald-500'
-    : node.status === 'IN_PROGRESS'
-      ? 'bg-blue-500'
-      : node.status === 'WEAK'
-        ? 'bg-amber-500'
-        : 'bg-slate-300';
+  const barColor = knowledgeProgressColor(node.status);
 
   return (
-    <div className={`relative rounded-xl border px-3 py-3 text-sm ${style.bg} ${style.border}`}>
-      {recommendedRank && recommendedRank > 0 && (
-        <span className="absolute right-2 top-2 rounded-full bg-primary-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-          推荐 {recommendedRank}
+    <div className={`rounded-xl border px-3 py-3 ${style.bg} ${style.border}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-primary-600 dark:text-primary-300">重点 {rank}</div>
+          <div className={`mt-1 truncate text-sm font-semibold ${style.text}`}>{node.topic}</div>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${style.bg} ${style.text} ring-1 ring-inset ring-current/20`}>
+          {style.label}
         </span>
-      )}
-      <div className={`pr-14 font-medium leading-6 ${style.text}`}>{node.topic}</div>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/60 dark:bg-slate-700/60">
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/70 dark:bg-slate-700/70">
           <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
         </div>
-        <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{pct}%</span>
+        <span className="shrink-0 text-xs font-medium text-slate-500 dark:text-slate-400">{pct}%</span>
       </div>
-      <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">{style.label}</div>
     </div>
   );
+}
+
+function KnowledgeNodeRow(props: {
+  node: KnowledgeGraphNodeView;
+}) {
+  const { node } = props;
+  const style = NODE_STATUS_COLORS[node.status] ?? NODE_STATUS_COLORS.NOT_STARTED;
+  const pct = Math.round(node.mastery * 100);
+  const barColor = knowledgeProgressColor(node.status);
+
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/30">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className={`min-w-0 truncate text-sm font-medium ${style.text}`}>{node.topic}</div>
+        <div className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{pct}%</div>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white dark:bg-slate-800">
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${style.bg} ${style.text}`}>
+          {style.label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function compactKnowledgeGraphNodes(nodes: KnowledgeGraphNodeView[]): KnowledgeGraphNodeView[] {
+  const byTopic = new Map<string, KnowledgeGraphNodeView>();
+  for (const node of nodes) {
+    const topicKey = normalizeKnowledgeTopicKey(node.topic);
+    if (!topicKey) {
+      continue;
+    }
+    const existing = byTopic.get(topicKey);
+    if (!existing || shouldUseKnowledgeNode(node, existing)) {
+      byTopic.set(topicKey, node);
+    }
+  }
+  return Array.from(byTopic.values());
+}
+
+function shouldUseKnowledgeNode(candidate: KnowledgeGraphNodeView, existing: KnowledgeGraphNodeView): boolean {
+  const statusDelta = knowledgeStatusRank(candidate.status) - knowledgeStatusRank(existing.status);
+  if (statusDelta !== 0) {
+    return statusDelta < 0;
+  }
+  if (candidate.mastery !== existing.mastery) {
+    return candidate.mastery < existing.mastery;
+  }
+  return candidate.topic.length < existing.topic.length;
+}
+
+function normalizeKnowledgeTopicKey(topic: string): string {
+  const normalized = topic
+    .trim()
+    .toLowerCase()
+    .replace(/[：。·・／]/g, (char) => ({ '：': ':', '。': '.', '·': '.', '・': '.', '／': '/' }[char] ?? char));
+  const head = normalized.split(/[:./\\|_-]/)[0] || normalized;
+  return head
+    .replace(/\s+/g, '')
+    .replace(/(基础语法入门|基础语法|基础入门|入门|基础|概述)$/u, '');
+}
+
+function knowledgeStatusRank(status: KnowledgeGraphNodeView['status']): number {
+  const index = KNOWLEDGE_STATUS_ORDER.indexOf(status);
+  return index >= 0 ? index : KNOWLEDGE_STATUS_ORDER.length;
+}
+
+function knowledgeProgressColor(status: KnowledgeGraphNodeView['status']): string {
+  if (status === 'MASTERED') {
+    return 'bg-emerald-500';
+  }
+  if (status === 'IN_PROGRESS') {
+    return 'bg-blue-500';
+  }
+  if (status === 'WEAK') {
+    return 'bg-amber-500';
+  }
+  return 'bg-slate-300';
 }

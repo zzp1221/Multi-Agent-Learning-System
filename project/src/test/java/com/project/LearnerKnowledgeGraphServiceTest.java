@@ -33,6 +33,7 @@ class LearnerKnowledgeGraphServiceTest {
         assertThat(response.nodes())
             .extracting("topic")
             .containsExactly("ThreadLocal", "Callable", "并发编程基础", "变量声明", "线程安全");
+        assertThat(response.nodes()).hasSize(5);
         assertThat(response.nextRecommended()).contains("threadlocal");
     }
 
@@ -44,8 +45,10 @@ class LearnerKnowledgeGraphServiceTest {
             node("变量声明", "variable", 0.0, "NOT_STARTED"),
             node("学习主动性：并发编程", "initiative", 0.05, "WEAK"),
             node("Callable", "callable", 0.27, "WEAK"),
+            node("Callable:回调细节", "callable_detail", 0.33, "WEAK"),
             node("并发编程基础", "concurrency", 0.4, "IN_PROGRESS"),
             node("ThreadLocal", "threadlocal", 0.19, "WEAK"),
+            node("ThreadLocal.detail", "threadlocal_detail", 0.31, "IN_PROGRESS"),
             node("线程安全", "thread_safe", 0.0, "NOT_STARTED")
         );
         return mapWithMapper(mapper, rows);
