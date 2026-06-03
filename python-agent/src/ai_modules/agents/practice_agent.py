@@ -8,7 +8,7 @@ from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.async_utils import cancel_and_await
-from src.ai_modules.llms import PracticeLLMClientFactory, PracticeQuestionGenerator
+from src.ai_modules.llms import PracticeQuestionGenerator
 from src.ai_modules.memory import InMemoryPracticeStore, PostgresPracticeStore, PracticeStore
 from src.ai_modules.models import (
     ProgressPayload,
@@ -31,13 +31,11 @@ class PracticeAgent(PlaceholderAgent):
 
     def __init__(
         self,
-        llm_client: Any | None = None,
         practice_store: PracticeStore | None = None,
         question_generator: Any | None = None,
         heartbeat_interval_seconds: float = 15.0,
     ) -> None:
         super().__init__("Practice Agent", "practice")
-        self.llm_client = llm_client or PracticeLLMClientFactory.create()
         self.practice_store = practice_store or PostgresPracticeStore()
         self.fallback_practice_store = InMemoryPracticeStore()
         self.question_generator = question_generator or PracticeQuestionGenerator()
@@ -210,7 +208,15 @@ class PracticeAgent(PlaceholderAgent):
         questions = raw_batch.get("questions")
         if not isinstance(questions, list) or not questions:
             return None
-        return QuestionBatchPayload.model_validate(raw_batch).model_dump(by_alias=True)
+        batch = QuestionBatchPayload.model_validate(raw_batch).model_dump(by_alias=True)
+        return self._sanitize_existing_question_batch(batch)
+
+    def _sanitize_existing_question_batch(self, batch: dict[str, Any]) -> dict[str, Any]:
+        topic = str(batch.get("topic") or "当前主题")
+        batch["title"] = f"{topic} 练习题"
+        batch["submitLabel"] = None
+        batch["assessmentDimension"] = None
+        return batch
 
     def _build_question_provenance(self, *, params: dict[str, Any]) -> dict[str, Any]:
         return build_llm_provenance(

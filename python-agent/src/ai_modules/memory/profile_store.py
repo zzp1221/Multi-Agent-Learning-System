@@ -94,6 +94,7 @@ class PostgresProfileStore:
         }
         self._connect_fn = connect_fn
         self._embedding_fn = embedding_fn
+        self._table_ensured: bool = False
 
     def _connect(self) -> Any:
         if self._connect_fn is not None:
@@ -140,6 +141,8 @@ class PostgresProfileStore:
                 )
 
     def _ensure_feature_table(self, cur: Any) -> None:
+        if self._table_ensured:
+            return
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS app.learner_feature (
@@ -291,6 +294,7 @@ class PostgresProfileStore:
             ON app.learner_feature(user_id, status, resolved_at DESC)
             """
         )
+        self._table_ensured = True
 
     def _fetch_active_features(self, cur: Any, user_id: str) -> list[dict[str, Any]]:
         cur.execute(

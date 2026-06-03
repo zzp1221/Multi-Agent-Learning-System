@@ -37,7 +37,7 @@ AI agent 自主优化"智学引擎"全栈项目的运行指令。人类写这份
 | Python Agent 工具、检索逻辑 | SSE 协议格式 `event:`/`data:` 前缀 |
 | nginx 配置（超时、缓冲） | Java 是唯一入口的契约 |
 | 数据库查询、索引 | 环境变量命名规范 |
-| 测试用例 | MinIO bucket 名称 |
+| 测试用例 | 数据库 schema 结构 |
 
 ## 4. 改动约束
 
@@ -70,9 +70,9 @@ AI agent 自主优化"智学引擎"全栈项目的运行指令。人类写这份
 |---|---|---|---|
 | 前端 | TypeScript | React + Vite + Tailwind | 80 |
 | 后端 | Java | Spring Boot | 8081 |
-| AI Agent | Python | FastAPI + SSE | 5001 |
+| AI Agent | Python | FastAPI + SSE | 8000 |
 | 数据库 | - | PostgreSQL(pgvector) + MongoDB | 5432 / 27017 |
-| 缓存/对象 | - | Redis + MinIO | 6379 / 9000 |
+| 缓存/队列 | - | Redis Streams + TTL 缓存 | 6379 |
 
 ## 7. 实验日志
 

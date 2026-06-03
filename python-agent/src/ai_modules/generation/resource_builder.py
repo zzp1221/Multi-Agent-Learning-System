@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import base64
+import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,9 @@ from src.ai_modules.models import (
     VideoSandboxArtifact,
 )
 from src.ai_modules.runtime import SystemSnapshot
+
+LOGGER = logging.getLogger(__name__)
+DEFAULT_VIDEO_TTS_MAX_CHARS = 260
 
 
 class GeneratedAsset(BaseModel):
@@ -79,7 +83,19 @@ class ResourceGenerationService:
         self.sandbox_root = sandbox_root or get_sandbox_root()
         self.content_chain = content_chain or ContentGenerationChain()
 
-    def build_asset(
+    @staticmethod
+    def _video_tts_text(script_text: str, max_chars: int) -> str:
+        normalized = " ".join(script_text.split())
+        limit = max(200, max_chars or DEFAULT_VIDEO_TTS_MAX_CHARS)
+        if len(normalized) <= limit:
+            return normalized
+        head = normalized[:limit]
+        sentence_end = max(head.rfind("。"), head.rfind("！"), head.rfind("？"), head.rfind("."))
+        if sentence_end >= int(limit * 0.6):
+            return head[: sentence_end + 1].strip()
+        return head.rstrip("，,；;、 ") + "。"
+
+    async def build_asset(
         self,
         *,
         asset_type: str,
@@ -97,7 +113,7 @@ class ResourceGenerationService:
         builder = builder_map.get(asset_type)
         if builder is None:
             raise ValueError(f"Unsupported assetType: {asset_type}")
-        return builder(params=params, snapshot=snapshot)
+        return await builder(params=params, snapshot=snapshot)
 
     async def build_video_asset(
         self,
@@ -140,9 +156,17 @@ class ResourceGenerationService:
             from src.ai_modules.llms.mimo_client import MiMoClient
 
             try:
-                mimo_client = MiMoClient()
+                settings = get_settings()
+                mimo_client = MiMoClient(timeout_seconds=settings.tts_timeout_seconds)
+                tts_text = self._video_tts_text(script_payload.full_text, settings.video_tts_max_chars)
+                LOGGER.info(
+                    "Generating video TTS audio: task_id=%s text_chars=%s timeout_seconds=%s",
+                    task_id,
+                    len(tts_text),
+                    settings.tts_timeout_seconds,
+                )
                 tts_audio_bytes = await mimo_client.synthesize_speech(
-                    text=script_payload.full_text[:1600],
+                    text=tts_text,
                     style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
                     voice="mimo_default",
                     audio_format="mp3",
@@ -211,8 +235,9 @@ class ResourceGenerationService:
             knowledgePoint=topic,
         )
 
-    def _build_document(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
-        title = f"{params.get('query', '学习资源')}导学文档"
+    async def _build_document(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+        display_topic = self._display_topic(params)
+        title = f"{display_topic}导学文档"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
@@ -221,7 +246,7 @@ class ResourceGenerationService:
             snapshot=snapshot,
             sources=sources,
         )
-        generated_sections = self.content_chain.generate_document_sections(
+        generated_sections = await self.content_chain.generate_document_sections(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=generation_snapshot,
@@ -298,11 +323,6 @@ class ResourceGenerationService:
         lines = [
             f"# {title}",
             "",
-            f"- 课程: {snapshot.current_course}",
-            f"- 章节: {snapshot.current_chapter}",
-            f"- 学生水平: {snapshot.student_level}",
-            f"- 学习风格: {snapshot.preferred_style}",
-            "",
             "## 文档概览",
             f"本文围绕 `{topic}` 组织内容，采用“概念 -> 原理 -> 误区 -> 练习”的生成链路展开。",
             "",
@@ -322,13 +342,9 @@ class ResourceGenerationService:
                     "",
                     "### 学习提示",
                     *generated_section.tips,
-                    "",
-                    "### 引用依据",
-                    *generated_section.citations,
                 ]
             )
 
-        lines.extend(["", "## 参考来源", *self._render_source_catalog(sources)])
         return "\n".join(lines)
 
     def render_section_paragraph(
@@ -392,20 +408,6 @@ class ResourceGenerationService:
             for index, source_title in enumerate(source_titles, start=1)
         ]
 
-    def _render_source_catalog(self, sources: list[dict[str, Any]]) -> list[str]:
-        if not sources:
-            return ["- 暂无稳定来源"]
-        lines: list[str] = []
-        for index, source in enumerate(sources[:5], start=1):
-            title = str(source.get("title", "未知来源"))
-            channel = str(source.get("channel", "unknown"))
-            score = source.get("score", "")
-            evidence = source.get("evidence")
-            lines.append(f"- [来源{index}] {title} ({channel}:{score})")
-            if evidence:
-                lines.append(f"  证据说明: {evidence}")
-        return lines
-
     def _build_preview_text(self, section_plans: list[SectionPlan]) -> str:
         if not section_plans:
             return "已生成课程资源"
@@ -444,12 +446,13 @@ class ResourceGenerationService:
         )
         return base
 
-    def _build_reading(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
-        title = f"{params.get('query', '学习主题')}延伸阅读"
+    async def _build_reading(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+        display_topic = self._display_topic(params)
+        title = f"{display_topic}延伸阅读"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        generated_reading = self.content_chain.generate_reading_asset(
+        generated_reading = await self.content_chain.generate_reading_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=generation_snapshot,
@@ -471,8 +474,9 @@ class ResourceGenerationService:
             inlineContent=content,
         )
 
-    def _build_slides(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
-        title = f"{params.get('query', '学习主题')}PPT大纲"
+    async def _build_slides(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+        display_topic = self._display_topic(params)
+        title = f"{display_topic}PPT大纲"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         topic = str(params.get("rewrittenQuery", params.get("query", "主题")))
@@ -498,7 +502,7 @@ class ResourceGenerationService:
             )
 
         # ── 回退到 LLM + markdown ──
-        generated_slides = self.content_chain.generate_slides_asset(
+        generated_slides = await self.content_chain.generate_slides_asset(
             title=title,
             topic=topic,
             snapshot=generation_snapshot,
@@ -557,6 +561,7 @@ class ResourceGenerationService:
                 f"请为教学主题「{topic}」生成一份完整的 PPT 内容，用于 {snapshot.current_course} 课程。\n"
                 f"学生水平: {snapshot.student_level}，学习风格: {snapshot.preferred_style}。\n"
                 f"参考来源:\n{source_texts}\n\n"
+                "这些课程、学生画像和来源信息只用于生成判断，最终幻灯片正文不要展示课程、学生水平、学习风格、参考来源或证据说明等元信息。\n"
                 "请以JSON格式输出，包含以下字段：\n"
                 '{{"slides":[{{"slideTitle":"标题","bullets":["要点1","要点2"],"speakerNotes":"讲解备注"}}]}}\n'
                 "要求：6-10页幻灯片，每页3-5个要点，speakerNotes用中文写50-100字的讲解说明。"
@@ -654,7 +659,6 @@ class ResourceGenerationService:
             tf.clear()
             summary_points = [
                 f"主题: {topic}",
-                f"课程: {course}",
                 f"共 {len(slides)} 个内容页",
                 "请结合课堂讨论加深理解",
             ]
@@ -684,12 +688,20 @@ class ResourceGenerationService:
         path.write_bytes(data)
         return path
 
-    def _build_mindmap(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
-        title = f"{params.get('query', '学习主题')}思维导图"
+    def _display_topic(self, params: dict) -> str:
+        for key in ("topic", "keyPoints", "knowledgePoint"):
+            value = str(params.get(key) or "").strip()
+            if value:
+                return value
+        return str(params.get("query") or "学习主题").strip() or "学习主题"
+
+    async def _build_mindmap(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+        display_topic = self._display_topic(params)
+        title = f"{display_topic}思维导图"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        generated_mindmap = self.content_chain.generate_mindmap_asset(
+        generated_mindmap = await self.content_chain.generate_mindmap_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=generation_snapshot,
@@ -739,12 +751,13 @@ class ResourceGenerationService:
             .strip()
         )
 
-    def _build_code(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
-        title = f"{params.get('query', '学习主题')}代码案例"
+    async def _build_code(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+        display_topic = self._display_topic(params)
+        title = f"{display_topic}代码案例"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        generated_code = self.content_chain.generate_code_asset(
+        generated_code = await self.content_chain.generate_code_asset(
             title=title,
             topic=str(params.get("rewrittenQuery", params.get("query", "主题"))),
             snapshot=generation_snapshot,
@@ -768,7 +781,7 @@ class ResourceGenerationService:
             explanation=generated_code.explanation,
         )
 
-    def _build_video(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
+    async def _build_video(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         topic = str(params.get("topic") or params.get("query") or "教学主题")
         task_id = str(params.get("taskId") or "video-task")
         style = str(params.get("style") or "hybrid")
@@ -776,7 +789,7 @@ class ResourceGenerationService:
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", []) if isinstance(retrieval, dict) else []
         generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        script_payload = self.content_chain.generate_video_script(
+        script_payload = await self.content_chain.generate_video_script(
             title=f"{topic}教学视频",
             topic=topic,
             snapshot=generation_snapshot,
@@ -805,9 +818,17 @@ class ResourceGenerationService:
             from src.ai_modules.llms.mimo_client import MiMoClient
 
             try:
-                mimo_client = MiMoClient()
+                settings = get_settings()
+                mimo_client = MiMoClient(timeout_seconds=settings.tts_timeout_seconds)
+                tts_text = self._video_tts_text(script_payload.full_text, settings.video_tts_max_chars)
+                LOGGER.info(
+                    "Generating video TTS audio: task_id=%s text_chars=%s timeout_seconds=%s",
+                    task_id,
+                    len(tts_text),
+                    settings.tts_timeout_seconds,
+                )
                 tts_audio_bytes = mimo_client.synthesize_speech_sync(
-                    text=script_payload.full_text[:1600],
+                    text=tts_text,
                     style_description="用清晰自然的语速播报，声音沉稳专业，适合教学场景",
                     voice="mimo_default",
                     audio_format="mp3",

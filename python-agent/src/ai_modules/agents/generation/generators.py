@@ -252,23 +252,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
         build_params.setdefault("taskId", task_id)
 
         async def operation() -> dict[str, Any]:
-            if self.asset_type == "VIDEO":
-                asset = await self.generation_service.build_video_asset(
-                    params=build_params,
-                    snapshot=snapshot,
-                )
-            else:
-                asset_or_awaitable = await asyncio.to_thread(
-                    self.generation_service.build_asset,
-                    asset_type=self.asset_type,
-                    params=build_params,
-                    snapshot=snapshot,
-                )
-                asset = (
-                    await asset_or_awaitable
-                    if inspect.isawaitable(asset_or_awaitable)
-                    else asset_or_awaitable
-                )
+            asset = await self._call_asset_builder(build_params=build_params, snapshot=snapshot)
             generated_content = (
                 asset.preview_text
                 if asset.asset_type == "VIDEO"
@@ -291,6 +275,17 @@ class _BaseGenerationAgent(PlaceholderAgent):
         params["generatedAsset"] = draft["asset"]
         params["generatedContent"] = draft["generatedContent"]
         return draft
+
+    async def _call_asset_builder(self, *, build_params: dict[str, Any], snapshot: SystemSnapshot) -> Any:
+        if self.asset_type == "VIDEO":
+            builder = self.generation_service.build_video_asset
+            kwargs = {"params": build_params, "snapshot": snapshot}
+        else:
+            builder = self.generation_service.build_asset
+            kwargs = {"asset_type": self.asset_type, "params": build_params, "snapshot": snapshot}
+        if inspect.iscoroutinefunction(builder):
+            return await builder(**kwargs)
+        return await asyncio.to_thread(builder, **kwargs)
 
     def _build_asset_provenance(self, *, params: dict[str, Any]) -> dict[str, Any]:
         generator = getattr(getattr(self.generation_service, "content_chain", None), "primary_generator", None)

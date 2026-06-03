@@ -5,7 +5,6 @@
     "query_rewrite",
     "retrieval",
     "path_planning",
-    "resource_bundle",
     "resource_push",
     "critic"
   ],

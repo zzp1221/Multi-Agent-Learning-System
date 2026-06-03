@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { CheckCircle2, FileText, GraduationCap, X } from 'lucide-react';
 import type { LayoutOutletContext } from '../components/Layout';
@@ -14,11 +14,16 @@ import {
 import {
   AssistantActionBar,
   EngineSectionHeader,
-  LearningEffectPreview,
+  TaskStatusPreview,
   ServiceHeroVisual,
 } from './LearningStudioDemoPage.shell-components';
 import { useLearningStudioEngine } from './useLearningStudioEngine';
 import { useLearningStudioQna } from './useLearningStudioQna';
+import {
+  VOICE_PAGE_ACTION_EVENT,
+  consumeQueuedVoicePageAction,
+  isVoicePageActionEvent,
+} from '../utils/voicePageActions';
 
 const ServiceDynamicForm = lazy(() =>
   import('./LearningStudioDemoPage.components').then((module) => ({ default: module.ServiceDynamicForm }))
@@ -35,23 +40,18 @@ const serviceDescriptions: Record<EngineService, { summary: string; detail: stri
   },
   personalized: {
     summary: '多智能体协同生成路径并匹配资源',
-    detail: '画像、评估、检索、规划、资源推荐与质量审查串联执行。',
+    detail: '系统整合画像、学习进度、知识掌握图谱和资源反馈，生成路径与资源推荐。',
     accent: 'from-indigo-500 to-cyan-400',
   },
   path: {
-    summary: '结合目标周期和当前进度规划路径',
-    detail: '只展示任务返回的真实路径建议。',
+    summary: '结合画像、进度和掌握情况规划路径',
+    detail: '系统自动读取学习上下文并返回真实路径建议。',
     accent: 'from-indigo-500 to-blue-400',
   },
   push: {
     summary: '依据学习上下文推送资源',
     detail: '未返回推送结果前不展示预置推荐。',
     accent: 'from-cyan-500 to-emerald-400',
-  },
-  assessment: {
-    summary: '围绕选定维度生成评估任务',
-    detail: '练习与判题结果均来自任务接口。',
-    accent: 'from-violet-500 to-blue-400',
   },
 };
 
@@ -63,6 +63,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const mountedRef = useRef(true);
 
   const [conversationId, setConversationId] = useState('');
+  const [voicePlanSubmitPending, setVoicePlanSubmitPending] = useState(false);
   const { resetQnaConversation, viewProps: qnaViewProps } = useLearningStudioQna({
     mode,
     isAuthenticated,
@@ -78,7 +79,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     resourceFieldErrors,
     pathForm,
     pushForm,
-    assessmentForm,
     activeEngineSnapshot,
     engineBusy,
     taskId,
@@ -93,7 +93,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     setResourceForm,
     setPathForm,
     setPushForm,
-    setAssessmentForm,
     markFormEditing,
     handleSelectService,
     handleSubmitService,
@@ -159,14 +158,53 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     }
   }, [isAuthenticated]);
 
-  const withAuth = (action: () => void) => {
+  const withAuth = useCallback((action: () => void) => {
     if (isAuthenticated) {
       action();
       return;
     }
     pendingActionRef.current = action;
     openAuthModal('login', '请先登录');
-  };
+  }, [isAuthenticated, openAuthModal]);
+
+  const prepareVoiceStudyPlan = useCallback(() => {
+    if (mode !== 'engine') {
+      return;
+    }
+    withAuth(() => {
+      handleSelectService('personalized');
+      setVoicePlanSubmitPending(true);
+    });
+  }, [handleSelectService, mode, withAuth]);
+
+  useEffect(() => {
+    if (mode !== 'engine') {
+      return;
+    }
+    if (consumeQueuedVoicePageAction('generate_study_plan')) {
+      prepareVoiceStudyPlan();
+    }
+    const handleVoiceAction = (event: Event) => {
+      if (isVoicePageActionEvent(event, 'generate_study_plan')) {
+        prepareVoiceStudyPlan();
+      }
+    };
+    window.addEventListener(VOICE_PAGE_ACTION_EVENT, handleVoiceAction);
+    return () => {
+      window.removeEventListener(VOICE_PAGE_ACTION_EVENT, handleVoiceAction);
+    };
+  }, [mode, prepareVoiceStudyPlan]);
+
+  useEffect(() => {
+    if (!voicePlanSubmitPending || mode !== 'engine') {
+      return;
+    }
+    if (selectedService !== 'personalized' || engineBusy) {
+      return;
+    }
+    setVoicePlanSubmitPending(false);
+    void handleSubmitService();
+  }, [engineBusy, handleSubmitService, mode, selectedService, voicePlanSubmitPending]);
 
   if (mode === 'qna') {
     return <QnaChatView {...qnaViewProps} />;
@@ -255,8 +293,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           <section className="border-b border-blue-100/80 p-4 dark:border-slate-800 sm:p-6 xl:border-b-0 xl:border-r">
             <EngineSectionHeader
               icon={<FileText className="h-4 w-4" />}
-              title={selectedServiceButton ? `${selectedServiceButton.label}参数` : '服务参数'}
-              subtitle={selectedServiceDescription?.detail ?? '选择服务后填写参数，提交前不会生成任何预置推荐。'}
+              title={selectedService === 'personalized' ? '自动分析范围' : (selectedServiceButton ? `${selectedServiceButton.label}参数` : '服务参数')}
+              subtitle={selectedServiceDescription?.detail ?? '选择服务后提交任务，系统会基于真实数据生成结果。'}
             />
             <div className="mt-5 sm:mt-6">
               <ServiceDynamicForm
@@ -265,7 +303,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
                 resourceErrors={resourceFieldErrors}
                 pathForm={pathForm}
                 pushForm={pushForm}
-                assessmentForm={assessmentForm}
                 onResourceChange={(next) => {
                   setResourceForm(next);
                   markFormEditing();
@@ -278,15 +315,11 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
                   setPushForm(next);
                   markFormEditing();
                 }}
-                onAssessmentChange={(next) => {
-                  setAssessmentForm(next);
-                  markFormEditing();
-                }}
               />
             </div>
           </section>
 
-          <LearningEffectPreview
+          <TaskStatusPreview
             selectedServiceLabel={selectedServiceButton?.label ?? ''}
             taskId={taskId}
             taskProgress={taskProgress}
@@ -316,11 +349,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           inlineResource={activeEngineSnapshot.inlineResource}
           inlineResources={inlineResources}
           completedResources={completedResources}
-          masteryDiagnosis={activeEngineSnapshot.masteryDiagnosis}
           learningPlan={activeEngineSnapshot.learningPlan}
           resourcePushPlan={activeEngineSnapshot.resourcePushPlan}
-          criticReview={activeEngineSnapshot.criticReview}
-          agentTrace={activeEngineSnapshot.agentTrace}
           resultHistory={activeEngineSnapshot.resultHistory}
           selectedResultTaskId={activeEngineSnapshot.selectedResultTaskId}
           practiceBatch={activeEngineSnapshot.practiceBatch}

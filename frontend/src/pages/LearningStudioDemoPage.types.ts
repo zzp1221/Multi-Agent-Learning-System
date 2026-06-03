@@ -4,7 +4,7 @@ import type { SmartEngineServiceType, SmartEngineStreamEvent, SmartEngineTaskRes
 import type { ConversationStreamEventPayload } from '../api/conversation';
 import type { VideoCardStyle } from '../components/VideoCard';
 
-export type EngineService = 'resource' | 'personalized' | 'path' | 'push' | 'assessment';
+export type EngineService = 'resource' | 'personalized' | 'path' | 'push';
 export type ResourceType = 'EXPLANATION' | 'CODE_CASE' | 'QUIZ' | 'MINDMAP' | 'SLIDES' | 'VIDEO';
 export type PushResourceType = 'EXPLANATION' | 'CODE_CASE' | 'PRACTICAL_CASE' | 'READING' | 'VIDEO';
 export type QnaState = 'QNA_IDLE' | 'QNA_STREAMING';
@@ -314,10 +314,6 @@ export interface PushForm {
   preferredType: PushResourceType;
 }
 
-export interface AssessmentForm {
-  dimensions: string[];
-}
-
 export interface ProfileSnapshot {
   major: string;
   goal: string;
@@ -429,7 +425,6 @@ export interface ServiceFormsPayload {
   resourceForm: ResourceForm;
   pathForm: PathForm;
   pushForm: PushForm;
-  assessmentForm: AssessmentForm;
 }
 
 export interface ServiceButtonConfig {
@@ -459,8 +454,6 @@ export type {
 
 export const QNA_GREETING = '你好。你现在有什么要求？';
 export const EMPTY_VALUE = '--';
-export const defaultAssessmentDimensions = ['知识基础'];
-export const assessmentDimensionOptions = ['知识基础', '案例迁移', '练习掌握', '学习主动性', '复盘闭环'];
 
 export const serviceButtons: ServiceButtonConfig[] = [
   { id: 'resource', label: '资源生成', icon: Sparkles },
@@ -489,7 +482,6 @@ export const serviceTypeMap: Record<EngineService, SmartEngineServiceType> = {
   personalized: 'PERSONALIZED_LEARNING',
   path: 'PATH_PLANNING',
   push: 'RESOURCE_PUSH',
-  assessment: 'LEARNING_EVALUATION',
 };
 
 export const defaultResourceForm: ResourceForm = {

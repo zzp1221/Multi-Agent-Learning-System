@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +14,7 @@ from src.ai_modules.llms.spark_compatible import (
 )
 from src.ai_modules.llms.practice_llm import RuleBasedJudgeLLM, RuleBasedPracticeLLM
 from src.ai_modules.llms.profile_llm import RuleBasedProfileLLM
+from src.ai_modules.llms.json_utils import dumps_json
 from src.ai_modules.llms.tutor_llm import OpenAICompatibleTutorLLM, RuleBasedTutorLLM
 from src.ai_modules.models import (
     EvaluationPayload,
@@ -239,7 +239,7 @@ class OpenAICompatibleQueryRewriteGenerator:
             user_prompt="\n".join(
                 [
                     f"原始问题: {original_query}",
-                    f"学习上下文: {json.dumps(learning_context, ensure_ascii=False)}",
+                    f"学习上下文: {dumps_json(learning_context, ensure_ascii=False)}",
                     "请返回 JSON。",
                 ]
             ),
@@ -284,7 +284,7 @@ class OpenAICompatibleRetrievalSummaryGenerator:
                     "content": "\n".join(
                         [
                             f"查询: {retrieval_response.rewritten_query}",
-                            f"候选文档: {json.dumps(retrieval_response.model_dump(by_alias=True), ensure_ascii=False)}",
+                            f"候选文档: {dumps_json(retrieval_response, ensure_ascii=False)}",
                             "请输出 1-2 句中文摘要，不要返回 JSON。",
                         ]
                     ),
@@ -358,7 +358,7 @@ class OpenAICompatibleConversationSummaryRefiner:
                 '"preferredHelpStyle":"step_by_step|example_first|concept_then_question|visual_first",'
                 '"confidence":0.0,"summaryText":"..."}。'
             ),
-            user_prompt=json.dumps(
+            user_prompt=dumps_json(
                 {
                     "ruleSummary": rule_summary,
                     "recentUserMessages": user_messages,
@@ -390,7 +390,7 @@ class OpenAICompatibleEvaluationGenerator:
             system_prompt=system_prompt,
             user_prompt=(
                 "请结合以下上下文评估学生当前水平，并只返回 JSON。\n"
-                f"{json.dumps(context_payload, ensure_ascii=False)}"
+                f"{dumps_json(context_payload, ensure_ascii=False)}"
             ),
             max_tokens=max_tokens,
         )
@@ -405,7 +405,7 @@ class OpenAICompatibleEvaluationGenerator:
                 if text:
                     primary_dimension = text
                     break
-        if primary_dimension in {"学习主动性", "复盘闭环"}:
+        if primary_dimension == "学习效果评估":
             return 2200
         return 1200
 
@@ -429,7 +429,7 @@ class OpenAICompatibleLearningPathGenerator:
             system_prompt=system_prompt,
             user_prompt=(
                 "请根据以下上下文制定学习路径，并只返回 JSON。\n"
-                f"{json.dumps(context_payload, ensure_ascii=False)}"
+                f"{dumps_json(context_payload, ensure_ascii=False)}"
             ),
             max_tokens=1400,
         )
@@ -603,7 +603,7 @@ class OpenAICompatiblePracticeQuestionGenerator:
                     f"主题: {topic}",
                     f"难度: {difficulty}",
                     f"题量: {count}",
-                    f"学习上下文: {json.dumps(learning_context, ensure_ascii=False)}",
+                    f"学习上下文: {dumps_json(learning_context, ensure_ascii=False)}",
                     "要求同时覆盖概念、条件判断、易错点和自测/迁移。",
                 ]
             ),
@@ -644,9 +644,9 @@ class OpenAICompatibleObjectiveJudgeGenerator:
                 '"pendingSubjective":[{PracticeQuestion原样对象}]}.'
                 "SHORT_ANSWER 题不要判分，原样放入 pendingSubjective。"
             ),
-            user_prompt=json.dumps(
+            user_prompt=dumps_json(
                 {
-                    "questions": [question.model_dump(by_alias=True) for question in questions],
+                    "questions": [question.model_dump(by_alias=True, mode="json") for question in questions],
                     "answers": answers,
                 },
                 ensure_ascii=False,
@@ -688,10 +688,10 @@ class OpenAICompatibleJudgeFeedbackGenerator:
                 '结构为 {"summary":"...","totalScore":0.0,"accuracy":0.0,"items":[...],"weakKnowledgeTags":["..."]}。'
                 "accuracy 取值 0 到 1。summary 要用中文完整表述。"
             ),
-            user_prompt=json.dumps(
+            user_prompt=dumps_json(
                 {
                     "topic": topic,
-                    "items": [item.model_dump(by_alias=True) for item in items],
+                    "items": [item.model_dump(by_alias=True, mode="json") for item in items],
                 },
                 ensure_ascii=False,
             ),
@@ -750,7 +750,7 @@ class OpenAICompatibleProfileAnalyzer:
                 '"summaryText":"..."}。'
                 "所有分值范围必须在 0 到 1 之间；summaryText 需要明确说明该学生当前水平、薄弱点、偏好和下一步建议。"
             ),
-            user_prompt=json.dumps(context_payload, ensure_ascii=False),
+            user_prompt=dumps_json(context_payload, ensure_ascii=False),
             max_tokens=1400,
         )
         return LearnerProfileDimensions.model_validate(payload)
@@ -811,7 +811,7 @@ class OpenAICompatibleResourcePushReranker:
                 '{"rankedItems":[{"index":0,"score":0.0,"reason":"..."}],"summaryText":"..."}。'
                 "score 范围为 0 到 1，rankedItems 按优先级从高到低排序，最多返回 5 个。"
             ),
-            user_prompt=json.dumps(
+            user_prompt=dumps_json(
                 {
                     "query": query,
                     "profileContext": profile_context,

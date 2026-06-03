@@ -28,6 +28,8 @@ from src.ai_modules.runtime.provenance import build_llm_provenance, validate_llm
 LOGGER = logging.getLogger(__name__)
 
 MIN_TOPIC_RELEVANCE_SCORE = 4
+PATH_RECOMMENDATION_TYPES = ("DOCUMENT", "VIDEO", "QUIZ", "PRACTICAL_CASE")
+MAX_STEP_EXTERNAL_RESOURCE_TYPES = 4
 GENERIC_RESOURCE_TERMS = {
     "资源",
     "讲解文档",
@@ -46,6 +48,8 @@ GENERIC_RESOURCE_TERMS = {
     "PRACTICAL_CASE",
     "READING",
     "VIDEO",
+    "DOCUMENT",
+    "QUIZ",
 }
 
 
@@ -91,7 +95,7 @@ class ResourcePushAgent(PlaceholderAgent):
         profile_context = self._extract_profile_context(params, snapshot)
         learning_path = params.get("learningPath")
         if isinstance(learning_path, dict) and isinstance(learning_path.get("steps"), list):
-            plan = self._build_path_bound_resource_plan(
+            plan = await self._build_path_external_resource_plan(
                 learning_path=learning_path,
                 params=params,
                 profile_context=profile_context,
@@ -111,14 +115,14 @@ class ResourcePushAgent(PlaceholderAgent):
                 payload=ProgressPayload(
                     stage=self.stage_name,
                     percent=70,
-                    message=f"已按学习路径匹配 {len(params['pushedResources'])} 个真实资源或检索证据",
+                    message=f"已按学习路径推送 {len(params['pushedResources'])} 个外部学习资源",
                 ),
             )
             yield ResultChunkSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
                 seq=seq + 1,
-                payload=ResultChunkPayload(text=self._build_path_bound_summary(plan)),
+                payload=ResultChunkPayload(text=self._build_path_external_summary(plan)),
             )
             return
 
@@ -342,6 +346,172 @@ class ResourcePushAgent(PlaceholderAgent):
             snapshot=snapshot,
         )
 
+    async def _build_path_external_resource_plan(
+        self,
+        *,
+        learning_path: dict[str, Any],
+        params: dict[str, Any],
+        profile_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        step_resources: list[dict[str, Any]] = []
+        coverage_gaps: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+
+        for index, step in enumerate(learning_path.get("steps", []), start=1):
+            if not isinstance(step, dict):
+                continue
+            step_id = str(step.get("stepId") or f"step-{index}")
+            step_title = self._normalize_text(step.get("title")) or f"步骤 {index}"
+            step_context = self._build_step_profile_context(step=step, base_context=profile_context)
+            preferred_types = self._path_recommendation_types(step.get("preferredResourceTypes"))
+            query = self._build_step_external_query(step=step, params=params, profile_context=step_context)
+
+            resources: list[dict[str, Any]] = []
+            for resource_type in preferred_types:
+                candidates = await self._search_external_candidates(
+                    preferred_type=resource_type,
+                    query=query,
+                    profile_context=step_context,
+                )
+                candidate = self._first_unused_candidate(candidates, seen_urls)
+                if candidate is None:
+                    continue
+                if candidate.download_url:
+                    seen_urls.add(candidate.download_url)
+                resources.append(self._candidate_to_path_resource(candidate))
+                if len(resources) >= MAX_STEP_EXTERNAL_RESOURCE_TYPES:
+                    break
+
+            present_types = {
+                self._normalize_resource_type(item.get("resourceType"))
+                for item in resources
+                if isinstance(item, dict)
+            }
+            missing_types = [item for item in preferred_types if item not in present_types]
+            if missing_types:
+                coverage_gaps.append(
+                    {
+                        "stepId": step_id,
+                        "missingResourceTypes": missing_types,
+                        "reason": "Tavily 暂未检索到足够匹配当前学习步骤的外部资源。",
+                    }
+                )
+            step_resources.append(
+                {
+                    "stepId": step_id,
+                    "stepTitle": step_title,
+                    "targetKnowledgePoints": list(step_context.get("weakPoints") or []),
+                    "resources": resources,
+                }
+            )
+
+        return {
+            "stepResources": step_resources,
+            "coverageGaps": coverage_gaps,
+            "profileSignals": {
+                "primaryWeakPoint": profile_context.get("primaryWeakPoint"),
+                "preferredResourceTypes": list(PATH_RECOMMENDATION_TYPES),
+                "source": "tavily",
+            },
+        }
+
+    def _build_step_profile_context(
+        self,
+        *,
+        step: dict[str, Any],
+        base_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        target_points = [
+            self._normalize_text(item)
+            for item in step.get("targetKnowledgePoints", [])
+            if self._normalize_text(item)
+        ]
+        step_title = self._normalize_text(step.get("title"))
+        objective = self._normalize_text(step.get("objective"))
+        checkpoint = self._normalize_text(step.get("checkpoint") or step.get("successCriteria"))
+        primary_weak_point = target_points[0] if target_points else step_title
+        return {
+            **base_context,
+            "primaryWeakPoint": primary_weak_point or base_context.get("primaryWeakPoint", ""),
+            "weakPoints": target_points or [value for value in (step_title, objective) if value],
+            "learningGoal": objective or checkpoint or base_context.get("learningGoal", ""),
+            "currentChapter": step_title or base_context.get("currentChapter", ""),
+            "preferredResourceTypes": list(PATH_RECOMMENDATION_TYPES),
+        }
+
+    def _path_recommendation_types(self, raw_value: Any) -> list[str]:
+        normalized = self._normalize_resource_types(raw_value)
+        selected = [
+            item for item in normalized
+            if item in {"DOCUMENT", "VIDEO", "QUIZ", "PRACTICAL_CASE", "CODE", "READING"}
+        ]
+        if "CODE" in selected and "PRACTICAL_CASE" not in selected:
+            selected.append("PRACTICAL_CASE")
+        if "READING" in selected and "DOCUMENT" not in selected:
+            selected.append("DOCUMENT")
+        selected = [item for item in selected if item not in {"CODE", "READING"}]
+        for required_type in PATH_RECOMMENDATION_TYPES:
+            if required_type not in selected:
+                selected.append(required_type)
+        return selected[:4]
+
+    def _build_step_external_query(
+        self,
+        *,
+        step: dict[str, Any],
+        params: dict[str, Any],
+        profile_context: dict[str, Any],
+    ) -> str:
+        parts = [
+            self._normalize_text(params.get("query")),
+            self._normalize_text(step.get("title")),
+            self._normalize_text(step.get("objective")),
+            " ".join(
+                self._normalize_text(item)
+                for item in step.get("targetKnowledgePoints", [])
+                if self._normalize_text(item)
+            ),
+            self._normalize_text(profile_context.get("currentCourse")),
+        ]
+        return " ".join(part for part in parts if part).strip()
+
+    def _first_unused_candidate(
+        self,
+        candidates: list[PushResourceCandidate],
+        seen_urls: set[str],
+    ) -> PushResourceCandidate | None:
+        for candidate in candidates:
+            if candidate.download_url and candidate.download_url in seen_urls:
+                continue
+            return candidate
+        return None
+
+    def _candidate_to_path_resource(self, candidate: PushResourceCandidate) -> dict[str, Any]:
+        return {
+            "title": candidate.title,
+            "resourceType": candidate.resource_type,
+            "source": "tavily",
+            "sourceName": candidate.source_name,
+            "downloadUrl": candidate.download_url,
+            "summaryText": candidate.summary_text,
+            "matchReason": candidate.rerank_reason,
+            "rerankScore": candidate.rerank_score,
+            "thumbnailUrl": candidate.thumbnail_url,
+            "knowledgePoint": candidate.knowledge_point,
+        }
+
+    def _build_path_external_summary(self, plan: dict[str, Any]) -> str:
+        step_count = len(plan.get("stepResources", []))
+        resource_count = sum(
+            len(step.get("resources", []))
+            for step in plan.get("stepResources", [])
+            if isinstance(step, dict)
+        )
+        gap_count = len(plan.get("coverageGaps", []))
+        if gap_count:
+            return f"已为 {step_count} 个学习步骤推送 {resource_count} 个外部学习资源，仍有 {gap_count} 个步骤需要继续检索补充。"
+        return f"已为 {step_count} 个学习步骤推送 {resource_count} 个外部学习资源。"
+
     def _build_path_bound_resource_plan(
         self,
         *,
@@ -517,8 +687,11 @@ class ResourcePushAgent(PlaceholderAgent):
         aliases = {
             "EXPLANATION": "DOCUMENT",
             "CODE_CASE": "CODE",
-            "PRACTICAL_CASE": "CODE",
+            "PRACTICAL_CASE": "PRACTICAL_CASE",
             "PPT": "SLIDES",
+            "QUESTION_BANK": "QUIZ",
+            "QUESTION": "QUIZ",
+            "PRACTICE": "QUIZ",
         }
         return aliases.get(resource_type, resource_type)
 
@@ -726,14 +899,19 @@ class ResourcePushAgent(PlaceholderAgent):
     def _build_tavily_query(self, preferred_type: str, query: str, profile_context: dict[str, Any]) -> str:
         type_hint_map = {
             "EXPLANATION": "概念讲解 教程 官方文档 文章",
+            "DOCUMENT": "概念讲解 教程 官方文档 文档 guide",
             "CODE_CASE": "源码 示例项目 code example github tutorial",
+            "CODE": "源码 示例项目 code example github tutorial",
             "PRACTICAL_CASE": "从零搭建 实战 项目 教程 源码 github hands-on build",
+            "QUIZ": "练习题 题库 quiz exercises practice questions",
             "READING": "进阶阅读 深入解析 文章 文档",
             "VIDEO": "教学视频 讲解 course tutorial",
         }
         site_hint_map = {
             "CODE_CASE": "site:github.com OR site:gitee.com OR site:gitlab.com",
+            "CODE": "site:github.com OR site:gitee.com OR site:gitlab.com",
             "PRACTICAL_CASE": "site:github.com OR site:gitee.com OR site:medium.com OR site:dev.to",
+            "QUIZ": "练习题 OR quiz OR exercises",
             "VIDEO": "site:bilibili.com OR site:youtube.com",
         }
         parts = [
@@ -785,10 +963,12 @@ class ResourcePushAgent(PlaceholderAgent):
     def _is_valid_external_result(self, preferred_type: str, item: dict[str, Any], url: str, title: str) -> bool:
         if preferred_type == "VIDEO":
             return self._is_valid_video_result(item, url, title)
-        if preferred_type == "CODE_CASE":
+        if preferred_type in {"CODE", "CODE_CASE"}:
             return self._is_valid_code_case_result(item, url, title)
         if preferred_type == "PRACTICAL_CASE":
             return self._is_valid_practical_case_result(item, url, title)
+        if preferred_type == "QUIZ":
+            return self._is_valid_quiz_result(item, url, title)
         if preferred_type == "READING":
             return self._is_valid_reading_result(url)
         return self._is_valid_explanation_result(url)
@@ -835,6 +1015,17 @@ class ResourcePushAgent(PlaceholderAgent):
         )
         return has_source_code_signal and has_hands_on_signal
 
+    def _is_valid_quiz_result(self, item: dict[str, Any], url: str, title: str) -> bool:
+        lowered_url = url.lower()
+        lowered_title = title.lower()
+        if any(token in lowered_url for token in (".pdf", "youtube.com", "bilibili.com", "github.com")):
+            return False
+        content = self._normalize_text(item.get("content")).lower()
+        return any(
+            token in f"{lowered_title} {content}"
+            for token in ("练习", "题库", "试题", "测验", "quiz", "exercise", "practice question")
+        )
+
     def _is_valid_reading_result(self, url: str) -> bool:
         lowered_url = url.lower()
         return not any(token in lowered_url for token in ("youtube.com", "bilibili.com", "github.com", "gist.github.com"))
@@ -847,7 +1038,7 @@ class ResourcePushAgent(PlaceholderAgent):
         source = self._extract_source_name(url) or ""
         if preferred_type == "VIDEO" and source in {"bilibili.com", "youtube.com", "youtu.be"}:
             return 20
-        if preferred_type == "CODE_CASE" and source in {"github.com", "gitee.com", "gitlab.com", "gist.github.com"}:
+        if preferred_type in {"CODE", "CODE_CASE"} and source in {"github.com", "gitee.com", "gitlab.com", "gist.github.com"}:
             return 25
         if preferred_type == "PRACTICAL_CASE" and source in {"github.com", "gitee.com", "gitlab.com"}:
             return 30
@@ -922,12 +1113,15 @@ class ResourcePushAgent(PlaceholderAgent):
     def _resource_type_label(self, preferred_type: str) -> str:
         return {
             "EXPLANATION": "讲解文档",
+            "DOCUMENT": "讲解文档",
             "CODE_CASE": "代码案例",
+            "CODE": "代码案例",
             "PRACTICAL_CASE": "实操案例",
             "PPT": "PPT课件",
             "READING": "拓展阅读",
             "SLIDES": "PPT课件",
             "VIDEO": "视频",
+            "QUIZ": "题库练习",
         }.get(preferred_type, preferred_type or "资源")
 
     def _passes_content_safety(self, title: str, summary: str, url: str) -> bool:

@@ -8,6 +8,7 @@ import com.project.application.common.ApplicationException;
 import com.project.application.idempotency.IdempotencyService;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.domain.task.SmartEngineTask;
+import com.project.domain.task.ServiceType;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,7 @@ public class SmartEngineOrchestratorService {
     private final IdempotencyService idempotencyService;
     private final AuditService auditService;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
+    private final PersonalizedLearningContextService personalizedLearningContextService;
 
     public SmartEngineOrchestratorService(
         TaskStateMachineService taskStateMachineService,
@@ -41,7 +43,8 @@ public class SmartEngineOrchestratorService {
         ObjectProvider<SmartEngineQueueService> smartEngineQueueServiceProvider,
         IdempotencyService idempotencyService,
         AuditService auditService,
-        UserProfileCurrentRepository userProfileCurrentRepository
+        UserProfileCurrentRepository userProfileCurrentRepository,
+        PersonalizedLearningContextService personalizedLearningContextService
     ) {
         this.taskStateMachineService = taskStateMachineService;
         this.sseEmitterService = sseEmitterService;
@@ -49,6 +52,7 @@ public class SmartEngineOrchestratorService {
         this.idempotencyService = idempotencyService;
         this.auditService = auditService;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
+        this.personalizedLearningContextService = personalizedLearningContextService;
     }
 
     public SubmitTaskAcceptance submit(JwtAuthenticatedUser currentUser, SubmitTaskRequest request) {
@@ -114,12 +118,7 @@ public class SmartEngineOrchestratorService {
 
         auditService.log("TASK", "INFO", "Created SmartEngine task", currentUser.userId(), task.getId(), Map.of("serviceType", request.serviceType()));
 
-        Map<String, Object> invocationParams = new LinkedHashMap<>(request.safeParams());
-        userProfileCurrentRepository.findById(currentUser.userId())
-            .ifPresent(profile -> {
-                invocationParams.put("profile", new LinkedHashMap<>(profile.getProfileJson()));
-                invocationParams.put("profileSummary", profile.getSummaryText());
-            });
+        Map<String, Object> invocationParams = buildInvocationParams(currentUser, request);
 
         SmartEngineInvocation invocation = new SmartEngineInvocation(
             currentUser.userId(),
@@ -158,6 +157,21 @@ public class SmartEngineOrchestratorService {
             new SubmitTaskResponse(task.getId(), traceId, task.getTaskStatus()),
             false
         );
+    }
+
+    private Map<String, Object> buildInvocationParams(JwtAuthenticatedUser currentUser, SubmitTaskRequest request) {
+        Map<String, Object> invocationParams = new LinkedHashMap<>(request.safeParams());
+        if (request.serviceType() == ServiceType.PERSONALIZED_LEARNING) {
+            invocationParams.putAll(personalizedLearningContextService.buildContext(currentUser.userId()));
+            return invocationParams;
+        }
+
+        userProfileCurrentRepository.findById(currentUser.userId())
+            .ifPresent(profile -> {
+                invocationParams.put("profile", new LinkedHashMap<>(profile.getProfileJson()));
+                invocationParams.put("profileSummary", profile.getSummaryText());
+            });
+        return invocationParams;
     }
 
     public TaskStatusResponse getStatus(JwtAuthenticatedUser currentUser, UUID taskId) {

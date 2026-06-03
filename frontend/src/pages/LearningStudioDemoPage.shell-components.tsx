@@ -50,7 +50,7 @@ export function ServiceHeroVisual() {
   );
 }
 
-export function LearningEffectPreview(props: {
+export function TaskStatusPreview(props: {
   selectedServiceLabel: string;
   taskId: string;
   taskProgress: number;
@@ -70,8 +70,8 @@ export function LearningEffectPreview(props: {
           <TrendingUp className="h-4 w-4" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">学习效果预览</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">只展示真实任务状态，不展示预测分假数据。</p>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">任务状态</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">只展示真实任务进度和产物数量。</p>
         </div>
       </div>
 
@@ -105,9 +105,9 @@ export function LearningEffectPreview(props: {
       )}
 
       <div className="mt-6 rounded-2xl border border-blue-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:mt-8">
-        <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">学习效果趋势预测</div>
+        <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">执行状态</div>
         <div className="mt-3 flex min-h-24 items-center justify-center rounded-xl border border-dashed border-blue-100 bg-white/70 px-4 py-5 text-center text-sm leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400 sm:h-28 sm:py-0">
-          当前没有真实预测接口，已隐藏预测曲线和固定百分比。
+          提交任务后，系统会在这里同步后端返回的实时状态。
         </div>
         <div className="mt-3 text-xs text-slate-400">
           当前服务：{props.selectedServiceLabel || '未选择'}{hasTask ? ` · ${props.taskStatus}` : ''}

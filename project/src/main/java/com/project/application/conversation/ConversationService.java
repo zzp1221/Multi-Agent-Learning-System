@@ -5,15 +5,19 @@ import com.project.api.conversation.dto.ConversationHistoryItemResponse;
 import com.project.api.conversation.dto.ConversationMessageItemResponse;
 import com.project.api.conversation.dto.CreateConversationResponse;
 import com.project.application.common.ApplicationException;
+import com.project.application.common.ClientDisconnectDetector;
 import com.project.application.smartengine.PythonAgentClient;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
+import com.project.application.voice.VoiceMetricContext;
+import com.project.application.voice.VoiceMetricLogger;
+import com.project.application.voice.VoicePartialDraftService;
+import com.project.application.voice.VoiceTurnMetricsService;
 import com.project.domain.conversation.ConversationMode;
 import com.project.domain.conversation.QnaSession;
 import com.project.domain.conversation.QnaSessionRepository;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.security.JwtAuthenticatedUser;
-import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,7 +26,6 @@ import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -31,7 +34,6 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -52,19 +54,28 @@ public class ConversationService {
     private final PythonConversationMessageClient pythonConversationMessageClient;
     private final TaskExecutor conversationTaskExecutor;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
+    private final VoiceMetricLogger voiceMetricLogger;
+    private final VoiceTurnMetricsService voiceTurnMetricsService;
+    private final VoicePartialDraftService voicePartialDraftService;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
         PythonAgentClient pythonAgentClient,
         PythonConversationMessageClient pythonConversationMessageClient,
         @Qualifier("conversationTaskExecutor") TaskExecutor conversationTaskExecutor,
-        UserProfileCurrentRepository userProfileCurrentRepository
+        UserProfileCurrentRepository userProfileCurrentRepository,
+        VoiceMetricLogger voiceMetricLogger,
+        VoiceTurnMetricsService voiceTurnMetricsService,
+        VoicePartialDraftService voicePartialDraftService
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
         this.pythonConversationMessageClient = pythonConversationMessageClient;
         this.conversationTaskExecutor = conversationTaskExecutor;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
+        this.voiceMetricLogger = voiceMetricLogger;
+        this.voiceTurnMetricsService = voiceTurnMetricsService;
+        this.voicePartialDraftService = voicePartialDraftService;
     }
 
     @Transactional
@@ -150,31 +161,68 @@ public class ConversationService {
         emitter.onError(ex -> LOGGER.debug("Conversation SSE emitter error conversationId={}", conversationId, ex));
         AtomicInteger sequence = new AtomicInteger(0);
         StringBuilder assistantReply = new StringBuilder();
+        VoiceTurnRef voiceTurn = resolveVoiceTurn(request.voiceContextMap());
+        if (voiceTurn.isPresent()) {
+            voiceTurnMetricsService.attachConversation(
+                voiceTurn.voiceSessionId(),
+                voiceTurn.turnId(),
+                conversationId,
+                request.voiceContextMap().get("pageType"),
+                request.voiceContextMap().get("commandIntent")
+            );
+        }
 
         conversationTaskExecutor.execute(() -> {
             try {
-                pythonAgentClient.stream(
-                    new SmartEngineInvocation(
-                        currentUser.userId(),
-                        UUID.randomUUID(),
-                        UUID.randomUUID().toString(),
-                        conversationId,
-                        request.resolvedServiceType(),
-                        buildConversationParams(currentUser, conversationId, request, history)
-                    ),
-                    event -> {
-                        collectAssistantReply(assistantReply, event);
-                        sendConversationEvent(emitter, conversationId, sequence, event);
-                    }
+                recordVoiceMetric(
+                    "llm_request_start_ms",
+                    voiceTurn,
+                    voiceTurn.isPresent() ? voiceTurnMetricsService.elapsedMs(voiceTurn.voiceSessionId(), voiceTurn.turnId()) : -1L,
+                    "success",
+                    request.normalizedMessage().length(),
+                    null,
+                    ""
+                );
+                long llmStartedAtNanos = System.nanoTime();
+                java.util.concurrent.atomic.AtomicBoolean firstTokenLogged = new java.util.concurrent.atomic.AtomicBoolean(false);
+                streamConversationAnswer(
+                    currentUser,
+                    conversationId,
+                    request,
+                    history,
+                    voiceTurn,
+                    assistantReply,
+                    emitter,
+                    sequence,
+                    llmStartedAtNanos,
+                    firstTokenLogged
+                );
+                recordVoiceMetric(
+                    "llm_done_ms",
+                    voiceTurn,
+                    elapsedMs(llmStartedAtNanos),
+                    "success",
+                    request.normalizedMessage().length(),
+                    assistantReply.length(),
+                    ""
                 );
                 appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), List.of(), false);
                 emitter.complete();
             } catch (Exception ex) {
-                if (isClientDisconnect(ex)) {
+                if (ClientDisconnectDetector.isClientDisconnect(ex)) {
                     LOGGER.info("Conversation stream closed by client conversationId={}", conversationId);
                     safeComplete(emitter);
                     return;
                 }
+                recordVoiceMetric(
+                    "llm_error_ms",
+                    voiceTurn,
+                    voiceTurn.isPresent() ? voiceTurnMetricsService.elapsedMs(voiceTurn.voiceSessionId(), voiceTurn.turnId()) : -1L,
+                    "error",
+                    request.normalizedMessage().length(),
+                    assistantReply.length(),
+                    ex.getClass().getSimpleName()
+                );
                 if (assistantReply.isEmpty()) {
                     appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", List.of(), false);
                 }
@@ -188,38 +236,93 @@ public class ConversationService {
         return emitter;
     }
 
-    private boolean isClientDisconnect(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (
-                current instanceof ConversationClientDisconnectedException
-                    || current instanceof AsyncRequestNotUsableException
-                    || current instanceof ClientAbortException
-            ) {
-                return true;
-            }
-            if (current instanceof IOException && isClientDisconnectMessage(current.getMessage())) {
-                return true;
-            }
-            if (current instanceof IllegalStateException && isClientDisconnectMessage(current.getMessage())) {
-                return true;
-            }
-            current = current.getCause();
+    private VoiceTurnRef resolveVoiceTurn(Map<String, String> voiceContext) {
+        if (voiceContext == null || voiceContext.isEmpty()) {
+            return VoiceTurnRef.empty();
         }
-        return false;
+        try {
+            String voiceSessionId = voiceContext.get("voiceSessionId");
+            String turnId = voiceContext.get("voiceTurnId");
+            if (voiceSessionId == null || voiceSessionId.isBlank() || turnId == null || turnId.isBlank()) {
+                return VoiceTurnRef.empty();
+            }
+            return new VoiceTurnRef(UUID.fromString(voiceSessionId.trim()), turnId.trim());
+        } catch (IllegalArgumentException ex) {
+            return VoiceTurnRef.empty();
+        }
     }
 
-    private boolean isClientDisconnectMessage(String message) {
-        if (message == null || message.isBlank()) {
-            return false;
+    private void streamConversationAnswer(
+        JwtAuthenticatedUser currentUser,
+        UUID conversationId,
+        ConversationMessageStreamRequest request,
+        List<ConversationMessageItemResponse> history,
+        VoiceTurnRef voiceTurn,
+        StringBuilder assistantReply,
+        SseEmitter emitter,
+        AtomicInteger sequence,
+        long llmStartedAtNanos,
+        java.util.concurrent.atomic.AtomicBoolean firstTokenLogged
+    ) {
+        java.util.function.Consumer<PythonStreamEvent> eventConsumer = event -> {
+            collectAssistantReply(assistantReply, event);
+            String chunk = extractVisibleAssistantChunk(event);
+            if (!chunk.isEmpty() && firstTokenLogged.compareAndSet(false, true)) {
+                recordVoiceMetric(
+                    "llm_first_token_ms",
+                    voiceTurn,
+                    elapsedMs(llmStartedAtNanos),
+                    "success",
+                    request.normalizedMessage().length(),
+                    chunk.length(),
+                    ""
+                );
+            }
+            sendConversationEvent(emitter, conversationId, sequence, event);
+        };
+        VoicePartialDraftService.ReusableDraft reusableDraft = takeReusableDraft(voiceTurn, request.normalizedMessage());
+        if (reusableDraft != null) {
+            voicePartialDraftService.streamDraft(reusableDraft, eventConsumer);
+            return;
         }
-        String normalized = message.toLowerCase(Locale.ROOT);
-        return normalized.contains("broken pipe")
-            || normalized.contains("connection reset")
-            || normalized.contains("connection aborted")
-            || normalized.contains("connection has been closed")
-            || normalized.contains("asyncrequestnotusableexception")
-            || normalized.contains("responsebodyemitter has already completed");
+        pythonAgentClient.stream(
+            new SmartEngineInvocation(
+                currentUser.userId(),
+                UUID.randomUUID(),
+                UUID.randomUUID().toString(),
+                conversationId,
+                request.resolvedServiceType(),
+                buildConversationParams(currentUser, conversationId, request, history)
+            ),
+            eventConsumer
+        );
+    }
+
+    private VoicePartialDraftService.ReusableDraft takeReusableDraft(VoiceTurnRef voiceTurn, String finalText) {
+        if (!voiceTurn.isPresent() || voicePartialDraftService == null) {
+            return null;
+        }
+        return voicePartialDraftService.takeReusableDraft(voiceTurn.voiceSessionId(), voiceTurn.turnId(), finalText);
+    }
+
+    private void recordVoiceMetric(
+        String metric,
+        VoiceTurnRef voiceTurn,
+        long durationMs,
+        String outcome,
+        Integer inputLength,
+        Integer outputLength,
+        String errorCode
+    ) {
+        if (!voiceTurn.isPresent() || voiceMetricLogger == null || voiceTurnMetricsService == null) {
+            return;
+        }
+        VoiceMetricContext context = voiceTurnMetricsService.context(voiceTurn.voiceSessionId(), voiceTurn.turnId());
+        voiceMetricLogger.record(metric, context, durationMs, "python-agent", "conversation-stream", outcome, inputLength, outputLength, errorCode);
+    }
+
+    private long elapsedMs(long startedAtNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
     }
 
     private void sendConversationEvent(
@@ -405,6 +508,11 @@ public class ConversationService {
         params.put("conversationId", conversationId.toString());
         params.put("userId", currentUser.userId().toString());
         params.put("conversationLength", history.size());
+        Map<String, String> voiceContext = request.voiceContextMap();
+        if (!voiceContext.isEmpty()) {
+            params.put("voiceContext", voiceContext);
+            params.put("learningContext", buildLearningContext(voiceContext));
+        }
 
         List<Map<String, Object>> messages = new java.util.ArrayList<>();
         for (ConversationMessageItemResponse msg : history) {
@@ -421,6 +529,40 @@ public class ConversationService {
                 params.put("profileSummary", profile.getSummaryText());
             });
         return params;
+    }
+
+    private Map<String, Object> buildLearningContext(Map<String, String> voiceContext) {
+        Map<String, Object> learningContext = new LinkedHashMap<>();
+        putLearningContext(learningContext, "pageType", voiceContext.get("pageType"));
+        putLearningContext(learningContext, "questionId", voiceContext.get("questionId"));
+        putLearningContext(learningContext, "course", voiceContext.get("courseId"));
+        putLearningContext(learningContext, "knowledgePoint", voiceContext.get("knowledgePointId"));
+        putLearningContext(learningContext, "pageTitle", voiceContext.get("pageTitle"));
+        putLearningContext(learningContext, "currentPath", voiceContext.get("currentPath"));
+        putLearningContext(learningContext, "source", voiceContext.get("source"));
+        putLearningContext(learningContext, "conversationId", voiceContext.get("conversationId"));
+        putLearningContext(learningContext, "recentMessagesSummary", voiceContext.get("recentMessagesSummary"));
+        putLearningContext(learningContext, "commandIntent", voiceContext.get("commandIntent"));
+        putLearningContext(learningContext, "voiceSessionId", voiceContext.get("voiceSessionId"));
+        putLearningContext(learningContext, "voiceTurnId", voiceContext.get("voiceTurnId"));
+        putLearningContext(learningContext, "selectedService", voiceContext.get("selectedService"));
+        putLearningContext(learningContext, "formParametersSummary", voiceContext.get("formParametersSummary"));
+        putLearningContext(learningContext, "taskStatus", voiceContext.get("taskStatus"));
+        putLearningContext(learningContext, "currentMistakeSummary", voiceContext.get("currentMistakeSummary"));
+        putLearningContext(learningContext, "reviewStatus", voiceContext.get("reviewStatus"));
+        putLearningContext(learningContext, "weakPointsSummary", voiceContext.get("weakPointsSummary"));
+        putLearningContext(learningContext, "currentGoal", voiceContext.get("currentGoal"));
+        putLearningContext(learningContext, "lowestMasteryKnowledge", voiceContext.get("lowestMasteryKnowledge"));
+        putLearningContext(learningContext, "resourceResultSummary", voiceContext.get("resourceResultSummary"));
+        putLearningContext(learningContext, "downloadResourceSummary", voiceContext.get("downloadResourceSummary"));
+        putLearningContext(learningContext, "recommendedAction", voiceContext.get("recommendedAction"));
+        return learningContext;
+    }
+
+    private void putLearningContext(Map<String, Object> target, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            target.put(key, value.trim());
+        }
     }
 
     private String truncate(String message, int maxLength) {
@@ -463,5 +605,15 @@ public class ConversationService {
         }
         int imageCount = imageUrls == null ? 0 : imageUrls.size();
         return imageCount <= 1 ? "[图片]" : "[图片] 共 " + imageCount + " 张";
+    }
+
+    private record VoiceTurnRef(UUID voiceSessionId, String turnId) {
+        private static VoiceTurnRef empty() {
+            return new VoiceTurnRef(null, "");
+        }
+
+        private boolean isPresent() {
+            return voiceSessionId != null && turnId != null && !turnId.isBlank();
+        }
     }
 }

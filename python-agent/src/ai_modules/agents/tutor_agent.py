@@ -133,7 +133,8 @@ class TutorAgent(PlaceholderAgent):
         )
         params["compactedConversation"] = compaction_result.compacted_messages
         params["structuredConversationSummary"] = compaction_result.structured_summary.model_dump(
-            by_alias=True
+            by_alias=True,
+            mode="json",
         )
         params["conversationSummary"] = compaction_result.summary
         recent_dialogue = self._build_recent_dialogue_context(
@@ -153,7 +154,7 @@ class TutorAgent(PlaceholderAgent):
             await self._upsert_summary(
                 params=params,
                 task_id=task_id,
-                structured_summary=compaction_result.structured_summary.model_dump(by_alias=True),
+                structured_summary=compaction_result.structured_summary.model_dump(by_alias=True, mode="json"),
             )
 
         strategy = self._select_strategy(snapshot=snapshot, params=params)
@@ -725,7 +726,7 @@ class TutorAgent(PlaceholderAgent):
             return None
         if document is None:
             return None
-        return document.model_dump(by_alias=True)
+        return document.model_dump(by_alias=True, mode="json")
 
     async def _compact_conversation(
         self,

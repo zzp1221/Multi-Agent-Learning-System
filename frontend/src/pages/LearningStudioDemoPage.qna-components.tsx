@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowDown, BrainCircuit, FileImage, Globe2, LoaderCircle, Paperclip, SendHorizontal, Sparkles, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
@@ -84,6 +84,8 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
 
 export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatMessage[] }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const autoFollowRef = useRef(true);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -94,6 +96,7 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
   const scrollToBottom = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
+    container.scrollTop = container.scrollHeight;
     requestAnimationFrame(() => {
       container.scrollTop = container.scrollHeight;
       requestAnimationFrame(() => {
@@ -103,10 +106,11 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [scrollToBottom]);
+    autoFollowRef.current = autoFollow;
+  }, [autoFollow]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    autoFollowRef.current = true;
     setAutoFollow(true);
     scrollToBottom();
   }, [messageListKey, scrollToBottom]);
@@ -116,13 +120,29 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
     scrollToBottom();
   }, [autoFollow, messages, scrollToBottom]);
 
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (autoFollowRef.current) {
+        scrollToBottom();
+      }
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scrollToBottom]);
+
   const handleScroll = () => {
     const container = containerRef.current;
     if (!container) {
       return;
     }
     const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    setAutoFollow(distanceToBottom < 64);
+    const shouldFollow = distanceToBottom < 64;
+    autoFollowRef.current = shouldFollow;
+    setAutoFollow(shouldFollow);
   };
 
   const handleCopy = async (message: ChatMessage) => {
@@ -138,20 +158,22 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
   };
 
   return (
-    <div className="relative flex-1">
-      <div ref={containerRef} onScroll={handleScroll} className="h-full space-y-6 overflow-y-auto px-2 py-4 scrollbar-thin md:space-y-8 md:px-8">
-        <AnimatePresence>
-          {messages.map((message) => (
-            <ChatMessageBubble
-              key={message.id}
-              message={message}
-              isStreaming={message.id === lastMessage?.id && isStreaming}
-              onPreviewImage={setPreviewImage}
-              onCopy={handleCopy}
-              copiedMessageId={copiedMessageId}
-            />
-          ))}
-        </AnimatePresence>
+    <div className="relative min-h-0 flex-1">
+      <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto px-2 py-4 scrollbar-thin md:px-8">
+        <div ref={contentRef} className="space-y-6 md:space-y-8">
+          <AnimatePresence>
+            {messages.map((message) => (
+              <ChatMessageBubble
+                key={message.id}
+                message={message}
+                isStreaming={message.id === lastMessage?.id && isStreaming}
+                onPreviewImage={setPreviewImage}
+                onCopy={handleCopy}
+                copiedMessageId={copiedMessageId}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
       </div>
       {!autoFollow ? (
         <motion.button

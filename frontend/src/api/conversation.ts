@@ -13,6 +13,31 @@ export interface ConversationMessageStreamRequest {
   serviceType?: string;
   webSearchEnabled?: boolean;
   reasoningMode?: 'NORMAL' | 'DEEP';
+  voiceContext?: {
+    pageType?: string;
+    questionId?: string;
+    courseId?: string;
+    knowledgePointId?: string;
+    pageTitle?: string;
+    currentPath?: string;
+    source?: string;
+    conversationId?: string;
+    recentMessagesSummary?: string;
+    commandIntent?: string;
+    voiceSessionId?: string;
+    voiceTurnId?: string;
+    selectedService?: string;
+    formParametersSummary?: string;
+    taskStatus?: string;
+    currentMistakeSummary?: string;
+    reviewStatus?: string;
+    weakPointsSummary?: string;
+    currentGoal?: string;
+    lowestMasteryKnowledge?: string;
+    resourceResultSummary?: string;
+    downloadResourceSummary?: string;
+    recommendedAction?: string;
+  };
 }
 
 export interface ConversationHistoryItem {

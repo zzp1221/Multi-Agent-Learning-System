@@ -7,6 +7,7 @@ from typing import Any
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import OpenAICompatibleJSONGenerator, create_tool_calling_llm
+from src.ai_modules.llms.json_utils import dumps_json
 from src.ai_modules.models import CriticReviewPayload, SafetyReviewPayload
 
 
@@ -40,7 +41,7 @@ class OpenAICompatibleCriticReviewer:
             user_prompt=(
                 "Generate a structured Critic review for the following educational artifact. "
                 "Return JSON only.\n"
-                f"{json.dumps(context_payload, ensure_ascii=False)}"
+                f"{dumps_json(context_payload, ensure_ascii=False)}"
             ),
             max_tokens=1200,
         )
@@ -78,7 +79,7 @@ class OpenAICompatibleSafetyReviewer:
             user_prompt=(
                 "Generate a structured Safety review for the following educational artifact. "
                 "Return JSON only.\n"
-                f"{json.dumps(context_payload, ensure_ascii=False)}"
+                f"{dumps_json(context_payload, ensure_ascii=False)}"
             ),
             max_tokens=1200,
         )
@@ -114,7 +115,7 @@ def _stringify_review_signal(value: dict[str, Any]) -> str:
         if evidence_parts:
             parts.append(f"evidence: {', '.join(evidence_parts[:4])}")
     if not parts:
-        return json.dumps(value, ensure_ascii=False)
+        return dumps_json(value, ensure_ascii=False)
     return "; ".join(parts)
 
 

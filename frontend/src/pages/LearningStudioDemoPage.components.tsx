@@ -2,18 +2,12 @@ import { lazy, Suspense, useState } from 'react';
 import { BookOpen, CheckCircle2, ExternalLink, FileText, Sparkles, XCircle } from 'lucide-react';
 import CodeBlock from '../components/CodeBlock';
 import {
-  assessmentDimensionOptions,
-  pushResourceTypeOptions,
   resourceTypeButtons,
-  type AgentTraceStepView,
-  type AssessmentForm,
   type CompletedResourceView,
-  type CriticReviewView,
   type EngineService,
   type EngineTaskResultRecord,
   type InlineResourceView,
   type LearningPlanView,
-  type MasteryDiagnosisView,
   type PathForm,
   type PracticeJudgeResult,
   type PracticeQuestionBatch,
@@ -49,31 +43,15 @@ function DeferredMermaidDiagram(props: { chart: string }) {
   );
 }
 
-function formatAgentTraceName(agentName: string): string {
-  const labels: Record<string, string> = {
-    profile: '画像分析智能体',
-    evaluation: '掌握度诊断智能体',
-    query_rewrite: '检索改写智能体',
-    retrieval: '知识检索智能体',
-    path_planning: '路径规划智能体',
-    resource_bundle: '资源整合智能体',
-    resource_push: '资源推荐智能体',
-    critic: '质量审查智能体',
-  };
-  return labels[agentName] || agentName || '智能体';
-}
-
 export function ServiceDynamicForm(props: {
   service: EngineService | null;
   resourceForm: ResourceForm;
   resourceErrors?: Partial<Record<'course' | 'keyPoints', string>>;
   pathForm: PathForm;
   pushForm: PushForm;
-  assessmentForm: AssessmentForm;
   onResourceChange: (next: ResourceForm) => void;
   onPathChange: (next: PathForm) => void;
   onPushChange: (next: PushForm) => void;
-  onAssessmentChange: (next: AssessmentForm) => void;
 }) {
   if (!props.service) {
     return (
@@ -183,115 +161,25 @@ export function ServiceDynamicForm(props: {
     );
   }
 
-  if (props.service === 'path' || props.service === 'personalized') {
-    const isPersonalized = props.service === 'personalized';
+  if (props.service === 'personalized' || props.service === 'path' || props.service === 'push') {
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
-        <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
-          {isPersonalized ? '个性化学习方案参数' : '学习路径规划参数'}
-        </div>
-        {isPersonalized ? (
-          <div className="mb-3 grid gap-3 md:grid-cols-2">
-            <input
-              value={props.resourceForm.course}
-              onChange={(e) => props.onResourceChange({ ...props.resourceForm, course: e.target.value })}
-              placeholder="课程名称"
-              className={baseInputClass}
-            />
-            <input
-              value={props.resourceForm.keyPoints}
-              onChange={(e) => props.onResourceChange({ ...props.resourceForm, keyPoints: e.target.value })}
-              placeholder="章节或重点知识点"
-              className={baseInputClass}
-            />
+        <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">自动分析范围</div>
+        <div className="grid gap-3 text-sm leading-6 text-slate-600 dark:text-slate-400">
+          <div className="rounded-xl border border-blue-100 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+            系统将读取学习画像、学习进度、知识掌握图谱、练习测试记录、错题复习和资源使用反馈。
           </div>
-        ) : null}
-        <div className="grid gap-3 md:grid-cols-2">
-          <input
-            value={props.pathForm.targetPeriod}
-            onChange={(e) => props.onPathChange({ ...props.pathForm, targetPeriod: e.target.value })}
-            placeholder="目标周期"
-            className={baseInputClass}
-          />
-          <input
-            value={props.pathForm.weeklyHours}
-            onChange={(e) => props.onPathChange({ ...props.pathForm, weeklyHours: e.target.value })}
-            placeholder="每周可投入（小时）"
-            className={baseInputClass}
-          />
-        </div>
-        <textarea
-          value={props.pathForm.currentProgress}
-          onChange={(e) => props.onPathChange({ ...props.pathForm, currentProgress: e.target.value })}
-          rows={2}
-          placeholder={isPersonalized ? '当前学习进度和学习目标' : '当前学习进度'}
-          className={`${baseInputClass} mt-3`}
-        />
-        {isPersonalized ? (
-          <label className="mt-3 block">
-            <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">优先资源类型</span>
-            <select
-              value={props.pushForm.preferredType}
-              onChange={(e) => props.onPushChange({ ...props.pushForm, preferredType: e.target.value as typeof props.pushForm.preferredType })}
-              className={baseSelectClass}
-            >
-              {pushResourceTypeOptions.map((item) => (
-                <option key={item.type} value={item.type}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (props.service === 'push') {
-    return (
-      <div className="space-y-5">
-        <label className="block">
-          <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">资源类型</span>
-          <select
-            value={props.pushForm.preferredType}
-            onChange={(e) => props.onPushChange({ ...props.pushForm, preferredType: e.target.value as typeof props.pushForm.preferredType })}
-            className={`${baseSelectClass} h-14 text-base`}
-          >
-            {pushResourceTypeOptions.map((item) => (
-              <option key={item.type} value={item.type}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-4 text-sm leading-7 text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
-          具体推送内容将在提交后由服务根据真实学习上下文自动筛选，不再手动输入关键词和课程范围。
+          <div className="rounded-xl border border-blue-100 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+            提交后自动完成学习状态分析、路径规划和资源推送策略调整，不需要手动填写课程、周期、进度或资源偏好。
+          </div>
         </div>
       </div>
     );
   }
 
-  const nextDimensions = props.assessmentForm.dimensions;
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
-      <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">学习效果评估参数</div>
-      <div className="flex flex-wrap gap-2">
-        {assessmentDimensionOptions.map((item) => {
-          const checked = nextDimensions.includes(item);
-          return (
-            <button
-              key={item}
-              type="button"
-              onClick={() => {
-                props.onAssessmentChange({ ...props.assessmentForm, dimensions: [item] });
-              }}
-              className={chipButton(checked)}
-            >
-              {item}
-            </button>
-          );
-        })}
-      </div>
+      <div className="text-sm leading-6 text-slate-600 dark:text-slate-400">请选择服务后继续。</div>
     </div>
   );
 }
@@ -339,6 +227,81 @@ function InlineResourcePanel(props: { resource: InlineResourceView }) {
     <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
       <DeferredMarkdownRenderer content={props.resource.content} />
     </div>
+  );
+}
+
+function sanitizeResourceDisplayText(value: string): string {
+  if (!value.trim()) {
+    return '';
+  }
+  const cleanedLines: string[] = [];
+  let skippingSourceBlock = false;
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    const compact = line.trim();
+    if (/^#{1,6}\s*(参考来源|引用依据)\s*$/.test(compact) || /^参考来源[:：]?\s*$/.test(compact)) {
+      skippingSourceBlock = true;
+      continue;
+    }
+    if (skippingSourceBlock) {
+      if (/^#{1,6}\s+/.test(compact) && !/^#{1,6}\s*(参考来源|引用依据)\s*$/.test(compact)) {
+        skippingSourceBlock = false;
+      } else {
+        continue;
+      }
+    }
+    if (/^[-*]\s*(课程|章节|学生水平|学习风格)[:：]/.test(compact)) {
+      continue;
+    }
+    if (/^证据说明[:：]/.test(compact) || /^\[?来源\d+\]?/.test(compact) || /^[-*]\s*\[?来源\d+\]?/.test(compact)) {
+      continue;
+    }
+    cleanedLines.push(
+      line
+        .replace(/真实\s*LLM\s*产物[:：]?/gi, '资源')
+        .replace(/真实LLM产物[:：]?/gi, '资源'),
+    );
+  }
+  return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function sanitizeResourceInlineResource(resource: InlineResourceView): InlineResourceView {
+  return {
+    ...resource,
+    summary: resource.summary ? sanitizeResourceDisplayText(resource.summary) : resource.summary,
+    content: sanitizeResourceDisplayText(resource.content),
+    explanation: resource.explanation ? sanitizeResourceDisplayText(resource.explanation) : resource.explanation,
+  };
+}
+
+function sanitizeResourceCompletedItem(item: CompletedResourceView): CompletedResourceView {
+  if (item.kind !== 'inline') {
+    return item;
+  }
+  return {
+    ...item,
+    resource: sanitizeResourceInlineResource(item.resource),
+  };
+}
+
+function isInternalLearningEvaluationResource(item: CompletedResourceView): boolean {
+  if (item.kind !== 'inline') {
+    return false;
+  }
+  const resource = item.resource;
+  const haystack = [resource.title, resource.summary, resource.content]
+    .filter(Boolean)
+    .join('\n');
+  return isInternalLearningEvaluationText(haystack);
+}
+
+function isInternalLearningEvaluationText(value: string): boolean {
+  const compact = value.replace(/\s+/g, '');
+  return (
+    (compact.includes('学习效果') && compact.includes('评估') && compact.includes('结果'))
+    || (compact.includes('学习') && compact.includes('诊断') && compact.includes('摘要'))
+    || (compact.includes('多智能体') && compact.includes('协同') && compact.includes('轨迹'))
+    || (compact.includes('质量') && compact.includes('审查'))
   );
 }
 
@@ -469,11 +432,8 @@ export function TaskResultPanel(props: {
   inlineResource: InlineResourceView | null;
   inlineResources: InlineResourceView[];
   completedResources: CompletedResourceView[];
-  masteryDiagnosis: MasteryDiagnosisView | null;
   learningPlan: LearningPlanView | null;
   resourcePushPlan: ResourcePushPlanView | null;
-  criticReview: CriticReviewView | null;
-  agentTrace: AgentTraceStepView[];
   resultHistory: EngineTaskResultRecord[];
   selectedResultTaskId: string;
   practiceBatch: PracticeQuestionBatch | null;
@@ -509,21 +469,12 @@ export function TaskResultPanel(props: {
   const visiblePracticeBatch = selectedRecordUsesCurrentSnapshot
     ? selectedRecord?.practiceBatch ?? props.practiceBatch
     : selectedRecord.practiceBatch;
-  const visibleMasteryDiagnosis = selectedRecordUsesCurrentSnapshot
-    ? selectedRecord?.masteryDiagnosis ?? props.masteryDiagnosis
-    : selectedRecord.masteryDiagnosis;
   const visibleLearningPlan = selectedRecordUsesCurrentSnapshot
     ? selectedRecord?.learningPlan ?? props.learningPlan
     : selectedRecord.learningPlan;
   const visibleResourcePushPlan = selectedRecordUsesCurrentSnapshot
     ? selectedRecord?.resourcePushPlan ?? props.resourcePushPlan
     : selectedRecord.resourcePushPlan;
-  const visibleCriticReview = selectedRecordUsesCurrentSnapshot
-    ? selectedRecord?.criticReview ?? props.criticReview
-    : selectedRecord.criticReview;
-  const visibleAgentTrace = selectedRecordUsesCurrentSnapshot
-    ? selectedRecord?.agentTrace?.length ? selectedRecord.agentTrace : props.agentTrace
-    : selectedRecord.agentTrace;
   const visibleCompletedResources = selectedRecordUsesCurrentSnapshot
     ? selectedRecord?.completedResources?.length
       ? selectedRecord.completedResources
@@ -547,6 +498,17 @@ export function TaskResultPanel(props: {
   const visibleJudgeResult = selectedRecordUsesCurrentSnapshot
     ? selectedRecord?.judgeResult ?? props.judgeResult
     : selectedRecord.judgeResult;
+  const cleanedTaskSummary = props.service === 'resource'
+    ? sanitizeResourceDisplayText(visibleTaskSummary)
+    : visibleTaskSummary;
+  const displayedResultLines = visibleResultLines.filter((line) => !isInternalLearningEvaluationText(line));
+  const cleanedResultLines = props.service === 'resource'
+    ? displayedResultLines.map(sanitizeResourceDisplayText).filter(Boolean)
+    : displayedResultLines;
+  const userFacingCompletedResources = visibleCompletedResources.filter((item) => !isInternalLearningEvaluationResource(item));
+  const cleanedCompletedResources = props.service === 'resource'
+    ? userFacingCompletedResources.map(sanitizeResourceCompletedItem)
+    : userFacingCompletedResources;
   const externalRecommendations = props.service === 'push' || props.service === 'personalized'
     ? visibleDownloadLinks.filter(isExternalRecommendation)
     : [];
@@ -612,17 +574,14 @@ export function TaskResultPanel(props: {
   }
 
   const hasContent = Boolean(props.taskSummary)
-    || visibleResultLines.length > 0
+    || cleanedResultLines.length > 0
     || visibleDownloadLinks.length > 0
     || Boolean(visibleVideoResult)
-    || visibleCompletedResources.length > 0
+    || cleanedCompletedResources.length > 0
     || Boolean(visiblePracticeBatch)
     || Boolean(visibleJudgeResult)
-    || Boolean(visibleMasteryDiagnosis)
     || Boolean(visibleLearningPlan)
     || Boolean(visibleResourcePushPlan)
-    || Boolean(visibleCriticReview)
-    || visibleAgentTrace.length > 0
     || props.resultHistory.length > 0;
   if (!hasContent) {
     return null;
@@ -698,37 +657,6 @@ export function TaskResultPanel(props: {
           <div className="grid gap-3 p-3 sm:p-4 md:grid-cols-2">
             {externalRecommendations.map((item) => (
               <ExternalResourceRecommendationCard key={`${item.title}-${item.url}`} item={item} />
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {visibleMasteryDiagnosis ? (
-        <MasteryDiagnosisSummary diagnosis={visibleMasteryDiagnosis} />
-      ) : null}
-
-      {visibleAgentTrace.length > 0 ? (
-        <div className="modern-card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-            <Sparkles className="h-4 w-4 text-primary-500" />
-            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">多智能体协同轨迹</span>
-          </div>
-          <div className="grid gap-2 p-3 sm:p-4 md:grid-cols-2">
-            {visibleAgentTrace.map((item, index) => (
-              <div key={`${item.agentName}-${index}`} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-600 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-700">
-                  {index + 1}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
-                    <span>{formatAgentTraceName(item.agentName)}</span>
-                    {item.status ? <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:ring-slate-700">{item.status}</span> : null}
-                  </div>
-                  {item.message || item.stage ? (
-                    <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.message || item.stage}</div>
-                  ) : null}
-                </div>
-              </div>
             ))}
           </div>
         </div>
@@ -815,44 +743,16 @@ export function TaskResultPanel(props: {
         </div>
       ) : null}
 
-      {visibleCriticReview ? (
-        <div className="modern-card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-            <Sparkles className="h-4 w-4 text-primary-500" />
-            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">质量审查</span>
-          </div>
-          <div className="space-y-3 p-3 text-sm leading-7 text-slate-600 dark:text-slate-300 sm:p-4">
-            {visibleCriticReview.verdict ? <div className="font-semibold text-slate-800 dark:text-slate-100">结论：{visibleCriticReview.verdict}</div> : null}
-            <div className="grid gap-2 md:grid-cols-3">
-              <DiagnosisMetric label="覆盖度" value={formatScore(visibleCriticReview.coverageScore)} />
-              <DiagnosisMetric label="路径顺序" value={formatScore(visibleCriticReview.pathOrderScore)} />
-              <DiagnosisMetric label="资源匹配" value={formatScore(visibleCriticReview.resourceMatchScore)} />
-            </div>
-            {visibleCriticReview.summaryText ? <div>{visibleCriticReview.summaryText}</div> : null}
-            {visibleCriticReview.issues.length > 0 ? <div>问题：{visibleCriticReview.issues.join('；')}</div> : null}
-            {visibleCriticReview.suggestions.length > 0 ? <div>建议：{visibleCriticReview.suggestions.join('；')}</div> : null}
-          </div>
-        </div>
-      ) : null}
-
       <div className="modern-card overflow-hidden">
         <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
           <BookOpen className="h-4 w-4 text-primary-500" />
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">任务结果</span>
         </div>
         <div className="p-3 sm:p-4">
-          {props.service === 'assessment' && visiblePracticeBatch ? (
-            <PracticeQuestionPanel
-              batch={visiblePracticeBatch}
-              judgeResult={visibleJudgeResult}
-              canSubmit={props.canSubmitPractice}
-              onSubmitAnswers={props.onSubmitPracticeAnswers}
-            />
-          ) : null}
-          {visibleCompletedResources.map((item, index) => (
+          {cleanedCompletedResources.map((item, index) => (
             item.kind === 'inline' ? (
               <InlineResourcePanel key={`${item.key}-${index}`} resource={item.resource} />
-            ) : props.service !== 'assessment' ? (
+            ) : (
               <PracticeQuestionPanel
                 key={`${item.key}-${index}`}
                 batch={item.batch}
@@ -860,16 +760,16 @@ export function TaskResultPanel(props: {
                 canSubmit={props.canSubmitPractice}
                 onSubmitAnswers={props.onSubmitPracticeAnswers}
               />
-            ) : null
+            )
           ))}
-          {visibleTaskSummary ? (
+          {cleanedTaskSummary ? (
             <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
-              <DeferredMarkdownRenderer content={visibleTaskSummary} />
+              <DeferredMarkdownRenderer content={cleanedTaskSummary} />
             </div>
           ) : null}
-          {visibleResultLines.length > 0 ? (
+          {cleanedResultLines.length > 0 ? (
             <ul className="space-y-2">
-              {visibleResultLines.map((line, index) => (
+              {cleanedResultLines.map((line, index) => (
                 <li key={`${index}-${line}`} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
                   <span className="mt-1.5 block h-1.5 w-1.5 shrink-0 rounded-full bg-primary-400" />
                   {line}
@@ -961,72 +861,6 @@ function ResourcePushPlanStepResources(props: {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function MasteryDiagnosisSummary(props: { diagnosis: MasteryDiagnosisView }) {
-  const weakItems = props.diagnosis.knowledgeDiagnoses
-    .slice()
-    .sort((left, right) => (left.priority ?? 99) - (right.priority ?? 99))
-    .slice(0, 4);
-  return (
-    <div className="modern-card overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
-        <Sparkles className="h-4 w-4 text-primary-500" />
-        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">学习诊断摘要</span>
-      </div>
-      <div className="space-y-4 p-3 sm:p-4">
-        <div className="grid gap-2 md:grid-cols-3">
-          <DiagnosisMetric label="掌握水平" value={props.diagnosis.overallLevel || '--'} />
-          <DiagnosisMetric label="掌握度" value={formatPercent(props.diagnosis.overallMasteryScore)} />
-          <DiagnosisMetric label="置信度" value={formatPercent(props.diagnosis.confidence)} />
-        </div>
-        {props.diagnosis.summaryText ? (
-          <div className="text-sm leading-7 text-slate-600 dark:text-slate-300">{props.diagnosis.summaryText}</div>
-        ) : null}
-        {weakItems.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {weakItems.map((item) => (
-              <div key={item.knowledgePoint} className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.knowledgePoint}</div>
-                  <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:ring-slate-700">
-                    {formatPercent(item.masteryScore)}
-                  </span>
-                </div>
-                {item.nextFocus ? <div className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">下一步：{item.nextFocus}</div> : null}
-                {item.evidence.length > 0 ? (
-                  <div className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">证据：{item.evidence.join('；')}</div>
-                ) : null}
-                {item.recommendedResourceTypes.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {item.recommendedResourceTypes.map((type) => (
-                      <span key={type} className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
-                        {recommendationTypeLabel(type)}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {props.diagnosis.planAdjustmentHints?.strategy ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs leading-5 text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-200">
-            调整建议：{props.diagnosis.planAdjustmentHints.strategy}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function DiagnosisMetric(props: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950/70">
-      <div className="text-[11px] text-slate-500 dark:text-slate-400">{props.label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{props.value}</div>
     </div>
   );
 }
@@ -1163,17 +997,6 @@ function recommendationTypeLabel(resourceType?: string): string {
     default:
       return '讲解文档';
   }
-}
-
-function formatPercent(value?: number): string {
-  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : '--';
-}
-
-function formatScore(value?: number): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return '--';
-  }
-  return value <= 1 ? `${Math.round(value * 100)}%` : `${Math.round(value)}`;
 }
 
 function extractFileName(url: string, fallbackTitle: string): string {

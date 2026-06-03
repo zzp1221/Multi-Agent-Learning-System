@@ -204,7 +204,14 @@
       "Bash(iconv -f gbk -t utf-8)",
       "Bash(netsh wlan *)",
       "Bash(netsh interface *)",
-      "Bash(netsh advfirewall *)"
+      "Bash(netsh advfirewall *)",
+      "Bash(docker context ls *)",
+      "Bash(docker context *)",
+      "Bash(xargs grep -l \"profile\\\\|Profile\")",
+      "Bash(mvn.cmd -q -DskipTests package)",
+      "Bash(npx.cmd vite *)",
+      "Bash(docker restart *)",
+      "Bash(npx.cmd tsc *)"
     ]
   }
 }

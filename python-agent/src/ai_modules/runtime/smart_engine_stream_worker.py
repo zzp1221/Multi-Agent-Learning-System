@@ -262,25 +262,32 @@ class SmartEngineStreamWorker:
     async def _consume_messages_until_leadership_lost(self, token: str) -> None:
         leadership_lost = asyncio.Event()
         in_flight: set[asyncio.Task[None]] = set()
+        in_flight_message_ids: set[str] = set()
         watchdog = self._start_leadership_watchdog(token, leadership_lost)
         should_cancel_in_flight = False
         try:
             while not leadership_lost.is_set():
-                await self._collect_finished_tasks(in_flight)
+                await self._collect_finished_tasks(in_flight, in_flight_message_ids)
                 if len(in_flight) >= self.worker_concurrency:
-                    await self._wait_for_processing_slot(in_flight, leadership_lost)
+                    await self._wait_for_processing_slot(in_flight, in_flight_message_ids, leadership_lost)
                     continue
                 message = await self._read_message_while_leader(leadership_lost)
                 if message is None:
-                    await self._collect_finished_tasks(in_flight)
+                    await self._collect_finished_tasks(in_flight, in_flight_message_ids)
                     continue
                 if leadership_lost.is_set():
                     break
                 message_id, fields = message
+                if message_id in in_flight_message_ids:
+                    LOGGER.debug("Skipping in-flight pending SmartEngine message message_id=%s", message_id)
+                    await asyncio.sleep(0)
+                    continue
                 task = asyncio.create_task(
                     self._process_message(message_id, fields),
                     name=f"smart-engine-task:{message_id}",
                 )
+                task._smart_engine_message_id = message_id  # type: ignore[attr-defined]
+                in_flight_message_ids.add(message_id)
                 in_flight.add(task)
         except asyncio.CancelledError:
             should_cancel_in_flight = True
@@ -295,6 +302,7 @@ class SmartEngineStreamWorker:
     async def _wait_for_processing_slot(
         self,
         in_flight: set[asyncio.Task[None]],
+        in_flight_message_ids: set[str],
         leadership_lost: asyncio.Event,
     ) -> None:
         lost_task = asyncio.create_task(leadership_lost.wait())
@@ -312,6 +320,7 @@ class SmartEngineStreamWorker:
         await self._cancel_pending_tasks(lost_task)
         for task in done:
             in_flight.discard(task)
+            self._discard_in_flight_message_id(task, in_flight_message_ids)
             await task
 
     async def _drain_processing_tasks(self, in_flight: set[asyncio.Task[None]]) -> None:
@@ -328,11 +337,26 @@ class SmartEngineStreamWorker:
         if in_flight:
             await asyncio.gather(*in_flight, return_exceptions=True)
 
-    async def _collect_finished_tasks(self, in_flight: set[asyncio.Task[None]]) -> None:
+    async def _collect_finished_tasks(
+        self,
+        in_flight: set[asyncio.Task[None]],
+        in_flight_message_ids: set[str] | None = None,
+    ) -> None:
         for task in tuple(in_flight):
             if task.done():
                 in_flight.discard(task)
+                if in_flight_message_ids is not None:
+                    self._discard_in_flight_message_id(task, in_flight_message_ids)
                 await task
+
+    def _discard_in_flight_message_id(
+        self,
+        task: asyncio.Task[None],
+        in_flight_message_ids: set[str],
+    ) -> None:
+        message_id = getattr(task, "_smart_engine_message_id", None)
+        if isinstance(message_id, str):
+            in_flight_message_ids.discard(message_id)
 
     async def _read_message_while_leader(
         self,

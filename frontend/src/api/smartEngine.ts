@@ -135,6 +135,27 @@ export interface UserProfileAnalyticsResponse {
   preferenceAnalytics?: ProfilePreferenceAnalytics;
 }
 
+export interface KnowledgeGraphNode {
+  key: string;
+  topic: string;
+  mastery: number;
+  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'MASTERED' | 'WEAK';
+  source: string;
+}
+
+export interface KnowledgeGraphEdge {
+  from: string;
+  to: string;
+  type: 'PREREQUISITE' | 'RELATED' | 'PART_OF';
+  weight: number;
+}
+
+export interface KnowledgeGraphResponse {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  nextRecommended: string[];
+}
+
 export const smartEngineApi = {
   submit(payload: SmartEngineSubmitRequest): Promise<SmartEngineSubmitResponse> {
     return request.post<SmartEngineSubmitResponse>('/api/smart-engine/submit', payload);
@@ -187,7 +208,6 @@ export const smartEngineApi = {
           return true;
         }
         if (parsed.event === 'error') {
-          handlers.onError(new Error(parsed.data || '实时任务连接执行失败'));
           return true;
         }
         return false;
@@ -205,5 +225,9 @@ export const smartEngineApi = {
     return request.get<UserProfileAnalyticsResponse>(`/api/users/${userId}/profile/analytics`, {
       params: { days },
     });
+  },
+
+  getKnowledgeGraph(userId: string): Promise<KnowledgeGraphResponse> {
+    return request.get<KnowledgeGraphResponse>(`/api/users/${userId}/knowledge-graph`);
   },
 };

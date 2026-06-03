@@ -12,6 +12,7 @@ import httpx
 from opentelemetry import trace
 
 from src.ai_modules.config import get_settings
+from src.ai_modules.llms.json_utils import dumps_json
 from src.ai_modules.runtime import AssistantTurn, ToolCall
 
 LOGGER = logging.getLogger(__name__)
@@ -90,6 +91,19 @@ class OpenAICompatibleClient:
             )
             self._shared_clients[client_key] = client
         return client
+
+    @classmethod
+    async def close_shared_clients(cls) -> None:
+        """在应用关闭时关闭所有共享的异步 HTTP 客户端。"""
+        clients = list(cls._shared_clients.values())
+        cls._shared_clients.clear()
+        for client in clients:
+            try:
+                await client.aclose()
+            except RuntimeError as exc:
+                if "Event loop is closed" not in str(exc):
+                    raise
+                LOGGER.debug("Skipping shared LLM client close after closed event loop")
 
     def _extract_cached_tokens(self, usage: dict[str, Any]) -> int:
         details = usage.get("prompt_tokens_details", {})
@@ -403,12 +417,12 @@ class OpenAICompatibleToolCallingLLM:
     def _stringify_arguments(self, value: Any) -> str:
         if isinstance(value, str):
             return value
-        return json.dumps(value, ensure_ascii=False)
+        return dumps_json(value, ensure_ascii=False)
 
     def _stringify_content(self, value: Any) -> str:
         if isinstance(value, str):
             return value
-        return json.dumps(value, ensure_ascii=False)
+        return dumps_json(value, ensure_ascii=False)
 
 
 # 从旧的提供商特定命名迁移期间的向后兼容别名。

@@ -6,7 +6,7 @@ from src.ai_modules.agents.query_rewrite_agent import QueryRewriteAgent
 from src.ai_modules.agents.retrieval_agent import RetrievalAgent
 from src.ai_modules.llms import RuleBasedQueryRewriteLLM
 from src.ai_modules.memory import InMemoryLearningPlanStore
-from src.ai_modules.models import EvaluationPayload, LearningPlanPayload, QueryRewriteResult, QuestionBatchPayload
+from src.ai_modules.models import EvaluationPayload, LearningPlanPayload, QueryRewriteResult
 from src.ai_modules.retrieval import HybridRetrievalService
 from src.ai_modules.runtime import SystemSnapshot
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
@@ -38,7 +38,7 @@ def _build_snapshot() -> SystemSnapshot:
 
 
 def test_evaluation_agent_system_prompt_loads_skill_and_context() -> None:
-    agent = EvaluationAgent(llm_client=_UnusedPlanningLLM())
+    agent = EvaluationAgent()
 
     prompt = agent.system_prompt(_build_snapshot())
 
@@ -50,7 +50,7 @@ def test_evaluation_agent_system_prompt_loads_skill_and_context() -> None:
 
 
 def test_evaluation_agent_uses_profile_analysis_in_aggregated_context() -> None:
-    agent = EvaluationAgent(llm_client=_UnusedPlanningLLM())
+    agent = EvaluationAgent()
     params = {
         "profile": {"knowledgeGaps": ["old-gap"]},
         "profileAnalysis": {
@@ -75,7 +75,7 @@ def test_evaluation_agent_uses_profile_analysis_in_aggregated_context() -> None:
 
 
 def test_evaluation_agent_ignores_empty_profile_analysis_values() -> None:
-    agent = EvaluationAgent(llm_client=_UnusedPlanningLLM())
+    agent = EvaluationAgent()
     params = {
         "profile": {
             "knowledgeGaps": ["persisted-gap"],
@@ -525,10 +525,7 @@ async def test_evaluation_agent_uses_llm_generated_report_via_agent_core_loop() 
                 }
             )
 
-    agent = EvaluationAgent(
-        llm_client=_UnusedPlanningLLM(),
-        generator=FakeEvaluationGenerator(),
-    )
+    agent = EvaluationAgent(generator=FakeEvaluationGenerator())
     params = {
         "profile": {"studentLevel": "BASIC", "knowledgeGaps": ["最左匹配", "使用条件"]},
         "judgeResult": {"accuracy": 0.5, "weakKnowledgeTags": ["条件判断"]},
@@ -549,7 +546,7 @@ async def test_evaluation_agent_uses_llm_generated_report_via_agent_core_loop() 
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "resource_file", "result_chunk"]
+    assert [event.event for event in events] == ["progress", "result_chunk"]
     assert params["aggregatedEvaluationContext"]["candidateWeaknesses"][0] == "最左匹配"
     assert params["evaluationResult"]["overallLevel"] == "INTERMEDIATE"
     diagnosis = params["masteryDiagnosis"]
@@ -557,23 +554,19 @@ async def test_evaluation_agent_uses_llm_generated_report_via_agent_core_loop() 
     assert diagnosis["behaviorSignals"]["practiceAccuracy"] == 0.5
     assert diagnosis["knowledgeDiagnoses"][0]["knowledgePoint"] == "最左匹配"
     assert diagnosis["knowledgeDiagnoses"][0]["recommendedResourceTypes"]
-    assert events[1].payload.asset_type == "DOCUMENT"
-    assert events[1].payload.generated_by == "LLM"
-    assert events[1].payload.provider == "test-provider"
-    assert events[1].payload.inline_content is not None
-    assert "LLM 评估：" in events[1].payload.inline_content
-    assert "LLM 评估：" in events[2].payload.text
+    assert "LLM 评估：" in events[1].payload.text
 
 
 @pytest.mark.asyncio
-async def test_evaluation_agent_golden_eval_preserves_interactive_question_batch() -> None:
+async def test_evaluation_agent_normalizes_legacy_dimension_to_learning_effect() -> None:
     class GoldenEvaluationGenerator:
         provider_name = "test-provider"
         model_name = "test-eval-model"
 
         async def evaluate(self, *, system_prompt, context_payload):
             assert "# 评估智能体" in system_prompt
-            assert context_payload["assessmentDimensions"] == ["练习掌握"]
+            assert context_payload["assessmentDimensions"] == ["学习效果评估"]
+            assert context_payload["outputGuidance"]["mode"] == "learning_effect_evaluation"
             return EvaluationPayload.model_validate(
                 {
                     "overallLevel": "BASIC",
@@ -584,46 +577,15 @@ async def test_evaluation_agent_golden_eval_preserves_interactive_question_batch
                         {
                             "name": "practice_mastery",
                             "level": "BASIC",
-                            "evidence": "正确率 0.5，仍需要围绕最左匹配做专项练习。",
+                            "evidence": "正确率 0.5，仍需要围绕最左匹配做针对性练习。",
                             "recommendation": "先判断索引字段顺序，再解释失效条件。",
                         }
                     ],
-                    "summaryText": "练习掌握评估：学生能识别联合索引主题，但最左匹配和索引条件仍需巩固。",
+                    "summaryText": "学习效果评估：学生能识别联合索引主题，但最左匹配和索引条件仍需巩固。",
                 }
             )
 
-    class FakeQuestionGenerator:
-        provider_name = "test-provider"
-        model_name = "test-practice-model"
-
-        async def generate_batch(self, *, topic, difficulty, count, learning_context):
-            assert topic == "练习掌握：联合索引"
-            assert count == 3
-            assert learning_context["assessmentDimension"] == "练习掌握"
-            return QuestionBatchPayload.model_validate(
-                {
-                    "title": "LLM 生成的练习掌握题",
-                    "topic": "联合索引",
-                    "difficulty": difficulty,
-                    "questions": [
-                        {
-                            "questionId": "q1",
-                            "questionType": "SHORT_ANSWER",
-                            "stem": "请说明联合索引最左匹配的判断步骤。",
-                            "answer": "先看索引列顺序，再判断条件是否连续命中。",
-                            "knowledgeTags": ["联合索引", "最左匹配"],
-                            "difficultyLevel": difficulty,
-                            "explanation": "重点是按索引定义顺序判断。",
-                        }
-                    ],
-                }
-            )
-
-    agent = EvaluationAgent(
-        llm_client=_UnusedPlanningLLM(),
-        generator=GoldenEvaluationGenerator(),
-        question_generator=FakeQuestionGenerator(),
-    )
+    agent = EvaluationAgent(generator=GoldenEvaluationGenerator())
     params = {
         "dimensions": ["练习掌握"],
         "profile": {"studentLevel": "BASIC", "knowledgeGaps": ["最左匹配"]},
@@ -647,34 +609,27 @@ async def test_evaluation_agent_golden_eval_preserves_interactive_question_batch
 
     result = params["evaluationResult"]
 
-    assert [event.event for event in events] == ["progress", "resource_file", "result_chunk", "question_batch"]
+    assert [event.event for event in events] == ["progress", "result_chunk"]
     assert result["overallLevel"] == "BASIC"
     assert result["weaknesses"] == ["最左匹配", "索引条件"]
     assert result["nextFocus"] == ["最左匹配", "条件判断"]
     assert result["dimensions"][0]["name"] == "practice_mastery"
-    assert events[1].payload.asset_type == "DOCUMENT"
-    assert events[1].payload.inline_content is not None
-    assert "练习掌握评估" in events[1].payload.inline_content
-    assert "练习掌握专项评估已完成" in events[2].payload.text
-    assert events[3].payload.assessment_dimension == "练习掌握"
-    assert events[3].payload.generated_by == "LLM"
-    assert events[3].payload.provider == "test-provider"
-    assert events[3].payload.fallback is False
-    assert len(events[3].payload.questions) == 1
+    assert "学习效果评估已完成" in events[1].payload.text
+    assert "practiceQuestionBatch" not in params
     assert params["profileSource"] == "EVALUATION"
-    assert params["practiceQuestionBatch"]["assessmentDimension"] == "练习掌握"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("dimension", ["学习主动性", "复盘闭环"])
-async def test_evaluation_agent_profile_dimensions_skip_question_batch(dimension: str) -> None:
+async def test_evaluation_agent_legacy_profile_dimensions_are_not_exposed(dimension: str) -> None:
     class GoldenEvaluationGenerator:
         provider_name = "test-provider"
         model_name = "test-eval-model"
 
         async def evaluate(self, *, system_prompt, context_payload):
             assert "# 评估智能体" in system_prompt
-            assert context_payload["assessmentDimensions"] == [dimension]
+            assert context_payload["assessmentDimensions"] == ["学习效果评估"]
+            assert context_payload["outputGuidance"]["mode"] == "learning_effect_evaluation"
             assert context_payload["outputGuidance"]["detailLevel"] == "high"
             assert context_payload["outputGuidance"]["minSummaryCharacters"] == 260
             assert len(context_payload["outputGuidance"]["rubric"]) == 4
@@ -686,29 +641,17 @@ async def test_evaluation_agent_profile_dimensions_skip_question_batch(dimension
                     "nextFocus": ["设定下一轮学习验证点"],
                     "dimensions": [
                         {
-                            "name": dimension,
+                            "name": "学习效果评估",
                             "level": "INTERMEDIATE",
-                            "evidence": "LLM 综合学生画像、对话行为和近期活动后给出判断。",
-                            "recommendation": "继续根据画像信号做学习行为调整。",
+                            "evidence": "LLM 综合学生画像、对话行为、近期活动、练习测试和资源反馈后给出判断。",
+                            "recommendation": "继续根据画像信号、练习反馈和资源使用情况做学习方案调整。",
                         }
                     ],
-                    "summaryText": f"{dimension}评估：根据学生画像判断，无需生成练习题。",
+                    "summaryText": "学习效果评估：根据学生画像和学习反馈判断，无需生成练习题。",
                 }
             )
 
-    class FailingQuestionGenerator:
-        provider_name = "test-provider"
-        model_name = "test-practice-model"
-
-        async def generate_batch(self, *, topic, difficulty, count, learning_context):
-            del topic, difficulty, count, learning_context
-            raise AssertionError("画像类评估不应进入出题路径")
-
-    agent = EvaluationAgent(
-        llm_client=_UnusedPlanningLLM(),
-        generator=GoldenEvaluationGenerator(),
-        question_generator=FailingQuestionGenerator(),
-    )
+    agent = EvaluationAgent(generator=GoldenEvaluationGenerator())
     params = {
         "dimensions": [dimension],
         "profile": {
@@ -733,29 +676,16 @@ async def test_evaluation_agent_profile_dimensions_skip_question_batch(dimension
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "resource_file", "result_chunk"]
+    assert [event.event for event in events] == ["progress", "result_chunk"]
     assert "practiceQuestionBatch" not in params
     assert "practiceQuestions" not in params
-    assert params["evaluationResult"]["summaryText"] == f"{dimension}评估：根据学生画像判断，无需生成练习题。"
-    assert events[1].payload.generated_by == "LLM"
-    assert events[1].payload.inline_content is not None
-    assert f"{dimension}评估" in events[1].payload.inline_content
-    if dimension == "学习主动性":
-        assert "目标拆解" in events[1].payload.inline_content
-        assert "主动追问" in events[1].payload.inline_content
-        assert "学习主动性强调主动发起" not in events[1].payload.inline_content
-    else:
-        assert "错因定位" in events[1].payload.inline_content
-        assert "间隔复测" in events[1].payload.inline_content
-        assert "目标拆解" not in events[1].payload.inline_content
+    assert params["evaluationResult"]["summaryText"] == "学习效果评估：根据学生画像和学习反馈判断，无需生成练习题。"
+    assert params["evaluationResult"]["dimensions"][0]["name"] == "学习效果评估"
+    assert dimension not in events[1].payload.text
 
 
 def test_evaluation_agent_context_dimension_falls_back_to_assessment_dimension() -> None:
-    agent = EvaluationAgent(
-        llm_client=_UnusedPlanningLLM(),
-        generator=None,
-        question_generator=None,
-    )
+    agent = EvaluationAgent(generator=None)
 
     payload = agent._build_context_payload(
         params={"assessmentDimension": "学习主动性"},
@@ -763,7 +693,7 @@ def test_evaluation_agent_context_dimension_falls_back_to_assessment_dimension()
         aggregated_behavior={},
     )
 
-    assert payload["assessmentDimensions"] == ["学习主动性"]
+    assert payload["assessmentDimensions"] == ["学习效果评估"]
     assert payload["outputGuidance"]["detailLevel"] == "high"
 
     default_payload = agent._build_context_payload(
@@ -772,17 +702,18 @@ def test_evaluation_agent_context_dimension_falls_back_to_assessment_dimension()
         aggregated_behavior={},
     )
 
-    assert default_payload["assessmentDimensions"] == ["知识基础"]
+    assert default_payload["assessmentDimensions"] == ["学习效果评估"]
 
 
 @pytest.mark.asyncio
-async def test_evaluation_agent_fails_when_assessment_question_llm_fails() -> None:
+async def test_evaluation_agent_skips_question_generation_for_legacy_practice_dimension() -> None:
     class GoldenEvaluationGenerator:
         provider_name = "test-provider"
         model_name = "test-eval-model"
 
         async def evaluate(self, *, system_prompt, context_payload):
-            del system_prompt, context_payload
+            del system_prompt
+            assert context_payload["assessmentDimensions"] == ["学习效果评估"]
             return EvaluationPayload.model_validate(
                 {
                     "overallLevel": "BASIC",
@@ -790,39 +721,31 @@ async def test_evaluation_agent_fails_when_assessment_question_llm_fails() -> No
                     "weaknesses": ["最左匹配"],
                     "nextFocus": ["最左匹配"],
                     "dimensions": [],
-                    "summaryText": "LLM 评估：需要继续练习。",
+                    "summaryText": "学习效果评估：需要继续练习。",
                 }
             )
 
-    class FailingQuestionGenerator:
-        provider_name = "test-provider"
-        model_name = "test-practice-model"
+    agent = EvaluationAgent(generator=GoldenEvaluationGenerator())
 
-        async def generate_batch(self, *, topic, difficulty, count, learning_context):
-            del topic, difficulty, count, learning_context
-            raise RuntimeError("practice llm down")
+    params = {
+        "dimensions": ["练习掌握"],
+        "learningContext": {"course": "数据库原理", "chapter": "联合索引"},
+    }
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-eval-question-skip",
+            trace_id="trace-eval-question-skip",
+            seq=1,
+            service_type="EVALUATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=agent.system_prompt(_build_snapshot()),
+        )
+    ]
 
-    agent = EvaluationAgent(
-        generator=GoldenEvaluationGenerator(),
-        question_generator=FailingQuestionGenerator(),
-    )
-
-    with pytest.raises(RuntimeError, match="deterministic fallback is not allowed"):
-        _ = [
-            event
-            async for event in agent.run(
-                task_id="task-eval-question-fail",
-                trace_id="trace-eval-question-fail",
-                seq=1,
-                service_type="EVALUATION",
-                params={
-                    "dimensions": ["练习掌握"],
-                    "learningContext": {"course": "数据库原理", "chapter": "联合索引"},
-                },
-                snapshot=_build_snapshot(),
-                system_prompt=agent.system_prompt(_build_snapshot()),
-            )
-        ]
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert "practiceQuestionBatch" not in params
 
 
 @pytest.mark.asyncio

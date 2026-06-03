@@ -144,7 +144,7 @@ async def test_practice_agent_reuses_existing_question_batch() -> None:
     params = {
         "topic": "学习主动性：并发编程",
         "practiceQuestionBatch": {
-            "title": "并发编程 学习主动性专项评估",
+            "title": "并发编程 旧版行为测评",
             "topic": "并发编程",
             "difficulty": "BASIC",
             "assessmentDimension": "学习主动性",
@@ -177,10 +177,13 @@ async def test_practice_agent_reuses_existing_question_batch() -> None:
     ]
 
     assert [event.event for event in events] == ["progress", "question_batch"]
-    assert events[1].payload.title == "并发编程 学习主动性专项评估"
-    assert events[1].payload.assessment_dimension == "学习主动性"
+    assert events[1].payload.title == "并发编程 练习题"
+    assert events[1].payload.assessment_dimension is None
+    assert events[1].payload.submit_label is None
     assert events[1].payload.questions[0].question_id == "initiative-q1"
-    assert params["practiceQuestionBatch"]["title"] == "并发编程 学习主动性专项评估"
+    assert events[1].payload.questions[0].knowledge_tags == ["并发编程", "学习主动性"]
+    assert params["practiceQuestionBatch"]["title"] == "并发编程 练习题"
+    assert params["practiceQuestionBatch"]["assessmentDimension"] is None
 
 
 @pytest.mark.asyncio
@@ -322,11 +325,6 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
                 }
             )
 
-    class FakeObjectiveJudgeGenerator:
-        async def judge(self, *, questions, answers):
-            del questions, answers
-            raise AssertionError("objective questions should be graded deterministically")
-
     class FakeFeedbackGenerator:
         async def summarize(self, *, items, topic):
             return {
@@ -378,7 +376,6 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
         "q5": "",
     }
     judge_agent = JudgeAgent(
-        objective_judge_generator=FakeObjectiveJudgeGenerator(),
         subjective_evaluator=FakeSubjectiveEvaluator(),
         feedback_generator=FakeFeedbackGenerator(),
     )
@@ -563,11 +560,6 @@ def test_validate_complete_judge_items_rejects_empty_result() -> None:
 
 @pytest.mark.asyncio
 async def test_judge_agent_golden_eval_preserves_scoring_contract() -> None:
-    class BrokenObjectiveJudgeGenerator:
-        async def judge(self, *, questions, answers):
-            del questions, answers
-            raise AssertionError("objective questions should be graded deterministically")
-
     class GoldenSubjectiveEvaluator:
         async def evaluate(self, *, question, learner_answer):
             del question
@@ -641,7 +633,6 @@ async def test_judge_agent_golden_eval_preserves_scoring_contract() -> None:
     }
     agent = JudgeAgent(
         practice_store=InMemoryPracticeStore(),
-        objective_judge_generator=BrokenObjectiveJudgeGenerator(),
         subjective_evaluator=GoldenSubjectiveEvaluator(),
         feedback_generator=GoldenFeedbackGenerator(),
     )
@@ -675,11 +666,6 @@ async def test_judge_agent_golden_eval_preserves_scoring_contract() -> None:
 
 @pytest.mark.asyncio
 async def test_judge_agent_uses_subjective_evaluator_result_when_available() -> None:
-    class BrokenObjectiveJudgeGenerator:
-        async def judge(self, *, questions, answers):
-            del questions, answers
-            raise AssertionError("objective questions should be graded deterministically")
-
     class FakeSubjectiveEvaluator:
         async def evaluate(self, *, question, learner_answer):
             del question, learner_answer
@@ -718,7 +704,6 @@ async def test_judge_agent_uses_subjective_evaluator_result_when_available() -> 
     }
 
     judge_agent = JudgeAgent(
-        objective_judge_generator=BrokenObjectiveJudgeGenerator(),
         subjective_evaluator=FakeSubjectiveEvaluator(),
     )
     events = [
@@ -745,11 +730,6 @@ async def test_judge_agent_uses_subjective_evaluator_result_when_available() -> 
 
 @pytest.mark.asyncio
 async def test_judge_agent_fails_when_subjective_evaluator_fails() -> None:
-    class BrokenObjectiveJudgeGenerator:
-        async def judge(self, *, questions, answers):
-            del questions, answers
-            raise AssertionError("objective questions should be graded deterministically")
-
     class BrokenSubjectiveEvaluator:
         async def evaluate(self, *, question, learner_answer):
             del question, learner_answer
@@ -783,7 +763,6 @@ async def test_judge_agent_fails_when_subjective_evaluator_fails() -> None:
     }
 
     judge_agent = JudgeAgent(
-        objective_judge_generator=BrokenObjectiveJudgeGenerator(),
         subjective_evaluator=BrokenSubjectiveEvaluator(),
     )
     with pytest.raises(RuntimeError, match="rate limit"):

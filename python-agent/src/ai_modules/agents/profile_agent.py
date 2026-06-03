@@ -12,6 +12,7 @@ from src.ai_modules.async_utils import cancel_and_await
 from src.ai_modules.llms import ProfileAnalyzer, ProfileLLMClientFactory
 from src.ai_modules.memory import (
     InMemoryProfileStore,
+    LearnerKnowledgeGraphStore,
     MongoConversationSummaryStore,
     PostgresProfileStore,
     ProfileStore,
@@ -52,6 +53,7 @@ class ProfileAgent(PlaceholderAgent):
         llm_client: Any | None = None,
         profile_analyzer: Any | None = None,
         heartbeat_interval_seconds: float = 15.0,
+        knowledge_graph_store: LearnerKnowledgeGraphStore | None = None,
     ) -> None:
         super().__init__("Profile Agent", "profiling")
         self.profile_store = profile_store or PostgresProfileStore()
@@ -61,6 +63,7 @@ class ProfileAgent(PlaceholderAgent):
         self.profile_analyzer = profile_analyzer or ProfileAnalyzer()
         self.recovery_engine = RecoveryEngine()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self.knowledge_graph_store = knowledge_graph_store or LearnerKnowledgeGraphStore()
         self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
@@ -179,7 +182,14 @@ class ProfileAgent(PlaceholderAgent):
         await self._tool_analyze_dialogue(tool_input={}, params=params)
 
         # 步骤 3: 更新画像（数据库写入，确定性操作）
-        return await self._tool_update_profile(tool_input={}, user_id=user_id, params=params)
+        result = await self._tool_update_profile(tool_input={}, user_id=user_id, params=params)
+
+        # 步骤 4: 同步掌握度到知识图谱节点（后台，失败不影响主链路）
+        skill_mastery = (result.get("dimensions") or {}).get("skillMastery") or {}
+        if skill_mastery:
+            await self._sync_mastery_to_graph(user_id=user_id, skill_mastery=skill_mastery)
+
+        return result
 
     async def _tool_read_profile(
         self,
@@ -195,7 +205,7 @@ class ProfileAgent(PlaceholderAgent):
             "exists": True,
             "userId": snapshot.user_id,
             "version": snapshot.version,
-            "profile": snapshot.profile.model_dump(by_alias=True),
+            "profile": snapshot.profile.model_dump(by_alias=True, mode="json"),
         }
 
     async def _tool_analyze_dialogue(
@@ -261,7 +271,7 @@ class ProfileAgent(PlaceholderAgent):
             combined_text=combined_text,
             profile_source=profile_source,
         )
-        serialized_dimensions = dimensions.model_dump(by_alias=True)
+        serialized_dimensions = dimensions.model_dump(by_alias=True, mode="json")
         params["analyzedProfileDimensions"] = serialized_dimensions
         return serialized_dimensions
 
@@ -306,7 +316,7 @@ class ProfileAgent(PlaceholderAgent):
             "userId": snapshot.user_id,
             "version": snapshot.version,
             "summaryText": snapshot.profile.summary_text,
-            "dimensions": snapshot.profile.model_dump(by_alias=True),
+            "dimensions": snapshot.profile.model_dump(by_alias=True, mode="json"),
         }
 
     def _latest_analyzed_dimensions(self, params: dict[str, Any]) -> dict[str, Any] | None:
@@ -334,7 +344,7 @@ class ProfileAgent(PlaceholderAgent):
             return None
         if document is None:
             return None
-        return document.model_dump(by_alias=True)
+        return document.model_dump(by_alias=True, mode="json")
 
     def _merge_summary_context(
         self,
@@ -618,7 +628,7 @@ class ProfileAgent(PlaceholderAgent):
         short_goal = dimensions.current_goal.short_term or dimensions.learning_goal
         return (
             f"画像更新完成：当前知识基础为 {self._localize_knowledge_foundation(dimensions.knowledge_foundation)}，"
-            f"短期目标聚焦“{short_goal}”；"
+            f"短期目标聚焦 \"{short_goal}\"；"
             f"主要薄弱点为 {', '.join(weak_topics[:3]) or '暂无明确薄弱点'}，"
             f"高频易错模式为 {dimensions.error_patterns[0].pattern if dimensions.error_patterns else '概念理解待巩固'}；"
             f"学习偏好偏向 {self._localize_learning_preference(dimensions.learning_preference or dimensions.explanation_preference or 'step_by_step')}，"
@@ -951,8 +961,34 @@ class ProfileAgent(PlaceholderAgent):
     ) -> list[str]:
         recommendations: list[str] = []
         if weak_point_details:
-            recommendations.append(f"优先攻克“{weak_point_details[0].topic}”相关薄弱点")
+            recommendations.append(f"优先攻克 \"{weak_point_details[0].topic}\" 相关薄弱点")
         if preferred_resource_types:
             recommendations.append(f"优先推送 {preferred_resource_types[0]} 类型资源")
-        recommendations.append(f"讲解顺序建议采用“{explanation_preference}”")
+        recommendations.append(f"讲解顺序建议采用 \"{explanation_preference}\"")
         return recommendations[:3]
+
+    async def _sync_mastery_to_graph(
+        self,
+        *,
+        user_id: str,
+        skill_mastery: dict[str, Any],
+    ) -> None:
+        """把 LLM 分析出的技能掌握度同步更新到知识图谱节点。"""
+        try:
+            for topic, score in skill_mastery.items():
+                topic_str = str(topic).strip()
+                if not topic_str:
+                    continue
+                try:
+                    mastery = max(0.0, min(1.0, float(score)))
+                except (TypeError, ValueError):
+                    continue
+                await self.knowledge_graph_store.upsert_node(
+                    user_id=user_id,
+                    canonical_key=topic_str,
+                    topic=topic_str,
+                    mastery_score=mastery,
+                    source="PRACTICE",
+                )
+        except Exception as exc:
+            LOGGER.warning("_sync_mastery_to_graph failed user=%s: %s", user_id, exc)

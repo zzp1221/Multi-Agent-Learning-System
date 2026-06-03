@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.generation import (
@@ -20,7 +21,7 @@ from src.ai_modules.models.video import VideoScriptPayload
 
 
 class FakePrimaryGenerator:
-    def generate_document_sections(self, **kwargs) -> GeneratedSectionBundle:
+    async def generate_document_sections(self, **kwargs) -> GeneratedSectionBundle:
         del kwargs
         return GeneratedSectionBundle(
             sections=[
@@ -51,7 +52,7 @@ class FakePrimaryGenerator:
             ]
         )
 
-    def generate_reading_asset(self, **kwargs) -> GeneratedTextAsset:
+    async def generate_reading_asset(self, **kwargs) -> GeneratedTextAsset:
         del kwargs
         return GeneratedTextAsset(
             title="联合索引延伸阅读",
@@ -59,7 +60,7 @@ class FakePrimaryGenerator:
             body="这里是百炼生成的阅读正文。",
         )
 
-    def generate_slides_asset(self, **kwargs) -> GeneratedSlideDeck:
+    async def generate_slides_asset(self, **kwargs) -> GeneratedSlideDeck:
         del kwargs
         return GeneratedSlideDeck.model_validate(
             {
@@ -75,7 +76,7 @@ class FakePrimaryGenerator:
             }
         )
 
-    def generate_mindmap_asset(self, **kwargs) -> GeneratedMindMap:
+    async def generate_mindmap_asset(self, **kwargs) -> GeneratedMindMap:
         del kwargs
         return GeneratedMindMap.model_validate(
             {
@@ -86,7 +87,7 @@ class FakePrimaryGenerator:
             }
         )
 
-    def generate_code_asset(self, **kwargs) -> GeneratedCodeAsset:
+    async def generate_code_asset(self, **kwargs) -> GeneratedCodeAsset:
         del kwargs
         return GeneratedCodeAsset(
             title="联合索引代码案例",
@@ -95,7 +96,7 @@ class FakePrimaryGenerator:
             explanation="这里是百炼生成的代码解释。",
         )
 
-    def generate_video_script(self, **kwargs) -> VideoScriptPayload:
+    async def generate_video_script(self, **kwargs) -> VideoScriptPayload:
         del kwargs
         return VideoScriptPayload.model_validate(
             {
@@ -138,32 +139,33 @@ class FakePrimaryGenerator:
 
 
 class FailingPrimaryGenerator:
-    def generate_document_sections(self, **kwargs) -> GeneratedSectionBundle:
+    async def generate_document_sections(self, **kwargs) -> GeneratedSectionBundle:
         del kwargs
         raise RuntimeError("simulated bailian failure")
 
-    def generate_reading_asset(self, **kwargs) -> GeneratedTextAsset:
+    async def generate_reading_asset(self, **kwargs) -> GeneratedTextAsset:
         del kwargs
         raise RuntimeError("simulated bailian failure")
 
-    def generate_slides_asset(self, **kwargs) -> GeneratedSlideDeck:
+    async def generate_slides_asset(self, **kwargs) -> GeneratedSlideDeck:
         del kwargs
         raise RuntimeError("simulated bailian failure")
 
-    def generate_mindmap_asset(self, **kwargs) -> GeneratedMindMap:
+    async def generate_mindmap_asset(self, **kwargs) -> GeneratedMindMap:
         del kwargs
         raise RuntimeError("simulated bailian failure")
 
-    def generate_code_asset(self, **kwargs) -> GeneratedCodeAsset:
+    async def generate_code_asset(self, **kwargs) -> GeneratedCodeAsset:
         del kwargs
         raise RuntimeError("simulated bailian failure")
 
-    def generate_video_script(self, **kwargs) -> VideoScriptPayload:
+    async def generate_video_script(self, **kwargs) -> VideoScriptPayload:
         del kwargs
         raise RuntimeError("simulated bailian failure")
 
 
-def test_generation_service_writes_document_asset(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_generation_service_writes_document_asset(tmp_path: Path) -> None:
     service = ResourceGenerationService(
         sandbox_root=tmp_path,
         content_chain=ContentGenerationChain(primary_generator=FakePrimaryGenerator()),
@@ -185,11 +187,12 @@ def test_generation_service_writes_document_asset(tmp_path: Path) -> None:
         recent_activities=[],
     )
 
-    asset = service.build_asset(
+    asset = await service.build_asset(
         asset_type="DOCUMENT",
         params={
             "taskId": "task-doc",
-            "query": "联合索引",
+            "query": "数据库原理 联合索引 中等 讲解文档",
+            "keyPoints": "联合索引",
             "rewrittenQuery": "数据库原理 联合索引",
             "retrievalResult": {
                 "documents": [
@@ -202,18 +205,27 @@ def test_generation_service_writes_document_asset(tmp_path: Path) -> None:
     )
 
     assert asset.asset_type == "DOCUMENT"
+    assert asset.title == "联合索引导学文档"
+    assert "中等" not in asset.title
+    assert "讲解文档" not in asset.title
     assert asset.file_name == "document_guide_task-doc.md"
     assert Path(asset.local_path).exists()
     content = Path(asset.local_path).read_text(encoding="utf-8")
     assert content.startswith("# ")
     assert "## 生成大纲" in content
     assert "## 一、核心概念与学习目标" in content
-    assert "### 引用依据" in content
-    assert "[来源1]" in content
     assert "这里是百炼生成的正文。" in content
+    assert "课程:" not in content
+    assert "章节:" not in content
+    assert "学生水平:" not in content
+    assert "学习风格:" not in content
+    assert "### 引用依据" not in content
+    assert "## 参考来源" not in content
+    assert "证据说明" not in content
 
 
-def test_generation_service_raises_when_primary_generator_fails(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_generation_service_raises_when_primary_generator_fails(tmp_path: Path) -> None:
     service = ResourceGenerationService(
         sandbox_root=tmp_path,
         content_chain=ContentGenerationChain(primary_generator=FailingPrimaryGenerator()),
@@ -236,7 +248,7 @@ def test_generation_service_raises_when_primary_generator_fails(tmp_path: Path) 
     )
 
     with pytest.raises(RuntimeError):
-        service.build_asset(
+        await service.build_asset(
             asset_type="DOCUMENT",
             params={
                 "taskId": "task-fallback",
@@ -253,7 +265,8 @@ def test_generation_service_raises_when_primary_generator_fails(tmp_path: Path) 
         )
 
 
-def test_generation_service_writes_non_document_assets_from_llm_output(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_generation_service_writes_non_document_assets_from_llm_output(tmp_path: Path) -> None:
     service = ResourceGenerationService(
         sandbox_root=tmp_path,
         content_chain=ContentGenerationChain(primary_generator=FakePrimaryGenerator()),
@@ -281,10 +294,10 @@ def test_generation_service_writes_non_document_assets_from_llm_output(tmp_path:
         "retrievalResult": {"documents": [{"title": "数据库索引导学", "channel": "hybrid"}]},
     }
 
-    reading_asset = service.build_asset(asset_type="READING", params=params, snapshot=snapshot)
-    slides_asset = service.build_asset(asset_type="SLIDES", params=params, snapshot=snapshot)
-    mindmap_asset = service.build_asset(asset_type="MINDMAP", params=params, snapshot=snapshot)
-    code_asset = service.build_asset(asset_type="CODE", params=params, snapshot=snapshot)
+    reading_asset = await service.build_asset(asset_type="READING", params=params, snapshot=snapshot)
+    slides_asset = await service.build_asset(asset_type="SLIDES", params=params, snapshot=snapshot)
+    mindmap_asset = await service.build_asset(asset_type="MINDMAP", params=params, snapshot=snapshot)
+    code_asset = await service.build_asset(asset_type="CODE", params=params, snapshot=snapshot)
 
     assert "这里是百炼生成的阅读正文。" in Path(reading_asset.local_path).read_text(encoding="utf-8")
     assert "讲解备注: 先讲概念。" in Path(slides_asset.local_path).read_text(encoding="utf-8")
@@ -302,9 +315,10 @@ def test_generation_service_writes_non_document_assets_from_llm_output(tmp_path:
     assert "百炼代码案例" in code_asset.inline_content
 
 
-def test_generation_service_rebuilds_safe_mermaid_mindmap(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_generation_service_rebuilds_safe_mermaid_mindmap(tmp_path: Path) -> None:
     class BrokenMindmapGenerator(FakePrimaryGenerator):
-        def generate_mindmap_asset(self, **kwargs) -> GeneratedMindMap:
+        async def generate_mindmap_asset(self, **kwargs) -> GeneratedMindMap:
             del kwargs
             return GeneratedMindMap.model_validate(
                 {
@@ -342,7 +356,7 @@ def test_generation_service_rebuilds_safe_mermaid_mindmap(tmp_path: Path) -> Non
         recent_activities=[],
     )
 
-    asset = service.build_asset(
+    asset = await service.build_asset(
         asset_type="MINDMAP",
         params={
             "taskId": "task-mindmap-safe",
@@ -362,7 +376,8 @@ def test_generation_service_rebuilds_safe_mermaid_mindmap(tmp_path: Path) -> Non
     assert 'node_2["拒绝策略 \\"CallerRuns\\""]' in asset.inline_content
 
 
-def test_generation_service_requires_tts_audio_for_video_asset(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_generation_service_requires_tts_audio_for_video_asset(tmp_path: Path) -> None:
     class FailingMimoClient:
         def synthesize_speech_sync(self, **kwargs) -> bytes:
             raise RuntimeError("tts unavailable")
@@ -392,7 +407,7 @@ def test_generation_service_requires_tts_audio_for_video_asset(tmp_path: Path) -
     )
 
     with pytest.raises(RuntimeError, match="Video TTS generation failed"):
-        service.build_asset(
+        await service.build_asset(
             asset_type="VIDEO",
             params={
                 "taskId": "task-video",
@@ -406,7 +421,8 @@ def test_generation_service_requires_tts_audio_for_video_asset(tmp_path: Path) -
     monkeypatch.undo()
 
 
-def test_generation_service_writes_video_asset(
+@pytest.mark.asyncio
+async def test_generation_service_writes_video_asset(
     tmp_path: Path,
 ) -> None:
     service = ResourceGenerationService(sandbox_root=tmp_path)
@@ -434,7 +450,7 @@ def test_generation_service_writes_video_asset(
         "style": "hybrid",
         "tts_audio_bytes": b"x" * 256,
     }
-    asset = service.build_asset(asset_type="VIDEO", params=params, snapshot=snapshot)
+    asset = await service.build_asset(asset_type="VIDEO", params=params, snapshot=snapshot)
 
     assert asset.asset_type == "VIDEO"
     assert asset.file_name == "browser-rendered.webm"
@@ -447,17 +463,26 @@ def test_generation_service_writes_video_asset(
     assert params["videoSandboxArtifact"]["avatarDataUrl"] == "/dh_live/assets/combined_data.json.gz"
 
 
-def test_generation_service_synthesizes_video_audio_from_final_script(
+@pytest.mark.asyncio
+async def test_generation_service_synthesizes_video_audio_from_final_script(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, str] = {}
+    captured: dict[str, object] = {}
 
     class FakeMimoClient:
+        def __init__(self, **kwargs) -> None:
+            captured["timeout_seconds"] = kwargs["timeout_seconds"]
+
         def synthesize_speech_sync(self, **kwargs) -> bytes:
             captured["text"] = kwargs["text"]
             return b"y" * 512
 
+    from src.ai_modules.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("TTS_TIMEOUT_SECONDS", "180")
+    monkeypatch.setenv("VIDEO_TTS_MAX_CHARS", "260")
     monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMimoClient)
 
     service = ResourceGenerationService(
@@ -487,14 +512,18 @@ def test_generation_service_synthesizes_video_audio_from_final_script(
         "topic": "并发编程",
         "style": "talking_head",
     }
-    asset = service.build_asset(asset_type="VIDEO", params=params, snapshot=snapshot)
+    asset = await service.build_asset(asset_type="VIDEO", params=params, snapshot=snapshot)
 
     assert asset.asset_type == "VIDEO"
+    assert len(captured["text"]) <= 260
+    assert captured["timeout_seconds"] == 180.0
+    get_settings.cache_clear()
     assert "回退候选" not in captured["text"]
     assert captured["text"].startswith("今天我们用联合索引来理解最左前缀原则")
 
 
-def test_generation_service_rejects_unknown_asset_type(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_generation_service_rejects_unknown_asset_type(tmp_path: Path) -> None:
     service = ResourceGenerationService(sandbox_root=tmp_path)
     snapshot = SystemSnapshot(
         current_course="数据库原理",
@@ -514,14 +543,15 @@ def test_generation_service_rejects_unknown_asset_type(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="Unsupported assetType"):
-        service.build_asset(
+        await service.build_asset(
             asset_type="UNKNOWN",
             params={"taskId": "task-unknown"},
             snapshot=snapshot,
         )
 
 
-def test_structured_generator_uses_spark_openai_compatible_config(
+@pytest.mark.asyncio
+async def test_structured_generator_uses_spark_openai_compatible_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MODEL_PROVIDER", "spark")
@@ -535,7 +565,7 @@ def test_structured_generator_uses_spark_openai_compatible_config(
 
     captured: dict[str, object] = {}
 
-    def fake_post_chat_completion(
+    async def fake_post_chat_completion_async(
         self,
         *,
         messages,
@@ -565,12 +595,12 @@ def test_structured_generator_uses_spark_openai_compatible_config(
 
     monkeypatch.setattr(
         OpenAICompatibleStructuredGenerator,
-        "_post_chat_completion",
-        fake_post_chat_completion,
+        "_post_chat_completion_async",
+        fake_post_chat_completion_async,
     )
 
     generator = OpenAICompatibleStructuredGenerator()
-    asset = generator.generate_reading_asset(
+    asset = await generator.generate_reading_asset(
         title="联合索引延伸阅读",
         topic="联合索引",
         snapshot={"current_course": "数据库原理"},
@@ -590,10 +620,11 @@ def test_structured_generator_uses_spark_openai_compatible_config(
     get_settings.cache_clear()
 
 
-def test_reading_generation_retries_invalid_schema_with_llm(monkeypatch) -> None:
+@pytest.mark.asyncio
+async def test_reading_generation_retries_invalid_schema_with_llm(monkeypatch) -> None:
     calls: list[list[dict[str, str]]] = []
 
-    def fake_post_chat_completion(
+    async def fake_post_chat_completion_async(
         self,
         *,
         messages,
@@ -610,12 +641,12 @@ def test_reading_generation_retries_invalid_schema_with_llm(monkeypatch) -> None
 
     monkeypatch.setattr(
         OpenAICompatibleStructuredGenerator,
-        "_post_chat_completion",
-        fake_post_chat_completion,
+        "_post_chat_completion_async",
+        fake_post_chat_completion_async,
     )
 
     generator = OpenAICompatibleStructuredGenerator(api_key="test-key", max_retries=1, backoff_seconds=0)
-    asset = generator.generate_reading_asset(
+    asset = await generator.generate_reading_asset(
         title="reading",
         topic="Java",
         snapshot={"current_course": "Java"},
@@ -629,10 +660,11 @@ def test_reading_generation_retries_invalid_schema_with_llm(monkeypatch) -> None
     assert "previous LLM output was invalid".lower() in calls[1][1]["content"].lower()
 
 
-def test_reading_generation_raises_when_llm_schema_remains_invalid(monkeypatch) -> None:
+@pytest.mark.asyncio
+async def test_reading_generation_raises_when_llm_schema_remains_invalid(monkeypatch) -> None:
     calls: list[list[dict[str, str]]] = []
 
-    def fake_post_chat_completion(
+    async def fake_post_chat_completion_async(
         self,
         *,
         messages,
@@ -646,14 +678,14 @@ def test_reading_generation_raises_when_llm_schema_remains_invalid(monkeypatch) 
 
     monkeypatch.setattr(
         OpenAICompatibleStructuredGenerator,
-        "_post_chat_completion",
-        fake_post_chat_completion,
+        "_post_chat_completion_async",
+        fake_post_chat_completion_async,
     )
 
     generator = OpenAICompatibleStructuredGenerator(api_key="test-key", max_retries=1, backoff_seconds=0)
 
     with pytest.raises(GenerationOutputInvalidError):
-        generator.generate_reading_asset(
+        await generator.generate_reading_asset(
             title="reading",
             topic="Java",
             snapshot={"current_course": "Java"},
@@ -663,10 +695,11 @@ def test_reading_generation_raises_when_llm_schema_remains_invalid(monkeypatch) 
     assert len(calls) == 2
 
 
-def test_document_generation_retries_invalid_sections_with_llm(monkeypatch) -> None:
+@pytest.mark.asyncio
+async def test_document_generation_retries_invalid_sections_with_llm(monkeypatch) -> None:
     calls: list[list[dict[str, str]]] = []
 
-    def fake_post_chat_completion(
+    async def fake_post_chat_completion_async(
         self,
         *,
         messages,
@@ -686,12 +719,12 @@ def test_document_generation_retries_invalid_sections_with_llm(monkeypatch) -> N
 
     monkeypatch.setattr(
         OpenAICompatibleStructuredGenerator,
-        "_post_chat_completion",
-        fake_post_chat_completion,
+        "_post_chat_completion_async",
+        fake_post_chat_completion_async,
     )
 
     generator = OpenAICompatibleStructuredGenerator(api_key="test-key", max_retries=1, backoff_seconds=0)
-    bundle = generator.generate_document_sections(
+    bundle = await generator.generate_document_sections(
         title="document",
         topic="Java",
         snapshot={"current_course": "Java"},

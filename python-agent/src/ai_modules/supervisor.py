@@ -632,11 +632,6 @@ class PythonAgentSupervisor:
         if not isinstance(resource_failures, list):
             resource_failures = []
         if service_type == "RESOURCE_GENERATION" and isinstance(generated_assets, list) and generated_assets:
-            titles = "、".join(
-                str(item.get("title") or item.get("assetType") or "资源")
-                for item in generated_assets[:3]
-                if isinstance(item, dict)
-            )
             if resource_failures:
                 failed_types = "、".join(
                     str(item.get("resourceType") or "UNKNOWN")
@@ -646,7 +641,7 @@ class PythonAgentSupervisor:
                 return DonePayload(
                     status="PARTIAL_FAILED",
                     summary=(
-                        f"资源包部分完成，共 {len(generated_assets)} 个真实 LLM 产物：{titles}；"
+                        f"资源包部分完成，共生成 {len(generated_assets)} 个资源；"
                         f"{len(resource_failures)} 个资源失败：{failed_types}"
                     ),
                     masteryDiagnosis=mastery_diagnosis,
@@ -656,7 +651,7 @@ class PythonAgentSupervisor:
                 )
             return DonePayload(
                 status="SUCCESS",
-                summary=f"资源包生成完成，共 {len(generated_assets)} 个真实 LLM 产物：{titles}",
+                summary=f"资源包生成完成，共生成 {len(generated_assets)} 个资源",
                 masteryDiagnosis=mastery_diagnosis,
                 learningPlan=learning_plan,
                 criticReview=critic_review,

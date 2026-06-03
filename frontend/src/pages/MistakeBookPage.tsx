@@ -24,6 +24,11 @@ import {
   type MistakeUpdateRequest,
 } from '../api/mistakes';
 import type { LayoutOutletContext } from '../components/Layout';
+import {
+  VOICE_PAGE_ACTION_EVENT,
+  consumeQueuedVoicePageAction,
+  isVoicePageActionEvent,
+} from '../utils/voicePageActions';
 
 const STATUS_OPTIONS: Array<{ value: MistakeStatus; label: string }> = [
   { value: 'active', label: '未掌握' },
@@ -247,7 +252,10 @@ export default function MistakeBookPage() {
     }
   };
 
-  const handleStartReview = async () => {
+  const handleStartReview = useCallback(async () => {
+    if (reviewBusy) {
+      return;
+    }
     setReviewBusy(true);
     setReviewMessage('');
     try {
@@ -259,7 +267,25 @@ export default function MistakeBookPage() {
     } finally {
       setReviewBusy(false);
     }
-  };
+  }, [reviewBusy]);
+
+  useEffect(() => {
+    const startReview = () => {
+      void handleStartReview();
+    };
+    if (consumeQueuedVoicePageAction('start_review')) {
+      startReview();
+    }
+    const handleVoiceAction = (event: Event) => {
+      if (isVoicePageActionEvent(event, 'start_review')) {
+        startReview();
+      }
+    };
+    window.addEventListener(VOICE_PAGE_ACTION_EVENT, handleVoiceAction);
+    return () => {
+      window.removeEventListener(VOICE_PAGE_ACTION_EVENT, handleVoiceAction);
+    };
+  }, [handleStartReview]);
 
   const handleSubmitReview = async () => {
     if (!reviewSession) {

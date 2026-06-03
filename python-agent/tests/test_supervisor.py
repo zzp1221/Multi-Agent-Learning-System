@@ -50,7 +50,6 @@ def test_supervisor_resolves_personalized_learning_route() -> None:
         "query_rewrite",
         "retrieval",
         "path_planning",
-        "resource_bundle",
         "resource_push",
         "critic",
     ]
@@ -69,6 +68,25 @@ def test_supervisor_keeps_resource_generation_on_bundle_when_resource_types_incl
         "retrieval",
         "resource_bundle",
     ]
+
+
+def test_resource_generation_done_summary_hides_internal_generation_details() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    payload = supervisor._build_done_payload(
+        service_type="RESOURCE_GENERATION",
+        agent_names=["query_rewrite", "retrieval", "resource_bundle"],
+        params={
+            "generatedAssets": [
+                {"title": "java Bean 中等 讲解文档导学文档", "assetType": "DOCUMENT"},
+            ],
+        },
+    )
+
+    assert payload.status == "SUCCESS"
+    assert payload.summary == "资源包生成完成，共生成 1 个资源"
+    assert "真实 LLM 产物" not in payload.summary
+    assert "java Bean" not in payload.summary
 
 
 def test_supervisor_resolves_video_generation_route() -> None:
@@ -401,6 +419,42 @@ class _StubDocumentGeneratorAgent(_StubResourceGeneratorAgent):
         super().__init__("DOCUMENT", "document_generation")
 
 
+class _StubResourcePushAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("stub resource push", "resource_push")
+
+    async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+        del kwargs
+        plan = {
+            "stepResources": [
+                {
+                    "stepId": "step-1",
+                    "stepTitle": "最左匹配复盘",
+                    "targetKnowledgePoints": ["最左匹配"],
+                    "resources": [
+                        {
+                            "title": "最左匹配外部讲解",
+                            "resourceType": "DOCUMENT",
+                            "source": "tavily",
+                            "sourceName": "example.com",
+                            "downloadUrl": "https://example.com/db-index",
+                            "summaryText": "外部推荐资源",
+                        }
+                    ],
+                }
+            ],
+            "coverageGaps": [],
+        }
+        params["resourcePushPlan"] = plan
+        params["pushedResources"] = plan["stepResources"][0]["resources"]
+        yield ResultChunkSSEEvent(
+            taskId=task_id,
+            traceId=trace_id,
+            seq=seq,
+            payload=ResultChunkPayload(text="资源推送完成"),
+        )
+
+
 def _install_resource_bundle_stubs(supervisor: PythonAgentSupervisor) -> None:
     supervisor.agent_registry["document_generator"] = _StubDocumentGeneratorAgent()
     supervisor.agent_registry["slide_generator"] = _StubResourceGeneratorAgent("SLIDES", "slide_generation")
@@ -572,7 +626,7 @@ class _StubEvaluationAgent(PlaceholderAgent):
         params["evaluationResult"] = payload
         params["masteryDiagnosis"] = {
             "diagnosisSource": "evaluation",
-            "primaryDimension": "练习掌握",
+            "primaryDimension": "学习效果评估",
             "overallLevel": "BASIC",
             "overallMasteryScore": 0.48,
             "confidence": 0.72,
@@ -637,7 +691,7 @@ class _StubPathPlanningAgent(PlaceholderAgent):
                     "order": 1,
                     "title": "理解最左匹配",
                     "objective": "掌握联合索引最左匹配规则",
-                    "activities": ["阅读导学资料", "完成专项练习"],
+                    "activities": ["阅读导学资料", "完成针对性练习"],
                     "successCriteria": "能解释最左匹配的适用条件",
                     "targetKnowledgePoints": ["最左匹配"],
                     "preferredResourceTypes": ["DOCUMENT", "QUIZ"],
@@ -761,7 +815,7 @@ async def test_supervisor_streams_personalized_learning_multi_agent_route() -> N
     supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["path_planning"] = _StubPathPlanningAgent()
-    _install_resource_bundle_stubs(supervisor)
+    supervisor.agent_registry["resource_push"] = _StubResourcePushAgent()
     _install_stub_critic(supervisor)
 
     request = EngineStreamRequest(
@@ -792,13 +846,12 @@ async def test_supervisor_streams_personalized_learning_multi_agent_route() -> N
         "query_rewrite",
         "retrieval",
         "path_planning",
-        "resource_bundle",
         "resource_push",
         "critic",
     ]
     resource_events = [event for event in events if event.event == "resource_file"]
-    assert resource_events
-    assert done.payload.resource_push_plan["stepResources"][0]["resources"][0]["source"] == "generated"
+    assert not resource_events
+    assert done.payload.resource_push_plan["stepResources"][0]["resources"][0]["source"] == "tavily"
 
 
 def test_supervisor_resource_push_done_payload_keeps_empty_plan() -> None:

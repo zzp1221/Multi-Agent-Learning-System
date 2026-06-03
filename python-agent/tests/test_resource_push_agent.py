@@ -1,4 +1,6 @@
-from src.ai_modules.agents.resource_push_agent import ResourcePushAgent
+import asyncio
+
+from src.ai_modules.agents.resource_push_agent import PushResourceCandidate, ResourcePushAgent
 
 
 def test_resource_push_agent_only_accepts_http_direct_urls() -> None:
@@ -88,74 +90,68 @@ def test_resource_push_agent_rejects_generic_unrelated_resources() -> None:
     )
 
 
-def test_resource_push_agent_binds_generated_assets_to_learning_path_steps() -> None:
+def test_resource_push_agent_builds_external_plan_for_learning_path_steps(monkeypatch) -> None:
     agent = ResourcePushAgent()
 
-    plan = agent._build_path_bound_resource_plan(
-        learning_path={
-            "steps": [
-                {
-                    "stepId": "step-1",
-                    "title": "理解最左匹配",
-                    "objective": "掌握联合索引最左匹配规则",
-                    "targetKnowledgePoints": ["最左匹配"],
-                    "preferredResourceTypes": ["DOCUMENT", "VIDEO"],
-                }
-            ]
-        },
-        params={
-            "generatedAssets": [
-                {
-                    "assetType": "DOCUMENT",
-                    "title": "最左匹配导学文档",
-                    "summary": "讲解最左匹配规则",
-                    "generatedBy": "LLM",
-                    "contentOrigin": "LLM",
-                    "provider": "test",
-                    "model": "test-model",
-                    "agentName": "document_generation",
-                    "evidenceIds": ["doc-1"],
-                    "fallback": False,
-                    "fromCache": False,
-                }
-            ]
-        },
-        profile_context={"preferredResourceTypes": ["DOCUMENT"], "primaryWeakPoint": "最左匹配"},
+    async def fake_search_external_candidates(*, preferred_type, query, profile_context):
+        assert "理解最左匹配" in query
+        assert profile_context["currentChapter"] == "理解最左匹配"
+        return [
+            PushResourceCandidate(
+                title=f"{preferred_type} 推荐",
+                resource_type=preferred_type,
+                summary_text="Tavily 外部资源",
+                file_name="",
+                mime_type="text/html",
+                score=10,
+                matched_terms=["最左匹配"],
+                download_url=f"https://example.com/{preferred_type.lower()}",
+                rerank_reason="mock tavily",
+                source_name="example.com",
+            )
+        ]
+
+    monkeypatch.setattr(agent, "_search_external_candidates", fake_search_external_candidates)
+
+    plan = asyncio.run(
+        agent._build_path_external_resource_plan(
+            learning_path={
+                "steps": [
+                    {
+                        "stepId": "step-1",
+                        "title": "理解最左匹配",
+                        "objective": "掌握联合索引最左匹配规则",
+                        "targetKnowledgePoints": ["最左匹配"],
+                        "preferredResourceTypes": ["DOCUMENT", "VIDEO"],
+                    }
+                ]
+            },
+            params={"query": "个性化学习路径规划和资源推送", "generatedAssets": [{"assetType": "VIDEO"}]},
+            profile_context={"preferredResourceTypes": ["DOCUMENT"], "primaryWeakPoint": "最左匹配"},
+        )
     )
 
     step_plan = plan["stepResources"][0]
     assert step_plan["stepId"] == "step-1"
-    assert step_plan["resources"][0]["source"] == "generated"
-    assert step_plan["resources"][0]["fallback"] is False
-    assert plan["coverageGaps"][0]["missingResourceTypes"] == ["VIDEO"]
+    assert [item["resourceType"] for item in step_plan["resources"]] == [
+        "DOCUMENT",
+        "VIDEO",
+        "QUIZ",
+        "PRACTICAL_CASE",
+    ]
+    assert {item["source"] for item in step_plan["resources"]} == {"tavily"}
+    assert plan["coverageGaps"] == []
 
 
-def test_resource_push_agent_normalizes_resource_type_aliases_for_path_binding() -> None:
+def test_resource_push_agent_normalizes_resource_type_aliases_for_path_external_search() -> None:
     agent = ResourcePushAgent()
 
-    plan = agent._build_path_bound_resource_plan(
-        learning_path={
-            "steps": [
-                {
-                    "stepId": "step-1",
-                    "title": "CODE_CASE alias",
-                    "targetKnowledgePoints": ["alias"],
-                    "preferredResourceTypes": ["EXPLANATION", "CODE_CASE", "PRACTICAL_CASE"],
-                }
-            ]
-        },
-        params={
-            "generatedAssets": [
-                {"assetType": "DOCUMENT", "title": "alias document", "summary": "alias"},
-                {"assetType": "CODE", "title": "alias code", "summary": "alias"},
-            ]
-        },
-        profile_context={},
-    )
-
-    resources = plan["stepResources"][0]["resources"]
-    assert [item["resourceType"] for item in resources] == ["DOCUMENT", "CODE"]
-    assert plan["coverageGaps"] == []
+    assert agent._path_recommendation_types(["EXPLANATION", "CODE_CASE", "PRACTICAL_CASE"]) == [
+        "DOCUMENT",
+        "PRACTICAL_CASE",
+        "VIDEO",
+        "QUIZ",
+    ]
 
 
 def test_resource_push_agent_prefers_profile_analysis_context() -> None:

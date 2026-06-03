@@ -4,10 +4,8 @@ import { getErrorMessage } from '../api/request';
 import { smartEngineApi } from '../api/smartEngine';
 import type { LayoutOutletContext } from '../components/Layout';
 import {
-  defaultAssessmentDimensions,
   defaultResourceForm,
   serviceTypeMap,
-  type AssessmentForm,
   type EngineService,
   type EngineTaskSnapshot,
   type PathForm,
@@ -78,12 +76,6 @@ function createTaskMonitorRefs(): Record<EngineService, TaskMonitorRefs> {
       streamFlushTimerRef: { current: null },
       streamRafRef: { current: null },
     },
-    assessment: {
-      taskStreamAbortRef: { current: null },
-      streamQueueRef: { current: [] },
-      streamFlushTimerRef: { current: null },
-      streamRafRef: { current: null },
-    },
   };
 }
 
@@ -125,9 +117,6 @@ export function useLearningStudioEngine({
   });
   const [pushForm, setPushForm] = useState<PushForm>({
     preferredType: 'CODE_CASE',
-  });
-  const [assessmentForm, setAssessmentForm] = useState<AssessmentForm>({
-    dimensions: defaultAssessmentDimensions,
   });
 
   const activeEngineSnapshot = selectedService ? serviceSnapshots[selectedService] : createEmptyEngineTaskSnapshot();
@@ -471,7 +460,7 @@ export function useLearningStudioEngine({
       selectedResultTaskId: serviceSnapshots[selectedService].selectedResultTaskId,
     });
 
-    const params = buildServiceParams(selectedService, { resourceForm, pathForm, pushForm, assessmentForm });
+    const params = buildServiceParams(selectedService, { resourceForm, pathForm, pushForm });
 
     try {
       engineSubmitVersionRef.current += 1;
@@ -510,7 +499,7 @@ export function useLearningStudioEngine({
       openAuthModal('login', '请先登录');
       return;
     }
-    const targetService: EngineService = selectedService === 'assessment' ? 'assessment' : 'resource';
+    const targetService: EngineService = selectedService ?? 'resource';
     if (hasLockedTask(serviceSnapshots[targetService])) {
       return;
     }
@@ -545,23 +534,17 @@ export function useLearningStudioEngine({
 
     try {
       const ensuredConversationId = await ensureEngineConversationId();
-      const assessmentDimension = batch.assessmentDimension || (targetService === 'assessment' ? assessmentForm.dimensions[0] : '');
       const batchTopic = batch.topic || resourceForm.keyPoints || resourceForm.course;
-      const judgeQuery = targetService === 'assessment'
-        ? `${assessmentDimension || '专项评估'} ${batchTopic} 判题`
-        : `${resourceForm.course} ${batchTopic} 练习题判题`;
+      const judgeQuery = `${resourceForm.course} ${batchTopic} 练习题判题`.trim();
       const submitResp = await smartEngineApi.submit({
         conversationId: ensuredConversationId,
         serviceType: 'PRACTICE_JUDGE',
         params: {
-          topic: targetService === 'assessment' && assessmentDimension
-            ? `${assessmentDimension}：${batchTopic}`
-            : batchTopic,
+          topic: batchTopic,
           query: judgeQuery,
           practiceQuestionBatch: batch,
           practiceQuestions: batch.questions,
           answers,
-          assessmentDimension,
           learningContext: {
             course: resourceForm.course,
             chapter: batchTopic,
@@ -726,7 +709,6 @@ export function useLearningStudioEngine({
     resourceForm,
     pathForm,
     pushForm,
-    assessmentForm,
     activeEngineSnapshot,
     engineBusy,
     taskId: activeEngineSnapshot.taskId,
@@ -742,7 +724,6 @@ export function useLearningStudioEngine({
     setResourceForm: updateResourceForm,
     setPathForm,
     setPushForm,
-    setAssessmentForm,
     markFormEditing,
     handleSelectService,
     handleSubmitService,
