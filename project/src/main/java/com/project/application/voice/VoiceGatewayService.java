@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.UUID;
 
 @Service
 public class VoiceGatewayService {
@@ -66,6 +67,19 @@ public class VoiceGatewayService {
     public VoiceCommandResponse parseCommand(JwtAuthenticatedUser currentUser, VoiceCommandRequest request) {
         ensureEnabled();
         return commandParser.parse(request);
+    }
+
+    public void ensureSessionOwnedBy(UUID sessionId, JwtAuthenticatedUser currentUser) {
+        ensureEnabled();
+        if (sessionId == null || currentUser == null || !sessionService.isOwnedBy(sessionId, currentUser.userId())) {
+            throw new ApplicationException("VOICE_SESSION_NOT_FOUND", "语音会话不存在或已过期", HttpStatus.NOT_FOUND);
+        }
+    }
+
+    public void closeSession(UUID sessionId, JwtAuthenticatedUser currentUser) {
+        if (sessionId != null && currentUser != null) {
+            sessionService.close(sessionId, currentUser.userId());
+        }
     }
 
     private void ensureEnabled() {

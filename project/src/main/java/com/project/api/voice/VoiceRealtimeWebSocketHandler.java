@@ -5,8 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.application.voice.VoiceRealtimeAsrClient;
 import com.project.application.voice.VoiceRealtimeAsrListener;
 import com.project.application.voice.VoiceRealtimeAsrSession;
+import com.project.application.voice.VoicePartialDraftService;
+import com.project.application.voice.VoicePartialDraftService.VoiceDraftRequest;
 import com.project.application.voice.VoiceMetricLogger;
+import com.project.application.voice.VoiceAsrPrewarmService;
 import com.project.application.voice.VoiceSessionService;
+import com.project.application.voice.VoiceTurnMetricsService;
 import com.project.config.AppProperties;
 import com.project.security.JwtAuthenticatedUser;
 import com.project.security.JwtProvider;
@@ -44,6 +48,9 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final TaskExecutor voiceTaskExecutor;
     private final VoiceMetricLogger voiceMetricLogger;
+    private final VoiceTurnMetricsService voiceTurnMetricsService;
+    private final VoiceAsrPrewarmService voiceAsrPrewarmService;
+    private final VoicePartialDraftService voicePartialDraftService;
     private final Map<String, VoiceSocketState> states = new ConcurrentHashMap<>();
 
     public VoiceRealtimeWebSocketHandler(
@@ -53,7 +60,10 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         AppProperties appProperties,
         ObjectMapper objectMapper,
         @Qualifier("voiceTaskExecutor") TaskExecutor voiceTaskExecutor,
-        VoiceMetricLogger voiceMetricLogger
+        VoiceMetricLogger voiceMetricLogger,
+        VoiceTurnMetricsService voiceTurnMetricsService,
+        VoiceAsrPrewarmService voiceAsrPrewarmService,
+        VoicePartialDraftService voicePartialDraftService
     ) {
         this.jwtProvider = jwtProvider;
         this.sessionService = sessionService;
@@ -62,6 +72,9 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         this.objectMapper = objectMapper;
         this.voiceTaskExecutor = voiceTaskExecutor;
         this.voiceMetricLogger = voiceMetricLogger;
+        this.voiceTurnMetricsService = voiceTurnMetricsService;
+        this.voiceAsrPrewarmService = voiceAsrPrewarmService;
+        this.voicePartialDraftService = voicePartialDraftService;
     }
 
     @Override
@@ -75,6 +88,7 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         session.setTextMessageSizeLimit(256 * 1024);
         session.setBinaryMessageSizeLimit(256 * 1024);
         VoiceSocketState state = new VoiceSocketState(user.userId(), voiceSessionId);
+        voiceTurnMetricsService.startAsrTurn(voiceSessionId, user.userId(), state.turnId());
         states.put(session.getId(), state);
         send(session, "ready", Map.of(
             "sessionId", voiceSessionId.toString(),
@@ -94,6 +108,15 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         JsonNode event = objectMapper.readTree(message.getPayload());
         String type = event.path("type").asText("");
         if ("audio_chunk".equals(type)) {
+            UUID conversationId = parseUuid(event.path("conversationId").asText(""));
+            String pageType = event.path("pageType").asText("");
+            String commandIntent = event.path("commandIntent").asText("");
+            state.attachClientContext(
+                conversationId,
+                pageType,
+                commandIntent
+            );
+            voiceTurnMetricsService.attachConversation(state.sessionId(), state.turnId(), conversationId, pageType, commandIntent);
             appendAudio(session, state, event.path("data").asText(""), event.path("turnId").asText(""));
             return;
         }
@@ -128,6 +151,10 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         byte[] chunk = Base64.getDecoder().decode(base64);
+        long firstAudioMs = voiceTurnMetricsService.markFirstAudio(state.sessionId(), state.turnId());
+        if (firstAudioMs >= 0) {
+            recordMetric("asr_first_audio_ms", state, state.turnId(), firstAudioMs, "success", chunk.length, null, "");
+        }
         int currentBytes = state.addAudioBytes(chunk.length);
         if (currentBytes > appProperties.getVoice().getMaxAudioBytes()) {
             throw new IllegalArgumentException("voice audio too large");
@@ -143,8 +170,10 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private void cancelTurn(WebSocketSession session, VoiceSocketState state) throws Exception {
         String cancelledTurnId = state.turnId();
+        voicePartialDraftService.cancel(state.sessionId(), cancelledTurnId, "TURN_CANCELLED");
         state.closeCurrentTurn();
         state.nextTurn();
+        voiceTurnMetricsService.startAsrTurn(state.sessionId(), state.userId(), state.turnId());
         send(session, "cancelled", Map.of(
             "sessionId", state.sessionId().toString(),
             "cancelledTurnId", cancelledTurnId,
@@ -185,11 +214,11 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private VoiceRealtimeAsrSession newAsrSession(WebSocketSession session, VoiceSocketState state, String turnId) {
         String sessionKey = state.sessionId() + ":" + turnId;
-        return realtimeAsrClient.start(sessionKey, appProperties.getVoice().getSampleRate(), new VoiceRealtimeAsrListener() {
+        VoiceRealtimeAsrListener listener = new VoiceRealtimeAsrListener() {
             @Override
             public void onReady() {
                 if (isActive(session, state, turnId)) {
-                    recordMetric("asr_ready_ms", state, turnId, "success");
+                    recordMetric("asr_ws_ready_ms", state, turnId, "success");
                     safeSend(session, "asr_ready", Map.of("turnId", turnId));
                 }
             }
@@ -198,9 +227,21 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             public void onPartial(String text) {
                 if (!text.isBlank() && isActive(session, state, turnId)) {
                     if (state.markFirstPartial(turnId)) {
-                        recordMetric("asr_first_partial_ms", state, turnId, "success");
+                        recordMetric("asr_first_partial_ms", state, turnId, "success", null, text.length(), "");
                     }
                     String preview = state.previewTranscript(turnId, text);
+                    String stablePartial = state.acceptPartialForDraft(turnId, preview);
+                    if (!stablePartial.isBlank()) {
+                        voicePartialDraftService.startDraft(new VoiceDraftRequest(
+                            state.userId(),
+                            state.sessionId(),
+                            turnId,
+                            state.conversationId(),
+                            state.pageType(),
+                            state.commandIntent(),
+                            stablePartial
+                        ));
+                    }
                     safeSend(session, "asr_partial", Map.of("turnId", turnId, "text", preview));
                 }
             }
@@ -208,8 +249,9 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             @Override
             public void onFinal(String text) {
                 if (isActive(session, state, turnId)) {
-                    recordMetric("asr_final_ms", state, turnId, "success");
+                    recordMetric("asr_final_ms", state, turnId, "success", null, text.length(), "");
                     String transcript = state.commitTranscript(turnId, text);
+                    voicePartialDraftService.keepOrCancel(state.sessionId(), turnId, transcript);
                     safeSend(session, "asr_final", Map.of(
                         "turnId", turnId,
                         "text", transcript,
@@ -223,22 +265,55 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
             public void onError(Throwable error) {
                 LOGGER.warn("Realtime ASR failed sessionId={} turnId={}: {}", state.sessionId(), turnId, error.getMessage());
                 if (isActive(session, state, turnId)) {
-                    recordMetric("asr_error_ms", state, turnId, "error");
+                    recordMetric("asr_error_ms", state, turnId, "error", null, null, error.getClass().getSimpleName());
+                    voicePartialDraftService.cancel(state.sessionId(), turnId, error.getClass().getSimpleName());
                     safeSend(session, "error", Map.of("turnId", turnId, "message", "语音识别失败，请重试"));
                 }
             }
-        });
+        };
+        VoiceRealtimeAsrSession prewarmed = voiceAsrPrewarmService.take(state.sessionId(), state.userId(), turnId, listener);
+        if (prewarmed != null) {
+            return prewarmed;
+        }
+        return realtimeAsrClient.start(sessionKey, appProperties.getVoice().getSampleRate(), listener);
     }
 
     private void recordMetric(String metric, VoiceSocketState state, String turnId, String outcome) {
+        recordMetric(metric, state, turnId, state.elapsedMs(turnId), outcome, null, null, "");
+    }
+
+    private void recordMetric(
+        String metric,
+        VoiceSocketState state,
+        String turnId,
+        String outcome,
+        Integer inputLength,
+        Integer outputLength,
+        String errorCode
+    ) {
+        recordMetric(metric, state, turnId, state.elapsedMs(turnId), outcome, inputLength, outputLength, errorCode);
+    }
+
+    private void recordMetric(
+        String metric,
+        VoiceSocketState state,
+        String turnId,
+        long durationMs,
+        String outcome,
+        Integer inputLength,
+        Integer outputLength,
+        String errorCode
+    ) {
         voiceMetricLogger.record(
             metric,
-            state.sessionId(),
-            turnId,
-            state.elapsedMs(turnId),
+            voiceTurnMetricsService.context(state.sessionId(), turnId),
+            durationMs,
             appProperties.getVoice().getProvider(),
             appProperties.getVoice().getAsrModel(),
-            outcome
+            outcome,
+            inputLength,
+            outputLength,
+            errorCode
         );
     }
 
@@ -259,6 +334,17 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
     private UUID readSessionId(URI uri) {
         Map<String, String> params = parseQuery(uri);
         return UUID.fromString(params.getOrDefault("sessionId", ""));
+    }
+
+    private UUID parseUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value.trim());
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private Map<String, String> parseQuery(URI uri) {
@@ -318,6 +404,12 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         private volatile String turnId;
         private volatile long turnStartedAtNanos;
         private volatile boolean firstPartialLogged;
+        private volatile UUID conversationId;
+        private volatile String pageType = "";
+        private volatile String commandIntent = "ASK";
+        private String lastPartialForDraft = "";
+        private int similarPartialCount;
+        private boolean draftStarted;
         private boolean pendingCommit;
 
         private VoiceSocketState(UUID userId, UUID sessionId) {
@@ -337,6 +429,30 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
 
         private String turnId() {
             return turnId;
+        }
+
+        private UUID conversationId() {
+            return conversationId;
+        }
+
+        private String pageType() {
+            return pageType;
+        }
+
+        private String commandIntent() {
+            return commandIntent;
+        }
+
+        private void attachClientContext(UUID nextConversationId, String nextPageType, String nextCommandIntent) {
+            if (nextConversationId != null) {
+                conversationId = nextConversationId;
+            }
+            if (nextPageType != null && !nextPageType.isBlank()) {
+                pageType = nextPageType.trim();
+            }
+            if (nextCommandIntent != null && !nextCommandIntent.isBlank()) {
+                commandIntent = nextCommandIntent.trim();
+            }
         }
 
         private boolean isCurrentTurn(String requestedTurnId) {
@@ -391,6 +507,9 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
                 turnId = "turn-" + turnSequence.incrementAndGet();
                 turnStartedAtNanos = System.nanoTime();
                 firstPartialLogged = false;
+                lastPartialForDraft = "";
+                similarPartialCount = 0;
+                draftStarted = false;
             }
         }
 
@@ -426,6 +545,47 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
                 }
                 return joinTranscript(current, normalized);
             }
+        }
+
+        private String acceptPartialForDraft(String requestedTurnId, String preview) {
+            synchronized (lock) {
+                if (!isCurrentTurn(requestedTurnId) || draftStarted || conversationId == null) {
+                    return "";
+                }
+                String normalized = preview == null ? "" : preview.trim();
+                if (normalized.length() < 8) {
+                    return "";
+                }
+                if (isSimilarPartial(lastPartialForDraft, normalized)) {
+                    similarPartialCount += 1;
+                } else {
+                    similarPartialCount = 1;
+                }
+                lastPartialForDraft = normalized;
+                if (similarPartialCount >= 2 || normalized.length() >= 18) {
+                    draftStarted = true;
+                    return normalized;
+                }
+                return "";
+            }
+        }
+
+        private boolean isSimilarPartial(String previous, String current) {
+            if (previous == null || previous.isBlank() || current == null || current.isBlank()) {
+                return false;
+            }
+            return current.startsWith(previous)
+                || previous.startsWith(current)
+                || commonPrefixLength(previous, current) >= Math.min(previous.length(), current.length()) * 0.8D;
+        }
+
+        private int commonPrefixLength(String left, String right) {
+            int max = Math.min(left.length(), right.length());
+            int index = 0;
+            while (index < max && left.charAt(index) == right.charAt(index)) {
+                index += 1;
+            }
+            return index;
         }
 
         private String commitTranscript(String requestedTurnId, String text) {

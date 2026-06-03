@@ -331,6 +331,7 @@ public class AppProperties {
         private Duration connectTimeout = Duration.ofSeconds(5);
         private Duration requestTimeout = Duration.ofSeconds(90);
         private Duration sessionTtl = Duration.ofSeconds(300);
+        private Duration asrPrewarmTtl = Duration.ofSeconds(60);
         private Duration ttsFirstAudioTimeout = Duration.ofSeconds(3);
         private int asrVadSilenceDurationMs = 1200;
         private double asrVadThreshold = 0.5D;
@@ -448,6 +449,14 @@ public class AppProperties {
 
         public void setSessionTtl(Duration sessionTtl) {
             this.sessionTtl = sessionTtl;
+        }
+
+        public Duration getAsrPrewarmTtl() {
+            return asrPrewarmTtl;
+        }
+
+        public void setAsrPrewarmTtl(Duration asrPrewarmTtl) {
+            this.asrPrewarmTtl = asrPrewarmTtl;
         }
 
         public Duration getTtsFirstAudioTimeout() {

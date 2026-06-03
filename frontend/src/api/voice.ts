@@ -35,6 +35,19 @@ export interface VoicePageContext {
   conversationId?: string;
   recentMessagesSummary?: string;
   commandIntent?: string;
+  voiceSessionId?: string;
+  voiceTurnId?: string;
+  selectedService?: string;
+  formParametersSummary?: string;
+  taskStatus?: string;
+  currentMistakeSummary?: string;
+  reviewStatus?: string;
+  weakPointsSummary?: string;
+  currentGoal?: string;
+  lowestMasteryKnowledge?: string;
+  resourceResultSummary?: string;
+  downloadResourceSummary?: string;
+  recommendedAction?: string;
 }
 
 export interface VoiceTtsEvent {
@@ -85,12 +98,23 @@ export const voiceApi = {
     return request.post<VoiceSessionResponse>('/api/voice/sessions');
   },
 
+  async prewarmSession(sessionId: string): Promise<void> {
+    await request.post<void>(`/api/voice/sessions/${sessionId}/prewarm`);
+  },
+
+  async releasePrewarm(sessionId: string): Promise<void> {
+    await request.delete<void>(`/api/voice/sessions/${sessionId}/prewarm`);
+  },
+
   async parseCommand(text: string, context?: VoicePageContext): Promise<VoiceCommandResponse> {
     return request.post<VoiceCommandResponse>('/api/voice/commands/parse', { text, ...context });
   },
 
   async streamTts(
     text: string,
+    context: VoicePageContext | undefined,
+    turnComplete: boolean,
+    completionOutcome: 'success' | 'cancelled' | 'error',
     handlers: {
       onEvent: (event: VoiceTtsEvent) => void;
       onDone: () => void;
@@ -106,7 +130,7 @@ export const voiceApi = {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
         },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, ...context, turnComplete, completionOutcome }),
         signal,
       },
       missingBodyMessage: '无法读取语音合成流',

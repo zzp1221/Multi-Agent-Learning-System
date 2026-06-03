@@ -20,6 +20,7 @@ import { getErrorMessage } from '../api/request';
 import { voiceApi, type VoicePageContext, type VoiceRealtimeEvent } from '../api/voice';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
+  ENGINE_TASK_STORAGE_KEY,
   QNA_CONVERSATION_CACHE_STORAGE_KEY,
   SELECTED_CONVERSATION_STORAGE_KEY,
   conversationCacheKey,
@@ -78,6 +79,7 @@ const VOICE_PANEL_DEFAULT_HEIGHT = 520;
 const VOICE_DRAG_THRESHOLD_PX = 6;
 const VOICE_RECENT_CONTEXT_MESSAGE_LIMIT = 6;
 const VOICE_RECENT_CONTEXT_MAX_LENGTH = 600;
+const VOICE_TTS_SENTENCE_MIN_LENGTH = 8;
 
 export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal }: FloatingVoiceAssistantProps) {
   const location = useLocation();
@@ -102,6 +104,8 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
 
   const voiceStateRef = useRef<VoiceState>('idle');
   const panelRef = useRef<HTMLElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const answerRef = useRef<HTMLParagraphElement | null>(null);
   const dragStateRef = useRef<VoiceAssistantDragState | null>(null);
   const suppressFabClickRef = useRef(false);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -109,15 +113,26 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const realtimeSocketRef = useRef<WebSocket | null>(null);
+  const currentVoiceSessionIdRef = useRef('');
+  const realtimeSessionClosedRef = useRef(false);
   const currentTurnIdRef = useRef('');
+  const currentCommandIntentRef = useRef('ASK');
+  const prewarmInFlightRef = useRef(false);
   const expectedRealtimeCloseRef = useRef(false);
   const recordingCommitRequestedRef = useRef(false);
   const recognizedTextRef = useRef('');
+  const recordingDraftBaseRef = useRef('');
+  const recordingSegmentTextRef = useRef('');
   const assistantTextRef = useRef('');
   const recordStartedAtRef = useRef(0);
   const recordingTimerRef = useRef<number | null>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
+  const ttsQueueRef = useRef<string[]>([]);
+  const ttsProcessingRef = useRef(false);
+  const ttsSentenceBufferRef = useRef('');
+  const ttsTurnCompletePendingRef = useRef(false);
+  const completedVoiceTurnsRef = useRef<Set<string>>(new Set());
   const playbackContextRef = useRef<AudioContext | null>(null);
   const playbackSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const playbackSourceCountRef = useRef(0);
@@ -163,11 +178,37 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     '--voice-assistant-panel-top': `${Math.round(panelPosition.y)}px`,
   }) as CSSProperties, [panelPosition, visibleAssistantPosition]);
 
+  const scrollVoiceContentToBottom = useCallback(() => {
+    const scroll = () => {
+      const body = bodyRef.current;
+      const answer = answerRef.current;
+      if (body) {
+        body.scrollTop = body.scrollHeight;
+      }
+      if (answer) {
+        answer.scrollTop = answer.scrollHeight;
+      }
+    };
+    scroll();
+    requestAnimationFrame(() => {
+      scroll();
+      requestAnimationFrame(scroll);
+    });
+  }, []);
+
   useEffect(() => () => {
     stopRecordingResources();
+    releasePrewarmedAsr();
     stopSpeaking();
     chatAbortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (!open || !isAuthenticated) {
+      return;
+    }
+    void ensurePrewarmedAsr();
+  }, [isAuthenticated, open]);
 
   useEffect(() => {
     const handleResize = () => setViewportSize(readViewportSize());
@@ -219,6 +260,12 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   }, [assistantText]);
 
   useEffect(() => {
+    if (open) {
+      scrollVoiceContentToBottom();
+    }
+  }, [assistantText, recognizedText, noticeMessage, errorMessage, voiceHistory.length, open, scrollVoiceContentToBottom]);
+
+  useEffect(() => {
     playbackPausedRef.current = playbackPaused;
   }, [playbackPaused]);
 
@@ -237,16 +284,19 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     setOpen(true);
     setErrorMessage('');
     setNoticeMessage('');
+    const draftBase = shouldPreserveDraftForRecording() ? recognizedTextRef.current.trim() : '';
     setAssistantText('');
-    setRecognizedText('');
-    recognizedTextRef.current = '';
+    setRecognizedText(draftBase);
+    recognizedTextRef.current = draftBase;
+    recordingDraftBaseRef.current = draftBase;
+    recordingSegmentTextRef.current = '';
     interruptCurrentTurn();
     realtimeReadyRef.current = false;
     recordingCommitRequestedRef.current = false;
     setRecordingMs(0);
     setVoiceState('recording');
     try {
-      const voiceSession = await voiceApi.createSession();
+      const voiceSession = await ensureVoiceSession();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -266,6 +316,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       gainNode.gain.value = 0;
 
       const socket = await connectRealtimeSocket(voiceSession.sessionId);
+      currentVoiceSessionIdRef.current = voiceSession.sessionId;
       realtimeSocketRef.current = socket;
       workletNode.port.onmessage = (event) => {
         const turnId = currentTurnIdRef.current;
@@ -275,6 +326,9 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
         socket.send(JSON.stringify({
           type: 'audio_chunk',
           turnId,
+          conversationId: readActiveVoiceConversationId(),
+          pageType: pageContext.pageType,
+          commandIntent: currentCommandIntentRef.current,
           data: arrayBufferToBase64(event.data as ArrayBuffer),
         }));
       };
@@ -314,7 +368,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
         if (
           voiceStateRef.current === 'transcribing'
           && recordingCommitRequestedRef.current
-          && recognizedTextRef.current.trim()
+          && currentRecordingDraftText().trim()
         ) {
           recordingCommitRequestedRef.current = false;
           voiceStateRef.current = 'ready';
@@ -328,7 +382,10 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
           return;
         }
         recordingCommitRequestedRef.current = false;
-        if (recognizedTextRef.current.trim()) {
+        const draftText = currentRecordingDraftText().trim();
+        if (draftText) {
+          setRecognizedText(draftText);
+          recognizedTextRef.current = draftText;
           voiceStateRef.current = 'ready';
           setVoiceState('ready');
         } else {
@@ -355,13 +412,17 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     try {
       const command = await voiceApi.parseCommand(text, buildVoicePageContext(location.pathname, {
         conversationId: activeConversationId,
+        voiceSessionId: currentVoiceSessionIdRef.current,
+        voiceTurnId: currentTurnIdRef.current,
       }));
       commandIntent = command.intent || 'ASK';
+      currentCommandIntentRef.current = commandIntent;
       if (handleLocalVoiceCommand(command.intent)) {
         return;
       }
     } catch {
       // 指令解析失败不阻断普通问答。
+      currentCommandIntentRef.current = commandIntent;
     }
     if (!activeConversationId) {
       setOpen(true);
@@ -396,6 +457,8 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
           voiceContext: buildVoicePageContext(location.pathname, {
             conversationId: activeConversationId,
             commandIntent,
+            voiceSessionId: currentVoiceSessionIdRef.current,
+            voiceTurnId: currentTurnIdRef.current,
           }),
         },
         {
@@ -404,6 +467,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
             if (!chunk) {
               return;
             }
+            enqueueTtsChunk(chunk, false);
             dispatchVoiceConversationStream({
               conversationId: activeConversationId,
               streamId,
@@ -419,7 +483,13 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
           onDone: () => {
             chatAbortRef.current = null;
             finishHistoryTurn(assistantTextRef.current);
-            setVoiceState(autoSpeak ? 'speaking' : 'idle');
+            if (autoSpeak) {
+              flushTtsSentenceBuffer(true);
+              setVoiceState('speaking');
+            } else {
+              void sendVoiceTurnCompletionMarker();
+              setVoiceState('idle');
+            }
             dispatchVoiceConversationStream({
               conversationId: activeConversationId,
               streamId,
@@ -532,45 +602,11 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   }, [viewportSize]);
 
   useEffect(() => {
-    if (!autoSpeak || voiceState !== 'speaking' || !assistantText.trim()) {
+    if (voiceState !== 'speaking') {
       return;
     }
-    const abortController = new AbortController();
-    const playbackGeneration = playbackGenerationRef.current + 1;
-    playbackGenerationRef.current = playbackGeneration;
-    playbackSourceCountRef.current = 0;
-    playbackSourcesRef.current.clear();
-    playbackTimeRef.current = 0;
-    ttsStreamDoneRef.current = false;
-    setPlaybackPaused(false);
-    ttsAbortRef.current = abortController;
-    void voiceApi.streamTts(
-      assistantText,
-      {
-        onEvent: (event) => {
-          if (event.event !== 'audio' || !event.payload.audio) {
-            return;
-          }
-          void playPcmBase64(event.payload.audio, event.payload.sampleRate ?? TARGET_SAMPLE_RATE);
-        },
-        onDone: () => {
-          ttsAbortRef.current = null;
-          ttsStreamDoneRef.current = true;
-          finishSpeakingIfPlaybackComplete(playbackGeneration);
-        },
-        onError: (error) => {
-          ttsAbortRef.current = null;
-          setNoticeMessage(getErrorMessage(error));
-          ttsStreamDoneRef.current = true;
-          setVoiceState('idle');
-        },
-      },
-      abortController.signal,
-    );
-    return () => {
-      abortController.abort();
-    };
-  }, [assistantText, autoSpeak, voiceState]);
+    startSpeakingPlayback();
+  }, [voiceState]);
 
   const cancelCurrent = () => {
     if (voiceState === 'recording') {
@@ -582,14 +618,63 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     setVoiceState('idle');
   };
 
+  function closePanel() {
+    setOpen(false);
+    if (voiceStateRef.current === 'idle' || voiceStateRef.current === 'error') {
+      releasePrewarmedAsr();
+      currentVoiceSessionIdRef.current = '';
+      realtimeSessionClosedRef.current = true;
+    }
+  }
+
   function interruptCurrentTurn() {
-    realtimeSocketRef.current?.send(JSON.stringify({ type: 'cancel', turnId: currentTurnIdRef.current }));
+    const socket = realtimeSocketRef.current;
+    socket?.send(JSON.stringify({ type: 'cancel', turnId: currentTurnIdRef.current }));
     expectedRealtimeCloseRef.current = true;
-    realtimeSocketRef.current?.close();
+    socket?.close();
+    if (socket) {
+      realtimeSessionClosedRef.current = true;
+    }
     realtimeSocketRef.current = null;
     realtimeReadyRef.current = false;
     chatAbortRef.current?.abort();
     stopSpeaking();
+  }
+
+  async function ensureVoiceSession(): Promise<{ sessionId: string }> {
+    if (currentVoiceSessionIdRef.current && !realtimeSessionClosedRef.current) {
+      return { sessionId: currentVoiceSessionIdRef.current };
+    }
+    const voiceSession = await voiceApi.createSession();
+    currentVoiceSessionIdRef.current = voiceSession.sessionId;
+    realtimeSessionClosedRef.current = false;
+    return voiceSession;
+  }
+
+  async function ensurePrewarmedAsr() {
+    if (prewarmInFlightRef.current || currentVoiceSessionIdRef.current) {
+      return;
+    }
+    prewarmInFlightRef.current = true;
+    try {
+      const voiceSession = await voiceApi.createSession();
+      currentVoiceSessionIdRef.current = voiceSession.sessionId;
+      realtimeSessionClosedRef.current = false;
+      await voiceApi.prewarmSession(voiceSession.sessionId);
+    } catch {
+      currentVoiceSessionIdRef.current = '';
+      realtimeSessionClosedRef.current = true;
+    } finally {
+      prewarmInFlightRef.current = false;
+    }
+  }
+
+  function releasePrewarmedAsr() {
+    const sessionId = currentVoiceSessionIdRef.current;
+    if (!sessionId) {
+      return;
+    }
+    void voiceApi.releasePrewarm(sessionId).catch(() => undefined);
   }
 
   return (
@@ -622,19 +707,19 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
                 >
                   {autoSpeak ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                 </button>
-                <button type="button" className="voice-assistant-icon" onClick={() => setOpen(false)} title="收起">
+                <button type="button" className="voice-assistant-icon" onClick={closePanel} title="收起">
                   <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            <div className="voice-assistant-body">
+            <div ref={bodyRef} className="voice-assistant-body">
               {recognizedText || voiceState === 'recording' || voiceState === 'transcribing' || voiceState === 'ready' ? (
                 <label className="voice-assistant-field">
                   <span>识别文本</span>
                   <textarea
                     value={recognizedText}
-                    onChange={(event) => setRecognizedText(event.target.value)}
+                    onChange={(event) => updateRecognizedDraftText(event.target.value)}
                     rows={3}
                     disabled={voiceState === 'chatting' || voiceState === 'speaking'}
                   />
@@ -644,7 +729,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
               {assistantText ? (
                 <div className="voice-assistant-answer">
                   <span>回答</span>
-                  <p>{assistantText}</p>
+                  <p ref={answerRef}>{assistantText}</p>
                 </div>
               ) : null}
 
@@ -813,6 +898,9 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
         const expectedClose = expectedRealtimeCloseRef.current;
         expectedRealtimeCloseRef.current = false;
         const isCurrentSocket = realtimeSocketRef.current === socket;
+        if (currentVoiceSessionIdRef.current === sessionId) {
+          realtimeSessionClosedRef.current = true;
+        }
         if (isCurrentSocket) {
           realtimeSocketRef.current = null;
           realtimeReadyRef.current = false;
@@ -831,7 +919,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   }
 
   function handleRealtimeEvent(event: VoiceRealtimeEvent) {
-    if (event.turnId && event.turnId !== currentTurnIdRef.current && event.type !== 'ready' && event.type !== 'cancelled') {
+    if (event.turnId && event.turnId !== currentTurnIdRef.current && event.type !== 'ready') {
       return;
     }
     if (event.type === 'ready') {
@@ -855,10 +943,14 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       }
       if (recordingCommitRequestedRef.current) {
         recordingCommitRequestedRef.current = false;
-        const finalText = (text || recognizedTextRef.current).trim();
+        const finalText = currentRecordingDraftText(text).trim();
         const nextState = finalText ? 'ready' : 'error';
         voiceStateRef.current = nextState;
         setVoiceState(nextState);
+        if (finalText) {
+          setRecognizedText(finalText);
+          recognizedTextRef.current = finalText;
+        }
         if (!finalText) {
           setErrorMessage('没有识别到文字，请重试');
         }
@@ -868,10 +960,12 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       return;
     }
     if (event.type === 'cancelled') {
-      currentTurnIdRef.current = event.turnId ?? '';
       realtimeReadyRef.current = true;
       recordingCommitRequestedRef.current = false;
-      setRecognizedText('');
+      recordingSegmentTextRef.current = '';
+      const draftBase = recordingDraftBaseRef.current.trim();
+      setRecognizedText(draftBase);
+      recognizedTextRef.current = draftBase;
       return;
     }
     if (event.type === 'error') {
@@ -888,13 +982,51 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (!next) {
       return;
     }
-    setRecognizedText(next);
-    recognizedTextRef.current = next;
+    recordingSegmentTextRef.current = next;
+    const draftText = currentRecordingDraftText(next);
+    setRecognizedText(draftText);
+    recognizedTextRef.current = draftText;
+  }
+
+  function updateRecognizedDraftText(text: string) {
+    setRecognizedText(text);
+    recognizedTextRef.current = text;
+    recordingDraftBaseRef.current = text;
+    recordingSegmentTextRef.current = '';
+  }
+
+  function shouldPreserveDraftForRecording() {
+    const draft = recognizedTextRef.current.trim();
+    if (!draft) {
+      return false;
+    }
+    const currentState = voiceStateRef.current;
+    return currentState === 'ready'
+      || (currentState === 'idle' && !assistantTextRef.current.trim())
+      || (currentState === 'speaking' && playbackPausedRef.current);
+  }
+
+  function currentRecordingDraftText(segmentOverride?: string) {
+    return mergeVoiceDraftText(recordingDraftBaseRef.current, segmentOverride ?? recordingSegmentTextRef.current);
   }
 
   function stopSpeaking() {
+    const shouldMarkCancelled = (
+      voiceStateRef.current === 'speaking'
+      || voiceStateRef.current === 'chatting'
+      || ttsQueueRef.current.length > 0
+      || ttsTurnCompletePendingRef.current
+      || Boolean(ttsAbortRef.current)
+    );
+    if (shouldMarkCancelled) {
+      void sendVoiceTurnCompletionMarker('cancelled');
+    }
     ttsAbortRef.current?.abort();
     ttsAbortRef.current = null;
+    ttsQueueRef.current = [];
+    ttsProcessingRef.current = false;
+    ttsSentenceBufferRef.current = '';
+    ttsTurnCompletePendingRef.current = false;
     playbackGenerationRef.current += 1;
     playbackSourcesRef.current.forEach((source) => {
       try {
@@ -910,6 +1042,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     playbackContextRef.current?.close().catch(() => undefined);
     playbackContextRef.current = null;
     playbackTimeRef.current = 0;
+    playbackPausedRef.current = false;
     setPlaybackPaused(false);
   }
 
@@ -943,11 +1076,172 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     playbackTimeRef.current = startAt + buffer.duration;
   }
 
+  function startSpeakingPlayback() {
+    const playbackGeneration = playbackGenerationRef.current + 1;
+    playbackGenerationRef.current = playbackGeneration;
+    playbackSourceCountRef.current = 0;
+    playbackSourcesRef.current.clear();
+    playbackTimeRef.current = 0;
+    ttsStreamDoneRef.current = false;
+    playbackPausedRef.current = false;
+    setPlaybackPaused(false);
+    void drainTtsQueue(playbackGeneration);
+  }
+
+  function enqueueTtsChunk(chunk: string, forceFlush: boolean) {
+    if (!autoSpeak) {
+      return;
+    }
+    ttsSentenceBufferRef.current += chunk;
+    flushTtsSentenceBuffer(forceFlush);
+  }
+
+  function flushTtsSentenceBuffer(forceFlush: boolean) {
+    if (!autoSpeak) {
+      return;
+    }
+    if (forceFlush) {
+      ttsTurnCompletePendingRef.current = true;
+    }
+    let buffer = ttsSentenceBufferRef.current;
+    const sentences: string[] = [];
+    let boundaryIndex = findSentenceBoundary(buffer);
+    while (boundaryIndex >= 0) {
+      const sentence = buffer.slice(0, boundaryIndex + 1).trim();
+      if (sentence.length >= VOICE_TTS_SENTENCE_MIN_LENGTH) {
+        sentences.push(sentence);
+      }
+      buffer = buffer.slice(boundaryIndex + 1);
+      boundaryIndex = findSentenceBoundary(buffer);
+    }
+    if (forceFlush && buffer.trim()) {
+      sentences.push(buffer.trim());
+      buffer = '';
+    }
+    ttsSentenceBufferRef.current = buffer;
+    if (sentences.length === 0) {
+      if (forceFlush) {
+        void drainTtsQueue(playbackGenerationRef.current);
+      }
+      return;
+    }
+    ttsQueueRef.current.push(...sentences);
+    if (voiceStateRef.current !== 'speaking') {
+      setVoiceState('speaking');
+      return;
+    }
+    void drainTtsQueue(playbackGenerationRef.current);
+  }
+
+  async function drainTtsQueue(generation: number) {
+    if (ttsProcessingRef.current) {
+      return;
+    }
+    ttsProcessingRef.current = true;
+    try {
+      while (generation === playbackGenerationRef.current && ttsQueueRef.current.length > 0) {
+        const sentence = ttsQueueRef.current.shift();
+        if (!sentence) {
+          continue;
+        }
+        await streamSentenceTts(sentence, false, generation);
+      }
+      if (
+        generation === playbackGenerationRef.current
+        && ttsTurnCompletePendingRef.current
+        && chatAbortRef.current === null
+        && ttsQueueRef.current.length === 0
+      ) {
+        ttsTurnCompletePendingRef.current = false;
+        await sendVoiceTurnCompletionMarker('success');
+      }
+    } finally {
+      ttsProcessingRef.current = false;
+      if (chatAbortRef.current === null && ttsQueueRef.current.length === 0 && !ttsTurnCompletePendingRef.current) {
+        ttsStreamDoneRef.current = true;
+        finishSpeakingIfPlaybackComplete(generation);
+      }
+    }
+  }
+
+  async function streamSentenceTts(sentence: string, turnComplete: boolean, generation: number) {
+    const abortController = new AbortController();
+    ttsAbortRef.current = abortController;
+    await voiceApi.streamTts(
+      sentence,
+      buildVoicePageContext(location.pathname, {
+        conversationId: readActiveVoiceConversationId(),
+        commandIntent: currentCommandIntentRef.current,
+        voiceSessionId: currentVoiceSessionIdRef.current,
+        voiceTurnId: currentTurnIdRef.current,
+      }),
+      turnComplete,
+      'success',
+      {
+        onEvent: (event) => {
+          if (event.event !== 'audio' || !event.payload.audio || generation !== playbackGenerationRef.current) {
+            return;
+          }
+          void playPcmBase64(event.payload.audio, event.payload.sampleRate ?? TARGET_SAMPLE_RATE);
+        },
+        onDone: () => {
+          ttsAbortRef.current = null;
+        },
+        onError: (error) => {
+          ttsAbortRef.current = null;
+          setNoticeMessage(getErrorMessage(error));
+        },
+      },
+      abortController.signal,
+    );
+  }
+
+  async function sendVoiceTurnCompletionMarker(completionOutcome: 'success' | 'cancelled' | 'error' = 'success') {
+    const voiceSessionId = currentVoiceSessionIdRef.current;
+    const voiceTurnId = currentTurnIdRef.current;
+    if (!voiceSessionId || !voiceTurnId) {
+      return;
+    }
+    const markerKey = `${voiceSessionId}:${voiceTurnId}`;
+    if (completedVoiceTurnsRef.current.has(markerKey)) {
+      return;
+    }
+    completedVoiceTurnsRef.current.add(markerKey);
+    try {
+      await voiceApi.streamTts(
+        '',
+        buildVoicePageContext(location.pathname, {
+          conversationId: readActiveVoiceConversationId(),
+          commandIntent: currentCommandIntentRef.current,
+          voiceSessionId,
+          voiceTurnId,
+        }),
+        true,
+        completionOutcome,
+        {
+          onEvent: () => undefined,
+          onDone: () => undefined,
+          onError: () => undefined,
+        },
+      );
+    } catch {
+      completedVoiceTurnsRef.current.delete(markerKey);
+    }
+  }
+
+  function findSentenceBoundary(text: string): number {
+    const matches = ['。', '！', '？', '.', '!', '?', '\n']
+      .map((mark) => text.indexOf(mark))
+      .filter((index) => index >= 0);
+    return matches.length === 0 ? -1 : Math.min(...matches);
+  }
+
   async function pauseSpeaking() {
     const audioContext = playbackContextRef.current;
     if (audioContext && audioContext.state === 'running') {
       await audioContext.suspend();
     }
+    playbackPausedRef.current = true;
     setPlaybackPaused(true);
     setNoticeMessage('朗读已暂停');
   }
@@ -957,6 +1251,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (audioContext && audioContext.state === 'suspended') {
       await audioContext.resume();
     }
+    playbackPausedRef.current = false;
     setPlaybackPaused(false);
     setNoticeMessage('继续朗读');
   }
@@ -968,6 +1263,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (!ttsStreamDoneRef.current || playbackSourceCountRef.current > 0) {
       return;
     }
+    playbackPausedRef.current = false;
     setPlaybackPaused(false);
     setVoiceState('idle');
   }
@@ -1109,27 +1405,129 @@ function buildVoicePageContext(pathname: string, overrides: Partial<VoicePageCon
 
 function buildBaseVoicePageContext(pathname: string): VoicePageContext {
   if (pathname.startsWith('/engine')) {
+    const engineContext = readEngineStructuredContext();
     return {
       pageType: 'learning_service',
       pageTitle: readDocumentTitle('学习服务'),
+      selectedService: engineContext.selectedService,
+      formParametersSummary: engineContext.formParametersSummary,
+      taskStatus: engineContext.taskStatus,
+      resourceResultSummary: engineContext.resourceResultSummary,
+      downloadResourceSummary: engineContext.downloadResourceSummary,
+      recommendedAction: engineContext.recommendedAction,
     };
   }
   if (pathname.startsWith('/mistakes')) {
+    const mistakeContext = readVisiblePageContext(['错题', '知识点', '复习', '掌握'], 500);
     return {
       pageType: 'mistake_book',
       pageTitle: readDocumentTitle('错题本'),
+      currentMistakeSummary: mistakeContext,
+      reviewStatus: mistakeContext,
     };
   }
   if (pathname.startsWith('/profile')) {
+    const profileContext = readProfileStructuredContext();
     return {
       pageType: 'learner_profile',
       pageTitle: readDocumentTitle('个人画像'),
+      weakPointsSummary: profileContext.weakPointsSummary,
+      currentGoal: profileContext.currentGoal,
+      lowestMasteryKnowledge: profileContext.lowestMasteryKnowledge,
     };
   }
   return {
     pageType: 'qna_chat',
     pageTitle: readDocumentTitle('智能对话'),
   };
+}
+
+function mergeVoiceDraftText(base: string, segment: string): string {
+  const normalizedBase = base.trim();
+  const normalizedSegment = segment.trim();
+  if (!normalizedBase) {
+    return normalizedSegment;
+  }
+  if (!normalizedSegment || normalizedBase.endsWith(normalizedSegment)) {
+    return normalizedBase;
+  }
+  if (normalizedSegment.startsWith(normalizedBase)) {
+    return normalizedSegment;
+  }
+  return `${normalizedBase}${normalizedSegment}`;
+}
+
+function readEngineStructuredContext(): Partial<VoicePageContext> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+  try {
+    const raw = window.sessionStorage.getItem(ENGINE_TASK_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) as {
+      selectedService?: string;
+      snapshots?: Record<string, Record<string, unknown>>;
+    } : {};
+    const selectedService = parsed.selectedService || '';
+    const snapshot = selectedService && parsed.snapshots ? parsed.snapshots[selectedService] : null;
+    const taskStatus = readString(snapshot, 'engineState') || readString(snapshot, 'status');
+    const taskSummary = readString(snapshot, 'taskSummary');
+    const resultLines = Array.isArray(snapshot?.serviceResultLines)
+      ? snapshot.serviceResultLines.filter((item): item is string => typeof item === 'string').slice(0, 3).join('；')
+      : '';
+    const downloads = Array.isArray(snapshot?.downloadLinks) ? snapshot.downloadLinks.length : 0;
+    return {
+      selectedService,
+      taskStatus,
+      formParametersSummary: compactText([selectedService, taskStatus, taskSummary].join('；'), 500),
+      resourceResultSummary: compactText([taskSummary, resultLines].join('；'), 700),
+      downloadResourceSummary: downloads > 0 ? `可下载资源 ${downloads} 个` : '',
+      recommendedAction: taskStatus === 'ENGINE_COMPLETED' ? '查看结果或下载资源' : '',
+    };
+  } catch {
+    return {
+      formParametersSummary: readVisiblePageContext(['当前服务', '参数', '任务'], 500),
+    };
+  }
+}
+
+function readProfileStructuredContext(): Partial<VoicePageContext> {
+  const visible = readVisiblePageContext(['薄弱', '目标', '掌握', '知识'], 700);
+  return {
+    weakPointsSummary: visible,
+    currentGoal: firstVisibleLineContaining(['目标']),
+    lowestMasteryKnowledge: firstVisibleLineContaining(['最低', '薄弱', '掌握']),
+  };
+}
+
+function readVisiblePageContext(keywords: string[], maxLength: number): string {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+  const text = Array.from(document.querySelectorAll('main h1, main h2, main h3, main p, main li, main button, main [aria-label]'))
+    .map((node) => node.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+    .filter((line) => line && keywords.some((keyword) => line.includes(keyword)))
+    .slice(0, 8)
+    .join('；');
+  return compactText(text, maxLength);
+}
+
+function firstVisibleLineContaining(keywords: string[]): string {
+  if (typeof document === 'undefined') {
+    return '';
+  }
+  return Array.from(document.querySelectorAll('main h1, main h2, main h3, main p, main li'))
+    .map((node) => node.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+    .find((line) => line && keywords.some((keyword) => line.includes(keyword))) ?? '';
+}
+
+function readString(source: Record<string, unknown> | null | undefined, key: string): string {
+  const value = source?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function compactText(text: string, maxLength: number): string {
+  const normalized = text.replace(/\s+/g, ' ').replace(/；+/g, '；').trim();
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength)}...`;
 }
 
 function readRecentConversationSummary(conversationId?: string): string {

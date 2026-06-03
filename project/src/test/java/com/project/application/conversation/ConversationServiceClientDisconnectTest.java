@@ -59,7 +59,7 @@ class ConversationServiceClientDisconnectTest {
         when(messageClient.listMessages(conversationId, userId, 0, 50)).thenReturn(List.of(
             new ConversationMessageItemResponse("message-1", "assistant", "ok", List.of(), null)
         ));
-        ConversationService service = new ConversationService(repository, null, messageClient, null, null);
+        ConversationService service = new ConversationService(repository, null, messageClient, null, null, null, null, null);
 
         List<ConversationMessageItemResponse> messages = service.listConversationMessages(
             new JwtAuthenticatedUser(userId, "demo", "USER"),
