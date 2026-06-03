@@ -130,6 +130,98 @@ def test_resource_push_agent_binds_generated_assets_to_learning_path_steps() -> 
     assert plan["coverageGaps"][0]["missingResourceTypes"] == ["VIDEO"]
 
 
+def test_resource_push_agent_normalizes_resource_type_aliases_for_path_binding() -> None:
+    agent = ResourcePushAgent()
+
+    plan = agent._build_path_bound_resource_plan(
+        learning_path={
+            "steps": [
+                {
+                    "stepId": "step-1",
+                    "title": "CODE_CASE alias",
+                    "targetKnowledgePoints": ["alias"],
+                    "preferredResourceTypes": ["EXPLANATION", "CODE_CASE", "PRACTICAL_CASE"],
+                }
+            ]
+        },
+        params={
+            "generatedAssets": [
+                {"assetType": "DOCUMENT", "title": "alias document", "summary": "alias"},
+                {"assetType": "CODE", "title": "alias code", "summary": "alias"},
+            ]
+        },
+        profile_context={},
+    )
+
+    resources = plan["stepResources"][0]["resources"]
+    assert [item["resourceType"] for item in resources] == ["DOCUMENT", "CODE"]
+    assert plan["coverageGaps"] == []
+
+
+def test_resource_push_agent_prefers_profile_analysis_context() -> None:
+    agent = ResourcePushAgent()
+
+    context = agent._extract_profile_context(
+        {
+            "profile": {
+                "weakPoints": ["old-profile"],
+                "preferredResourceTypes": ["READING"],
+            },
+            "profileAnalysis": {
+                "weakPoints": ["new-profile-analysis"],
+                "preferredResourceTypes": ["CODE_CASE"],
+            },
+            "learningContext": {"course": "course", "chapter": "chapter"},
+        },
+        snapshot=type(
+            "Snapshot",
+            (),
+            {
+                "preferred_style": "step_by_step",
+                "student_level": "BASIC",
+                "knowledge_gaps": [],
+                "current_course": "snapshot-course",
+                "current_chapter": "snapshot-chapter",
+            },
+        )(),
+    )
+
+    assert context["primaryWeakPoint"] == "new-profile-analysis"
+    assert context["preferredResourceTypes"] == ["CODE"]
+
+
+def test_resource_push_agent_ignores_empty_profile_analysis_context() -> None:
+    agent = ResourcePushAgent()
+
+    context = agent._extract_profile_context(
+        {
+            "profile": {
+                "weakPoints": ["old-profile"],
+                "preferredResourceTypes": ["READING"],
+            },
+            "profileAnalysis": {
+                "weakPoints": [],
+                "preferredResourceTypes": [],
+            },
+            "learningContext": {"course": "course", "chapter": "chapter"},
+        },
+        snapshot=type(
+            "Snapshot",
+            (),
+            {
+                "preferred_style": "",
+                "student_level": "BASIC",
+                "knowledge_gaps": [],
+                "current_course": "snapshot-course",
+                "current_chapter": "snapshot-chapter",
+            },
+        )(),
+    )
+
+    assert context["primaryWeakPoint"] == "old-profile"
+    assert context["preferredResourceTypes"] == ["READING"]
+
+
 def test_resource_push_agent_uses_retrieval_evidence_without_faking_download_url() -> None:
     agent = ResourcePushAgent()
 

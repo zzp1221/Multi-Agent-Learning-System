@@ -13,11 +13,16 @@ import {
   type EngineTaskResultRecord,
   type InlineResourceView,
   type LearningPlanView,
+  type MasteryDiagnosisView,
   type PathForm,
   type PracticeJudgeResult,
   type PracticeQuestionBatch,
   type PushForm,
+  type ResourceCoverageGapView,
   type ResourceForm,
+  type ResourcePushPlanResourceView,
+  type ResourcePushPlanStepView,
+  type ResourcePushPlanView,
   type ResourceType,
   type TempDownloadLink,
   type VideoResult,
@@ -185,6 +190,22 @@ export function ServiceDynamicForm(props: {
         <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
           {isPersonalized ? '个性化学习方案参数' : '学习路径规划参数'}
         </div>
+        {isPersonalized ? (
+          <div className="mb-3 grid gap-3 md:grid-cols-2">
+            <input
+              value={props.resourceForm.course}
+              onChange={(e) => props.onResourceChange({ ...props.resourceForm, course: e.target.value })}
+              placeholder="课程名称"
+              className={baseInputClass}
+            />
+            <input
+              value={props.resourceForm.keyPoints}
+              onChange={(e) => props.onResourceChange({ ...props.resourceForm, keyPoints: e.target.value })}
+              placeholder="章节或重点知识点"
+              className={baseInputClass}
+            />
+          </div>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-2">
           <input
             value={props.pathForm.targetPeriod}
@@ -203,7 +224,7 @@ export function ServiceDynamicForm(props: {
           value={props.pathForm.currentProgress}
           onChange={(e) => props.onPathChange({ ...props.pathForm, currentProgress: e.target.value })}
           rows={2}
-          placeholder="当前学习进度"
+          placeholder={isPersonalized ? '当前学习进度和学习目标' : '当前学习进度'}
           className={`${baseInputClass} mt-3`}
         />
         {isPersonalized ? (
@@ -440,6 +461,7 @@ function PracticeQuestionPanel(props: {
 
 export function TaskResultPanel(props: {
   service: EngineService | null;
+  taskId: string;
   taskSummary: string;
   serviceResultLines: string[];
   downloadLinks: TempDownloadLink[];
@@ -447,7 +469,9 @@ export function TaskResultPanel(props: {
   inlineResource: InlineResourceView | null;
   inlineResources: InlineResourceView[];
   completedResources: CompletedResourceView[];
+  masteryDiagnosis: MasteryDiagnosisView | null;
   learningPlan: LearningPlanView | null;
+  resourcePushPlan: ResourcePushPlanView | null;
   criticReview: CriticReviewView | null;
   agentTrace: AgentTraceStepView[];
   resultHistory: EngineTaskResultRecord[];
@@ -459,46 +483,80 @@ export function TaskResultPanel(props: {
   onSubmitPracticeAnswers: (batch: PracticeQuestionBatch, answers: Record<string, string>) => void;
 }) {
   const selectedRecord = props.resultHistory.find((item) => item.taskId === props.selectedResultTaskId) ?? null;
-  const visibleTaskSummary = selectedRecord?.taskSummary ?? props.taskSummary;
-  const visibleResultLines = selectedRecord?.serviceResultLines ?? props.serviceResultLines;
-  const visibleDownloadLinks = selectedRecord?.downloadLinks ?? props.downloadLinks;
-  const visibleVideoResult = selectedRecord?.videoResult ?? props.videoResult;
-  const visibleInlineResources = selectedRecord?.inlineResources?.length
-    ? selectedRecord.inlineResources
-    : props.inlineResources.length
-      ? props.inlineResources
-      : props.inlineResource
-        ? [props.inlineResource]
-        : [];
-  const visiblePracticeBatch = selectedRecord?.practiceBatch ?? props.practiceBatch;
-  const visibleLearningPlan = selectedRecord?.learningPlan ?? props.learningPlan;
-  const visibleCriticReview = selectedRecord?.criticReview ?? props.criticReview;
-  const visibleAgentTrace = selectedRecord?.agentTrace?.length ? selectedRecord.agentTrace : props.agentTrace;
-  const visibleCompletedResources = selectedRecord?.completedResources?.length
-    ? selectedRecord.completedResources
-    : props.completedResources.length
-      ? props.completedResources
-      : [
-          ...visibleInlineResources.map((resource) => ({
-            kind: 'inline' as const,
-            key: `inline:${resource.kind}:${resource.title}`,
-            resource,
-          })),
-          ...(visiblePracticeBatch
-            ? [{
-                kind: 'question_batch' as const,
-                key: `question_batch:${visiblePracticeBatch.title}:${visiblePracticeBatch.topic}`,
-                batch: visiblePracticeBatch,
-              }]
-            : []),
-        ];
-  const visibleJudgeResult = selectedRecord?.judgeResult ?? props.judgeResult;
+  const selectedRecordUsesCurrentSnapshot = !selectedRecord || selectedRecord.taskId === props.taskId;
+  const activeInlineResources = props.inlineResources.length
+    ? props.inlineResources
+    : props.inlineResource
+      ? [props.inlineResource]
+      : [];
+  const visibleTaskSummary = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.taskSummary ?? props.taskSummary
+    : selectedRecord.taskSummary;
+  const visibleResultLines = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.serviceResultLines ?? props.serviceResultLines
+    : selectedRecord.serviceResultLines;
+  const visibleDownloadLinks = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.downloadLinks ?? props.downloadLinks
+    : selectedRecord.downloadLinks;
+  const visibleVideoResult = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.videoResult ?? props.videoResult
+    : selectedRecord.videoResult;
+  const visibleInlineResources = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.inlineResources?.length
+      ? selectedRecord.inlineResources
+      : activeInlineResources
+    : selectedRecord.inlineResources;
+  const visiblePracticeBatch = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.practiceBatch ?? props.practiceBatch
+    : selectedRecord.practiceBatch;
+  const visibleMasteryDiagnosis = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.masteryDiagnosis ?? props.masteryDiagnosis
+    : selectedRecord.masteryDiagnosis;
+  const visibleLearningPlan = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.learningPlan ?? props.learningPlan
+    : selectedRecord.learningPlan;
+  const visibleResourcePushPlan = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.resourcePushPlan ?? props.resourcePushPlan
+    : selectedRecord.resourcePushPlan;
+  const visibleCriticReview = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.criticReview ?? props.criticReview
+    : selectedRecord.criticReview;
+  const visibleAgentTrace = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.agentTrace?.length ? selectedRecord.agentTrace : props.agentTrace
+    : selectedRecord.agentTrace;
+  const visibleCompletedResources = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.completedResources?.length
+      ? selectedRecord.completedResources
+      : props.completedResources.length
+        ? props.completedResources
+        : [
+            ...visibleInlineResources.map((resource) => ({
+              kind: 'inline' as const,
+              key: `inline:${resource.kind}:${resource.title}`,
+              resource,
+            })),
+            ...(visiblePracticeBatch
+              ? [{
+                  kind: 'question_batch' as const,
+                  key: `question_batch:${visiblePracticeBatch.title}:${visiblePracticeBatch.topic}`,
+                  batch: visiblePracticeBatch,
+                }]
+              : []),
+          ]
+    : selectedRecord.completedResources;
+  const visibleJudgeResult = selectedRecordUsesCurrentSnapshot
+    ? selectedRecord?.judgeResult ?? props.judgeResult
+    : selectedRecord.judgeResult;
   const externalRecommendations = props.service === 'push' || props.service === 'personalized'
     ? visibleDownloadLinks.filter(isExternalRecommendation)
     : [];
   const fileDownloads = props.service === 'push'
     ? []
     : visibleDownloadLinks.filter((item) => !isExternalRecommendation(item));
+  const resourcesByStepId = buildResourcePlanStepMap(visibleResourcePushPlan);
+  const gapsByStepId = buildResourceCoverageGapMap(visibleResourcePushPlan);
+  const standaloneStepResources = visibleResourcePushPlan?.stepResources.filter((step) => !resourcesByLearningStep(visibleLearningPlan, step.stepId)) ?? [];
+  const standaloneCoverageGaps = visibleResourcePushPlan?.coverageGaps.filter((gap) => !resourcesByLearningStep(visibleLearningPlan, gap.stepId)) ?? [];
 
   const handleDownload = async (item: TempDownloadLink) => {
     const absoluteUrl = /^https?:\/\//i.test(item.url) ? item.url : `${window.location.origin}${item.url.startsWith('/') ? item.url : `/${item.url}`}`;
@@ -536,6 +594,19 @@ export function TaskResultPanel(props: {
     }
   };
 
+  const handleResourcePlanOpen = (item: ResourcePushPlanResourceView) => {
+    if (!item.downloadUrl) {
+      return;
+    }
+    const anchor = document.createElement('a');
+    anchor.href = item.downloadUrl;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  };
+
   if (!props.service) {
     return null;
   }
@@ -547,7 +618,9 @@ export function TaskResultPanel(props: {
     || visibleCompletedResources.length > 0
     || Boolean(visiblePracticeBatch)
     || Boolean(visibleJudgeResult)
+    || Boolean(visibleMasteryDiagnosis)
     || Boolean(visibleLearningPlan)
+    || Boolean(visibleResourcePushPlan)
     || Boolean(visibleCriticReview)
     || visibleAgentTrace.length > 0
     || props.resultHistory.length > 0;
@@ -630,6 +703,10 @@ export function TaskResultPanel(props: {
         </div>
       ) : null}
 
+      {visibleMasteryDiagnosis ? (
+        <MasteryDiagnosisSummary diagnosis={visibleMasteryDiagnosis} />
+      ) : null}
+
       {visibleAgentTrace.length > 0 ? (
         <div className="modern-card overflow-hidden">
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
@@ -668,17 +745,71 @@ export function TaskResultPanel(props: {
               <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{visibleLearningPlan.goal}</div>
             ) : null}
             {visibleLearningPlan.steps.map((step, index) => (
-              <div key={`${step.stepId}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
-                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  {index + 1}. {step.title || step.stepId}
-                </div>
-                {step.intent ? <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">{step.intent}</div> : null}
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                  {step.agentName ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-700">{step.agentName}</span> : null}
-                  {step.serviceType ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-700">{step.serviceType}</span> : null}
-                  {step.status ? <span className="rounded-full bg-primary-50 px-2 py-1 text-primary-600 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-700">{step.status}</span> : null}
-                </div>
-              </div>
+              (() => {
+                const resourceStep = resourcesByStepId.get(step.stepId);
+                const stepGaps = gapsByStepId.get(step.stepId) ?? [];
+                return (
+                  <div key={`${step.stepId}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                        {step.order ?? index + 1}. {step.title || step.stepId}
+                      </div>
+                      {step.estimatedMinutes ? (
+                        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:ring-slate-700">
+                          {step.estimatedMinutes} 分钟
+                        </span>
+                      ) : null}
+                    </div>
+                    {step.intent ? <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">{step.intent}</div> : null}
+                    {step.reason && step.reason !== step.intent ? <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">依据：{step.reason}</div> : null}
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                      {step.targetKnowledgePoints.map((point) => (
+                        <span key={point} className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-700">{point}</span>
+                      ))}
+                      {step.preferredResourceTypes.map((type) => (
+                        <span key={type} className="rounded-full bg-primary-50 px-2 py-1 text-primary-600 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-700">{recommendationTypeLabel(type)}</span>
+                      ))}
+                      {step.status ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-700">{step.status}</span> : null}
+                    </div>
+                    {step.checkpoint ? (
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300">
+                        检查点：{step.checkpoint}
+                      </div>
+                    ) : null}
+                    {resourceStep?.resources.length ? (
+                      <ResourcePushPlanStepResources
+                        step={resourceStep}
+                        onOpenResource={handleResourcePlanOpen}
+                      />
+                    ) : null}
+                    {stepGaps.map((gap, gapIndex) => (
+                      <ResourceCoverageGapNote key={`${gap.stepId}-${gapIndex}`} gap={gap} />
+                    ))}
+                  </div>
+                );
+              })()
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {standaloneStepResources.length > 0 || standaloneCoverageGaps.length > 0 ? (
+        <div className="modern-card overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <Sparkles className="h-4 w-4 text-primary-500" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">资源推送计划</span>
+          </div>
+          <div className="space-y-3 p-3 sm:p-4">
+            {standaloneStepResources.map((step, index) => (
+              <ResourcePushPlanStepResources
+                key={`${step.stepId}-${index}`}
+                step={step}
+                onOpenResource={handleResourcePlanOpen}
+                standalone
+              />
+            ))}
+            {standaloneCoverageGaps.map((gap, index) => (
+              <ResourceCoverageGapNote key={`${gap.stepId}-${index}`} gap={gap} />
             ))}
           </div>
         </div>
@@ -692,6 +823,11 @@ export function TaskResultPanel(props: {
           </div>
           <div className="space-y-3 p-3 text-sm leading-7 text-slate-600 dark:text-slate-300 sm:p-4">
             {visibleCriticReview.verdict ? <div className="font-semibold text-slate-800 dark:text-slate-100">结论：{visibleCriticReview.verdict}</div> : null}
+            <div className="grid gap-2 md:grid-cols-3">
+              <DiagnosisMetric label="覆盖度" value={formatScore(visibleCriticReview.coverageScore)} />
+              <DiagnosisMetric label="路径顺序" value={formatScore(visibleCriticReview.pathOrderScore)} />
+              <DiagnosisMetric label="资源匹配" value={formatScore(visibleCriticReview.resourceMatchScore)} />
+            </div>
             {visibleCriticReview.summaryText ? <div>{visibleCriticReview.summaryText}</div> : null}
             {visibleCriticReview.issues.length > 0 ? <div>问题：{visibleCriticReview.issues.join('；')}</div> : null}
             {visibleCriticReview.suggestions.length > 0 ? <div>建议：{visibleCriticReview.suggestions.join('；')}</div> : null}
@@ -781,6 +917,158 @@ export function TaskResultPanel(props: {
   );
 }
 
+function ResourcePushPlanStepResources(props: {
+  step: ResourcePushPlanStepView;
+  onOpenResource: (item: ResourcePushPlanResourceView) => void;
+  standalone?: boolean;
+}) {
+  if (props.step.resources.length === 0) {
+    return null;
+  }
+  return (
+    <div className={props.standalone ? 'rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50' : 'mt-3 border-t border-slate-200 pt-3 dark:border-slate-700'}>
+      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+        <span>{props.standalone ? props.step.stepTitle || props.step.stepId || '推荐资源' : '推荐资源'}</span>
+        {props.step.targetKnowledgePoints.map((point) => (
+          <span key={point} className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:ring-slate-700">
+            {point}
+          </span>
+        ))}
+      </div>
+      <div className="mt-2 grid gap-2 md:grid-cols-2">
+        {props.step.resources.map((item, index) => (
+          <div key={`${item.title}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950/70">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+              {item.resourceType ? <span className="rounded-full bg-primary-50 px-2 py-0.5 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">{recommendationTypeLabel(item.resourceType)}</span> : null}
+              {item.sourceName || item.source ? <span>{item.sourceName || item.source}</span> : null}
+            </div>
+            <div className="mt-1 text-sm font-medium text-slate-800 dark:text-slate-200">{item.title || item.resourceType || '资源'}</div>
+            {item.matchReason || item.summaryText ? (
+              <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                {item.matchReason || item.summaryText}
+              </div>
+            ) : null}
+            {item.downloadUrl ? (
+              <button
+                type="button"
+                onClick={() => props.onOpenResource(item)}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              >
+                打开资源
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MasteryDiagnosisSummary(props: { diagnosis: MasteryDiagnosisView }) {
+  const weakItems = props.diagnosis.knowledgeDiagnoses
+    .slice()
+    .sort((left, right) => (left.priority ?? 99) - (right.priority ?? 99))
+    .slice(0, 4);
+  return (
+    <div className="modern-card overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+        <Sparkles className="h-4 w-4 text-primary-500" />
+        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">学习诊断摘要</span>
+      </div>
+      <div className="space-y-4 p-3 sm:p-4">
+        <div className="grid gap-2 md:grid-cols-3">
+          <DiagnosisMetric label="掌握水平" value={props.diagnosis.overallLevel || '--'} />
+          <DiagnosisMetric label="掌握度" value={formatPercent(props.diagnosis.overallMasteryScore)} />
+          <DiagnosisMetric label="置信度" value={formatPercent(props.diagnosis.confidence)} />
+        </div>
+        {props.diagnosis.summaryText ? (
+          <div className="text-sm leading-7 text-slate-600 dark:text-slate-300">{props.diagnosis.summaryText}</div>
+        ) : null}
+        {weakItems.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {weakItems.map((item) => (
+              <div key={item.knowledgePoint} className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{item.knowledgePoint}</div>
+                  <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:ring-slate-700">
+                    {formatPercent(item.masteryScore)}
+                  </span>
+                </div>
+                {item.nextFocus ? <div className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-300">下一步：{item.nextFocus}</div> : null}
+                {item.evidence.length > 0 ? (
+                  <div className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">证据：{item.evidence.join('；')}</div>
+                ) : null}
+                {item.recommendedResourceTypes.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {item.recommendedResourceTypes.map((type) => (
+                      <span key={type} className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
+                        {recommendationTypeLabel(type)}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {props.diagnosis.planAdjustmentHints?.strategy ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs leading-5 text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-200">
+            调整建议：{props.diagnosis.planAdjustmentHints.strategy}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DiagnosisMetric(props: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950/70">
+      <div className="text-[11px] text-slate-500 dark:text-slate-400">{props.label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{props.value}</div>
+    </div>
+  );
+}
+
+function ResourceCoverageGapNote(props: { gap: ResourceCoverageGapView }) {
+  const missingTypes = props.gap.missingResourceTypes.map((item) => recommendationTypeLabel(item)).join('、');
+  if (!missingTypes && !props.gap.reason) {
+    return null;
+  }
+  return (
+    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
+      资源缺口：{missingTypes || '待补齐'}{props.gap.reason ? `。${props.gap.reason}` : ''}
+    </div>
+  );
+}
+
+function buildResourcePlanStepMap(plan: ResourcePushPlanView | null): Map<string, ResourcePushPlanStepView> {
+  const map = new Map<string, ResourcePushPlanStepView>();
+  plan?.stepResources.forEach((step) => {
+    if (step.stepId && !map.has(step.stepId)) {
+      map.set(step.stepId, step);
+    }
+  });
+  return map;
+}
+
+function buildResourceCoverageGapMap(plan: ResourcePushPlanView | null): Map<string, ResourceCoverageGapView[]> {
+  const map = new Map<string, ResourceCoverageGapView[]>();
+  plan?.coverageGaps.forEach((gap) => {
+    if (!gap.stepId) {
+      return;
+    }
+    const current = map.get(gap.stepId) ?? [];
+    map.set(gap.stepId, [...current, gap]);
+  });
+  return map;
+}
+
+function resourcesByLearningStep(plan: LearningPlanView | null, stepId: string): boolean {
+  return Boolean(stepId && plan?.steps.some((step) => step.stepId === stepId));
+}
+
 function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
   const actionLabel = recommendationActionLabel(props.item.resourceType);
   const typeLabel = recommendationTypeLabel(props.item.resourceType);
@@ -856,15 +1144,36 @@ function recommendationTypeLabel(resourceType?: string): string {
   switch (resourceType) {
     case 'VIDEO':
       return '外部视频';
+    case 'DOCUMENT':
+    case 'EXPLANATION':
+      return '讲解文档';
+    case 'QUIZ':
+      return '练习题';
+    case 'CODE':
     case 'CODE_CASE':
       return '代码案例';
     case 'PRACTICAL_CASE':
       return '实操案例';
     case 'READING':
       return '拓展阅读';
+    case 'SLIDES':
+      return '演示课件';
+    case 'MINDMAP':
+      return '思维导图';
     default:
       return '讲解文档';
   }
+}
+
+function formatPercent(value?: number): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : '--';
+}
+
+function formatScore(value?: number): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '--';
+  }
+  return value <= 1 ? `${Math.round(value * 100)}%` : `${Math.round(value)}`;
 }
 
 function extractFileName(url: string, fallbackTitle: string): string {

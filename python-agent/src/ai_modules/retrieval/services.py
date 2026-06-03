@@ -210,9 +210,17 @@ class QueryRewriteService:
     def rewrite(self, params: dict[str, Any]) -> QueryRewriteResult:
         original_query = self.extract_query(params)
         learning_context = params.get("learningContext", {})
+        if not isinstance(learning_context, dict):
+            learning_context = {}
+        query_context = params.get("queryRewriteContext")
+        if not isinstance(query_context, dict):
+            query_context = {}
         prefixes = [
             learning_context.get("course", ""),
             learning_context.get("chapter", ""),
+            *self._context_terms(query_context, "diagnosisWeaknesses"),
+            *self._context_terms(query_context, "diagnosisFocus"),
+            *self._context_terms(query_context, "profileWeakPoints"),
         ]
         rewritten_query = original_query
         for prefix in prefixes:
@@ -225,6 +233,20 @@ class QueryRewriteService:
             rewrittenQuery=rewritten_query,
             keywords=keywords,
         )
+
+    def _context_terms(self, context: dict[str, Any], key: str) -> list[str]:
+        learning_context = context.get("learningContext")
+        if isinstance(learning_context, dict):
+            values = learning_context.get(key)
+        else:
+            values = context.get(key)
+        if not isinstance(values, list):
+            return []
+        return [
+            text
+            for text in (self._clean_query_term(item) for item in values)
+            if text
+        ][:4]
 
     def _extract_keywords(self, text: str) -> list[str]:
         raw_terms = re.findall(r"[A-Za-z0-9+\-#_.]{2,}|[\u4e00-\u9fff]{2,}", text)

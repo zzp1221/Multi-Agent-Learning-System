@@ -49,6 +49,53 @@ def test_evaluation_agent_system_prompt_loads_skill_and_context() -> None:
     assert f"课程: {_build_snapshot().current_course}" in prompt
 
 
+def test_evaluation_agent_uses_profile_analysis_in_aggregated_context() -> None:
+    agent = EvaluationAgent(llm_client=_UnusedPlanningLLM())
+    params = {
+        "profile": {"knowledgeGaps": ["old-gap"]},
+        "profileAnalysis": {
+            "weakPoints": ["new-gap"],
+            "studentLevel": "ADVANCED",
+        },
+    }
+
+    aggregated = agent._tool_aggregate_behavior(
+        tool_input={},
+        params=params,
+        snapshot=_build_snapshot(),
+    )
+    llm_context = agent._build_context_payload(
+        params=params,
+        snapshot=_build_snapshot(),
+        aggregated_behavior=aggregated,
+    )
+
+    assert "new-gap" in aggregated["candidateWeaknesses"]
+    assert llm_context["profile"]["studentLevel"] == "ADVANCED"
+
+
+def test_evaluation_agent_ignores_empty_profile_analysis_values() -> None:
+    agent = EvaluationAgent(llm_client=_UnusedPlanningLLM())
+    params = {
+        "profile": {
+            "knowledgeGaps": ["persisted-gap"],
+            "preferredResourceTypes": ["READING"],
+            "learningPreference": "example_first",
+        },
+        "profileAnalysis": {
+            "weakPoints": [],
+            "preferredResourceTypes": [],
+            "learningPreference": None,
+        },
+    }
+
+    profile = agent._resolve_profile_context(params)
+
+    assert profile["knowledgeGaps"] == ["persisted-gap"]
+    assert profile["preferredResourceTypes"] == ["READING"]
+    assert profile["learningPreference"] == "example_first"
+
+
 def test_evaluation_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> None:
     loader = SkillPromptLoader(skills_root=tmp_path)
 
@@ -119,6 +166,8 @@ async def test_query_rewrite_agent_accepts_llm_rewrite_result() -> None:
             assert "# 查询改写智能体" in system_prompt
             assert original_query == "联合索引"
             assert learning_context["course"] == "数据库原理"
+            assert learning_context["diagnosisWeaknesses"][:2] == ["最左匹配", "跳过前导列"]
+            assert learning_context["profileWeakPoints"] == ["覆盖索引"]
             return QueryRewriteResult(
                 originalQuery="联合索引",
                 rewrittenQuery="数据库原理 联合索引 最左匹配",
@@ -132,6 +181,19 @@ async def test_query_rewrite_agent_accepts_llm_rewrite_result() -> None:
     params = {
         "query": "联合索引",
         "learningContext": {"course": "数据库原理", "chapter": "索引"},
+        "profileAnalysis": {"weakPoints": ["覆盖索引"]},
+        "masteryDiagnosis": {
+            "knowledgeDiagnoses": [
+                {
+                    "knowledgePoint": "最左匹配",
+                    "nextFocus": "跳过前导列",
+                    "masteryScore": 0.42,
+                    "status": "weak",
+                    "priority": 1,
+                }
+            ],
+            "targetScope": {"knowledgePoints": ["联合索引"]},
+        },
     }
 
     events = [
@@ -151,7 +213,55 @@ async def test_query_rewrite_agent_accepts_llm_rewrite_result() -> None:
     assert params["rewrittenQuery"] == "数据库原理 联合索引 最左匹配"
     assert params["keywords"] == ["数据库原理", "联合索引", "最左匹配"]
     assert params["queryRewriteContext"]["originalQuery"] == "联合索引"
+    assert params["queryRewriteContext"]["masteryDiagnosis"]["diagnosisWeaknesses"][0] == "最左匹配"
     assert params["rewrittenQueryPayload"]["rewrittenQuery"] == "数据库原理 联合索引 最左匹配"
+
+
+@pytest.mark.asyncio
+async def test_query_rewrite_fallback_uses_mastery_diagnosis_context() -> None:
+    class FailingRewriteGenerator:
+        async def rewrite(self, *, system_prompt, original_query, learning_context):
+            del system_prompt, original_query, learning_context
+            raise RuntimeError("rewrite failed")
+
+    agent = QueryRewriteAgent(
+        llm_client=RuleBasedQueryRewriteLLM(),
+        llm_generator=FailingRewriteGenerator(),
+    )
+    params = {
+        "query": "联合索引",
+        "learningContext": {"course": "数据库原理", "chapter": "索引"},
+        "profile": {"weakPoints": ["覆盖索引"]},
+        "masteryDiagnosis": {
+            "knowledgeDiagnoses": [
+                {
+                    "knowledgePoint": "最左匹配",
+                    "nextFocus": "跳过前导列",
+                    "masteryScore": 0.3,
+                    "status": "weak",
+                    "priority": 1,
+                }
+            ]
+        },
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-query-fallback",
+            trace_id="trace-query-fallback",
+            seq=1,
+            service_type="PERSONALIZED_LEARNING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=agent.system_prompt(_build_snapshot()),
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert "最左匹配" in params["rewrittenQuery"]
+    assert "跳过前导列" in params["rewrittenQuery"]
+    assert "覆盖索引" in params["rewrittenQuery"]
 
 
 @pytest.mark.asyncio
@@ -442,6 +552,11 @@ async def test_evaluation_agent_uses_llm_generated_report_via_agent_core_loop() 
     assert [event.event for event in events] == ["progress", "resource_file", "result_chunk"]
     assert params["aggregatedEvaluationContext"]["candidateWeaknesses"][0] == "最左匹配"
     assert params["evaluationResult"]["overallLevel"] == "INTERMEDIATE"
+    diagnosis = params["masteryDiagnosis"]
+    assert diagnosis["diagnosisSource"] == "evaluation"
+    assert diagnosis["behaviorSignals"]["practiceAccuracy"] == 0.5
+    assert diagnosis["knowledgeDiagnoses"][0]["knowledgePoint"] == "最左匹配"
+    assert diagnosis["knowledgeDiagnoses"][0]["recommendedResourceTypes"]
     assert events[1].payload.asset_type == "DOCUMENT"
     assert events[1].payload.generated_by == "LLM"
     assert events[1].payload.provider == "test-provider"
@@ -785,6 +900,87 @@ async def test_path_planning_agent_golden_eval_preserves_learning_path_contract(
     assert params["learningPlanPersistence"]["version"] == 1
     assert stored_record["summaryText"].startswith("LLM 路径：")
     assert events[1].payload.text.startswith("LLM 路径：")
+
+
+@pytest.mark.asyncio
+async def test_path_planning_agent_maps_mastery_diagnosis_to_planning_context() -> None:
+    class FakePathGenerator:
+        async def plan(self, *, system_prompt, context_payload):
+            del system_prompt
+            planning_context = context_payload["planningContext"]
+            assert planning_context["goal"] == "优先补齐最左匹配薄弱点"
+            assert planning_context["nextFocus"][:2] == ["最左匹配判定", "最左匹配"]
+            assert "跳过前导列" in planning_context["weaknesses"]
+            assert planning_context["preferredResourceTypes"][:2] == ["VIDEO", "QUIZ"]
+            return LearningPlanPayload.model_validate(
+                {
+                    "goal": "优先补齐最左匹配薄弱点",
+                    "duration": "3天",
+                    "milestones": ["看讲解", "做测验"],
+                    "steps": [
+                        {
+                            "title": "诊断薄弱点复盘",
+                            "objective": "围绕最左匹配错误模式复盘。",
+                            "activities": ["看讲解", "标注错误条件"],
+                            "successCriteria": "能解释跳过前导列为何失效",
+                        }
+                    ],
+                    "summaryText": "基于掌握度诊断生成路径。",
+                }
+            )
+
+    agent = PathPlanningAgent(
+        llm_client=_UnusedPlanningLLM(),
+        learning_plan_store=InMemoryLearningPlanStore(),
+        generator=FakePathGenerator(),
+    )
+    params = {
+        "userId": "00000000-0000-0000-0000-000000000778",
+        "profileAnalysis": {"studentLevel": "BASIC", "learningPreference": "video_first"},
+        "masteryDiagnosis": {
+            "diagnosisSource": "EVALUATION_AGENT",
+            "overallLevel": "BASIC",
+            "overallMasteryScore": 0.42,
+            "confidence": 0.8,
+            "targetScope": {"course": "数据库原理", "chapter": "联合索引", "knowledgePoints": ["最左匹配"]},
+            "knowledgeDiagnoses": [
+                {
+                    "knowledgePoint": "最左匹配",
+                    "masteryScore": 0.35,
+                    "status": "WEAK",
+                    "priority": 1,
+                    "errorPatterns": ["跳过前导列"],
+                    "nextFocus": "最左匹配判定",
+                    "recommendedResourceTypes": ["VIDEO", "QUIZ"],
+                }
+            ],
+            "behaviorSignals": {},
+            "planAdjustmentHints": {
+                "shouldRefreshPlan": True,
+                "refreshReason": "优先补齐最左匹配薄弱点",
+                "strategy": "先讲解再练习",
+            },
+            "summaryText": "最左匹配掌握不足。",
+        },
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-plan-mastery",
+            trace_id="trace-plan-mastery",
+            seq=1,
+            service_type="PATH_PLANNING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=agent.system_prompt(_build_snapshot()),
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert params["pathPlanningContext"]["masteryDiagnosis"] == params["masteryDiagnosis"]
+    assert params["learningPath"]["steps"][0]["targetKnowledgePoints"][:2] == ["最左匹配判定", "最左匹配"]
+    assert params["learningPath"]["steps"][0]["preferredResourceTypes"][:2] == ["VIDEO", "QUIZ"]
 
 
 @pytest.mark.asyncio

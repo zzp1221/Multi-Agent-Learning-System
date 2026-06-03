@@ -47,6 +47,12 @@ async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
         async def review(self, *, system_prompt, context_payload):
             del system_prompt
             assert context_payload["reviewSignals"]["sourceCoverage"]["status"] == "GOOD"
+            assert context_payload["learningPath"]["steps"][0]["stepId"] == "step-1"
+            assert context_payload["masteryDiagnosis"]["knowledgeDiagnoses"][0]["knowledgePoint"] == "最左匹配"
+            assert context_payload["resourcePushPlan"]["stepResources"][0]["resources"][0]["title"] == "来源A"
+            assert context_payload["reviewSignals"]["learningPathCoverage"]["score"] == 1.0
+            assert context_payload["reviewSignals"]["pathOrder"]["score"] == 1.0
+            assert context_payload["reviewSignals"]["resourceMatch"]["score"] == 1.0
             return CriticReviewPayload(
                 verdict="PASS",
                 factConsistency="SUPPORTED",
@@ -73,6 +79,29 @@ async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
                 {"title": "来源B"},
             ]
         },
+        "learningPath": {
+            "steps": [
+                {
+                    "stepId": "step-1",
+                    "order": 1,
+                    "title": "最左匹配复盘",
+                    "targetKnowledgePoints": ["最左匹配"],
+                }
+            ]
+        },
+        "masteryDiagnosis": {
+            "targetScope": {"knowledgePoints": ["最左匹配"]},
+            "knowledgeDiagnoses": [{"knowledgePoint": "最左匹配", "nextFocus": "最左匹配", "masteryScore": 0.4}],
+        },
+        "resourcePushPlan": {
+            "stepResources": [
+                {
+                    "stepId": "step-1",
+                    "resources": [{"title": "来源A", "resourceType": "DOCUMENT"}],
+                }
+            ],
+            "coverageGaps": [],
+        },
     }
 
     events = [
@@ -90,6 +119,9 @@ async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
 
     assert [event.event for event in events] == ["progress", "result_chunk"]
     assert params["criticReview"]["verdict"] == "PASS"
+    assert params["criticReview"]["coverageScore"] == 1.0
+    assert params["criticReview"]["pathOrderScore"] == 1.0
+    assert params["criticReview"]["resourceMatchScore"] == 1.0
     assert events[1].payload.text.startswith("LLM Critic：")
 
 

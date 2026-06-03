@@ -32,10 +32,15 @@ from src.ai_modules.models.practice import (
     SubjectiveJudgeEvaluation,
 )
 from src.ai_modules.models.planning import (
+    DiagnosisBehaviorSignals,
+    DiagnosisTargetScope,
     EvaluationDimension,
     EvaluationPayload,
+    KnowledgeDiagnosis,
     LearningPlanPayload,
     LearningPlanStep,
+    MasteryDiagnosisPayload,
+    PlanAdjustmentHints,
 )
 from src.ai_modules.models.provider_config import (
     ModelRoutingConfig,
@@ -60,6 +65,8 @@ from src.ai_modules.models.video import (
 
 __all__ = [
     "DialogState",
+    "DiagnosisBehaviorSignals",
+    "DiagnosisTargetScope",
     "DonePayload",
     "DoneSSEEvent",
     "EngineStreamRequest",
@@ -68,6 +75,7 @@ __all__ = [
     "CriticReviewPayload",
     "EvaluationDimension",
     "EvaluationPayload",
+    "KnowledgeDiagnosis",
     "JudgeItemResult",
     "JudgeResultPayload",
     "JudgeResultSSEEvent",
@@ -77,8 +85,10 @@ __all__ = [
     "LearnerProfileSnapshot",
     "LearningPlanPayload",
     "LearningPlanStep",
+    "MasteryDiagnosisPayload",
     "ModelRoutingConfig",
     "PracticeQuestion",
+    "PlanAdjustmentHints",
     "ProgressPayload",
     "ProgressSSEEvent",
     "ProviderEndpointConfig",

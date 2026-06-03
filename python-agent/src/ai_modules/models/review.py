@@ -15,6 +15,9 @@ class CriticReviewPayload(BaseModel):
     issues: list[str]
     suggestions: list[str]
     summary_text: str = Field(alias="summaryText")
+    coverage_score: float | None = Field(default=None, alias="coverageScore")
+    path_order_score: float | None = Field(default=None, alias="pathOrderScore")
+    resource_match_score: float | None = Field(default=None, alias="resourceMatchScore")
 
     model_config = ConfigDict(populate_by_name=True)
 

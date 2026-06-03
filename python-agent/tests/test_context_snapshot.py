@@ -36,6 +36,64 @@ async def test_snapshot_builder_extracts_context_from_request_params() -> None:
 
 
 @pytest.mark.asyncio
+async def test_snapshot_builder_prefers_profile_analysis_from_current_route() -> None:
+    builder = SnapshotBuilder()
+
+    snapshot = await builder.build(
+        user_id="user-001",
+        task_id="task-001",
+        conversation_id="conv-001",
+        params={
+            "learningContext": {"course": "course", "chapter": "chapter"},
+            "profile": {
+                "studentName": "student",
+                "studentLevel": "BASIC",
+                "knowledgeGaps": ["old-gap"],
+                "preferredStyle": "old-style",
+            },
+            "profileAnalysis": {
+                "studentLevel": "ADVANCED",
+                "weakPoints": ["new-gap"],
+                "learningPreference": "new-style",
+            },
+        },
+    )
+
+    assert snapshot.student_level == "ADVANCED"
+    assert snapshot.knowledge_gaps == ["new-gap"]
+    assert snapshot.preferred_style == "new-style"
+
+
+@pytest.mark.asyncio
+async def test_snapshot_builder_ignores_empty_profile_analysis_values() -> None:
+    builder = SnapshotBuilder()
+
+    snapshot = await builder.build(
+        user_id="user-001",
+        task_id="task-001",
+        conversation_id="conv-001",
+        params={
+            "learningContext": {"course": "course", "chapter": "chapter"},
+            "profile": {
+                "studentName": "student",
+                "studentLevel": "BASIC",
+                "knowledgeGaps": ["old-gap"],
+                "preferredStyle": "old-style",
+            },
+            "profileAnalysis": {
+                "studentLevel": None,
+                "weakPoints": [],
+                "learningPreference": "",
+            },
+        },
+    )
+
+    assert snapshot.student_level == "BASIC"
+    assert snapshot.knowledge_gaps == ["old-gap"]
+    assert snapshot.preferred_style == "old-style"
+
+
+@pytest.mark.asyncio
 async def test_supervisor_builds_prompt_with_snapshot_context() -> None:
     supervisor = PythonAgentSupervisor()
     request = EngineStreamRequest(

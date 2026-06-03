@@ -91,6 +91,10 @@ def _normalize_critic_payload(payload: dict[str, Any]) -> dict[str, Any]:
         value = normalized.get(field)
         if isinstance(value, dict):
             normalized[field] = _stringify_review_signal(value)
+    for field in ("coverageScore", "pathOrderScore", "resourceMatchScore"):
+        score = _normalize_score(normalized.get(field))
+        if score is not None:
+            normalized[field] = score
     return normalized
 
 
@@ -112,6 +116,18 @@ def _stringify_review_signal(value: dict[str, Any]) -> str:
     if not parts:
         return json.dumps(value, ensure_ascii=False)
     return "; ".join(parts)
+
+
+def _normalize_score(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if score > 1:
+        score = score / 100
+    return max(0.0, min(score, 1.0))
 
 
 class ReviewLLMClientFactory:

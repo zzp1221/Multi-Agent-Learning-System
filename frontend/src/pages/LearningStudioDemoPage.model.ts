@@ -11,7 +11,9 @@ import {
   type EngineTaskSnapshot,
   type InlineResourceView,
   type LearningPlanView,
+  type MasteryDiagnosisView,
   type QnaState,
+  type ResourcePushPlanView,
 } from './LearningStudioDemoPage.types';
 import { sanitizeConversationMessageContent } from './LearningStudioDemoPage.utils';
 
@@ -133,7 +135,9 @@ export function createEmptyEngineTaskSnapshot(baseState: EngineState = 'ENGINE_I
     practiceBatch: null,
     completedResources: [],
     judgeResult: null,
+    masteryDiagnosis: null,
     learningPlan: null,
+    resourcePushPlan: null,
     criticReview: null,
     agentTrace: [],
     resultHistory: [],
@@ -207,7 +211,17 @@ function normalizeLearningPlan(value: unknown): LearningPlanView | null {
         .map((step) => ({
           stepId: String(step.stepId || ''),
           title: String(step.title || ''),
+          order: typeof step.order === 'number' ? step.order : undefined,
           intent: step.intent ? String(step.intent) : undefined,
+          reason: step.reason ? String(step.reason) : undefined,
+          targetKnowledgePoints: Array.isArray(step.targetKnowledgePoints)
+            ? step.targetKnowledgePoints.map((item) => String(item)).filter(Boolean)
+            : [],
+          preferredResourceTypes: Array.isArray(step.preferredResourceTypes)
+            ? step.preferredResourceTypes.map((item) => String(item)).filter(Boolean)
+            : [],
+          estimatedMinutes: typeof step.estimatedMinutes === 'number' ? step.estimatedMinutes : undefined,
+          checkpoint: step.checkpoint ? String(step.checkpoint) : undefined,
           agentName: step.agentName ? String(step.agentName) : undefined,
           serviceType: step.serviceType ? String(step.serviceType) : undefined,
           status: step.status ? String(step.status) : undefined,
@@ -229,6 +243,135 @@ function normalizeLearningPlan(value: unknown): LearningPlanView | null {
   };
 }
 
+function normalizeMasteryDiagnosis(value: unknown): MasteryDiagnosisView | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Partial<MasteryDiagnosisView>;
+  const targetScope = record.targetScope && typeof record.targetScope === 'object' && !Array.isArray(record.targetScope)
+    ? record.targetScope
+    : undefined;
+  const knowledgeDiagnoses = Array.isArray(record.knowledgeDiagnoses)
+    ? record.knowledgeDiagnoses
+        .filter((item): item is MasteryDiagnosisView['knowledgeDiagnoses'][number] => Boolean(item && typeof item === 'object'))
+        .map((item) => ({
+          knowledgePoint: String(item.knowledgePoint || ''),
+          masteryScore: typeof item.masteryScore === 'number' ? item.masteryScore : undefined,
+          status: item.status ? String(item.status) : undefined,
+          priority: typeof item.priority === 'number' ? item.priority : undefined,
+          evidence: Array.isArray(item.evidence) ? item.evidence.map((text) => String(text)).filter(Boolean) : [],
+          errorPatterns: Array.isArray(item.errorPatterns) ? item.errorPatterns.map((text) => String(text)).filter(Boolean) : [],
+          nextFocus: item.nextFocus ? String(item.nextFocus) : undefined,
+          recommendedResourceTypes: Array.isArray(item.recommendedResourceTypes)
+            ? item.recommendedResourceTypes.map((text) => String(text)).filter(Boolean)
+            : [],
+        }))
+        .filter((item) => item.knowledgePoint || item.evidence.length > 0)
+    : [];
+  if (!record.summaryText && !record.overallLevel && knowledgeDiagnoses.length === 0) {
+    return null;
+  }
+  return {
+    diagnosisSource: record.diagnosisSource ? String(record.diagnosisSource) : undefined,
+    primaryDimension: record.primaryDimension ? String(record.primaryDimension) : undefined,
+    overallLevel: record.overallLevel ? String(record.overallLevel) : undefined,
+    overallMasteryScore: typeof record.overallMasteryScore === 'number' ? record.overallMasteryScore : undefined,
+    confidence: typeof record.confidence === 'number' ? record.confidence : undefined,
+    targetScope: targetScope
+      ? {
+          course: targetScope.course ? String(targetScope.course) : undefined,
+          chapter: targetScope.chapter ? String(targetScope.chapter) : undefined,
+          knowledgePoints: Array.isArray(targetScope.knowledgePoints)
+            ? targetScope.knowledgePoints.map((item) => String(item)).filter(Boolean)
+            : [],
+        }
+      : undefined,
+    knowledgeDiagnoses,
+    behaviorSignals: normalizeDiagnosisBehaviorSignals(record.behaviorSignals),
+    planAdjustmentHints: normalizePlanAdjustmentHints(record.planAdjustmentHints),
+    summaryText: record.summaryText ? String(record.summaryText) : undefined,
+  };
+}
+
+function normalizeDiagnosisBehaviorSignals(value: unknown): MasteryDiagnosisView['behaviorSignals'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as NonNullable<MasteryDiagnosisView['behaviorSignals']>;
+  return {
+    practiceAccuracy: typeof record.practiceAccuracy === 'number' ? record.practiceAccuracy : undefined,
+    recentQuestionCount: typeof record.recentQuestionCount === 'number' ? record.recentQuestionCount : undefined,
+    reviewCount: typeof record.reviewCount === 'number' ? record.reviewCount : undefined,
+    resourceDownloads: typeof record.resourceDownloads === 'number' ? record.resourceDownloads : undefined,
+    messageCount: typeof record.messageCount === 'number' ? record.messageCount : undefined,
+    recentMistakeCount: typeof record.recentMistakeCount === 'number' ? record.recentMistakeCount : undefined,
+  };
+}
+
+function normalizePlanAdjustmentHints(value: unknown): MasteryDiagnosisView['planAdjustmentHints'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as NonNullable<MasteryDiagnosisView['planAdjustmentHints']>;
+  return {
+    shouldRefreshPlan: typeof record.shouldRefreshPlan === 'boolean' ? record.shouldRefreshPlan : undefined,
+    refreshReason: record.refreshReason ? String(record.refreshReason) : undefined,
+    strategy: record.strategy ? String(record.strategy) : undefined,
+  };
+}
+
+function normalizeResourcePushPlan(value: unknown): ResourcePushPlanView | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Partial<ResourcePushPlanView>;
+  const stepResources = Array.isArray(record.stepResources)
+    ? record.stepResources
+        .filter((item): item is ResourcePushPlanView['stepResources'][number] => Boolean(item && typeof item === 'object'))
+        .map((step) => ({
+          stepId: String(step.stepId || ''),
+          stepTitle: step.stepTitle ? String(step.stepTitle) : undefined,
+          targetKnowledgePoints: Array.isArray(step.targetKnowledgePoints)
+            ? step.targetKnowledgePoints.map((item) => String(item)).filter(Boolean)
+            : [],
+          resources: Array.isArray(step.resources)
+            ? step.resources
+                .filter((item): item is ResourcePushPlanView['stepResources'][number]['resources'][number] => Boolean(item && typeof item === 'object'))
+                .map((resource) => ({
+                  title: String(resource.title || ''),
+                  resourceType: String(resource.resourceType || ''),
+                  source: String(resource.source || resource.sourceName || ''),
+                  sourceName: resource.sourceName ? String(resource.sourceName) : undefined,
+                  matchReason: resource.matchReason ? String(resource.matchReason) : undefined,
+                  downloadUrl: resource.downloadUrl ? String(resource.downloadUrl) : undefined,
+                  summaryText: resource.summaryText ? String(resource.summaryText) : undefined,
+                }))
+                .filter((resource) => resource.title || resource.summaryText || resource.downloadUrl)
+            : [],
+        }))
+        .filter((step) => step.stepId || step.stepTitle || step.resources.length > 0)
+    : [];
+  const coverageGaps = Array.isArray(record.coverageGaps)
+    ? record.coverageGaps
+        .filter((item): item is ResourcePushPlanView['coverageGaps'][number] => Boolean(item && typeof item === 'object'))
+        .map((gap) => ({
+          stepId: String(gap.stepId || ''),
+          missingResourceTypes: Array.isArray(gap.missingResourceTypes)
+            ? gap.missingResourceTypes.map((item) => String(item)).filter(Boolean)
+            : [],
+          reason: gap.reason ? String(gap.reason) : undefined,
+        }))
+        .filter((gap) => gap.stepId || gap.missingResourceTypes.length > 0)
+    : [];
+  if (stepResources.length === 0 && coverageGaps.length === 0) {
+    return null;
+  }
+  return {
+    stepResources,
+    coverageGaps,
+  };
+}
+
 function normalizeCriticReview(value: unknown): CriticReviewView | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -241,6 +384,9 @@ function normalizeCriticReview(value: unknown): CriticReviewView | null {
   }
   return {
     verdict: record.verdict ? String(record.verdict) : undefined,
+    coverageScore: typeof record.coverageScore === 'number' ? record.coverageScore : undefined,
+    pathOrderScore: typeof record.pathOrderScore === 'number' ? record.pathOrderScore : undefined,
+    resourceMatchScore: typeof record.resourceMatchScore === 'number' ? record.resourceMatchScore : undefined,
     factConsistency: record.factConsistency ? String(record.factConsistency) : undefined,
     difficultyMatch: record.difficultyMatch ? String(record.difficultyMatch) : undefined,
     sourceCoverage: record.sourceCoverage ? String(record.sourceCoverage) : undefined,
@@ -283,7 +429,9 @@ function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): Eng
     practiceBatch: record.practiceBatch ?? null,
     completedResources: createCompletedResourcesFromSnapshot(record),
     judgeResult: record.judgeResult ?? null,
+    masteryDiagnosis: normalizeMasteryDiagnosis(record.masteryDiagnosis),
     learningPlan: normalizeLearningPlan(record.learningPlan),
+    resourcePushPlan: normalizeResourcePushPlan(record.resourcePushPlan),
     criticReview: normalizeCriticReview(record.criticReview),
     agentTrace: normalizeAgentTrace(record.agentTrace),
     createdAt: typeof record.createdAt === 'number' ? record.createdAt : now,
@@ -310,7 +458,9 @@ function createTaskResultRecord(
     practiceBatch: overrides.practiceBatch ?? snapshot.practiceBatch,
     completedResources: overrides.completedResources ?? createCompletedResourcesFromSnapshot(snapshot),
     judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
+    masteryDiagnosis: overrides.masteryDiagnosis ?? snapshot.masteryDiagnosis,
     learningPlan: overrides.learningPlan ?? snapshot.learningPlan,
+    resourcePushPlan: overrides.resourcePushPlan ?? snapshot.resourcePushPlan,
     criticReview: overrides.criticReview ?? snapshot.criticReview,
     agentTrace: overrides.agentTrace ?? snapshot.agentTrace,
     createdAt: overrides.createdAt ?? now,
@@ -347,7 +497,9 @@ function upsertTaskResultRecord(
     practiceBatch: overrides.practiceBatch ?? snapshot.practiceBatch,
     completedResources: overrides.completedResources ?? createCompletedResourcesFromSnapshot(snapshot),
     judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
+    masteryDiagnosis: overrides.masteryDiagnosis ?? snapshot.masteryDiagnosis,
     learningPlan: overrides.learningPlan ?? snapshot.learningPlan,
+    resourcePushPlan: overrides.resourcePushPlan ?? snapshot.resourcePushPlan,
     criticReview: overrides.criticReview ?? snapshot.criticReview,
     agentTrace: overrides.agentTrace ?? snapshot.agentTrace,
     createdAt: current.createdAt,
@@ -373,7 +525,9 @@ function sanitizeEngineSnapshot(snapshot: EngineTaskSnapshot): EngineTaskSnapsho
     serviceResultLines: dedupeResultLines(snapshot.serviceResultLines),
     inlineResources: getInlineResourcesFromSnapshot(snapshot),
     completedResources: createCompletedResourcesFromSnapshot(snapshot),
+    masteryDiagnosis: normalizeMasteryDiagnosis(snapshot.masteryDiagnosis),
     learningPlan: normalizeLearningPlan(snapshot.learningPlan),
+    resourcePushPlan: normalizeResourcePushPlan(snapshot.resourcePushPlan),
     criticReview: normalizeCriticReview(snapshot.criticReview),
     agentTrace: normalizeAgentTrace(snapshot.agentTrace),
     resultHistory: Array.isArray(snapshot.resultHistory)

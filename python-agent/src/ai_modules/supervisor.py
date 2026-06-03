@@ -269,7 +269,12 @@ class PythonAgentSupervisor:
                 payload=DonePayload(
                     status="FAILED",
                     summary=message,
+                    masteryDiagnosis=self._safe_dict(state.params.get("masteryDiagnosis")),
+                    learningPath=self._safe_dict(state.params.get("learningPath")),
                     learningPlan=self._safe_dict(state.params.get("learningPlan")),
+                    resourcePushPlan=self._safe_dict(state.params.get("resourcePushPlan")),
+                    pushedResources=state.params.get("pushedResources") if isinstance(state.params.get("pushedResources"), list) else [],
+                    agentTrace=state.params.get("agentTrace") if isinstance(state.params.get("agentTrace"), list) else [],
                     criticReview=self._safe_dict(state.params.get("criticReview")),
                 ),
             )
@@ -611,6 +616,7 @@ class PythonAgentSupervisor:
         return event
 
     def _build_done_payload(self, *, service_type: str, agent_names: list[str], params: dict) -> DonePayload:
+        mastery_diagnosis = self._safe_dict(params.get("masteryDiagnosis"))
         learning_plan = self._safe_dict(params.get("learningPlan"))
         critic_review = self._safe_dict(params.get("criticReview"))
         learning_path = params.get("learningPath")
@@ -643,6 +649,7 @@ class PythonAgentSupervisor:
                         f"资源包部分完成，共 {len(generated_assets)} 个真实 LLM 产物：{titles}；"
                         f"{len(resource_failures)} 个资源失败：{failed_types}"
                     ),
+                    masteryDiagnosis=mastery_diagnosis,
                     learningPlan=learning_plan,
                     criticReview=critic_review,
                     resourceFailures=resource_failures,
@@ -650,6 +657,7 @@ class PythonAgentSupervisor:
             return DonePayload(
                 status="SUCCESS",
                 summary=f"资源包生成完成，共 {len(generated_assets)} 个真实 LLM 产物：{titles}",
+                masteryDiagnosis=mastery_diagnosis,
                 learningPlan=learning_plan,
                 criticReview=critic_review,
                 resourceFailures=[],
@@ -661,6 +669,7 @@ class PythonAgentSupervisor:
             return DonePayload(
                 status="SUCCESS",
                 summary=f"{title} 生成完成：{summary}" if summary else f"{title} 生成完成",
+                masteryDiagnosis=mastery_diagnosis,
                 learningPlan=learning_plan,
                 criticReview=critic_review,
             )
@@ -669,7 +678,10 @@ class PythonAgentSupervisor:
                 return DonePayload(
                     status="SUCCESS",
                     summary="资源推送未命中可直接分发的现成资源",
+                    masteryDiagnosis=mastery_diagnosis,
                     learningPlan=learning_plan,
+                    resourcePushPlan=resource_push_plan,
+                    pushedResources=pushed_resources,
                     criticReview=critic_review,
                 )
             titles = "、".join(
@@ -680,6 +692,7 @@ class PythonAgentSupervisor:
             return DonePayload(
                 status="SUCCESS",
                 summary=f"资源推送完成，已匹配 {len(pushed_resources)} 个现成资源：{titles}",
+                masteryDiagnosis=mastery_diagnosis,
                 learningPlan=learning_plan,
                 resourcePushPlan=resource_push_plan,
                 pushedResources=pushed_resources,
@@ -692,6 +705,7 @@ class PythonAgentSupervisor:
             return DonePayload(
                 status="SUCCESS",
                 summary=summary,
+                masteryDiagnosis=mastery_diagnosis,
                 learningPath=learning_path,
                 learningPlan=learning_plan,
                 criticReview=critic_review,
@@ -705,6 +719,7 @@ class PythonAgentSupervisor:
             return DonePayload(
                 status="SUCCESS",
                 summary=summary,
+                masteryDiagnosis=mastery_diagnosis,
                 learningPath=learning_path if isinstance(learning_path, dict) else None,
                 learningPlan=learning_plan,
                 resourcePushPlan=resource_push_plan,
@@ -715,6 +730,7 @@ class PythonAgentSupervisor:
         return DonePayload(
             status="SUCCESS",
             summary=f"{service_type} 路由完成，执行链路: {' -> '.join(agent_names)}",
+            masteryDiagnosis=mastery_diagnosis,
             learningPlan=learning_plan,
             agentTrace=agent_trace,
             criticReview=critic_review,

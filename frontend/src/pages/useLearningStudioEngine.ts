@@ -300,10 +300,22 @@ export function useLearningStudioEngine({
             judgeResult: typeof value === 'function' ? value(current.judgeResult) : value,
           }));
         },
+        setMasteryDiagnosis: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            masteryDiagnosis: typeof value === 'function' ? value(current.masteryDiagnosis) : value,
+          }));
+        },
         setLearningPlan: (value) => {
           updateServiceSnapshot(service, (current) => ({
             ...current,
             learningPlan: typeof value === 'function' ? value(current.learningPlan) : value,
+          }));
+        },
+        setResourcePushPlan: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            resourcePushPlan: typeof value === 'function' ? value(current.resourcePushPlan) : value,
           }));
         },
         setCriticReview: (value) => {
@@ -450,7 +462,9 @@ export function useLearningStudioEngine({
       practiceBatch: null,
       completedResources: [],
       judgeResult: null,
+      masteryDiagnosis: null,
       learningPlan: null,
+      resourcePushPlan: null,
       criticReview: null,
       agentTrace: [],
       resultHistory: serviceSnapshots[selectedService].resultHistory,
@@ -520,7 +534,9 @@ export function useLearningStudioEngine({
       inlineResources: [],
       completedResources: [],
       judgeResult: null,
+      masteryDiagnosis: null,
       learningPlan: null,
+      resourcePushPlan: null,
       criticReview: null,
       agentTrace: [],
       resultHistory: current.resultHistory,

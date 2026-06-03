@@ -8,6 +8,7 @@ import type {
   InlineResourceView,
   CriticReviewView,
   LearningPlanView,
+  MasteryDiagnosisView,
   ProfileCurrentGoal,
   ProfileDimensionScore,
   ProfileHistoryPoint,
@@ -16,6 +17,7 @@ import type {
   ProfileSkillMastery,
   PracticeJudgeResult,
   PracticeQuestionBatch,
+  ResourcePushPlanView,
   ResourceType,
   RunByApiTaskArgs,
   ServiceFormsPayload,
@@ -86,7 +88,9 @@ export async function runByApiTask({
   setCompletedResources,
   setPracticeBatch,
   setJudgeResult,
+  setMasteryDiagnosis,
   setLearningPlan,
+  setResourcePushPlan,
   setCriticReview,
   setAgentTrace,
   taskStreamAbortRef,
@@ -159,8 +163,14 @@ export async function runByApiTask({
       setJudgeResult(item);
       setTaskSummary(item.summary);
     },
+    onMasteryDiagnosis: (item) => {
+      setMasteryDiagnosis(item);
+    },
     onLearningPlan: (item) => {
       setLearningPlan(item);
+    },
+    onResourcePushPlan: (item) => {
+      setResourcePushPlan(item);
     },
     onCriticReview: (item) => {
       setCriticReview(item);
@@ -278,9 +288,17 @@ async function consumeTaskStreamEvent(
     if (learningPlan) {
       handlers.onLearningPlan(learningPlan);
     }
+    const masteryDiagnosis = readMasteryDiagnosis(envelope.payload);
+    if (masteryDiagnosis) {
+      handlers.onMasteryDiagnosis(masteryDiagnosis);
+    }
     const criticReview = readCriticReview(envelope.payload);
     if (criticReview) {
       handlers.onCriticReview(criticReview);
+    }
+    const resourcePushPlan = readResourcePushPlan(envelope.payload);
+    if (resourcePushPlan) {
+      handlers.onResourcePushPlan(resourcePushPlan);
     }
     return;
   }
@@ -390,9 +408,17 @@ async function consumeTaskStreamEvent(
     if (learningPlan) {
       handlers.onLearningPlan(learningPlan);
     }
+    const masteryDiagnosis = readMasteryDiagnosis(envelope.payload);
+    if (masteryDiagnosis) {
+      handlers.onMasteryDiagnosis(masteryDiagnosis);
+    }
     const criticReview = readCriticReview(envelope.payload);
     if (criticReview) {
       handlers.onCriticReview(criticReview);
+    }
+    const resourcePushPlan = readResourcePushPlan(envelope.payload);
+    if (resourcePushPlan) {
+      handlers.onResourcePushPlan(resourcePushPlan);
     }
     const agentTrace = readAgentTrace(envelope.payload);
     if (agentTrace.length > 0) {
@@ -453,9 +479,17 @@ async function applyTaskSnapshot(
     if (learningPlan) {
       handlers.onLearningPlan(learningPlan);
     }
+    const masteryDiagnosis = readMasteryDiagnosis(task.responseSummary);
+    if (masteryDiagnosis) {
+      handlers.onMasteryDiagnosis(masteryDiagnosis);
+    }
     const criticReview = readCriticReview(task.responseSummary);
     if (criticReview) {
       handlers.onCriticReview(criticReview);
+    }
+    const resourcePushPlan = readResourcePushPlan(task.responseSummary);
+    if (resourcePushPlan) {
+      handlers.onResourcePushPlan(resourcePushPlan);
     }
     const agentTrace = readAgentTrace(task.responseSummary);
     if (agentTrace.length > 0) {
@@ -646,6 +680,7 @@ function responseSummaryToLines(summary: Record<string, unknown>, service: Engin
       'items',
       'learningPath',
       'learningPlan',
+      'masteryDiagnosis',
       'resourcePushPlan',
       'pushedResources',
       'agentTrace',
@@ -2043,7 +2078,13 @@ function readLearningPlan(payload: Record<string, unknown> | undefined): Learnin
     .map((item) => ({
       stepId: readString(item.stepId),
       title: readString(item.title),
+      order: readNumericRaw(item.order),
       intent: readString(item.intent) || readString(item.objective) || readString(item.reason) || undefined,
+      reason: readString(item.reason) || undefined,
+      targetKnowledgePoints: readStringArray(item.targetKnowledgePoints),
+      preferredResourceTypes: readStringArray(item.preferredResourceTypes),
+      estimatedMinutes: readNumericRaw(item.estimatedMinutes),
+      checkpoint: readString(item.checkpoint) || undefined,
       agentName: readString(item.agentName) || undefined,
       serviceType: readString(item.serviceType) || undefined,
       status: readString(item.status) || undefined,
@@ -2064,6 +2105,164 @@ function readLearningPlan(payload: Record<string, unknown> | undefined): Learnin
   };
 }
 
+function readMasteryDiagnosis(payload: Record<string, unknown> | undefined): MasteryDiagnosisView | null {
+  const record = readRecord(payload?.masteryDiagnosis);
+  if (!record) {
+    return null;
+  }
+  const rawTargetScope = readRecord(record.targetScope);
+  const knowledgeDiagnoses = Array.isArray(record.knowledgeDiagnoses)
+    ? record.knowledgeDiagnoses
+        .map((item) => readRecord(item))
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map((item) => ({
+          knowledgePoint: readString(item.knowledgePoint),
+          masteryScore: readNumericRaw(item.masteryScore),
+          status: readString(item.status) || undefined,
+          priority: readNumericRaw(item.priority),
+          evidence: readStringArray(item.evidence),
+          errorPatterns: readStringArray(item.errorPatterns),
+          nextFocus: readString(item.nextFocus) || undefined,
+          recommendedResourceTypes: readStringArray(item.recommendedResourceTypes),
+        }))
+        .filter((item) => item.knowledgePoint || item.evidence.length > 0)
+    : [];
+  const summaryText = readString(record.summaryText);
+  const overallLevel = readString(record.overallLevel);
+  if (!summaryText && !overallLevel && knowledgeDiagnoses.length === 0) {
+    return null;
+  }
+  return {
+    diagnosisSource: readString(record.diagnosisSource) || undefined,
+    primaryDimension: readString(record.primaryDimension) || undefined,
+    overallLevel: overallLevel || undefined,
+    overallMasteryScore: readNumericRaw(record.overallMasteryScore),
+    confidence: readNumericRaw(record.confidence),
+    targetScope: rawTargetScope
+      ? {
+          course: readString(rawTargetScope.course) || undefined,
+          chapter: readString(rawTargetScope.chapter) || undefined,
+          knowledgePoints: readStringArray(rawTargetScope.knowledgePoints),
+        }
+      : undefined,
+    knowledgeDiagnoses,
+    behaviorSignals: readBehaviorSignals(record.behaviorSignals),
+    planAdjustmentHints: readPlanAdjustmentHints(record.planAdjustmentHints),
+    summaryText: summaryText || undefined,
+  };
+}
+
+function readBehaviorSignals(value: unknown): MasteryDiagnosisView['behaviorSignals'] {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  return {
+    practiceAccuracy: readNumericRaw(record.practiceAccuracy),
+    recentQuestionCount: readNumericRaw(record.recentQuestionCount),
+    reviewCount: readNumericRaw(record.reviewCount),
+    resourceDownloads: readNumericRaw(record.resourceDownloads),
+    messageCount: readNumericRaw(record.messageCount),
+    recentMistakeCount: readNumericRaw(record.recentMistakeCount),
+  };
+}
+
+function readPlanAdjustmentHints(value: unknown): MasteryDiagnosisView['planAdjustmentHints'] {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  return {
+    shouldRefreshPlan: typeof record.shouldRefreshPlan === 'boolean' ? record.shouldRefreshPlan : undefined,
+    refreshReason: readString(record.refreshReason) || undefined,
+    strategy: readString(record.strategy) || undefined,
+  };
+}
+
+function readResourcePushPlan(payload: Record<string, unknown> | undefined): ResourcePushPlanView | null {
+  const record = readRecord(payload?.resourcePushPlan);
+  if (!record) {
+    return readPushedResourcesAsPlan(payload?.pushedResources);
+  }
+  const stepResources = Array.isArray(record.stepResources)
+    ? record.stepResources
+        .map((item) => readRecord(item))
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map((item) => ({
+          stepId: readString(item.stepId),
+          stepTitle: readString(item.stepTitle) || undefined,
+          targetKnowledgePoints: readStringArray(item.targetKnowledgePoints),
+          resources: Array.isArray(item.resources)
+            ? item.resources
+                .map((resource) => readRecord(resource))
+                .filter((resource): resource is Record<string, unknown> => Boolean(resource))
+                .map((resource) => ({
+                  title: readString(resource.title),
+                  resourceType: readString(resource.resourceType),
+                  source: readString(resource.source) || readString(resource.sourceName),
+                  sourceName: readString(resource.sourceName) || undefined,
+                  matchReason: readString(resource.matchReason) || readString(resource.rerankReason) || undefined,
+                  downloadUrl: readString(resource.downloadUrl) || undefined,
+                  summaryText: readString(resource.summaryText) || readString(resource.summary) || undefined,
+                }))
+                .filter((resource) => resource.title || resource.downloadUrl || resource.summaryText)
+            : [],
+        }))
+        .filter((item) => item.stepId || item.stepTitle || item.resources.length > 0)
+    : [];
+  const coverageGaps = Array.isArray(record.coverageGaps)
+    ? record.coverageGaps
+        .map((item) => readRecord(item))
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map((item) => ({
+          stepId: readString(item.stepId),
+          missingResourceTypes: readStringArray(item.missingResourceTypes),
+          reason: readString(item.reason) || undefined,
+        }))
+        .filter((item) => item.stepId || item.missingResourceTypes.length > 0)
+    : [];
+  if (stepResources.length === 0 && coverageGaps.length === 0) {
+    return readPushedResourcesAsPlan(payload?.pushedResources);
+  }
+  return {
+    stepResources,
+    coverageGaps,
+  };
+}
+
+function readPushedResourcesAsPlan(value: unknown): ResourcePushPlanView | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const resources = value
+    .map((item) => readRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      title: readString(item.title),
+      resourceType: readString(item.resourceType),
+      source: readString(item.source) || readString(item.sourceName),
+      sourceName: readString(item.sourceName) || undefined,
+      matchReason: readString(item.matchReason) || readString(item.rerankReason) || undefined,
+      downloadUrl: readString(item.downloadUrl) || undefined,
+      summaryText: readString(item.summaryText) || readString(item.summary) || undefined,
+    }))
+    .filter((item) => item.title || item.downloadUrl || item.summaryText);
+  if (resources.length === 0) {
+    return null;
+  }
+  return {
+    stepResources: [
+      {
+        stepId: 'resources',
+        stepTitle: '推荐资源',
+        targetKnowledgePoints: [],
+        resources,
+      },
+    ],
+    coverageGaps: [],
+  };
+}
+
 function readCriticReview(payload: Record<string, unknown> | undefined): CriticReviewView | null {
   const record = readRecord(payload?.criticReview);
   if (!record) {
@@ -2078,6 +2277,9 @@ function readCriticReview(payload: Record<string, unknown> | undefined): CriticR
   }
   return {
     verdict: verdict || undefined,
+    coverageScore: readNumericRaw(record.coverageScore),
+    pathOrderScore: readNumericRaw(record.pathOrderScore),
+    resourceMatchScore: readNumericRaw(record.resourceMatchScore),
     factConsistency: readString(record.factConsistency) || undefined,
     difficultyMatch: readString(record.difficultyMatch) || undefined,
     sourceCoverage: readString(record.sourceCoverage) || undefined,

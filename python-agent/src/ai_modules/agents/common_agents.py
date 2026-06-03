@@ -87,7 +87,7 @@ class CriticAgent(PlaceholderAgent):
     ) -> CriticReviewPayload:
         review_signals = self._collect_critic_signals(params=params, snapshot=snapshot)
         try:
-            return await self._reviewer().review(
+            payload = await self._reviewer().review(
                 system_prompt=system_prompt,
                 context_payload=self._build_critic_context(
                     params=params,
@@ -95,6 +95,7 @@ class CriticAgent(PlaceholderAgent):
                     review_signals=review_signals,
                 ),
             )
+            return self._merge_structured_scores(payload=payload, review_signals=review_signals)
         except Exception as exc:
             LOGGER.exception("Critic review LLM failed")
             raise RuntimeError("Critic review LLM failed; heuristic fallback is disabled") from exc
@@ -202,6 +203,9 @@ class CriticAgent(PlaceholderAgent):
             "studentLevel": self._student_level(params=params, snapshot=snapshot),
             "sources": self._source_titles(params),
             "contentPreview": self._content_text(params)[:1500],
+            "learningPath": self._safe_dict(params.get("learningPath")) or {},
+            "masteryDiagnosis": self._safe_dict(params.get("masteryDiagnosis")) or {},
+            "resourcePushPlan": self._safe_dict(params.get("resourcePushPlan")) or {},
             "reviewSignals": review_signals,
         }
 
@@ -224,7 +228,120 @@ class CriticAgent(PlaceholderAgent):
                 snapshot=snapshot,
             ),
             "sourceCoverage": self._tool_review_source_coverage(tool_input={}, params=params),
+            "learningPathCoverage": self._tool_review_learning_path_coverage(params=params),
+            "pathOrder": self._tool_review_path_order(params=params),
+            "resourceMatch": self._tool_review_resource_match(params=params),
         }
+
+    def _tool_review_learning_path_coverage(self, *, params: dict[str, Any]) -> dict[str, Any]:
+        learning_path = self._safe_dict(params.get("learningPath")) or {}
+        diagnosis = self._safe_dict(params.get("masteryDiagnosis")) or {}
+        steps = self._learning_path_steps(learning_path)
+        target_points = self._diagnosis_points(diagnosis)
+        step_points = self._step_target_points(steps)
+        if not target_points:
+            score = 1.0 if steps else 0.0
+            missing_points: list[str] = []
+        else:
+            covered_points = [point for point in target_points if point in step_points]
+            score = len(covered_points) / len(target_points)
+            missing_points = [point for point in target_points if point not in step_points]
+        status = "GOOD" if score >= 0.8 else "LIMITED"
+        return {
+            "status": status,
+            "score": round(score, 2),
+            "issues": [f"学习路径未覆盖诊断知识点：{', '.join(missing_points[:3])}"] if missing_points else [],
+            "evidence": {
+                "diagnosisPointCount": len(target_points),
+                "stepPointCount": len(step_points),
+            },
+        }
+
+    def _tool_review_path_order(self, *, params: dict[str, Any]) -> dict[str, Any]:
+        learning_path = self._safe_dict(params.get("learningPath")) or {}
+        steps = self._learning_path_steps(learning_path)
+        orders = [self._safe_int(step.get("order")) for step in steps]
+        numeric_orders = [order for order in orders if order is not None]
+        expected_orders = list(range(1, len(steps) + 1))
+        has_duplicate = len(set(numeric_orders)) != len(numeric_orders)
+        is_ordered = numeric_orders == sorted(numeric_orders) and not has_duplicate
+        is_complete = len(numeric_orders) == len(steps) and sorted(numeric_orders) == expected_orders
+        if not steps:
+            score = 0.0
+        elif is_complete:
+            score = 1.0
+        elif is_ordered:
+            score = 0.75
+        else:
+            score = 0.45
+        issues: list[str] = []
+        if steps and not is_complete:
+            issues.append("学习步骤 order 未形成连续顺序。")
+        return {
+            "status": "GOOD" if score >= 0.8 else "LIMITED",
+            "score": score,
+            "issues": issues,
+            "evidence": {"stepCount": len(steps), "orders": numeric_orders},
+        }
+
+    def _tool_review_resource_match(self, *, params: dict[str, Any]) -> dict[str, Any]:
+        resource_push_plan = self._safe_dict(params.get("resourcePushPlan")) or {}
+        step_resources = resource_push_plan.get("stepResources")
+        if not isinstance(step_resources, list):
+            step_resources = []
+        coverage_gaps = resource_push_plan.get("coverageGaps")
+        if not isinstance(coverage_gaps, list):
+            coverage_gaps = []
+        step_count = len([item for item in step_resources if isinstance(item, dict)])
+        matched_step_count = 0
+        matched_resource_count = 0
+        for item in step_resources:
+            if not isinstance(item, dict):
+                continue
+            resources = item.get("resources")
+            if not isinstance(resources, list):
+                resources = []
+            valid_resources = [resource for resource in resources if isinstance(resource, dict)]
+            if valid_resources:
+                matched_step_count += 1
+                matched_resource_count += len(valid_resources)
+        gap_count = len([item for item in coverage_gaps if isinstance(item, dict)])
+        if step_count == 0:
+            score = 0.0
+        else:
+            score = matched_step_count / step_count
+            if gap_count:
+                score = max(0.0, score - min(0.3, gap_count / max(step_count, 1) * 0.2))
+        issues = ["资源推送计划存在覆盖缺口。"] if gap_count else []
+        return {
+            "status": "GOOD" if score >= 0.8 else "LIMITED",
+            "score": round(score, 2),
+            "issues": issues,
+            "evidence": {
+                "stepCount": step_count,
+                "matchedStepCount": matched_step_count,
+                "resourceCount": matched_resource_count,
+                "gapCount": gap_count,
+            },
+        }
+
+    def _merge_structured_scores(
+        self,
+        *,
+        payload: CriticReviewPayload,
+        review_signals: dict[str, Any],
+    ) -> CriticReviewPayload:
+        serialized = payload.model_dump(by_alias=True)
+        score_sources = {
+            "coverageScore": review_signals.get("learningPathCoverage"),
+            "pathOrderScore": review_signals.get("pathOrder"),
+            "resourceMatchScore": review_signals.get("resourceMatch"),
+        }
+        for field, signal in score_sources.items():
+            existing_score = self._normalize_score(serialized.get(field))
+            signal_score = signal.get("score") if isinstance(signal, dict) else None
+            serialized[field] = existing_score if existing_score is not None else self._normalize_score(signal_score)
+        return CriticReviewPayload.model_validate(serialized)
 
     def _content_text(self, params: dict[str, Any]) -> str:
         final_answer = params.get("finalAnswer")
@@ -256,6 +373,69 @@ class CriticAgent(PlaceholderAgent):
     def _student_level(self, *, params: dict[str, Any], snapshot: SystemSnapshot) -> str:
         profile = params.get("profile", {})
         return str(profile.get("studentLevel") or snapshot.student_level or "BASIC")
+
+    def _safe_dict(self, value: Any) -> dict[str, Any] | None:
+        return value if isinstance(value, dict) else None
+
+    def _learning_path_steps(self, learning_path: dict[str, Any]) -> list[dict[str, Any]]:
+        steps = learning_path.get("steps")
+        if not isinstance(steps, list):
+            return []
+        return [step for step in steps if isinstance(step, dict)]
+
+    def _diagnosis_points(self, diagnosis: dict[str, Any]) -> list[str]:
+        points: list[Any] = []
+        target_scope = self._safe_dict(diagnosis.get("targetScope")) or {}
+        scope_points = target_scope.get("knowledgePoints")
+        if isinstance(scope_points, list):
+            points.extend(scope_points)
+        diagnoses = diagnosis.get("knowledgeDiagnoses")
+        if isinstance(diagnoses, list):
+            for item in diagnoses:
+                if not isinstance(item, dict):
+                    continue
+                points.append(item.get("knowledgePoint"))
+                next_focus = item.get("nextFocus")
+                if next_focus:
+                    points.append(next_focus)
+        return self._unique_texts(points)
+
+    def _step_target_points(self, steps: list[dict[str, Any]]) -> list[str]:
+        points: list[Any] = []
+        for step in steps:
+            target_points = step.get("targetKnowledgePoints")
+            if isinstance(target_points, list):
+                points.extend(target_points)
+            points.extend([step.get("title"), step.get("objective")])
+        return self._unique_texts(points)
+
+    def _unique_texts(self, items: list[Any]) -> list[str]:
+        seen: set[str] = set()
+        texts: list[str] = []
+        for item in items:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            texts.append(text)
+        return texts
+
+    def _safe_int(self, value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _normalize_score(self, value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            score = float(value)
+        except (TypeError, ValueError):
+            return None
+        if score > 1:
+            score = score / 100
+        return max(0.0, min(score, 1.0))
 
 
 class SafetyAgent(PlaceholderAgent):

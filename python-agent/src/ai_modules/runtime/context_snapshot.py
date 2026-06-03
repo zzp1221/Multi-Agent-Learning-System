@@ -36,7 +36,14 @@ class SnapshotBuilder:
         conversation_id: str | None,
         params: dict,
     ) -> SystemSnapshot:
-        profile = params.get("profile", {})
+        profile = params.get("profile") if isinstance(params.get("profile"), dict) else {}
+        profile_analysis = params.get("profileAnalysis") if isinstance(params.get("profileAnalysis"), dict) else {}
+        if profile_analysis:
+            profile = self._merge_non_empty(profile, profile_analysis)
+            if profile_analysis.get("weakPoints") and not profile_analysis.get("knowledgeGaps"):
+                profile["knowledgeGaps"] = profile_analysis["weakPoints"]
+            if profile_analysis.get("learningPreference") and not profile_analysis.get("preferredStyle"):
+                profile["preferredStyle"] = profile_analysis["learningPreference"]
         learning_context = params.get("learningContext", {})
         weak_points = list(
             profile.get("knowledgeGaps")
@@ -105,3 +112,11 @@ class SnapshotBuilder:
                 f"- 最近活动: {', '.join(snapshot.recent_activities) or '暂无'}",
             ]
         )
+
+    def _merge_non_empty(self, base: dict, incoming: dict) -> dict:
+        merged = dict(base)
+        for key, value in incoming.items():
+            if value is None or value == "" or value == [] or value == {}:
+                continue
+            merged[key] = value
+        return merged

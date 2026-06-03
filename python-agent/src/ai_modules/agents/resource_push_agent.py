@@ -376,7 +376,12 @@ class ResourcePushAgent(PlaceholderAgent):
                     existing_count=len(resources),
                 )
             )
-            present_types = {str(item.get("resourceType") or "").upper() for item in resources}
+            present_types = {
+                normalized_type
+                for item in resources
+                for normalized_type in [self._normalize_resource_type(item.get("resourceType"))]
+                if normalized_type
+            }
             missing_types = [resource_type for resource_type in preferred_types if resource_type not in present_types]
             if missing_types:
                 coverage_gaps.append(
@@ -413,7 +418,7 @@ class ResourcePushAgent(PlaceholderAgent):
         resources: list[dict[str, Any]] = []
         step_terms = self._step_match_terms(step)
         for asset in generated_assets:
-            resource_type = str(asset.get("assetType") or asset.get("resourceType") or "").upper()
+            resource_type = self._normalize_resource_type(asset.get("assetType") or asset.get("resourceType"))
             if preferred_types and resource_type not in preferred_types:
                 continue
             haystack = " ".join(
@@ -500,12 +505,22 @@ class ResourcePushAgent(PlaceholderAgent):
 
     def _normalize_resource_types(self, raw_value: Any) -> list[str]:
         if isinstance(raw_value, list):
-            normalized = [str(item).strip().upper() for item in raw_value if str(item).strip()]
+            normalized = [self._normalize_resource_type(item) for item in raw_value if str(item).strip()]
         elif isinstance(raw_value, str) and raw_value.strip():
-            normalized = [item.strip().upper() for item in raw_value.replace("，", ",").split(",") if item.strip()]
+            normalized = [self._normalize_resource_type(item) for item in raw_value.replace("，", ",").split(",") if item.strip()]
         else:
             normalized = []
-        return list(dict.fromkeys(normalized))
+        return [item for item in dict.fromkeys(normalized) if item]
+
+    def _normalize_resource_type(self, raw_value: Any) -> str:
+        resource_type = str(raw_value or "").strip().upper()
+        aliases = {
+            "EXPLANATION": "DOCUMENT",
+            "CODE_CASE": "CODE",
+            "PRACTICAL_CASE": "CODE",
+            "PPT": "SLIDES",
+        }
+        return aliases.get(resource_type, resource_type)
 
     def _build_generated_asset_provenance(self, *, params: dict[str, Any]) -> dict[str, Any]:
         generator = getattr(self.resource_generation_service.content_chain, "primary_generator", None)
@@ -561,7 +576,10 @@ class ResourcePushAgent(PlaceholderAgent):
         return terms
 
     def _extract_profile_context(self, params: dict[str, Any], snapshot: Any) -> dict[str, Any]:
-        profile = params.get("profile", {}) if isinstance(params.get("profile", {}), dict) else {}
+        profile = params.get("profile") if isinstance(params.get("profile"), dict) else {}
+        profile_analysis = params.get("profileAnalysis") if isinstance(params.get("profileAnalysis"), dict) else {}
+        if profile_analysis:
+            profile = self._merge_non_empty(profile, profile_analysis)
         learning_context = params.get("learningContext", {}) if isinstance(params.get("learningContext", {}), dict) else {}
         weak_points = [
             item for item in profile.get("weakPoints", [])
@@ -574,7 +592,7 @@ class ResourcePushAgent(PlaceholderAgent):
                 if isinstance(item, dict)
             ]
         preferred_resource_types = [
-            self._normalize_text(item).upper()
+            self._normalize_resource_type(item)
             for item in profile.get("preferredResourceTypes", [])
             if self._normalize_text(item)
         ]
@@ -728,6 +746,14 @@ class ResourcePushAgent(PlaceholderAgent):
             site_hint_map.get(preferred_type, ""),
         ]
         return " ".join(part for part in parts if part).strip()
+
+    def _merge_non_empty(self, base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(base)
+        for key, value in incoming.items():
+            if value is None or value == "" or value == [] or value == {}:
+                continue
+            merged[key] = value
+        return merged
 
     def _extract_tavily_thumbnail(self, item: dict[str, Any], payload: dict[str, Any]) -> str | None:
         for key in ("thumbnailUrl", "thumbnail_url", "image", "imageUrl"):

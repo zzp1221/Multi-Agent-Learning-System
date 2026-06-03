@@ -128,11 +128,17 @@ class PathPlanningAgent(PlaceholderAgent):
         del tool_input
         evaluation = self._safe_dict(params.get("masteryDiagnosis")) or self._safe_dict(params.get("evaluationResult")) or {}
         profile_analysis = self._safe_dict(params.get("profileAnalysis")) or {}
-        profile = profile_analysis or self._safe_dict(params.get("profile")) or {}
+        profile = self._merge_non_empty(self._safe_dict(params.get("profile")) or {}, profile_analysis)
         judge_result = params.get("judgeResult", {})
         retrieval_evidence = params.get("retrievalEvidence")
         if not isinstance(retrieval_evidence, list):
             retrieval_evidence = []
+        mastery_focus = self._extract_mastery_focus(evaluation)
+        mastery_weaknesses = self._extract_mastery_weaknesses(evaluation)
+        mastery_resource_types = self._extract_mastery_resource_types(evaluation)
+        profile_resource_types = profile.get("preferredResourceTypes", [])
+        if not isinstance(profile_resource_types, list):
+            profile_resource_types = []
         weak_point_details = [
             item for item in profile.get("weakPointDetails", [])
             if isinstance(item, dict)
@@ -141,6 +147,7 @@ class PathPlanningAgent(PlaceholderAgent):
         current_goal = profile.get("currentGoal", {})
         focus = self._unique_items(
             [
+                *mastery_focus,
                 *list(evaluation.get("nextFocus", [])),
                 *list(judge_result.get("weakKnowledgeTags", [])),
                 *list(profile.get("knowledgeGaps", [])),
@@ -164,6 +171,7 @@ class PathPlanningAgent(PlaceholderAgent):
             ),
             "weaknesses": self._unique_items(
                 [
+                    *mastery_weaknesses,
                     *list(evaluation.get("weaknesses", [])),
                     *list(profile.get("knowledgeGaps", [])),
                     *list(profile.get("weakPoints", [])),
@@ -179,7 +187,7 @@ class PathPlanningAgent(PlaceholderAgent):
                 or "step_by_step"
             ),
             "explanationPreference": str(profile.get("explanationPreference") or ""),
-            "preferredResourceTypes": list(profile.get("preferredResourceTypes", [])),
+            "preferredResourceTypes": self._unique_items([*profile_resource_types, *mastery_resource_types]),
             "skillMastery": skill_mastery if isinstance(skill_mastery, dict) else {},
             "weakPointDetails": weak_point_details,
             "currentGoal": current_goal if isinstance(current_goal, dict) else {},
@@ -358,14 +366,19 @@ class PathPlanningAgent(PlaceholderAgent):
 
     def _resolve_goal(self, params: dict[str, Any]) -> str:
         evaluation = self._safe_dict(params.get("masteryDiagnosis")) or self._safe_dict(params.get("evaluationResult")) or {}
-        profile = self._safe_dict(params.get("profileAnalysis")) or self._safe_dict(params.get("profile")) or {}
+        profile = self._merge_non_empty(
+            self._safe_dict(params.get("profile")) or {},
+            self._safe_dict(params.get("profileAnalysis")) or {},
+        )
         current_goal = profile.get("currentGoal", {}) if isinstance(profile.get("currentGoal", {}), dict) else {}
+        mastery_goal = self._resolve_mastery_goal(evaluation)
         return str(
             params.get("goal")
             or params.get("currentProgress")
             or current_goal.get("shortTerm")
             or profile.get("learningGoal")
             or (params.get("pathPlanningContext") or {}).get("goal")
+            or mastery_goal
             or (evaluation.get("nextFocus") or ["提升当前薄弱点"])[0]
             or "提升当前薄弱点"
         )
@@ -399,6 +412,88 @@ class PathPlanningAgent(PlaceholderAgent):
 
     def _safe_dict(self, value: Any) -> dict[str, Any] | None:
         return value if isinstance(value, dict) else None
+
+    def _merge_non_empty(self, base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(base)
+        for key, value in incoming.items():
+            if value is None or value == "" or value == [] or value == {}:
+                continue
+            merged[key] = value
+        return merged
+
+    def _extract_mastery_focus(self, evaluation: dict[str, Any]) -> list[str]:
+        target_scope = self._safe_dict(evaluation.get("targetScope")) or {}
+        focus_items: list[Any] = []
+        for diagnosis in self._sorted_knowledge_diagnoses(evaluation):
+            focus_items.extend([diagnosis.get("nextFocus"), diagnosis.get("knowledgePoint")])
+        knowledge_points = target_scope.get("knowledgePoints")
+        if isinstance(knowledge_points, list):
+            focus_items.extend(knowledge_points)
+        return self._unique_items(focus_items)
+
+    def _extract_mastery_weaknesses(self, evaluation: dict[str, Any]) -> list[str]:
+        weakness_items: list[Any] = []
+        for diagnosis in self._sorted_knowledge_diagnoses(evaluation):
+            score = self._safe_float(diagnosis.get("masteryScore"))
+            status = str(diagnosis.get("status") or "").strip().upper()
+            is_weak = score is None or score < 0.75 or status in {"WEAK", "AT_RISK", "NOT_MASTERED", "LOW"}
+            if not is_weak:
+                continue
+            weakness_items.extend([diagnosis.get("knowledgePoint"), diagnosis.get("nextFocus")])
+            error_patterns = diagnosis.get("errorPatterns")
+            if isinstance(error_patterns, list):
+                weakness_items.extend(error_patterns)
+        return self._unique_items(weakness_items)
+
+    def _extract_mastery_resource_types(self, evaluation: dict[str, Any]) -> list[str]:
+        raw_types: list[Any] = []
+        for diagnosis in self._sorted_knowledge_diagnoses(evaluation):
+            recommended_types = diagnosis.get("recommendedResourceTypes")
+            if isinstance(recommended_types, list):
+                raw_types.extend(recommended_types)
+        return self._unique_items([str(item).strip().upper() for item in raw_types if str(item).strip()])
+
+    def _resolve_mastery_goal(self, evaluation: dict[str, Any]) -> str:
+        hints = self._safe_dict(evaluation.get("planAdjustmentHints")) or {}
+        target_scope = self._safe_dict(evaluation.get("targetScope")) or {}
+        for key in ("refreshReason", "strategy"):
+            text = str(hints.get(key) or "").strip()
+            if text:
+                return text
+        knowledge_points = target_scope.get("knowledgePoints")
+        if isinstance(knowledge_points, list):
+            first_point = next((str(item).strip() for item in knowledge_points if str(item).strip()), "")
+            if first_point:
+                return f"提升{first_point}掌握度"
+        focus = self._extract_mastery_focus(evaluation)
+        if focus:
+            return f"提升{focus[0]}掌握度"
+        return ""
+
+    def _sorted_knowledge_diagnoses(self, evaluation: dict[str, Any]) -> list[dict[str, Any]]:
+        diagnoses = evaluation.get("knowledgeDiagnoses")
+        if not isinstance(diagnoses, list):
+            return []
+        normalized = [item for item in diagnoses if isinstance(item, dict)]
+        normalized.sort(
+            key=lambda item: (
+                self._safe_int(item.get("priority"), default=999),
+                self._safe_float(item.get("masteryScore"), default=1.0),
+            )
+        )
+        return normalized
+
+    def _safe_float(self, value: Any, default: float | None = None) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _safe_int(self, value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
     def _lowest_mastery_skills(self, skill_mastery: Any) -> list[str]:
         if not isinstance(skill_mastery, dict):

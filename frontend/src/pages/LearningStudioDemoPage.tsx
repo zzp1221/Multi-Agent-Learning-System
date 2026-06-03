@@ -308,6 +308,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
         <TaskResultPanel
           service={selectedService}
+          taskId={taskId}
           taskSummary={taskSummary}
           serviceResultLines={serviceResultLines}
           downloadLinks={downloadLinks}
@@ -315,7 +316,9 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           inlineResource={activeEngineSnapshot.inlineResource}
           inlineResources={inlineResources}
           completedResources={completedResources}
+          masteryDiagnosis={activeEngineSnapshot.masteryDiagnosis}
           learningPlan={activeEngineSnapshot.learningPlan}
+          resourcePushPlan={activeEngineSnapshot.resourcePushPlan}
           criticReview={activeEngineSnapshot.criticReview}
           agentTrace={activeEngineSnapshot.agentTrace}
           resultHistory={activeEngineSnapshot.resultHistory}

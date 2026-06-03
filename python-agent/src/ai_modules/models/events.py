@@ -155,6 +155,7 @@ class DonePayload(BaseModel):
 
     status: Literal["SUCCESS", "FAILED", "PARTIAL_FAILED"] = "SUCCESS"
     summary: str
+    mastery_diagnosis: dict[str, Any] | None = Field(default=None, alias="masteryDiagnosis")
     learning_path: dict[str, Any] | None = Field(default=None, alias="learningPath")
     learning_plan: dict[str, Any] | None = Field(default=None, alias="learningPlan")
     resource_push_plan: dict[str, Any] | None = Field(default=None, alias="resourcePushPlan")

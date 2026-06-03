@@ -570,7 +570,44 @@ class _StubEvaluationAgent(PlaceholderAgent):
             "summaryText": "已完成能力评估",
         }
         params["evaluationResult"] = payload
-        params["masteryDiagnosis"] = {**payload, "primaryDimension": "练习掌握", "diagnosisSource": "evaluation"}
+        params["masteryDiagnosis"] = {
+            "diagnosisSource": "evaluation",
+            "primaryDimension": "练习掌握",
+            "overallLevel": "BASIC",
+            "overallMasteryScore": 0.48,
+            "confidence": 0.72,
+            "targetScope": {
+                "course": "数据库原理",
+                "chapter": "索引",
+                "knowledgePoints": ["最左匹配"],
+            },
+            "knowledgeDiagnoses": [
+                {
+                    "knowledgePoint": "最左匹配",
+                    "masteryScore": 0.42,
+                    "status": "weak",
+                    "priority": 1,
+                    "evidence": ["学习画像记录为薄弱点"],
+                    "errorPatterns": [],
+                    "nextFocus": "最左匹配",
+                    "recommendedResourceTypes": ["DOCUMENT", "QUIZ"],
+                }
+            ],
+            "behaviorSignals": {
+                "practiceAccuracy": None,
+                "recentQuestionCount": 0,
+                "reviewCount": 0,
+                "resourceDownloads": 0,
+                "messageCount": 0,
+                "recentMistakeCount": 0,
+            },
+            "planAdjustmentHints": {
+                "shouldRefreshPlan": True,
+                "refreshReason": "最左匹配",
+                "strategy": "优先补齐最左匹配",
+            },
+            "summaryText": "已完成能力评估",
+        }
         yield ProgressSSEEvent(
             taskId=task_id,
             traceId=trace_id,
@@ -743,6 +780,8 @@ async def test_supervisor_streams_personalized_learning_multi_agent_route() -> N
     done = events[-1]
 
     assert done.event == "done"
+    assert done.payload.mastery_diagnosis is not None
+    assert done.payload.mastery_diagnosis["knowledgeDiagnoses"][0]["knowledgePoint"] == "最左匹配"
     assert done.payload.learning_path is not None
     assert done.payload.resource_push_plan is not None
     assert done.payload.pushed_resources
@@ -760,6 +799,44 @@ async def test_supervisor_streams_personalized_learning_multi_agent_route() -> N
     resource_events = [event for event in events if event.event == "resource_file"]
     assert resource_events
     assert done.payload.resource_push_plan["stepResources"][0]["resources"][0]["source"] == "generated"
+
+
+def test_supervisor_resource_push_done_payload_keeps_empty_plan() -> None:
+    supervisor = PythonAgentSupervisor()
+    resource_push_plan = {
+        "stepResources": [
+            {
+                "stepId": "step-1",
+                "stepTitle": "最左匹配复盘",
+                "targetKnowledgePoints": ["最左匹配"],
+                "resources": [],
+            }
+        ],
+        "coverageGaps": [
+            {
+                "stepId": "step-1",
+                "missingResourceTypes": ["VIDEO"],
+                "reason": "当前上下文没有可验证资源。",
+            }
+        ],
+    }
+
+    payload = supervisor._build_done_payload(
+        service_type="RESOURCE_PUSH",
+        agent_names=["resource_push"],
+        params={
+            "masteryDiagnosis": {"summaryText": "最左匹配薄弱"},
+            "learningPlan": {"planId": "plan-1"},
+            "resourcePushPlan": resource_push_plan,
+            "pushedResources": [],
+            "criticReview": {"verdict": "PASS"},
+        },
+    )
+
+    assert payload.status == "SUCCESS"
+    assert payload.pushed_resources == []
+    assert payload.resource_push_plan == resource_push_plan
+    assert payload.critic_review["verdict"] == "PASS"
 
 
 @pytest.mark.asyncio

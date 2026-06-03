@@ -133,10 +133,20 @@ class QueryRewriteAgent(PlaceholderAgent):
     ) -> dict[str, Any]:
         del tool_input
         learning_context = params.get("learningContext", {})
+        if not isinstance(learning_context, dict):
+            learning_context = {}
+        diagnosis_context = self._extract_diagnosis_context(params.get("masteryDiagnosis"))
+        profile_context = self._extract_profile_context(params.get("profileAnalysis") or params.get("profile"))
         original_query = self.service.extract_query(params)
         context = {
             "originalQuery": original_query,
-            "learningContext": learning_context,
+            "learningContext": {
+                **learning_context,
+                **profile_context,
+                **diagnosis_context,
+            },
+            "profileAnalysis": profile_context,
+            "masteryDiagnosis": diagnosis_context,
             "course": learning_context.get("course"),
             "chapter": learning_context.get("chapter"),
         }
@@ -159,7 +169,7 @@ class QueryRewriteAgent(PlaceholderAgent):
             rewritten = await generator.rewrite(
                 system_prompt=system_prompt,
                 original_query=original_query,
-                learning_context=params.get("learningContext", {}),
+                learning_context=context.get("learningContext", {}),
             )
             payload = rewritten.model_dump(by_alias=True)
         except Exception:
@@ -169,3 +179,72 @@ class QueryRewriteAgent(PlaceholderAgent):
 
     def _tool_finalize_rewrite(self, tool_input: dict[str, Any]) -> QueryRewriteResult:
         return QueryRewriteResult.model_validate(tool_input)
+
+    def _extract_diagnosis_context(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        focus: list[Any] = []
+        weaknesses: list[Any] = []
+        resource_types: list[Any] = []
+        diagnoses = value.get("knowledgeDiagnoses")
+        if isinstance(diagnoses, list):
+            sorted_diagnoses = [item for item in diagnoses if isinstance(item, dict)]
+            sorted_diagnoses.sort(
+                key=lambda item: (
+                    self._safe_int(item.get("priority"), default=999),
+                    self._safe_float(item.get("masteryScore"), default=1.0),
+                )
+            )
+            for diagnosis in sorted_diagnoses:
+                focus.extend([diagnosis.get("nextFocus"), diagnosis.get("knowledgePoint")])
+                score = self._safe_float(diagnosis.get("masteryScore"))
+                status = str(diagnosis.get("status") or "").strip().lower()
+                if score is None or score < 0.75 or status in {"weak", "at_risk", "not_mastered", "low"}:
+                    weaknesses.extend([diagnosis.get("knowledgePoint"), diagnosis.get("nextFocus")])
+                recommended = diagnosis.get("recommendedResourceTypes")
+                if isinstance(recommended, list):
+                    resource_types.extend(recommended)
+        target_scope = value.get("targetScope")
+        if isinstance(target_scope, dict) and isinstance(target_scope.get("knowledgePoints"), list):
+            focus.extend(target_scope["knowledgePoints"])
+        hints = value.get("planAdjustmentHints")
+        strategy = hints.get("strategy") if isinstance(hints, dict) else ""
+        return {
+            "diagnosisFocus": self._unique_items(focus)[:5],
+            "diagnosisWeaknesses": self._unique_items(weaknesses)[:5],
+            "recommendedResourceTypes": self._unique_items(resource_types)[:5],
+            "diagnosisStrategy": str(strategy or "").strip(),
+        }
+
+    def _extract_profile_context(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {}
+        return {
+            "profileWeakPoints": self._unique_items(
+                list(value.get("weakPoints") or []) + list(value.get("knowledgeGaps") or [])
+            )[:5],
+            "learningPreference": str(value.get("learningPreference") or value.get("preferredStyle") or "").strip(),
+        }
+
+    def _unique_items(self, items: list[Any]) -> list[str]:
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for item in items:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+        return normalized
+
+    def _safe_float(self, value: Any, default: float | None = None) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _safe_int(self, value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default

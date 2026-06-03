@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { ChartColumn, Compass, Sparkles } from 'lucide-react';
+import { Compass, Sparkles } from 'lucide-react';
 import type { SmartEngineServiceType, SmartEngineStreamEvent, SmartEngineTaskResponse, UserProfileResponse } from '../api/smartEngine';
 import type { ConversationStreamEventPayload } from '../api/conversation';
 import type { VideoCardStyle } from '../components/VideoCard';
@@ -81,7 +81,13 @@ export type CompletedResourceView =
 export interface LearningPlanStepView {
   stepId: string;
   title: string;
+  order?: number;
   intent?: string;
+  reason?: string;
+  targetKnowledgePoints: string[];
+  preferredResourceTypes: string[];
+  estimatedMinutes?: number;
+  checkpoint?: string;
   agentName?: string;
   serviceType?: string;
   status?: string;
@@ -98,8 +104,78 @@ export interface LearningPlanView {
   steps: LearningPlanStepView[];
 }
 
+export interface ResourcePushPlanResourceView {
+  title: string;
+  resourceType: string;
+  source: string;
+  sourceName?: string;
+  matchReason?: string;
+  downloadUrl?: string;
+  summaryText?: string;
+}
+
+export interface ResourcePushPlanStepView {
+  stepId: string;
+  stepTitle?: string;
+  targetKnowledgePoints: string[];
+  resources: ResourcePushPlanResourceView[];
+}
+
+export interface ResourceCoverageGapView {
+  stepId: string;
+  missingResourceTypes: string[];
+  reason?: string;
+}
+
+export interface ResourcePushPlanView {
+  stepResources: ResourcePushPlanStepView[];
+  coverageGaps: ResourceCoverageGapView[];
+}
+
+export interface MasteryDiagnosisKnowledgeView {
+  knowledgePoint: string;
+  masteryScore?: number;
+  status?: string;
+  priority?: number;
+  evidence: string[];
+  errorPatterns: string[];
+  nextFocus?: string;
+  recommendedResourceTypes: string[];
+}
+
+export interface MasteryDiagnosisView {
+  diagnosisSource?: string;
+  primaryDimension?: string;
+  overallLevel?: string;
+  overallMasteryScore?: number;
+  confidence?: number;
+  targetScope?: {
+    course?: string;
+    chapter?: string;
+    knowledgePoints: string[];
+  };
+  knowledgeDiagnoses: MasteryDiagnosisKnowledgeView[];
+  behaviorSignals?: {
+    practiceAccuracy?: number;
+    recentQuestionCount?: number;
+    reviewCount?: number;
+    resourceDownloads?: number;
+    messageCount?: number;
+    recentMistakeCount?: number;
+  };
+  planAdjustmentHints?: {
+    shouldRefreshPlan?: boolean;
+    refreshReason?: string;
+    strategy?: string;
+  };
+  summaryText?: string;
+}
+
 export interface CriticReviewView {
   verdict?: string;
+  coverageScore?: number;
+  pathOrderScore?: number;
+  resourceMatchScore?: number;
   factConsistency?: string;
   difficultyMatch?: string;
   sourceCoverage?: string;
@@ -128,7 +204,9 @@ export interface EngineTaskResultRecord {
   practiceBatch: PracticeQuestionBatch | null;
   completedResources: CompletedResourceView[];
   judgeResult: PracticeJudgeResult | null;
+  masteryDiagnosis: MasteryDiagnosisView | null;
   learningPlan: LearningPlanView | null;
+  resourcePushPlan: ResourcePushPlanView | null;
   criticReview: CriticReviewView | null;
   agentTrace: AgentTraceStepView[];
   createdAt: number;
@@ -209,7 +287,9 @@ export interface EngineTaskSnapshot {
   practiceBatch: PracticeQuestionBatch | null;
   completedResources: CompletedResourceView[];
   judgeResult: PracticeJudgeResult | null;
+  masteryDiagnosis: MasteryDiagnosisView | null;
   learningPlan: LearningPlanView | null;
+  resourcePushPlan: ResourcePushPlanView | null;
   criticReview: CriticReviewView | null;
   agentTrace: AgentTraceStepView[];
   resultHistory: EngineTaskResultRecord[];
@@ -313,7 +393,9 @@ export interface TaskRunHandlers {
   onInlineResource: (item: InlineResourceView) => void;
   onQuestionBatch: (item: PracticeQuestionBatch) => void;
   onJudgeResult: (item: PracticeJudgeResult) => void;
+  onMasteryDiagnosis: (item: MasteryDiagnosisView) => void;
   onLearningPlan: (item: LearningPlanView) => void;
+  onResourcePushPlan: (item: ResourcePushPlanView) => void;
   onCriticReview: (item: CriticReviewView) => void;
   onAgentTrace: (items: AgentTraceStepView[]) => void;
 }
@@ -335,7 +417,9 @@ export interface RunByApiTaskArgs {
   setCompletedResources: (value: React.SetStateAction<CompletedResourceView[]>) => void;
   setPracticeBatch: (value: React.SetStateAction<PracticeQuestionBatch | null>) => void;
   setJudgeResult: (value: React.SetStateAction<PracticeJudgeResult | null>) => void;
+  setMasteryDiagnosis: (value: React.SetStateAction<MasteryDiagnosisView | null>) => void;
   setLearningPlan: (value: React.SetStateAction<LearningPlanView | null>) => void;
+  setResourcePushPlan: (value: React.SetStateAction<ResourcePushPlanView | null>) => void;
   setCriticReview: (value: React.SetStateAction<CriticReviewView | null>) => void;
   setAgentTrace: (value: React.SetStateAction<AgentTraceStepView[]>) => void;
   taskStreamAbortRef: React.MutableRefObject<AbortController | null>;
@@ -381,7 +465,6 @@ export const assessmentDimensionOptions = ['知识基础', '案例迁移', '练�
 export const serviceButtons: ServiceButtonConfig[] = [
   { id: 'resource', label: '资源生成', icon: Sparkles },
   { id: 'personalized', label: '个性化学习方案', icon: Compass },
-  { id: 'assessment', label: '学习效果评估', icon: ChartColumn },
 ];
 
 export const resourceTypeButtons: ResourceTypeButtonConfig[] = [
