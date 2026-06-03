@@ -10,10 +10,13 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
@@ -44,36 +47,64 @@ public class VoicePartialDraftService {
             return;
         }
         String draftKey = key(request.voiceSessionId(), request.turnId());
-        DraftState state = new DraftState(UUID.randomUUID(), request.partialText());
+        DraftState state = new DraftState(UUID.randomUUID(), request.voiceSessionId(), request.turnId(), request.partialText());
         if (drafts.putIfAbsent(draftKey, state) == null) {
             conversationTaskExecutor.execute(() -> runDraft(request, state));
         }
     }
 
     public boolean keepOrCancel(UUID voiceSessionId, String turnId, String finalText) {
-        DraftState draft = drafts.remove(key(voiceSessionId, turnId));
+        return cancelIfFinalDiffers(voiceSessionId, turnId, finalText);
+    }
+
+    public boolean cancelIfFinalDiffers(UUID voiceSessionId, String turnId, String finalText) {
+        DraftState draft = drafts.get(key(voiceSessionId, turnId));
         if (draft == null) {
             return false;
         }
-        boolean similar = isSimilar(draft.partialText(), finalText);
-        if (!similar) {
-            draft.cancel();
-            pythonAgentClient.cancel(draft.taskId().toString());
-            record("llm_draft_cancel_ms", voiceSessionId, turnId, "cancelled", draft.partialText().length(), finalText == null ? 0 : finalText.length(), "FINAL_DIFF");
-            return false;
+        if (isSimilar(draft.partialText(), finalText)) {
+            return true;
+        }
+        if (drafts.remove(key(voiceSessionId, turnId), draft)) {
+            cancelDraft(draft, "FINAL_DIFF", draft.partialText().length(), finalText == null ? 0 : finalText.length());
+        }
+        return false;
+    }
+
+    public ReusableDraft takeReusableDraft(UUID voiceSessionId, String turnId, String finalText) {
+        String draftKey = key(voiceSessionId, turnId);
+        DraftState draft = drafts.get(draftKey);
+        if (draft == null) {
+            return null;
+        }
+        if (!isSimilar(draft.partialText(), finalText)) {
+            cancelIfFinalDiffers(voiceSessionId, turnId, finalText);
+            return null;
+        }
+        if (!draft.hasVisibleChunks()) {
+            if (drafts.remove(draftKey, draft)) {
+                cancelDraft(draft, "NO_VISIBLE_DRAFT", draft.partialText().length(), finalText == null ? 0 : finalText.length());
+            }
+            return null;
+        }
+        if (!drafts.remove(draftKey, draft) || !draft.adopt()) {
+            return null;
         }
         record("llm_draft_keep_ms", voiceSessionId, turnId, "success", draft.partialText().length(), finalText == null ? 0 : finalText.length(), "");
-        return true;
+        return new ReusableDraft(draft);
+    }
+
+    public void streamDraft(ReusableDraft draft, java.util.function.Consumer<PythonStreamEvent> eventConsumer) {
+        if (draft != null && eventConsumer != null) {
+            draft.stream(eventConsumer);
+        }
     }
 
     public void cancel(UUID voiceSessionId, String turnId, String errorCode) {
         DraftState draft = drafts.remove(key(voiceSessionId, turnId));
-        if (draft == null) {
-            return;
+        if (draft != null) {
+            cancelDraft(draft, errorCode, draft.partialText().length(), null);
         }
-        draft.cancel();
-        pythonAgentClient.cancel(draft.taskId().toString());
-        record("llm_draft_cancel_ms", voiceSessionId, turnId, "cancelled", draft.partialText().length(), null, errorCode);
     }
 
     private void runDraft(VoiceDraftRequest request, DraftState state) {
@@ -94,6 +125,7 @@ public class VoicePartialDraftService {
                     if (state.cancelled()) {
                         throw new IllegalStateException("voice draft cancelled");
                     }
+                    state.appendEvent(event);
                     String chunk = visibleChunk(event);
                     if (!chunk.isBlank() && firstTokenLogged.compareAndSet(false, true)) {
                         voiceMetricLogger.record(
@@ -110,13 +142,16 @@ public class VoicePartialDraftService {
                     }
                 }
             );
-            record("llm_draft_done_ms", request.voiceSessionId(), request.turnId(), "success", request.partialText().length(), null, "");
+            if (!state.cancelled()) {
+                record("llm_draft_done_ms", request.voiceSessionId(), request.turnId(), "success", request.partialText().length(), null, "");
+            }
         } catch (Exception ex) {
             if (!state.cancelled()) {
                 LOGGER.debug("Voice partial draft failed sessionId={} turnId={}: {}", request.voiceSessionId(), request.turnId(), ex.getMessage());
                 record("llm_draft_error_ms", request.voiceSessionId(), request.turnId(), "error", request.partialText().length(), null, ex.getClass().getSimpleName());
             }
         } finally {
+            state.finish();
             drafts.remove(key(request.voiceSessionId(), request.turnId()), state);
         }
     }
@@ -149,6 +184,12 @@ public class VoicePartialDraftService {
         return text instanceof String value ? value.trim() : "";
     }
 
+    private void cancelDraft(DraftState draft, String errorCode, Integer inputLength, Integer outputLength) {
+        draft.cancel();
+        pythonAgentClient.cancel(draft.taskId().toString());
+        record("llm_draft_cancel_ms", draft.voiceSessionId(), draft.turnId(), "cancelled", inputLength, outputLength, errorCode);
+    }
+
     private void record(String metric, UUID voiceSessionId, String turnId, String outcome, Integer inputLength, Integer outputLength, String errorCode) {
         voiceMetricLogger.record(
             metric,
@@ -164,7 +205,7 @@ public class VoicePartialDraftService {
     }
 
     private long elapsedMs(long startedAtNanos) {
-        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos);
     }
 
     private boolean isSimilar(String partialText, String finalText) {
@@ -212,13 +253,49 @@ public class VoicePartialDraftService {
         }
     }
 
-    private static final class DraftState {
-        private final UUID taskId;
-        private final String partialText;
-        private volatile boolean cancelled;
+    public final class ReusableDraft {
+        private final DraftState state;
+        private int cursor;
 
-        private DraftState(UUID taskId, String partialText) {
+        private ReusableDraft(DraftState state) {
+            this.state = state;
+        }
+
+        public boolean hasChunks() {
+            return state.hasVisibleChunks();
+        }
+
+        public void cancel(String errorCode) {
+            cancelDraft(state, errorCode, state.partialText().length(), null);
+        }
+
+        private void stream(java.util.function.Consumer<PythonStreamEvent> eventConsumer) {
+            while (true) {
+                List<PythonStreamEvent> events = state.eventsAfter(cursor);
+                cursor += events.size();
+                events.forEach(eventConsumer);
+                if (state.done()) {
+                    return;
+                }
+                state.awaitNextEvent();
+            }
+        }
+    }
+
+    private final class DraftState {
+        private final UUID taskId;
+        private final UUID voiceSessionId;
+        private final String turnId;
+        private final String partialText;
+        private final List<PythonStreamEvent> events = new ArrayList<>();
+        private boolean cancelled;
+        private boolean adopted;
+        private boolean done;
+
+        private DraftState(UUID taskId, UUID voiceSessionId, String turnId, String partialText) {
             this.taskId = taskId;
+            this.voiceSessionId = voiceSessionId;
+            this.turnId = turnId;
             this.partialText = partialText;
         }
 
@@ -226,16 +303,69 @@ public class VoicePartialDraftService {
             return taskId;
         }
 
+        private UUID voiceSessionId() {
+            return voiceSessionId;
+        }
+
+        private String turnId() {
+            return turnId;
+        }
+
         private String partialText() {
             return partialText;
         }
 
-        private boolean cancelled() {
+        private synchronized boolean cancelled() {
             return cancelled;
         }
 
-        private void cancel() {
+        private synchronized boolean adopt() {
+            if (adopted || cancelled) {
+                return false;
+            }
+            adopted = true;
+            notifyAll();
+            return true;
+        }
+
+        private synchronized void appendEvent(PythonStreamEvent event) {
+            events.add(event);
+            notifyAll();
+        }
+
+        private synchronized List<PythonStreamEvent> eventsAfter(int cursor) {
+            if (cursor >= events.size()) {
+                return List.of();
+            }
+            return List.copyOf(events.subList(cursor, events.size()));
+        }
+
+        private synchronized boolean hasVisibleChunks() {
+            return events.stream().anyMatch(event -> !visibleChunk(event).isBlank());
+        }
+
+        private synchronized void awaitNextEvent() {
+            try {
+                wait(250L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                done = true;
+            }
+        }
+
+        private synchronized boolean done() {
+            return done;
+        }
+
+        private synchronized void finish() {
+            done = true;
+            notifyAll();
+        }
+
+        private synchronized void cancel() {
             cancelled = true;
+            done = true;
+            notifyAll();
         }
     }
 }

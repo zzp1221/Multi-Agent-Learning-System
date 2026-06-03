@@ -63,8 +63,12 @@ public class VoiceTurnMetricsService {
         return trace == null ? -1L : trace.markFirstAudio();
     }
 
-    public void complete(UUID voiceSessionId, String turnId) {
-        traces.remove(traceKey(voiceSessionId, turnId));
+    public long completeElapsedMs(UUID voiceSessionId, String turnId) {
+        VoiceTurnTrace trace = traces.remove(traceKey(voiceSessionId, turnId));
+        if (trace == null || trace.isExpired()) {
+            return -1L;
+        }
+        return trace.elapsedMs();
     }
 
     @Scheduled(fixedDelay = 60_000)

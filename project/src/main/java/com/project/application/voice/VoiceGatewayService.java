@@ -76,6 +76,12 @@ public class VoiceGatewayService {
         }
     }
 
+    public void closeSession(UUID sessionId, JwtAuthenticatedUser currentUser) {
+        if (sessionId != null && currentUser != null) {
+            sessionService.close(sessionId, currentUser.userId());
+        }
+    }
+
     private void ensureEnabled() {
         if (!appProperties.getVoice().isEnabled()) {
             throw new ApplicationException("VOICE_DISABLED", "语音助手未启用", HttpStatus.SERVICE_UNAVAILABLE);

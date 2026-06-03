@@ -124,7 +124,7 @@ public class VoiceController {
         }
         VoiceMetricContext metricContext = resolveMetricContext(request, currentUser);
         if (text.isBlank()) {
-            return completeTtsTurn(metricContext);
+            return completeTtsTurn(metricContext, request.normalizedCompletionOutcome());
         }
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         AtomicInteger sequence = new AtomicInteger(0);
@@ -146,7 +146,7 @@ public class VoiceController {
                 });
                 recordTtsMetric("tts_done_ms", metricContext, streamId, startedAtNanos, "success", text.length(), null, "");
                 if (request.isTurnComplete()) {
-                    recordVoiceTurnTotal(metricContext, "success", text.length(), null, "");
+                    recordVoiceTurnTotal(metricContext, request.normalizedCompletionOutcome(), text.length(), null, "");
                 }
                 sendEvent(emitter, "done", sequence, Map.of("finished", true));
                 emitter.complete();
@@ -171,7 +171,7 @@ public class VoiceController {
         return emitter;
     }
 
-    private SseEmitter completeTtsTurn(VoiceMetricContext metricContext) {
+    private SseEmitter completeTtsTurn(VoiceMetricContext metricContext, String outcome) {
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         AtomicInteger sequence = new AtomicInteger(0);
         emitter.onCompletion(() -> LOGGER.debug("Voice TTS completion marker SSE completed"));
@@ -179,7 +179,7 @@ public class VoiceController {
         emitter.onError(ex -> LOGGER.debug("Voice TTS completion marker SSE error", ex));
         voiceTaskExecutor.execute(() -> {
             try {
-                recordVoiceTurnTotal(metricContext, "success", 0, null, "");
+                recordVoiceTurnTotal(metricContext, outcome, 0, null, "");
                 sendEvent(emitter, "done", sequence, Map.of("finished", true, "audioSkipped", true));
                 emitter.complete();
             } catch (Exception ex) {
@@ -214,6 +214,7 @@ public class VoiceController {
     ) {
         JwtAuthenticatedUser currentUser = AuthenticatedUserResolver.require(authentication);
         voiceAsrPrewarmService.release(sessionId, currentUser.userId());
+        voiceGatewayService.closeSession(sessionId, currentUser);
         return ResponseEntity.noContent().build();
     }
 
@@ -290,10 +291,14 @@ public class VoiceController {
         if (metricContext.voiceSessionId() == null || metricContext.turnId() == null || metricContext.turnId().isBlank()) {
             return;
         }
+        long durationMs = voiceTurnMetricsService.completeElapsedMs(metricContext.voiceSessionId(), metricContext.turnId());
+        if (durationMs < 0L) {
+            return;
+        }
         voiceMetricLogger.record(
             "voice_turn_total_ms",
             metricContext,
-            voiceTurnMetricsService.elapsedMs(metricContext.voiceSessionId(), metricContext.turnId()),
+            durationMs,
             appProperties.getVoice().getProvider(),
             appProperties.getVoice().getTtsModel(),
             outcome,
@@ -301,7 +306,6 @@ public class VoiceController {
             outputLength,
             errorCode
         );
-        voiceTurnMetricsService.complete(metricContext.voiceSessionId(), metricContext.turnId());
     }
 
     private void sendTtsChunk(SseEmitter emitter, AtomicInteger sequence, VoiceTtsChunk chunk) {

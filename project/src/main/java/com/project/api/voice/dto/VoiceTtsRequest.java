@@ -16,7 +16,9 @@ public record VoiceTtsRequest(
     String pageType,
     @Size(max = 60, message = "语音意图不能超过 60 字")
     String commandIntent,
-    Boolean turnComplete
+    Boolean turnComplete,
+    @Size(max = 40, message = "完成状态不能超过 40 字")
+    String completionOutcome
 ) {
     public String normalizedText() {
         return text == null ? "" : text.trim();
@@ -28,5 +30,13 @@ public record VoiceTtsRequest(
 
     public boolean isTurnComplete() {
         return turnComplete == null || Boolean.TRUE.equals(turnComplete);
+    }
+
+    public String normalizedCompletionOutcome() {
+        String outcome = completionOutcome == null ? "" : completionOutcome.trim().toLowerCase(java.util.Locale.ROOT);
+        return switch (outcome) {
+            case "cancelled", "error" -> outcome;
+            default -> "success";
+        };
     }
 }

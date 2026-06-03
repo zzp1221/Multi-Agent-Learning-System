@@ -121,6 +121,8 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   const expectedRealtimeCloseRef = useRef(false);
   const recordingCommitRequestedRef = useRef(false);
   const recognizedTextRef = useRef('');
+  const recordingDraftBaseRef = useRef('');
+  const recordingSegmentTextRef = useRef('');
   const assistantTextRef = useRef('');
   const recordStartedAtRef = useRef(0);
   const recordingTimerRef = useRef<number | null>(null);
@@ -130,6 +132,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   const ttsProcessingRef = useRef(false);
   const ttsSentenceBufferRef = useRef('');
   const ttsTurnCompletePendingRef = useRef(false);
+  const completedVoiceTurnsRef = useRef<Set<string>>(new Set());
   const playbackContextRef = useRef<AudioContext | null>(null);
   const playbackSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const playbackSourceCountRef = useRef(0);
@@ -281,9 +284,12 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     setOpen(true);
     setErrorMessage('');
     setNoticeMessage('');
+    const draftBase = shouldPreserveDraftForRecording() ? recognizedTextRef.current.trim() : '';
     setAssistantText('');
-    setRecognizedText('');
-    recognizedTextRef.current = '';
+    setRecognizedText(draftBase);
+    recognizedTextRef.current = draftBase;
+    recordingDraftBaseRef.current = draftBase;
+    recordingSegmentTextRef.current = '';
     interruptCurrentTurn();
     realtimeReadyRef.current = false;
     recordingCommitRequestedRef.current = false;
@@ -362,7 +368,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
         if (
           voiceStateRef.current === 'transcribing'
           && recordingCommitRequestedRef.current
-          && recognizedTextRef.current.trim()
+          && currentRecordingDraftText().trim()
         ) {
           recordingCommitRequestedRef.current = false;
           voiceStateRef.current = 'ready';
@@ -376,7 +382,10 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
           return;
         }
         recordingCommitRequestedRef.current = false;
-        if (recognizedTextRef.current.trim()) {
+        const draftText = currentRecordingDraftText().trim();
+        if (draftText) {
+          setRecognizedText(draftText);
+          recognizedTextRef.current = draftText;
           voiceStateRef.current = 'ready';
           setVoiceState('ready');
         } else {
@@ -710,7 +719,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
                   <span>识别文本</span>
                   <textarea
                     value={recognizedText}
-                    onChange={(event) => setRecognizedText(event.target.value)}
+                    onChange={(event) => updateRecognizedDraftText(event.target.value)}
                     rows={3}
                     disabled={voiceState === 'chatting' || voiceState === 'speaking'}
                   />
@@ -910,7 +919,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
   }
 
   function handleRealtimeEvent(event: VoiceRealtimeEvent) {
-    if (event.turnId && event.turnId !== currentTurnIdRef.current && event.type !== 'ready' && event.type !== 'cancelled') {
+    if (event.turnId && event.turnId !== currentTurnIdRef.current && event.type !== 'ready') {
       return;
     }
     if (event.type === 'ready') {
@@ -934,10 +943,14 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       }
       if (recordingCommitRequestedRef.current) {
         recordingCommitRequestedRef.current = false;
-        const finalText = (text || recognizedTextRef.current).trim();
+        const finalText = currentRecordingDraftText(text).trim();
         const nextState = finalText ? 'ready' : 'error';
         voiceStateRef.current = nextState;
         setVoiceState(nextState);
+        if (finalText) {
+          setRecognizedText(finalText);
+          recognizedTextRef.current = finalText;
+        }
         if (!finalText) {
           setErrorMessage('没有识别到文字，请重试');
         }
@@ -947,10 +960,12 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
       return;
     }
     if (event.type === 'cancelled') {
-      currentTurnIdRef.current = event.turnId ?? '';
       realtimeReadyRef.current = true;
       recordingCommitRequestedRef.current = false;
-      setRecognizedText('');
+      recordingSegmentTextRef.current = '';
+      const draftBase = recordingDraftBaseRef.current.trim();
+      setRecognizedText(draftBase);
+      recognizedTextRef.current = draftBase;
       return;
     }
     if (event.type === 'error') {
@@ -967,11 +982,45 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (!next) {
       return;
     }
-    setRecognizedText(next);
-    recognizedTextRef.current = next;
+    recordingSegmentTextRef.current = next;
+    const draftText = currentRecordingDraftText(next);
+    setRecognizedText(draftText);
+    recognizedTextRef.current = draftText;
+  }
+
+  function updateRecognizedDraftText(text: string) {
+    setRecognizedText(text);
+    recognizedTextRef.current = text;
+    recordingDraftBaseRef.current = text;
+    recordingSegmentTextRef.current = '';
+  }
+
+  function shouldPreserveDraftForRecording() {
+    const draft = recognizedTextRef.current.trim();
+    if (!draft) {
+      return false;
+    }
+    const currentState = voiceStateRef.current;
+    return currentState === 'ready'
+      || (currentState === 'idle' && !assistantTextRef.current.trim())
+      || (currentState === 'speaking' && playbackPausedRef.current);
+  }
+
+  function currentRecordingDraftText(segmentOverride?: string) {
+    return mergeVoiceDraftText(recordingDraftBaseRef.current, segmentOverride ?? recordingSegmentTextRef.current);
   }
 
   function stopSpeaking() {
+    const shouldMarkCancelled = (
+      voiceStateRef.current === 'speaking'
+      || voiceStateRef.current === 'chatting'
+      || ttsQueueRef.current.length > 0
+      || ttsTurnCompletePendingRef.current
+      || Boolean(ttsAbortRef.current)
+    );
+    if (shouldMarkCancelled) {
+      void sendVoiceTurnCompletionMarker('cancelled');
+    }
     ttsAbortRef.current?.abort();
     ttsAbortRef.current = null;
     ttsQueueRef.current = [];
@@ -993,6 +1042,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     playbackContextRef.current?.close().catch(() => undefined);
     playbackContextRef.current = null;
     playbackTimeRef.current = 0;
+    playbackPausedRef.current = false;
     setPlaybackPaused(false);
   }
 
@@ -1033,6 +1083,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     playbackSourcesRef.current.clear();
     playbackTimeRef.current = 0;
     ttsStreamDoneRef.current = false;
+    playbackPausedRef.current = false;
     setPlaybackPaused(false);
     void drainTtsQueue(playbackGeneration);
   }
@@ -1102,7 +1153,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
         && ttsQueueRef.current.length === 0
       ) {
         ttsTurnCompletePendingRef.current = false;
-        await streamSentenceTts('', true, generation);
+        await sendVoiceTurnCompletionMarker('success');
       }
     } finally {
       ttsProcessingRef.current = false;
@@ -1125,6 +1176,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
         voiceTurnId: currentTurnIdRef.current,
       }),
       turnComplete,
+      'success',
       {
         onEvent: (event) => {
           if (event.event !== 'audio' || !event.payload.audio || generation !== playbackGenerationRef.current) {
@@ -1144,27 +1196,37 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     );
   }
 
-  async function sendVoiceTurnCompletionMarker() {
+  async function sendVoiceTurnCompletionMarker(completionOutcome: 'success' | 'cancelled' | 'error' = 'success') {
     const voiceSessionId = currentVoiceSessionIdRef.current;
     const voiceTurnId = currentTurnIdRef.current;
     if (!voiceSessionId || !voiceTurnId) {
       return;
     }
-    await voiceApi.streamTts(
-      '',
-      buildVoicePageContext(location.pathname, {
-        conversationId: readActiveVoiceConversationId(),
-        commandIntent: currentCommandIntentRef.current,
-        voiceSessionId,
-        voiceTurnId,
-      }),
-      true,
-      {
-        onEvent: () => undefined,
-        onDone: () => undefined,
-        onError: () => undefined,
-      },
-    ).catch(() => undefined);
+    const markerKey = `${voiceSessionId}:${voiceTurnId}`;
+    if (completedVoiceTurnsRef.current.has(markerKey)) {
+      return;
+    }
+    completedVoiceTurnsRef.current.add(markerKey);
+    try {
+      await voiceApi.streamTts(
+        '',
+        buildVoicePageContext(location.pathname, {
+          conversationId: readActiveVoiceConversationId(),
+          commandIntent: currentCommandIntentRef.current,
+          voiceSessionId,
+          voiceTurnId,
+        }),
+        true,
+        completionOutcome,
+        {
+          onEvent: () => undefined,
+          onDone: () => undefined,
+          onError: () => undefined,
+        },
+      );
+    } catch {
+      completedVoiceTurnsRef.current.delete(markerKey);
+    }
   }
 
   function findSentenceBoundary(text: string): number {
@@ -1179,6 +1241,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (audioContext && audioContext.state === 'running') {
       await audioContext.suspend();
     }
+    playbackPausedRef.current = true;
     setPlaybackPaused(true);
     setNoticeMessage('朗读已暂停');
   }
@@ -1188,6 +1251,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (audioContext && audioContext.state === 'suspended') {
       await audioContext.resume();
     }
+    playbackPausedRef.current = false;
     setPlaybackPaused(false);
     setNoticeMessage('继续朗读');
   }
@@ -1199,6 +1263,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, openAuthModal 
     if (!ttsStreamDoneRef.current || playbackSourceCountRef.current > 0) {
       return;
     }
+    playbackPausedRef.current = false;
     setPlaybackPaused(false);
     setVoiceState('idle');
   }
@@ -1375,6 +1440,21 @@ function buildBaseVoicePageContext(pathname: string): VoicePageContext {
     pageType: 'qna_chat',
     pageTitle: readDocumentTitle('智能对话'),
   };
+}
+
+function mergeVoiceDraftText(base: string, segment: string): string {
+  const normalizedBase = base.trim();
+  const normalizedSegment = segment.trim();
+  if (!normalizedBase) {
+    return normalizedSegment;
+  }
+  if (!normalizedSegment || normalizedBase.endsWith(normalizedSegment)) {
+    return normalizedBase;
+  }
+  if (normalizedSegment.startsWith(normalizedBase)) {
+    return normalizedSegment;
+  }
+  return `${normalizedBase}${normalizedSegment}`;
 }
 
 function readEngineStructuredContext(): Partial<VoicePageContext> {

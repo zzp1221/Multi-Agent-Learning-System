@@ -108,11 +108,15 @@ public class VoiceRealtimeWebSocketHandler extends TextWebSocketHandler {
         JsonNode event = objectMapper.readTree(message.getPayload());
         String type = event.path("type").asText("");
         if ("audio_chunk".equals(type)) {
+            UUID conversationId = parseUuid(event.path("conversationId").asText(""));
+            String pageType = event.path("pageType").asText("");
+            String commandIntent = event.path("commandIntent").asText("");
             state.attachClientContext(
-                parseUuid(event.path("conversationId").asText("")),
-                event.path("pageType").asText(""),
-                event.path("commandIntent").asText("")
+                conversationId,
+                pageType,
+                commandIntent
             );
+            voiceTurnMetricsService.attachConversation(state.sessionId(), state.turnId(), conversationId, pageType, commandIntent);
             appendAudio(session, state, event.path("data").asText(""), event.path("turnId").asText(""));
             return;
         }

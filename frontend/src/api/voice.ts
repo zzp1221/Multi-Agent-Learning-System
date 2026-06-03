@@ -114,6 +114,7 @@ export const voiceApi = {
     text: string,
     context: VoicePageContext | undefined,
     turnComplete: boolean,
+    completionOutcome: 'success' | 'cancelled' | 'error',
     handlers: {
       onEvent: (event: VoiceTtsEvent) => void;
       onDone: () => void;
@@ -129,7 +130,7 @@ export const voiceApi = {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
         },
-        body: JSON.stringify({ text, ...context, turnComplete }),
+        body: JSON.stringify({ text, ...context, turnComplete, completionOutcome }),
         signal,
       },
       missingBodyMessage: '无法读取语音合成流',

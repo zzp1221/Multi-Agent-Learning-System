@@ -49,7 +49,8 @@ class VoiceControllerTest {
             UUID.randomUUID().toString(),
             "qna_chat",
             "ASK",
-            true
+            true,
+            null
         ));
 
         verify(ttsClient, never()).synthesize(any(), any(), any());
@@ -79,11 +80,67 @@ class VoiceControllerTest {
             null,
             null,
             null,
+            null,
             null
         )))
             .isInstanceOf(ApplicationException.class)
             .extracting("code")
             .isEqualTo("VOICE_TTS_TEXT_EMPTY");
+    }
+
+    @Test
+    void cancelledCompletionMarkerRecordsCancelledOutcome() {
+        VoiceMetricLogger metricLogger = mock(VoiceMetricLogger.class);
+        VoiceTurnMetricsService turnMetricsService = new VoiceTurnMetricsService();
+        UUID voiceSessionId = UUID.randomUUID();
+        String turnId = "turn-1";
+        turnMetricsService.startAsrTurn(voiceSessionId, user.userId(), turnId);
+        VoiceController controller = controller(mock(VoiceTtsClient.class), metricLogger, turnMetricsService);
+
+        controller.streamTts(auth(), new VoiceTtsRequest(
+            "",
+            null,
+            voiceSessionId.toString(),
+            turnId,
+            UUID.randomUUID().toString(),
+            "qna_chat",
+            "ASK",
+            true,
+            "cancelled"
+        ));
+
+        verify(metricLogger).record(
+            eq("voice_turn_total_ms"),
+            any(VoiceMetricContext.class),
+            anyLong(),
+            eq("bailian"),
+            eq("qwen3-tts-flash-realtime"),
+            eq("cancelled"),
+            eq(0),
+            isNull(),
+            eq("")
+        );
+    }
+
+    @Test
+    void prewarmReleaseAlsoClosesVoiceSession() {
+        VoiceGatewayService gatewayService = mock(VoiceGatewayService.class);
+        VoiceAsrPrewarmService prewarmService = mock(VoiceAsrPrewarmService.class);
+        VoiceController controller = new VoiceController(
+            gatewayService,
+            mock(VoiceTtsClient.class),
+            new AppProperties(),
+            new SyncTaskExecutor(),
+            mock(VoiceMetricLogger.class),
+            new VoiceTurnMetricsService(),
+            prewarmService
+        );
+        UUID voiceSessionId = UUID.randomUUID();
+
+        controller.releasePrewarmedAsr(auth(), voiceSessionId);
+
+        verify(prewarmService).release(voiceSessionId, user.userId());
+        verify(gatewayService).closeSession(voiceSessionId, user);
     }
 
     private VoiceController controller(

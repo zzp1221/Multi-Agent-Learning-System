@@ -11,6 +11,7 @@ import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
 import com.project.application.voice.VoiceMetricContext;
 import com.project.application.voice.VoiceMetricLogger;
+import com.project.application.voice.VoicePartialDraftService;
 import com.project.application.voice.VoiceTurnMetricsService;
 import com.project.domain.conversation.ConversationMode;
 import com.project.domain.conversation.QnaSession;
@@ -55,6 +56,7 @@ public class ConversationService {
     private final UserProfileCurrentRepository userProfileCurrentRepository;
     private final VoiceMetricLogger voiceMetricLogger;
     private final VoiceTurnMetricsService voiceTurnMetricsService;
+    private final VoicePartialDraftService voicePartialDraftService;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
@@ -63,7 +65,8 @@ public class ConversationService {
         @Qualifier("conversationTaskExecutor") TaskExecutor conversationTaskExecutor,
         UserProfileCurrentRepository userProfileCurrentRepository,
         VoiceMetricLogger voiceMetricLogger,
-        VoiceTurnMetricsService voiceTurnMetricsService
+        VoiceTurnMetricsService voiceTurnMetricsService,
+        VoicePartialDraftService voicePartialDraftService
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
@@ -72,6 +75,7 @@ public class ConversationService {
         this.userProfileCurrentRepository = userProfileCurrentRepository;
         this.voiceMetricLogger = voiceMetricLogger;
         this.voiceTurnMetricsService = voiceTurnMetricsService;
+        this.voicePartialDraftService = voicePartialDraftService;
     }
 
     @Transactional
@@ -181,31 +185,17 @@ public class ConversationService {
                 );
                 long llmStartedAtNanos = System.nanoTime();
                 java.util.concurrent.atomic.AtomicBoolean firstTokenLogged = new java.util.concurrent.atomic.AtomicBoolean(false);
-                pythonAgentClient.stream(
-                    new SmartEngineInvocation(
-                        currentUser.userId(),
-                        UUID.randomUUID(),
-                        UUID.randomUUID().toString(),
-                        conversationId,
-                        request.resolvedServiceType(),
-                        buildConversationParams(currentUser, conversationId, request, history)
-                    ),
-                    event -> {
-                        collectAssistantReply(assistantReply, event);
-                        String chunk = extractVisibleAssistantChunk(event);
-                        if (!chunk.isEmpty() && firstTokenLogged.compareAndSet(false, true)) {
-                            recordVoiceMetric(
-                                "llm_first_token_ms",
-                                voiceTurn,
-                                elapsedMs(llmStartedAtNanos),
-                                "success",
-                                request.normalizedMessage().length(),
-                                chunk.length(),
-                                ""
-                            );
-                        }
-                        sendConversationEvent(emitter, conversationId, sequence, event);
-                    }
+                streamConversationAnswer(
+                    currentUser,
+                    conversationId,
+                    request,
+                    history,
+                    voiceTurn,
+                    assistantReply,
+                    emitter,
+                    sequence,
+                    llmStartedAtNanos,
+                    firstTokenLogged
                 );
                 recordVoiceMetric(
                     "llm_done_ms",
@@ -260,6 +250,59 @@ public class ConversationService {
         } catch (IllegalArgumentException ex) {
             return VoiceTurnRef.empty();
         }
+    }
+
+    private void streamConversationAnswer(
+        JwtAuthenticatedUser currentUser,
+        UUID conversationId,
+        ConversationMessageStreamRequest request,
+        List<ConversationMessageItemResponse> history,
+        VoiceTurnRef voiceTurn,
+        StringBuilder assistantReply,
+        SseEmitter emitter,
+        AtomicInteger sequence,
+        long llmStartedAtNanos,
+        java.util.concurrent.atomic.AtomicBoolean firstTokenLogged
+    ) {
+        java.util.function.Consumer<PythonStreamEvent> eventConsumer = event -> {
+            collectAssistantReply(assistantReply, event);
+            String chunk = extractVisibleAssistantChunk(event);
+            if (!chunk.isEmpty() && firstTokenLogged.compareAndSet(false, true)) {
+                recordVoiceMetric(
+                    "llm_first_token_ms",
+                    voiceTurn,
+                    elapsedMs(llmStartedAtNanos),
+                    "success",
+                    request.normalizedMessage().length(),
+                    chunk.length(),
+                    ""
+                );
+            }
+            sendConversationEvent(emitter, conversationId, sequence, event);
+        };
+        VoicePartialDraftService.ReusableDraft reusableDraft = takeReusableDraft(voiceTurn, request.normalizedMessage());
+        if (reusableDraft != null) {
+            voicePartialDraftService.streamDraft(reusableDraft, eventConsumer);
+            return;
+        }
+        pythonAgentClient.stream(
+            new SmartEngineInvocation(
+                currentUser.userId(),
+                UUID.randomUUID(),
+                UUID.randomUUID().toString(),
+                conversationId,
+                request.resolvedServiceType(),
+                buildConversationParams(currentUser, conversationId, request, history)
+            ),
+            eventConsumer
+        );
+    }
+
+    private VoicePartialDraftService.ReusableDraft takeReusableDraft(VoiceTurnRef voiceTurn, String finalText) {
+        if (!voiceTurn.isPresent() || voicePartialDraftService == null) {
+            return null;
+        }
+        return voicePartialDraftService.takeReusableDraft(voiceTurn.voiceSessionId(), voiceTurn.turnId(), finalText);
     }
 
     private void recordVoiceMetric(
