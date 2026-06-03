@@ -1,6 +1,6 @@
 # 智学引擎 ZhiXue Engine
 
-> 最后更新：2026-06-03
+> 最后更新：2026-06-04
 
 智学引擎是一个面向计算机学习场景的 AI 个性化学习系统。项目采用 React 前端、Java 控制平面、Python 多智能体运行时和 PostgreSQL/MongoDB/Redis 数据层，支持流式问答、资源生成、个性化学习方案、学习效果评估闭环、错题复习和学习画像。
 
@@ -43,6 +43,7 @@ flowchart LR
 - **资源包生成**：`RESOURCE_GENERATION` 使用 LangGraph `ResourceBundleWorkflow`，按 `resourceTypes[]` 并发 fan-out 到文档、PPT、思维导图、代码、练习、视频等资源 Agent。
 - **悬浮智能语音助手**：全局右下角麦克风入口，前端通过 AudioWorklet 采集 16k PCM，Java `/api/voice/**` 作为唯一语音网关，支持百炼 Qwen 实时 ASR partial/final、流式 TTS、停止/暂停/继续朗读、最近语音文本历史、页面上下文问答、学习动作控制和打断式 cancel，并复用现有聊天 SSE。
 - **无伪生成边界**：可发布生成资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 和 `fromCache`，Python、Java、前端三层共同校验。
+- **记忆系统与上下文工程**：会话消息、结构化摘要、学习画像、知识掌握图谱、学习计划和练习结果分层持久化；每次 Agent 执行前由 `SnapshotBuilder` 聚合成系统提示词上下文，长对话由 `ConversationCompactor` 压缩为结构化摘要。
 - **学习画像与错题本**：画像维度规则集中在 `profile_feature_registry.py`，错题本用 SM-2 间隔重复算法组织复习；学习画像页提供按主题归并的知识掌握图谱，以“下一步优先关注”和紧凑概览帮助学生提取重点。
 
 ## 路由与服务类型
@@ -125,6 +126,28 @@ Nginx 对 `/api/smart-engine/tasks/{taskId}/stream` 和 `/api/conversations/{con
 | Redis | idempotency key、rate limit、SmartEngine task stream、DLQ、cancel marker、运行时缓存 |
 
 `vector_data.dump` 随仓库提供预置向量数据，首次部署由 `restore_vector_data.sh` 自动恢复。
+
+## 记忆系统与上下文工程
+
+系统把“长期记忆”和“本次任务上下文”拆开处理，避免把所有历史直接塞进 prompt。
+
+| 层 | 主要模块 | 存储/来源 | 用途 |
+|---|---|---|---|
+| 原始会话记忆 | `conversation_message_store.py`、Java `ConversationService` | MongoDB `conversation_messages` / `conversation_stream_events` | 保存多轮问答、图片上下文和流式事件，支持历史恢复与断线重放 |
+| 结构化会话摘要 | `ConversationCompactor`、`conversation_summary_store.py` | MongoDB `conversation_summaries` | 长对话超出 token 预算时保留主题、目标、薄弱点、未解决问题和最近进展 |
+| 学习画像记忆 | `profile_store.py`、`profile_feature_registry.py` | PostgreSQL `app.user_profile_current` / `app.user_profile_snapshot` | 维护专业方向、知识基础、学习偏好、薄弱点、资源偏好和置信度生命周期 |
+| 知识掌握记忆 | `knowledge_graph_store.py`、Java `LearnerKnowledgeGraphService` | PostgreSQL `app.learner_knowledge_node` / `app.learner_knowledge_edge` | 记录知识点掌握度、依赖关系和状态，前端按主题归并后展示重点 |
+| 学习计划记忆 | `learning_plan_store.py` | PostgreSQL `app.learning_plan` / `app.learning_plan_snapshot` | 保存当前学习路径和版本快照，记录触发来源和计划演化 |
+| 练习与错题记忆 | `practice_store.py`、Java `MistakeBookService` | PostgreSQL `practice_submission` / `mistake_record` / `mistake_review_result` | 形成掌握度诊断、错题复习和间隔重复调度信号 |
+
+上下文工程链路：
+
+1. 前端提交任务时携带当前页面、会话、语音命令或学习服务输入等轻量 `learningContext`。
+2. Java `PersonalizedLearningContextService` 在 `PERSONALIZED_LEARNING` 提交前读取近 30 天画像、知识掌握、练习、评估、错题和资源使用信号，合并进任务参数。
+3. Python `SnapshotBuilder` 将 `profile`、`profileAnalysis`、`learningContext`、最近活动和检索状态整理成 `SystemSnapshot`。
+4. 每个 Agent 的 system prompt 通过 `SystemSnapshot` 注入课程、章节、进度、学生水平、薄弱点、偏好、最近错误和会话元数据。
+5. 长对话进入 `ConversationCompactor`，只把早期历史压缩为结构化摘要，保留最近轮次原文，摘要可写入 MongoDB 并在后续对话复用。
+6. Agent 执行结果再写回画像、知识图谱、学习计划、练习或会话存储，形成下一次任务可读取的闭环。
 
 ## 快速开始
 
