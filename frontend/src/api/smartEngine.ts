@@ -3,6 +3,7 @@ import type { AxiosRequestConfig } from 'axios';
 import { streamSse } from './sse';
 
 export type SmartEngineServiceType =
+  | 'PERSONALIZED_LEARNING'
   | 'RESOURCE_GENERATION'
   | 'PATH_PLANNING'
   | 'RESOURCE_PUSH'

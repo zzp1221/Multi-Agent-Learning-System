@@ -5,6 +5,7 @@ import {
   assessmentDimensionOptions,
   pushResourceTypeOptions,
   resourceTypeButtons,
+  type AgentTraceStepView,
   type AssessmentForm,
   type CompletedResourceView,
   type CriticReviewView,
@@ -41,6 +42,20 @@ function DeferredMermaidDiagram(props: { chart: string }) {
       <LazyMermaidDiagram {...props} />
     </Suspense>
   );
+}
+
+function formatAgentTraceName(agentName: string): string {
+  const labels: Record<string, string> = {
+    profile: '画像分析智能体',
+    evaluation: '掌握度诊断智能体',
+    query_rewrite: '检索改写智能体',
+    retrieval: '知识检索智能体',
+    path_planning: '路径规划智能体',
+    resource_bundle: '资源整合智能体',
+    resource_push: '资源推荐智能体',
+    critic: '质量审查智能体',
+  };
+  return labels[agentName] || agentName || '智能体';
 }
 
 export function ServiceDynamicForm(props: {
@@ -163,10 +178,13 @@ export function ServiceDynamicForm(props: {
     );
   }
 
-  if (props.service === 'path') {
+  if (props.service === 'path' || props.service === 'personalized') {
+    const isPersonalized = props.service === 'personalized';
     return (
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
-        <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">学习路径规划参数</div>
+        <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+          {isPersonalized ? '个性化学习方案参数' : '学习路径规划参数'}
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
           <input
             value={props.pathForm.targetPeriod}
@@ -188,6 +206,22 @@ export function ServiceDynamicForm(props: {
           placeholder="当前学习进度"
           className={`${baseInputClass} mt-3`}
         />
+        {isPersonalized ? (
+          <label className="mt-3 block">
+            <span className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">优先资源类型</span>
+            <select
+              value={props.pushForm.preferredType}
+              onChange={(e) => props.onPushChange({ ...props.pushForm, preferredType: e.target.value as typeof props.pushForm.preferredType })}
+              className={baseSelectClass}
+            >
+              {pushResourceTypeOptions.map((item) => (
+                <option key={item.type} value={item.type}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
     );
   }
@@ -415,6 +449,7 @@ export function TaskResultPanel(props: {
   completedResources: CompletedResourceView[];
   learningPlan: LearningPlanView | null;
   criticReview: CriticReviewView | null;
+  agentTrace: AgentTraceStepView[];
   resultHistory: EngineTaskResultRecord[];
   selectedResultTaskId: string;
   practiceBatch: PracticeQuestionBatch | null;
@@ -436,6 +471,9 @@ export function TaskResultPanel(props: {
         ? [props.inlineResource]
         : [];
   const visiblePracticeBatch = selectedRecord?.practiceBatch ?? props.practiceBatch;
+  const visibleLearningPlan = selectedRecord?.learningPlan ?? props.learningPlan;
+  const visibleCriticReview = selectedRecord?.criticReview ?? props.criticReview;
+  const visibleAgentTrace = selectedRecord?.agentTrace?.length ? selectedRecord.agentTrace : props.agentTrace;
   const visibleCompletedResources = selectedRecord?.completedResources?.length
     ? selectedRecord.completedResources
     : props.completedResources.length
@@ -455,7 +493,7 @@ export function TaskResultPanel(props: {
             : []),
         ];
   const visibleJudgeResult = selectedRecord?.judgeResult ?? props.judgeResult;
-  const externalRecommendations = props.service === 'push'
+  const externalRecommendations = props.service === 'push' || props.service === 'personalized'
     ? visibleDownloadLinks.filter(isExternalRecommendation)
     : [];
   const fileDownloads = props.service === 'push'
@@ -509,6 +547,9 @@ export function TaskResultPanel(props: {
     || visibleCompletedResources.length > 0
     || Boolean(visiblePracticeBatch)
     || Boolean(visibleJudgeResult)
+    || Boolean(visibleLearningPlan)
+    || Boolean(visibleCriticReview)
+    || visibleAgentTrace.length > 0
     || props.resultHistory.length > 0;
   if (!hasContent) {
     return null;
@@ -585,6 +626,75 @@ export function TaskResultPanel(props: {
             {externalRecommendations.map((item) => (
               <ExternalResourceRecommendationCard key={`${item.title}-${item.url}`} item={item} />
             ))}
+          </div>
+        </div>
+      ) : null}
+
+      {visibleAgentTrace.length > 0 ? (
+        <div className="modern-card overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <Sparkles className="h-4 w-4 text-primary-500" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">多智能体协同轨迹</span>
+          </div>
+          <div className="grid gap-2 p-3 sm:p-4 md:grid-cols-2">
+            {visibleAgentTrace.map((item, index) => (
+              <div key={`${item.agentName}-${index}`} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-600 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-700">
+                  {index + 1}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    <span>{formatAgentTraceName(item.agentName)}</span>
+                    {item.status ? <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-400 dark:ring-slate-700">{item.status}</span> : null}
+                  </div>
+                  {item.message || item.stage ? (
+                    <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.message || item.stage}</div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {visibleLearningPlan ? (
+        <div className="modern-card overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <BookOpen className="h-4 w-4 text-primary-500" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">学习路径</span>
+          </div>
+          <div className="space-y-3 p-3 sm:p-4">
+            {visibleLearningPlan.goal ? (
+              <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{visibleLearningPlan.goal}</div>
+            ) : null}
+            {visibleLearningPlan.steps.map((step, index) => (
+              <div key={`${step.stepId}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  {index + 1}. {step.title || step.stepId}
+                </div>
+                {step.intent ? <div className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">{step.intent}</div> : null}
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  {step.agentName ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-700">{step.agentName}</span> : null}
+                  {step.serviceType ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-700">{step.serviceType}</span> : null}
+                  {step.status ? <span className="rounded-full bg-primary-50 px-2 py-1 text-primary-600 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-700">{step.status}</span> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {visibleCriticReview ? (
+        <div className="modern-card overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+            <Sparkles className="h-4 w-4 text-primary-500" />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">质量审查</span>
+          </div>
+          <div className="space-y-3 p-3 text-sm leading-7 text-slate-600 dark:text-slate-300 sm:p-4">
+            {visibleCriticReview.verdict ? <div className="font-semibold text-slate-800 dark:text-slate-100">结论：{visibleCriticReview.verdict}</div> : null}
+            {visibleCriticReview.summaryText ? <div>{visibleCriticReview.summaryText}</div> : null}
+            {visibleCriticReview.issues.length > 0 ? <div>问题：{visibleCriticReview.issues.join('；')}</div> : null}
+            {visibleCriticReview.suggestions.length > 0 ? <div>建议：{visibleCriticReview.suggestions.join('；')}</div> : null}
           </div>
         </div>
       ) : null}

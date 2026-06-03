@@ -76,6 +76,11 @@ class EvaluationAgent(PlaceholderAgent):
             raise RuntimeError("Evaluation LLM provenance is missing")
         primary_dimension = self._resolve_primary_dimension(params)
         params["evaluationResult"] = payload.model_dump(by_alias=True)
+        params["masteryDiagnosis"] = {
+            **payload.model_dump(by_alias=True),
+            "primaryDimension": primary_dimension,
+            "diagnosisSource": "evaluation",
+        }
         params["profileSource"] = "EVALUATION"
         report_markdown = self._render_dimension_report(
             dimension=primary_dimension,

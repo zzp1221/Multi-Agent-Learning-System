@@ -9,6 +9,7 @@ import java.util.Arrays;
  * Supported service types across tutoring and smart-engine flows.
  */
 public enum ServiceType {
+    PERSONALIZED_LEARNING,
     RESOURCE_GENERATION,
     PATH_PLANNING,
     RESOURCE_PUSH,

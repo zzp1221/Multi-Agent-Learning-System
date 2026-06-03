@@ -222,6 +222,49 @@ def test_stream_endpoint_rejects_unknown_service_type(client) -> None:
     assert response.status_code == 400
 
 
+def test_stream_endpoint_accepts_personalized_learning_service_type(client, monkeypatch) -> None:
+    class StubSupervisor:
+        def resolve_route(self, service_type, params):
+            assert service_type == "PERSONALIZED_LEARNING"
+            assert params["topic"] == "联合索引"
+            return None
+
+        async def stream(self, request, cancelled=None):
+            del cancelled
+            yield ProgressSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=1,
+                payload=ProgressPayload(stage="profile", percent=10, message="画像分析"),
+            )
+            yield DoneSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=2,
+                payload=DonePayload(status="SUCCESS", summary="个性化学习方案完成"),
+            )
+
+    monkeypatch.setattr(server, "SUPERVISOR", StubSupervisor())
+    payload = {
+        "serviceType": "personalized_learning",
+        "params": {"topic": "联合索引"},
+        "taskId": "task-personalized",
+        "traceId": "trace-personalized",
+    }
+
+    with client.stream(
+        "POST",
+        "/internal/smart-engine/stream",
+        json=payload,
+        headers=INTERNAL_HEADERS,
+    ) as response:
+        assert response.status_code == 200
+        lines = [line for line in response.iter_lines() if line]
+
+    event_names = [line.removeprefix("event: ") for line in lines[::2]]
+    assert event_names == ["progress", "done"]
+
+
 def test_engine_stream_request_normalizes_legacy_java_payload() -> None:
     request = EngineStreamRequest.model_validate(
         {

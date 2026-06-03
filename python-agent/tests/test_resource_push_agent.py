@@ -86,3 +86,78 @@ def test_resource_push_agent_rejects_generic_unrelated_resources() -> None:
         ) < 4
         for title in bad_titles
     )
+
+
+def test_resource_push_agent_binds_generated_assets_to_learning_path_steps() -> None:
+    agent = ResourcePushAgent()
+
+    plan = agent._build_path_bound_resource_plan(
+        learning_path={
+            "steps": [
+                {
+                    "stepId": "step-1",
+                    "title": "理解最左匹配",
+                    "objective": "掌握联合索引最左匹配规则",
+                    "targetKnowledgePoints": ["最左匹配"],
+                    "preferredResourceTypes": ["DOCUMENT", "VIDEO"],
+                }
+            ]
+        },
+        params={
+            "generatedAssets": [
+                {
+                    "assetType": "DOCUMENT",
+                    "title": "最左匹配导学文档",
+                    "summary": "讲解最左匹配规则",
+                    "generatedBy": "LLM",
+                    "contentOrigin": "LLM",
+                    "provider": "test",
+                    "model": "test-model",
+                    "agentName": "document_generation",
+                    "evidenceIds": ["doc-1"],
+                    "fallback": False,
+                    "fromCache": False,
+                }
+            ]
+        },
+        profile_context={"preferredResourceTypes": ["DOCUMENT"], "primaryWeakPoint": "最左匹配"},
+    )
+
+    step_plan = plan["stepResources"][0]
+    assert step_plan["stepId"] == "step-1"
+    assert step_plan["resources"][0]["source"] == "generated"
+    assert step_plan["resources"][0]["fallback"] is False
+    assert plan["coverageGaps"][0]["missingResourceTypes"] == ["VIDEO"]
+
+
+def test_resource_push_agent_uses_retrieval_evidence_without_faking_download_url() -> None:
+    agent = ResourcePushAgent()
+
+    plan = agent._build_path_bound_resource_plan(
+        learning_path={
+            "steps": [
+                {
+                    "stepId": "step-1",
+                    "title": "理解最左匹配",
+                    "targetKnowledgePoints": ["最左匹配"],
+                    "preferredResourceTypes": ["READING"],
+                }
+            ]
+        },
+        params={
+            "retrievalEvidence": [
+                {
+                    "title": "联合索引知识点",
+                    "slug": "db-index",
+                    "channel": "vector",
+                    "evidence": "最左匹配是联合索引的重要规则",
+                    "url": None,
+                }
+            ]
+        },
+        profile_context={},
+    )
+
+    resource = plan["stepResources"][0]["resources"][0]
+    assert resource["source"] == "retrieval_evidence"
+    assert resource["downloadUrl"] is None

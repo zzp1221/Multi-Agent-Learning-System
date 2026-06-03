@@ -3,6 +3,7 @@ import { smartEngineApi } from '../api/smartEngine';
 import { renderTalkingVideoInBrowser } from '../utils/browserVideoRenderer';
 import type {
   EngineService,
+  AgentTraceStepView,
   ConversationStreamEventPayload,
   InlineResourceView,
   CriticReviewView,
@@ -87,6 +88,7 @@ export async function runByApiTask({
   setJudgeResult,
   setLearningPlan,
   setCriticReview,
+  setAgentTrace,
   taskStreamAbortRef,
 }: RunByApiTaskArgs): Promise<'completed' | 'running' | 'failed' | 'aborted' | 'unauthorized'> {
   const browserRenderState = {
@@ -162,6 +164,9 @@ export async function runByApiTask({
     },
     onCriticReview: (item) => {
       setCriticReview(item);
+    },
+    onAgentTrace: (items) => {
+      setAgentTrace(items);
     },
   };
 
@@ -389,6 +394,10 @@ async function consumeTaskStreamEvent(
     if (criticReview) {
       handlers.onCriticReview(criticReview);
     }
+    const agentTrace = readAgentTrace(envelope.payload);
+    if (agentTrace.length > 0) {
+      handlers.onAgentTrace(agentTrace);
+    }
     const status = readString(envelope.payload?.status).toUpperCase();
     const doneLabel = status === 'FAILED' || status === 'ERROR'
       ? '任务失败'
@@ -447,6 +456,10 @@ async function applyTaskSnapshot(
     const criticReview = readCriticReview(task.responseSummary);
     if (criticReview) {
       handlers.onCriticReview(criticReview);
+    }
+    const agentTrace = readAgentTrace(task.responseSummary);
+    if (agentTrace.length > 0) {
+      handlers.onAgentTrace(agentTrace);
     }
     if (summary) {
       handlers.onSummary(summary);
@@ -611,14 +624,33 @@ function parseTaskStreamEnvelope(raw: string): { payload?: Record<string, unknow
 }
 
 function responseSummaryToLines(summary: Record<string, unknown>, service: EngineService): string[] {
-  if (service === 'path') {
+  if (service === 'path' || service === 'personalized') {
     const learningPath = readRecord(summary.learningPath);
     if (learningPath) {
-      return formatLearningPathLines(learningPath);
+      const lines = formatLearningPathLines(learningPath);
+      const resourcePushPlan = readRecord(summary.resourcePushPlan);
+      const stepResources = Array.isArray(resourcePushPlan?.stepResources) ? resourcePushPlan.stepResources : [];
+      if (stepResources.length > 0) {
+        lines.push(`资源匹配：已为 ${stepResources.length} 个学习步骤绑定资源或检索证据`);
+      }
+      return lines;
     }
   }
   return Object.entries(summary)
-    .filter(([key]) => !['summary', 'summaryText', 'message', 'inlineContent', 'questions', 'items'].includes(key))
+    .filter(([key]) => ![
+      'summary',
+      'summaryText',
+      'message',
+      'inlineContent',
+      'questions',
+      'items',
+      'learningPath',
+      'learningPlan',
+      'resourcePushPlan',
+      'pushedResources',
+      'agentTrace',
+      'criticReview',
+    ].includes(key))
     .map(([key, value]) => `${labelForSummaryKey(key, service)}：${stringifyCompact(value)}`)
     .filter((line) => !line.endsWith('：'));
 }
@@ -1297,6 +1329,25 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
     };
   }
 
+  if (service === 'personalized') {
+    const preferredType = normalizeResourceType(payload.pushForm.preferredType);
+    const resourceTypes = uniqueResourceTypes(['DOCUMENT', preferredType, 'QUIZ', 'CODE']);
+    const topic = payload.resourceForm.keyPoints || payload.pathForm.currentProgress || payload.resourceForm.course || '个性化学习方案';
+    return {
+      targetPeriod: payload.pathForm.targetPeriod,
+      weeklyHours: payload.pathForm.weeklyHours,
+      currentProgress: payload.pathForm.currentProgress,
+      resourceType: preferredType,
+      resourceTypes,
+      query: `生成个性化学习方案：${topic}`,
+      topic,
+      learningContext: {
+        course: payload.resourceForm.course,
+        chapter: payload.resourceForm.keyPoints || topic,
+      },
+    };
+  }
+
   if (service === 'push') {
     const preferredTypeLabelMap: Record<string, string> = {
       CODE_CASE: '代码案例',
@@ -1531,13 +1582,13 @@ function labelForSummaryKey(key: string, service: EngineService): string {
     return commonLabels[key];
   }
 
-  if (service === 'path' && key === 'plan') {
+  if ((service === 'path' || service === 'personalized') && key === 'plan') {
     return '学习路径';
   }
   if (service === 'assessment' && key === 'judgeResult') {
     return '评估结果';
   }
-  if (service === 'push' && key === 'candidates') {
+  if ((service === 'push' || service === 'personalized') && key === 'candidates') {
     return '候选资源';
   }
   if (service === 'resource' && key === 'segments') {
@@ -1981,7 +2032,7 @@ function readPracticeJudgeResult(payload: Record<string, unknown> | undefined): 
 }
 
 function readLearningPlan(payload: Record<string, unknown> | undefined): LearningPlanView | null {
-  const record = readRecord(payload?.learningPlan);
+  const record = readRecord(payload?.learningPlan) ?? readRecord(payload?.learningPath);
   if (!record) {
     return null;
   }
@@ -1992,7 +2043,7 @@ function readLearningPlan(payload: Record<string, unknown> | undefined): Learnin
     .map((item) => ({
       stepId: readString(item.stepId),
       title: readString(item.title),
-      intent: readString(item.intent) || undefined,
+      intent: readString(item.intent) || readString(item.objective) || readString(item.reason) || undefined,
       agentName: readString(item.agentName) || undefined,
       serviceType: readString(item.serviceType) || undefined,
       status: readString(item.status) || undefined,
@@ -2003,7 +2054,7 @@ function readLearningPlan(payload: Record<string, unknown> | undefined): Learnin
     return null;
   }
   return {
-    planId: readString(record.planId),
+    planId: readString(record.planId) || readString(record.goal),
     goal: readString(record.goal),
     status: readString(record.status) || undefined,
     createdBy: readString(record.createdBy) || undefined,
@@ -2034,6 +2085,23 @@ function readCriticReview(payload: Record<string, unknown> | undefined): CriticR
     suggestions,
     summaryText: summaryText || undefined,
   };
+}
+
+function readAgentTrace(payload: Record<string, unknown> | undefined): AgentTraceStepView[] {
+  const rawTrace = payload?.agentTrace;
+  if (!Array.isArray(rawTrace)) {
+    return [];
+  }
+  return rawTrace
+    .map((item) => readRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({
+      agentName: readString(item.agentName),
+      status: readString(item.status),
+      stage: readString(item.stage) || undefined,
+      message: readString(item.message) || undefined,
+    }))
+    .filter((item) => item.agentName || item.stage || item.message);
 }
 
 function readNumericRaw(value: unknown): number | undefined {

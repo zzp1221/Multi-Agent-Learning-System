@@ -1,6 +1,7 @@
 import type { ConversationMessageItem } from '../api/conversation';
 import {
   QNA_GREETING,
+  type AgentTraceStepView,
   type ChatMessage,
   type CompletedResourceView,
   type CriticReviewView,
@@ -19,7 +20,7 @@ export const QNA_SNAPSHOT_STORAGE_KEY = 'learning_studio_qna_snapshot';
 export const QNA_CONVERSATION_CACHE_STORAGE_KEY = 'learning_studio_qna_cache';
 export const SELECTED_CONVERSATION_STORAGE_KEY = 'learning_studio_selected_conversation';
 export const ACTIVE_CONVERSATION_ID_STORAGE_KEY = 'learning_studio_active_conversation_id';
-export const DEFAULT_ENGINE_SERVICE: EngineService = 'push';
+export const DEFAULT_ENGINE_SERVICE: EngineService = 'personalized';
 
 export interface SelectedConversationSnapshot {
   conversationId: string;
@@ -134,6 +135,7 @@ export function createEmptyEngineTaskSnapshot(baseState: EngineState = 'ENGINE_I
     judgeResult: null,
     learningPlan: null,
     criticReview: null,
+    agentTrace: [],
     resultHistory: [],
     selectedResultTaskId: '',
   };
@@ -142,6 +144,7 @@ export function createEmptyEngineTaskSnapshot(baseState: EngineState = 'ENGINE_I
 export function createInitialEngineSnapshots(): Record<EngineService, EngineTaskSnapshot> {
   return {
     resource: createEmptyEngineTaskSnapshot(),
+    personalized: createEmptyEngineTaskSnapshot(),
     path: createEmptyEngineTaskSnapshot(),
     push: createEmptyEngineTaskSnapshot(),
     assessment: createEmptyEngineTaskSnapshot(),
@@ -247,6 +250,21 @@ function normalizeCriticReview(value: unknown): CriticReviewView | null {
   };
 }
 
+function normalizeAgentTrace(value: unknown): AgentTraceStepView[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is Partial<AgentTraceStepView> => Boolean(item && typeof item === 'object'))
+    .map((item) => ({
+      agentName: String(item.agentName || ''),
+      status: String(item.status || ''),
+      stage: item.stage ? String(item.stage) : undefined,
+      message: item.message ? String(item.message) : undefined,
+    }))
+    .filter((item) => item.agentName || item.stage || item.message);
+}
+
 function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): EngineTaskResultRecord | null {
   if (!record.taskId) {
     return null;
@@ -267,6 +285,7 @@ function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): Eng
     judgeResult: record.judgeResult ?? null,
     learningPlan: normalizeLearningPlan(record.learningPlan),
     criticReview: normalizeCriticReview(record.criticReview),
+    agentTrace: normalizeAgentTrace(record.agentTrace),
     createdAt: typeof record.createdAt === 'number' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : now,
   };
@@ -293,6 +312,7 @@ function createTaskResultRecord(
     judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
     learningPlan: overrides.learningPlan ?? snapshot.learningPlan,
     criticReview: overrides.criticReview ?? snapshot.criticReview,
+    agentTrace: overrides.agentTrace ?? snapshot.agentTrace,
     createdAt: overrides.createdAt ?? now,
     updatedAt: overrides.updatedAt ?? now,
   };
@@ -329,6 +349,7 @@ function upsertTaskResultRecord(
     judgeResult: overrides.judgeResult ?? snapshot.judgeResult,
     learningPlan: overrides.learningPlan ?? snapshot.learningPlan,
     criticReview: overrides.criticReview ?? snapshot.criticReview,
+    agentTrace: overrides.agentTrace ?? snapshot.agentTrace,
     createdAt: current.createdAt,
     updatedAt: Date.now(),
   };
@@ -354,6 +375,7 @@ function sanitizeEngineSnapshot(snapshot: EngineTaskSnapshot): EngineTaskSnapsho
     completedResources: createCompletedResourcesFromSnapshot(snapshot),
     learningPlan: normalizeLearningPlan(snapshot.learningPlan),
     criticReview: normalizeCriticReview(snapshot.criticReview),
+    agentTrace: normalizeAgentTrace(snapshot.agentTrace),
     resultHistory: Array.isArray(snapshot.resultHistory)
       ? snapshot.resultHistory.map(normalizeTaskResultRecord).filter((item): item is EngineTaskResultRecord => Boolean(item))
       : [],

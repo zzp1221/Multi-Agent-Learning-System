@@ -105,6 +105,7 @@ class PathPlanningAgent(PlaceholderAgent):
             system_prompt=system_prompt,
             planning_context=planning_context,
         )
+        plan = self._enrich_learning_plan(plan=plan, planning_context=planning_context)
         metadata = await self._safe_save_learning_plan(
             user_id=user_id,
             course_id=self._resolve_course_id(params),
@@ -125,9 +126,13 @@ class PathPlanningAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
     ) -> dict[str, Any]:
         del tool_input
-        evaluation = params.get("evaluationResult", {})
-        profile = params.get("profile", {})
+        evaluation = self._safe_dict(params.get("masteryDiagnosis")) or self._safe_dict(params.get("evaluationResult")) or {}
+        profile_analysis = self._safe_dict(params.get("profileAnalysis")) or {}
+        profile = profile_analysis or self._safe_dict(params.get("profile")) or {}
         judge_result = params.get("judgeResult", {})
+        retrieval_evidence = params.get("retrievalEvidence")
+        if not isinstance(retrieval_evidence, list):
+            retrieval_evidence = []
         weak_point_details = [
             item for item in profile.get("weakPointDetails", [])
             if isinstance(item, dict)
@@ -139,6 +144,7 @@ class PathPlanningAgent(PlaceholderAgent):
                 *list(evaluation.get("nextFocus", [])),
                 *list(judge_result.get("weakKnowledgeTags", [])),
                 *list(profile.get("knowledgeGaps", [])),
+                *list(profile.get("weakPoints", [])),
                 *[str(item.get("topic", "")) for item in weak_point_details],
                 *list(snapshot.knowledge_gaps),
             ]
@@ -160,6 +166,7 @@ class PathPlanningAgent(PlaceholderAgent):
                 [
                     *list(evaluation.get("weaknesses", [])),
                     *list(profile.get("knowledgeGaps", [])),
+                    *list(profile.get("weakPoints", [])),
                     *[str(item.get("topic", "")) for item in weak_point_details],
                     *list(snapshot.knowledge_gaps),
                 ]
@@ -177,6 +184,9 @@ class PathPlanningAgent(PlaceholderAgent):
             "weakPointDetails": weak_point_details,
             "currentGoal": current_goal if isinstance(current_goal, dict) else {},
             "weakestSkills": weakest_skills,
+            "retrievalEvidence": retrieval_evidence[:8],
+            "profileAnalysis": profile_analysis,
+            "masteryDiagnosis": evaluation,
             "recentMistakes": list(snapshot.recent_mistakes),
             "triggerSource": self._resolve_trigger_source(params),
         }
@@ -253,7 +263,10 @@ class PathPlanningAgent(PlaceholderAgent):
     ) -> dict[str, Any]:
         return {
             "evaluationResult": params.get("evaluationResult", {}),
+            "masteryDiagnosis": params.get("masteryDiagnosis", {}),
             "profile": params.get("profile", {}),
+            "profileAnalysis": params.get("profileAnalysis", {}),
+            "retrievalEvidence": params.get("retrievalEvidence", []),
             "learningContext": params.get("learningContext", {}),
             "plannerInputs": {
                 "targetPeriod": str(params.get("targetPeriod") or "").strip(),
@@ -268,6 +281,51 @@ class PathPlanningAgent(PlaceholderAgent):
             },
             "planningContext": planning_context,
         }
+
+    def _enrich_learning_plan(
+        self,
+        *,
+        plan: LearningPlanPayload,
+        planning_context: dict[str, Any],
+    ) -> LearningPlanPayload:
+        serialized = plan.model_dump(by_alias=True)
+        preferred_types = self._resolve_preferred_resource_types(planning_context)
+        focus_points = self._unique_items(
+            [
+                *list(planning_context.get("nextFocus", [])),
+                *list(planning_context.get("weaknesses", [])),
+            ]
+        )
+        enriched_steps: list[dict[str, Any]] = []
+        for index, raw_step in enumerate(serialized.get("steps") or [], start=1):
+            if not isinstance(raw_step, dict):
+                continue
+            target_points = raw_step.get("targetKnowledgePoints")
+            if not isinstance(target_points, list) or not target_points:
+                target_points = focus_points[:2]
+            step_resource_types = raw_step.get("preferredResourceTypes")
+            if not isinstance(step_resource_types, list) or not step_resource_types:
+                step_resource_types = preferred_types
+            enriched_steps.append(
+                {
+                    **raw_step,
+                    "stepId": raw_step.get("stepId") or f"step-{index}",
+                    "order": raw_step.get("order") or index,
+                    "targetKnowledgePoints": target_points,
+                    "preferredResourceTypes": step_resource_types,
+                    "checkpoint": raw_step.get("checkpoint") or raw_step.get("successCriteria") or raw_step.get("objective"),
+                }
+            )
+        serialized["steps"] = enriched_steps
+        return LearningPlanPayload.model_validate(serialized)
+
+    def _resolve_preferred_resource_types(self, planning_context: dict[str, Any]) -> list[str]:
+        raw_types = planning_context.get("preferredResourceTypes")
+        normalized = [str(item).strip().upper() for item in raw_types if str(item).strip()] if isinstance(raw_types, list) else []
+        for required in ("DOCUMENT", "VIDEO", "QUIZ", "CODE"):
+            if required not in normalized:
+                normalized.append(required)
+        return normalized[:4]
 
     async def _safe_save_learning_plan(
         self,
@@ -299,8 +357,8 @@ class PathPlanningAgent(PlaceholderAgent):
             )
 
     def _resolve_goal(self, params: dict[str, Any]) -> str:
-        evaluation = params.get("evaluationResult", {})
-        profile = params.get("profile", {})
+        evaluation = self._safe_dict(params.get("masteryDiagnosis")) or self._safe_dict(params.get("evaluationResult")) or {}
+        profile = self._safe_dict(params.get("profileAnalysis")) or self._safe_dict(params.get("profile")) or {}
         current_goal = profile.get("currentGoal", {}) if isinstance(profile.get("currentGoal", {}), dict) else {}
         return str(
             params.get("goal")
@@ -319,6 +377,8 @@ class PathPlanningAgent(PlaceholderAgent):
             return "PRACTICE_RESULT"
         if params.get("evaluationResult"):
             return "EVALUATION"
+        if params.get("profileAnalysis"):
+            return "PROFILE_ANALYSIS"
         if params.get("profileUpdate"):
             return "PROFILE_UPDATE"
         return "INITIAL"
@@ -336,6 +396,9 @@ class PathPlanningAgent(PlaceholderAgent):
             seen.add(text)
             normalized.append(text)
         return normalized
+
+    def _safe_dict(self, value: Any) -> dict[str, Any] | None:
+        return value if isinstance(value, dict) else None
 
     def _lowest_mastery_skills(self, skill_mastery: Any) -> list[str]:
         if not isinstance(skill_mastery, dict):

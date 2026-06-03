@@ -1,10 +1,10 @@
 import type { ComponentType } from 'react';
-import { ChartColumn, Compass, Sparkles, Target } from 'lucide-react';
+import { ChartColumn, Compass, Sparkles } from 'lucide-react';
 import type { SmartEngineServiceType, SmartEngineStreamEvent, SmartEngineTaskResponse, UserProfileResponse } from '../api/smartEngine';
 import type { ConversationStreamEventPayload } from '../api/conversation';
 import type { VideoCardStyle } from '../components/VideoCard';
 
-export type EngineService = 'resource' | 'path' | 'push' | 'assessment';
+export type EngineService = 'resource' | 'personalized' | 'path' | 'push' | 'assessment';
 export type ResourceType = 'EXPLANATION' | 'CODE_CASE' | 'QUIZ' | 'MINDMAP' | 'SLIDES' | 'VIDEO';
 export type PushResourceType = 'EXPLANATION' | 'CODE_CASE' | 'PRACTICAL_CASE' | 'READING' | 'VIDEO';
 export type QnaState = 'QNA_IDLE' | 'QNA_STREAMING';
@@ -108,6 +108,13 @@ export interface CriticReviewView {
   summaryText?: string;
 }
 
+export interface AgentTraceStepView {
+  agentName: string;
+  status: string;
+  stage?: string;
+  message?: string;
+}
+
 export interface EngineTaskResultRecord {
   taskId: string;
   title: string;
@@ -123,6 +130,7 @@ export interface EngineTaskResultRecord {
   judgeResult: PracticeJudgeResult | null;
   learningPlan: LearningPlanView | null;
   criticReview: CriticReviewView | null;
+  agentTrace: AgentTraceStepView[];
   createdAt: number;
   updatedAt: number;
 }
@@ -203,6 +211,7 @@ export interface EngineTaskSnapshot {
   judgeResult: PracticeJudgeResult | null;
   learningPlan: LearningPlanView | null;
   criticReview: CriticReviewView | null;
+  agentTrace: AgentTraceStepView[];
   resultHistory: EngineTaskResultRecord[];
   selectedResultTaskId: string;
 }
@@ -306,6 +315,7 @@ export interface TaskRunHandlers {
   onJudgeResult: (item: PracticeJudgeResult) => void;
   onLearningPlan: (item: LearningPlanView) => void;
   onCriticReview: (item: CriticReviewView) => void;
+  onAgentTrace: (items: AgentTraceStepView[]) => void;
 }
 
 export interface RunByApiTaskArgs {
@@ -327,6 +337,7 @@ export interface RunByApiTaskArgs {
   setJudgeResult: (value: React.SetStateAction<PracticeJudgeResult | null>) => void;
   setLearningPlan: (value: React.SetStateAction<LearningPlanView | null>) => void;
   setCriticReview: (value: React.SetStateAction<CriticReviewView | null>) => void;
+  setAgentTrace: (value: React.SetStateAction<AgentTraceStepView[]>) => void;
   taskStreamAbortRef: React.MutableRefObject<AbortController | null>;
 }
 
@@ -369,8 +380,7 @@ export const assessmentDimensionOptions = ['知识基础', '案例迁移', '练�
 
 export const serviceButtons: ServiceButtonConfig[] = [
   { id: 'resource', label: '资源生成', icon: Sparkles },
-  { id: 'path', label: '学习路径规划', icon: Compass },
-  { id: 'push', label: '资源推送', icon: Target },
+  { id: 'personalized', label: '个性化学习方案', icon: Compass },
   { id: 'assessment', label: '学习效果评估', icon: ChartColumn },
 ];
 
@@ -393,6 +403,7 @@ export const pushResourceTypeOptions: PushResourceTypeButtonConfig[] = [
 
 export const serviceTypeMap: Record<EngineService, SmartEngineServiceType> = {
   resource: 'RESOURCE_GENERATION',
+  personalized: 'PERSONALIZED_LEARNING',
   path: 'PATH_PLANNING',
   push: 'RESOURCE_PUSH',
   assessment: 'LEARNING_EVALUATION',

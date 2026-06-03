@@ -33,6 +33,11 @@ const serviceDescriptions: Record<EngineService, { summary: string; detail: stri
     detail: '提交后展示真实生成结果、下载链接或内联内容。',
     accent: 'from-blue-500 to-sky-400',
   },
+  personalized: {
+    summary: '多智能体协同生成路径并匹配资源',
+    detail: '画像、评估、检索、规划、资源推荐与质量审查串联执行。',
+    accent: 'from-indigo-500 to-cyan-400',
+  },
   path: {
     summary: '结合目标周期和当前进度规划路径',
     detail: '只展示任务返回的真实路径建议。',
@@ -312,6 +317,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           completedResources={completedResources}
           learningPlan={activeEngineSnapshot.learningPlan}
           criticReview={activeEngineSnapshot.criticReview}
+          agentTrace={activeEngineSnapshot.agentTrace}
           resultHistory={activeEngineSnapshot.resultHistory}
           selectedResultTaskId={activeEngineSnapshot.selectedResultTaskId}
           practiceBatch={activeEngineSnapshot.practiceBatch}

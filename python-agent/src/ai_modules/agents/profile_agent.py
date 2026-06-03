@@ -121,6 +121,7 @@ class ProfileAgent(PlaceholderAgent):
         if core_loop_result is None:
             core_loop_result = await profile_task
         params["profileUpdate"] = core_loop_result
+        params["profileAnalysis"] = self._build_profile_analysis(core_loop_result)
 
         yield ProgressSSEEvent(
             taskId=task_id,
@@ -140,6 +141,29 @@ class ProfileAgent(PlaceholderAgent):
                 text=core_loop_result["summaryText"],
             ),
         )
+
+    def _build_profile_analysis(self, core_loop_result: dict[str, Any]) -> dict[str, Any]:
+        dimensions = core_loop_result.get("dimensions")
+        if not isinstance(dimensions, dict):
+            dimensions = {}
+        return {
+            "summaryText": str(core_loop_result.get("summaryText") or "").strip(),
+            "professionalBackground": dimensions.get("professionalBackground"),
+            "studentLevel": (
+                dimensions.get("knowledgeFoundation")
+                or dimensions.get("knowledgeBase")
+                or dimensions.get("studentLevel")
+            ),
+            "learningPreference": dimensions.get("learningPreference"),
+            "explanationPreference": dimensions.get("explanationPreference"),
+            "preferredResourceTypes": list(dimensions.get("preferredResourceTypes") or []),
+            "weakPoints": list(dimensions.get("weakPoints") or dimensions.get("knowledgeGaps") or []),
+            "weakPointDetails": list(dimensions.get("weakPointDetails") or []),
+            "skillMastery": dimensions.get("skillMastery") if isinstance(dimensions.get("skillMastery"), dict) else {},
+            "currentGoal": dimensions.get("currentGoal") if isinstance(dimensions.get("currentGoal"), dict) else {},
+            "inferredRecommendations": list(dimensions.get("inferredRecommendations") or []),
+            "source": dimensions.get("source"),
+        }
 
     async def _run_agent_core_loop(
         self,

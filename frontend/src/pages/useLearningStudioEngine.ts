@@ -60,6 +60,12 @@ function createTaskMonitorRefs(): Record<EngineService, TaskMonitorRefs> {
       streamFlushTimerRef: { current: null },
       streamRafRef: { current: null },
     },
+    personalized: {
+      taskStreamAbortRef: { current: null },
+      streamQueueRef: { current: [] },
+      streamFlushTimerRef: { current: null },
+      streamRafRef: { current: null },
+    },
     path: {
       taskStreamAbortRef: { current: null },
       streamQueueRef: { current: [] },
@@ -306,6 +312,12 @@ export function useLearningStudioEngine({
             criticReview: typeof value === 'function' ? value(current.criticReview) : value,
           }));
         },
+        setAgentTrace: (value) => {
+          updateServiceSnapshot(service, (current) => ({
+            ...current,
+            agentTrace: typeof value === 'function' ? value(current.agentTrace) : value,
+          }));
+        },
         taskStreamAbortRef: refs.taskStreamAbortRef,
       });
 
@@ -440,6 +452,7 @@ export function useLearningStudioEngine({
       judgeResult: null,
       learningPlan: null,
       criticReview: null,
+      agentTrace: [],
       resultHistory: serviceSnapshots[selectedService].resultHistory,
       selectedResultTaskId: serviceSnapshots[selectedService].selectedResultTaskId,
     });
@@ -509,6 +522,7 @@ export function useLearningStudioEngine({
       judgeResult: null,
       learningPlan: null,
       criticReview: null,
+      agentTrace: [],
       resultHistory: current.resultHistory,
       selectedResultTaskId: current.selectedResultTaskId,
     }));

@@ -39,6 +39,23 @@ def test_supervisor_resolves_resource_generation_route() -> None:
     ]
 
 
+def test_supervisor_resolves_personalized_learning_route() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    route = supervisor.resolve_route("PERSONALIZED_LEARNING", {"topic": "联合索引"})
+
+    assert route.agent_names == [
+        "profile",
+        "evaluation",
+        "query_rewrite",
+        "retrieval",
+        "path_planning",
+        "resource_bundle",
+        "resource_push",
+        "critic",
+    ]
+
+
 def test_supervisor_keeps_resource_generation_on_bundle_when_resource_types_include_video() -> None:
     supervisor = PythonAgentSupervisor()
 
@@ -544,7 +561,7 @@ class _StubEvaluationAgent(PlaceholderAgent):
         super().__init__("stub evaluation", "evaluation")
 
     async def run(self, *, task_id, trace_id, seq, params, **kwargs):
-        params["evaluationResult"] = {
+        payload = {
             "overallLevel": "BASIC",
             "strengths": ["愿意学习"],
             "weaknesses": ["最左匹配"],
@@ -552,6 +569,8 @@ class _StubEvaluationAgent(PlaceholderAgent):
             "dimensions": [],
             "summaryText": "已完成能力评估",
         }
+        params["evaluationResult"] = payload
+        params["masteryDiagnosis"] = {**payload, "primaryDimension": "练习掌握", "diagnosisSource": "evaluation"}
         yield ProgressSSEEvent(
             taskId=task_id,
             traceId=trace_id,
@@ -575,7 +594,19 @@ class _StubPathPlanningAgent(PlaceholderAgent):
             "goal": "掌握最左匹配",
             "duration": "4天",
             "milestones": ["理解规则"],
-            "steps": [],
+            "steps": [
+                {
+                    "stepId": "step-1",
+                    "order": 1,
+                    "title": "理解最左匹配",
+                    "objective": "掌握联合索引最左匹配规则",
+                    "activities": ["阅读导学资料", "完成专项练习"],
+                    "successCriteria": "能解释最左匹配的适用条件",
+                    "targetKnowledgePoints": ["最左匹配"],
+                    "preferredResourceTypes": ["DOCUMENT", "QUIZ"],
+                    "checkpoint": "完成专项题并复述规则",
+                }
+            ],
             "summaryText": "学习路径：先理解最左匹配，再做题巩固。",
         }
         yield ProgressSSEEvent(
@@ -683,6 +714,52 @@ async def test_supervisor_streams_resource_generation_with_retrieval_chain() -> 
     assert all(e.payload.fallback is False for e in resource_events)
     assert "改写后" in events[1].payload.text
     assert "来源摘要" in events[3].payload.text
+
+
+@pytest.mark.asyncio
+async def test_supervisor_streams_personalized_learning_multi_agent_route() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["profile"] = _StubProfileAgent()
+    supervisor.agent_registry["evaluation"] = _StubEvaluationAgent()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["path_planning"] = _StubPathPlanningAgent()
+    _install_resource_bundle_stubs(supervisor)
+    _install_stub_critic(supervisor)
+
+    request = EngineStreamRequest(
+        serviceType="PERSONALIZED_LEARNING",
+        params={
+            "query": "帮我规划联合索引学习方案",
+            "resourceTypes": ["DOCUMENT"],
+            "learningContext": {"course": "数据库原理", "chapter": "索引"},
+            "profile": {"studentLevel": "BASIC", "knowledgeGaps": ["最左匹配"]},
+        },
+        taskId="task-personalized",
+        traceId="trace-personalized",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+    done = events[-1]
+
+    assert done.event == "done"
+    assert done.payload.learning_path is not None
+    assert done.payload.resource_push_plan is not None
+    assert done.payload.pushed_resources
+    assert done.payload.critic_review is not None
+    assert [item["agentName"] for item in done.payload.agent_trace] == [
+        "profile",
+        "evaluation",
+        "query_rewrite",
+        "retrieval",
+        "path_planning",
+        "resource_bundle",
+        "resource_push",
+        "critic",
+    ]
+    resource_events = [event for event in events if event.event == "resource_file"]
+    assert resource_events
+    assert done.payload.resource_push_plan["stepResources"][0]["resources"][0]["source"] == "generated"
 
 
 @pytest.mark.asyncio

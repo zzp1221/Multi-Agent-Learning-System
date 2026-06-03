@@ -89,6 +89,39 @@ class ResourcePushAgent(PlaceholderAgent):
         del service_type, system_prompt
 
         profile_context = self._extract_profile_context(params, snapshot)
+        learning_path = params.get("learningPath")
+        if isinstance(learning_path, dict) and isinstance(learning_path.get("steps"), list):
+            plan = self._build_path_bound_resource_plan(
+                learning_path=learning_path,
+                params=params,
+                profile_context=profile_context,
+            )
+            params["resourcePushPlan"] = plan
+            params["pushedResources"] = [
+                resource
+                for step_plan in plan.get("stepResources", [])
+                if isinstance(step_plan, dict)
+                for resource in step_plan.get("resources", [])
+                if isinstance(resource, dict)
+            ]
+            yield ProgressSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq,
+                payload=ProgressPayload(
+                    stage=self.stage_name,
+                    percent=70,
+                    message=f"已按学习路径匹配 {len(params['pushedResources'])} 个真实资源或检索证据",
+                ),
+            )
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq + 1,
+                payload=ResultChunkPayload(text=self._build_path_bound_summary(plan)),
+            )
+            return
+
         query = self._build_query(params, profile_context)
         yield ProgressSSEEvent(
             taskId=task_id,
@@ -308,6 +341,171 @@ class ResourcePushAgent(PlaceholderAgent):
             params=generated_params,
             snapshot=snapshot,
         )
+
+    def _build_path_bound_resource_plan(
+        self,
+        *,
+        learning_path: dict[str, Any],
+        params: dict[str, Any],
+        profile_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        generated_assets = [
+            item for item in params.get("generatedAssets", [])
+            if isinstance(item, dict)
+        ]
+        retrieval_evidence = [
+            item for item in params.get("retrievalEvidence", [])
+            if isinstance(item, dict)
+        ]
+        step_resources: list[dict[str, Any]] = []
+        coverage_gaps: list[dict[str, Any]] = []
+        for index, step in enumerate(learning_path.get("steps", []), start=1):
+            if not isinstance(step, dict):
+                continue
+            step_id = str(step.get("stepId") or f"step-{index}")
+            preferred_types = self._normalize_resource_types(step.get("preferredResourceTypes"))
+            resources = self._match_generated_assets_for_step(
+                step=step,
+                generated_assets=generated_assets,
+                preferred_types=preferred_types,
+            )
+            resources.extend(
+                self._match_retrieval_evidence_for_step(
+                    step=step,
+                    retrieval_evidence=retrieval_evidence,
+                    existing_count=len(resources),
+                )
+            )
+            present_types = {str(item.get("resourceType") or "").upper() for item in resources}
+            missing_types = [resource_type for resource_type in preferred_types if resource_type not in present_types]
+            if missing_types:
+                coverage_gaps.append(
+                    {
+                        "stepId": step_id,
+                        "missingResourceTypes": missing_types,
+                        "reason": "当前上下文没有可验证的系统生成资源或检索证据，未伪造资源卡片。",
+                    }
+                )
+            step_resources.append(
+                {
+                    "stepId": step_id,
+                    "stepTitle": step.get("title") or f"学习步骤 {index}",
+                    "targetKnowledgePoints": list(step.get("targetKnowledgePoints") or []),
+                    "resources": resources,
+                }
+            )
+        return {
+            "stepResources": step_resources,
+            "coverageGaps": coverage_gaps,
+            "profileSignals": {
+                "preferredResourceTypes": profile_context.get("preferredResourceTypes", []),
+                "primaryWeakPoint": profile_context.get("primaryWeakPoint"),
+            },
+        }
+
+    def _match_generated_assets_for_step(
+        self,
+        *,
+        step: dict[str, Any],
+        generated_assets: list[dict[str, Any]],
+        preferred_types: list[str],
+    ) -> list[dict[str, Any]]:
+        resources: list[dict[str, Any]] = []
+        step_terms = self._step_match_terms(step)
+        for asset in generated_assets:
+            resource_type = str(asset.get("assetType") or asset.get("resourceType") or "").upper()
+            if preferred_types and resource_type not in preferred_types:
+                continue
+            haystack = " ".join(
+                str(asset.get(key) or "")
+                for key in ("title", "summary", "knowledgePoint", "assetType")
+            ).lower()
+            matched_by_term = any(term.lower() in haystack for term in step_terms) if step_terms else False
+            resources.append(
+                {
+                    "title": asset.get("title") or resource_type or "系统生成资源",
+                    "resourceType": resource_type or "DOCUMENT",
+                    "source": "generated",
+                    "matchReason": (
+                        "匹配学习步骤的知识点和推荐资源类型"
+                        if matched_by_term
+                        else "匹配学习步骤要求的资源类型"
+                    ),
+                    "downloadUrl": asset.get("downloadUrl"),
+                    "summaryText": asset.get("summary") or asset.get("summaryText") or "",
+                    "generatedBy": asset.get("generatedBy"),
+                    "contentOrigin": asset.get("contentOrigin"),
+                    "provider": asset.get("provider"),
+                    "model": asset.get("model"),
+                    "agentName": asset.get("agentName"),
+                    "evidenceIds": list(asset.get("evidenceIds") or []),
+                    "fallback": asset.get("fallback"),
+                    "fromCache": bool(asset.get("fromCache", False)),
+                }
+            )
+        return resources[:3]
+
+    def _match_retrieval_evidence_for_step(
+        self,
+        *,
+        step: dict[str, Any],
+        retrieval_evidence: list[dict[str, Any]],
+        existing_count: int,
+    ) -> list[dict[str, Any]]:
+        if existing_count >= 3:
+            return []
+        resources: list[dict[str, Any]] = []
+        step_terms = self._step_match_terms(step)
+        for evidence in retrieval_evidence:
+            title = str(evidence.get("title") or "检索证据").strip()
+            evidence_text = str(evidence.get("evidence") or evidence.get("snippet") or "").strip()
+            haystack = f"{title} {evidence_text}".lower()
+            if step_terms and not any(term.lower() in haystack for term in step_terms):
+                continue
+            resources.append(
+                {
+                    "title": title,
+                    "resourceType": "READING",
+                    "source": "retrieval_evidence",
+                    "matchReason": "来自知识检索智能体的可追溯证据",
+                    "downloadUrl": evidence.get("url"),
+                    "summaryText": evidence_text,
+                    "evidenceSlug": evidence.get("slug"),
+                    "sourceName": evidence.get("sourceTitle") or evidence.get("channel"),
+                }
+            )
+            if len(resources) + existing_count >= 3:
+                break
+        return resources
+
+    def _build_path_bound_summary(self, plan: dict[str, Any]) -> str:
+        step_count = len(plan.get("stepResources", []))
+        resource_count = sum(
+            len(step.get("resources", []))
+            for step in plan.get("stepResources", [])
+            if isinstance(step, dict)
+        )
+        gap_count = len(plan.get("coverageGaps", []))
+        if gap_count:
+            return f"已为 {step_count} 个学习步骤绑定 {resource_count} 个真实资源或证据，仍有 {gap_count} 个资源类型缺口待生成。"
+        return f"已为 {step_count} 个学习步骤绑定 {resource_count} 个真实资源或证据。"
+
+    def _step_match_terms(self, step: dict[str, Any]) -> list[str]:
+        terms = [
+            str(step.get("title") or "").strip(),
+            str(step.get("objective") or "").strip(),
+        ]
+        terms.extend(str(item).strip() for item in step.get("targetKnowledgePoints", []) if str(item).strip())
+        return [term for term in terms if term]
+
+    def _normalize_resource_types(self, raw_value: Any) -> list[str]:
+        if isinstance(raw_value, list):
+            normalized = [str(item).strip().upper() for item in raw_value if str(item).strip()]
+        elif isinstance(raw_value, str) and raw_value.strip():
+            normalized = [item.strip().upper() for item in raw_value.replace("，", ",").split(",") if item.strip()]
+        else:
+            normalized = []
+        return list(dict.fromkeys(normalized))
 
     def _build_generated_asset_provenance(self, *, params: dict[str, Any]) -> dict[str, Any]:
         generator = getattr(self.resource_generation_service.content_chain, "primary_generator", None)

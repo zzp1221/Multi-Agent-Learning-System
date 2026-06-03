@@ -322,6 +322,8 @@ docs/*
 !docs/deployment.md
 !docs/experiment_log.md
 !docs/graph_multi_agent_architecture.md
+!docs/learning_effect_evaluation_personalized_implementation_plan.md
+!docs/personalized_learning_multi_agent_refactor_plan.md
 !docs/planner_reviewer_multi_agent_plan.md
 !docs/teacher_guide.md
 uploads/

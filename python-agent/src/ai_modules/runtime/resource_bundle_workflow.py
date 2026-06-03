@@ -208,7 +208,14 @@ class ResourceBundleWorkflow:
         for resource_type, node_name in RESOURCE_NODE_BY_TYPE.items():
             graph.add_node(node_name, self._make_resource_node(resource_type))
         graph.add_node("bundle_synthesizer", self._bundle_synthesizer_node)
-        graph.add_edge(START, "query_rewrite")
+        graph.add_conditional_edges(
+            START,
+            self._select_start_node,
+            {
+                "query_rewrite": "query_rewrite",
+                "resource_selector": "resource_selector",
+            },
+        )
         graph.add_edge("query_rewrite", "retrieval")
         graph.add_edge("retrieval", "resource_selector")
         for node_name in RESOURCE_NODE_BY_TYPE.values():
@@ -216,6 +223,12 @@ class ResourceBundleWorkflow:
         graph.add_edge(list(RESOURCE_NODE_BY_TYPE.values()), "bundle_synthesizer")
         graph.add_edge("bundle_synthesizer", END)
         return graph.compile()
+
+    def _select_start_node(self, raw_state: dict[str, Any]) -> str:
+        state = WorkflowState.model_validate(raw_state)
+        if state.params.get("skipResourceBundlePrelude"):
+            return "resource_selector"
+        return "query_rewrite"
 
     async def _query_rewrite_node(self, raw_state: dict[str, Any]) -> dict[str, Any]:
         state = WorkflowState.model_validate(raw_state)

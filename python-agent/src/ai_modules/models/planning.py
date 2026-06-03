@@ -34,6 +34,13 @@ class LearningPlanStep(BaseModel):
     objective: str
     activities: list[str]
     success_criteria: str = Field(alias="successCriteria")
+    step_id: str | None = Field(default=None, alias="stepId")
+    order: int | None = None
+    target_knowledge_points: list[str] = Field(default_factory=list, alias="targetKnowledgePoints")
+    reason: str | None = None
+    preferred_resource_types: list[str] = Field(default_factory=list, alias="preferredResourceTypes")
+    estimated_minutes: int | None = Field(default=None, alias="estimatedMinutes")
+    checkpoint: str | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 

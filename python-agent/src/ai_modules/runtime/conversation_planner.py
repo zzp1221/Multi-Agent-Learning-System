@@ -13,6 +13,7 @@ from src.ai_modules.runtime.context_snapshot import SystemSnapshot
 
 
 ALLOWED_PLAN_SERVICE_TYPES: set[str] = {
+    "PERSONALIZED_LEARNING",
     "TUTORING",
     "RESOURCE_GENERATION",
     "RESOURCE_PUSH",
@@ -27,9 +28,9 @@ PLANNER_SYSTEM_PROMPT = """你是智学引擎的多智能体 Planner。
 你必须基于用户当前学习目标生成可执行的 JSON 计划，不允许输出 Markdown。
 计划中的每一步必须绑定到一个已登记 Agent 或 serviceType。
 serviceType 只能从白名单中选择：
-TUTORING, RESOURCE_GENERATION, RESOURCE_PUSH, PRACTICE_JUDGE, PATH_PLANNING, EVALUATION, PROFILE_BUILD。
+PERSONALIZED_LEARNING, TUTORING, RESOURCE_GENERATION, RESOURCE_PUSH, PRACTICE_JUDGE, PATH_PLANNING, EVALUATION, PROFILE_BUILD。
 不要输出未登记工具、URL、SQL、shell 命令或虚构服务。
-如果需要资源生成、资源推送或练习判题，可以直接写成对应 serviceType，本系统会自动执行。
+如果需要完整个性化学习方案、资源生成、资源推送或练习判题，可以直接写成对应 serviceType，本系统会自动执行。
 输出 JSON 结构：
 {
   "goal": "...",

@@ -65,6 +65,7 @@ class RetrievalAgent(PlaceholderAgent):
             )
             summary_text = retrieval_response.sources_summary
             params["retrievalResult"] = retrieval_response.model_dump(by_alias=True)
+            params["retrievalEvidence"] = self._build_retrieval_evidence(retrieval_response, summary_text)
             params["retrievalSummaryText"] = summary_text
             yield ProgressSSEEvent(
                 taskId=task_id,
@@ -95,6 +96,7 @@ class RetrievalAgent(PlaceholderAgent):
             system_prompt=system_prompt,
         )
         params["retrievalResult"] = retrieval_response.model_dump(by_alias=True)
+        params["retrievalEvidence"] = self._build_retrieval_evidence(retrieval_response, summary_text)
 
         yield ProgressSSEEvent(
             taskId=task_id,
@@ -117,6 +119,34 @@ class RetrievalAgent(PlaceholderAgent):
                 )
             ),
         )
+
+    def _build_retrieval_evidence(self, retrieval_response: RetrievalResponse, summary_text: str) -> list[dict[str, Any]]:
+        evidence_items: list[dict[str, Any]] = []
+        for document in retrieval_response.documents[:8]:
+            evidence_items.append(
+                {
+                    "title": document.title,
+                    "slug": document.slug,
+                    "channel": document.channel,
+                    "score": document.score,
+                    "evidence": document.evidence or document.snippet or "",
+                    "url": document.url,
+                    "sourceTitle": document.source_title,
+                }
+            )
+        if not evidence_items and summary_text.strip():
+            evidence_items.append(
+                {
+                    "title": "检索摘要",
+                    "slug": "retrieval-summary",
+                    "channel": "summary",
+                    "score": 0.0,
+                    "evidence": summary_text.strip(),
+                    "url": None,
+                    "sourceTitle": None,
+                }
+            )
+        return evidence_items
 
     async def _run_agent_core_loop(
         self,

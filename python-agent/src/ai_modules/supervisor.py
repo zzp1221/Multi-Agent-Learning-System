@@ -51,6 +51,7 @@ from src.ai_modules.runtime.resource_bundle_workflow import ResourceBundleWorkfl
 LOGGER = logging.getLogger(__name__)
 
 REVIEW_REQUIRED_SERVICE_TYPES = {
+    "PERSONALIZED_LEARNING",
     "RESOURCE_GENERATION",
     "VIDEO_GENERATION",
     "PATH_PLANNING",
@@ -304,6 +305,17 @@ class PythonAgentSupervisor:
                     yield event
                 i += 2
                 continue
+            if agent_name == "resource_bundle":
+                self._prepare_resource_bundle_params(state.params)
+                async for event in self._execute_resource_bundle_route(
+                    state=state,
+                    route_plan=route_plan,
+                    cancelled=cancelled,
+                ):
+                    yield event
+                self._append_agent_trace(state.params, agent_name="resource_bundle", status="DONE")
+                i += 1
+                continue
 
             async for event in self._run_single_agent(state=state, agent_name=agent_name, service_type=route_plan.service_type):
                 self._collect_final_answer_from_event(state=state, agent_name=agent_name, event=event)
@@ -346,6 +358,37 @@ class PythonAgentSupervisor:
         state.params.update(final_state.params)
         state.seq = final_state.seq
         state.snapshot = final_state.snapshot
+
+    def _prepare_resource_bundle_params(self, params: dict[str, Any]) -> None:
+        if not isinstance(params.get("learningPath"), dict):
+            return
+        params["skipResourceBundlePrelude"] = True
+        if not params.get("resourceTypes"):
+            params["resourceTypes"] = self._resource_types_from_learning_path(params["learningPath"])
+        if not params.get("topic"):
+            params["topic"] = self._topic_from_learning_path(params["learningPath"])
+
+    def _resource_types_from_learning_path(self, learning_path: dict[str, Any]) -> list[str]:
+        resolved: list[str] = []
+        for step in learning_path.get("steps", []):
+            if not isinstance(step, dict):
+                continue
+            for raw_type in step.get("preferredResourceTypes", []):
+                resource_type = str(raw_type).strip().upper()
+                if resource_type and resource_type not in resolved:
+                    resolved.append(resource_type)
+        return resolved[:4] or ["DOCUMENT"]
+
+    def _topic_from_learning_path(self, learning_path: dict[str, Any]) -> str:
+        for step in learning_path.get("steps", []):
+            if not isinstance(step, dict):
+                continue
+            for point in step.get("targetKnowledgePoints", []):
+                if str(point).strip():
+                    return str(point).strip()
+            if str(step.get("title") or "").strip():
+                return str(step["title"]).strip()
+        return str(learning_path.get("goal") or "个性化学习方案").strip()
 
     async def _run_planned_tutoring_route(
         self,
@@ -509,6 +552,7 @@ class PythonAgentSupervisor:
             yield self._normalize_agent_event(agent_name=agent_name, event=event).model_copy(update={"seq": state.seq})
             state.seq += 1
         state.params.update(agent_params)
+        self._append_agent_trace(state.params, agent_name=agent_name, status="DONE")
         await self._refresh_snapshot(state)
 
     def _normalize_agent_event(self, *, agent_name: str, event: SSEEvent) -> SSEEvent:
@@ -536,6 +580,7 @@ class PythonAgentSupervisor:
             yield self._normalize_agent_event(agent_name="critic", event=event).model_copy(update={"seq": state.seq})
             state.seq += 1
         state.params.update(critic_params)
+        self._append_agent_trace(state.params, agent_name="critic", status="DONE")
         await self._refresh_snapshot(state)
 
     def _progress_event(
@@ -568,6 +613,14 @@ class PythonAgentSupervisor:
     def _build_done_payload(self, *, service_type: str, agent_names: list[str], params: dict) -> DonePayload:
         learning_plan = self._safe_dict(params.get("learningPlan"))
         critic_review = self._safe_dict(params.get("criticReview"))
+        learning_path = params.get("learningPath")
+        resource_push_plan = self._safe_dict(params.get("resourcePushPlan"))
+        pushed_resources = params.get("pushedResources")
+        if not isinstance(pushed_resources, list):
+            pushed_resources = []
+        agent_trace = params.get("agentTrace")
+        if not isinstance(agent_trace, list):
+            agent_trace = []
         generated_assets = params.get("generatedAssets")
         resource_failures = params.get("resourceFailures")
         if not isinstance(resource_failures, list):
@@ -611,7 +664,6 @@ class PythonAgentSupervisor:
                 learningPlan=learning_plan,
                 criticReview=critic_review,
             )
-        pushed_resources = params.get("pushedResources")
         if service_type == "RESOURCE_PUSH" and isinstance(pushed_resources, list):
             if not pushed_resources:
                 return DonePayload(
@@ -629,9 +681,10 @@ class PythonAgentSupervisor:
                 status="SUCCESS",
                 summary=f"资源推送完成，已匹配 {len(pushed_resources)} 个现成资源：{titles}",
                 learningPlan=learning_plan,
+                resourcePushPlan=resource_push_plan,
+                pushedResources=pushed_resources,
                 criticReview=critic_review,
             )
-        learning_path = params.get("learningPath")
         if service_type == "PATH_PLANNING" and isinstance(learning_path, dict):
             summary = str(learning_path.get("summaryText") or "").strip()
             if not summary:
@@ -643,10 +696,27 @@ class PythonAgentSupervisor:
                 learningPlan=learning_plan,
                 criticReview=critic_review,
             )
+        if service_type == "PERSONALIZED_LEARNING":
+            summary = ""
+            if isinstance(learning_path, dict):
+                summary = str(learning_path.get("summaryText") or "").strip()
+            if not summary:
+                summary = f"个性化学习方案已生成，执行链路: {' -> '.join(agent_names)}"
+            return DonePayload(
+                status="SUCCESS",
+                summary=summary,
+                learningPath=learning_path if isinstance(learning_path, dict) else None,
+                learningPlan=learning_plan,
+                resourcePushPlan=resource_push_plan,
+                pushedResources=pushed_resources,
+                agentTrace=agent_trace,
+                criticReview=critic_review,
+            )
         return DonePayload(
             status="SUCCESS",
             summary=f"{service_type} 路由完成，执行链路: {' -> '.join(agent_names)}",
             learningPlan=learning_plan,
+            agentTrace=agent_trace,
             criticReview=critic_review,
         )
 
@@ -740,9 +810,18 @@ class PythonAgentSupervisor:
         return re.search(r"\d{2,4}\s*(?:字|个字|字符)\s*(?:以内|内|之内|以下|左右)?", text) is not None
 
     def _should_review_route(self, *, route_plan: RoutePlan, params: dict) -> bool:
+        if "critic" in route_plan.agent_names:
+            return False
         if route_plan.service_type in REVIEW_REQUIRED_SERVICE_TYPES:
             return True
         return False
+
+    def _append_agent_trace(self, params: dict, *, agent_name: str, status: str) -> None:
+        trace = params.get("agentTrace")
+        if not isinstance(trace, list):
+            trace = []
+            params["agentTrace"] = trace
+        trace.append({"agentName": agent_name, "status": status})
 
     def _update_plan_step_status(self, params: dict, step_id: str, status: str) -> None:
         learning_plan = params.get("learningPlan")

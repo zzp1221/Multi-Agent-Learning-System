@@ -157,6 +157,9 @@ class DonePayload(BaseModel):
     summary: str
     learning_path: dict[str, Any] | None = Field(default=None, alias="learningPath")
     learning_plan: dict[str, Any] | None = Field(default=None, alias="learningPlan")
+    resource_push_plan: dict[str, Any] | None = Field(default=None, alias="resourcePushPlan")
+    pushed_resources: list[dict[str, Any]] = Field(default_factory=list, alias="pushedResources")
+    agent_trace: list[dict[str, Any]] = Field(default_factory=list, alias="agentTrace")
     critic_review: dict[str, Any] | None = Field(default=None, alias="criticReview")
     resource_failures: list[dict[str, Any]] = Field(default_factory=list, alias="resourceFailures")
 

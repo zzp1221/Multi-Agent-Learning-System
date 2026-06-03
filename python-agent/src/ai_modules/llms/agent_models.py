@@ -531,15 +531,46 @@ class OpenAICompatibleLearningPathGenerator:
                 or item.get("completionCriteria")
                 or objective
             ).strip()
+            target_points = self._normalize_string_list(
+                item.get("targetKnowledgePoints")
+                or item.get("knowledgePoints")
+                or item.get("topics")
+            )
+            preferred_resource_types = self._normalize_string_list(
+                item.get("preferredResourceTypes")
+                or item.get("resourceTypes")
+                or item.get("resourcesTypes")
+            )
             normalized_steps.append(
                 {
+                    "stepId": str(item.get("stepId") or item.get("id") or f"step-{index}").strip(),
+                    "order": self._coerce_positive_int(item.get("order"), default=index),
                     "title": title,
                     "objective": objective,
                     "activities": activities or [objective],
                     "successCriteria": success_criteria,
+                    "targetKnowledgePoints": target_points,
+                    "reason": str(item.get("reason") or item.get("rationale") or "").strip() or None,
+                    "preferredResourceTypes": preferred_resource_types,
+                    "estimatedMinutes": self._coerce_positive_int(item.get("estimatedMinutes") or item.get("minutes")),
+                    "checkpoint": str(item.get("checkpoint") or item.get("checkPoint") or success_criteria).strip(),
                 }
             )
         return normalized_steps
+
+    def _normalize_string_list(self, raw_value: Any) -> list[str]:
+        if isinstance(raw_value, list):
+            return [str(item).strip() for item in raw_value if str(item).strip()]
+        if isinstance(raw_value, str) and raw_value.strip():
+            return [item.strip() for item in raw_value.replace("，", ",").split(",") if item.strip()]
+        return []
+
+    def _coerce_positive_int(self, raw_value: Any, default: int | None = None) -> int | None:
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            return default
+        return value if value > 0 else default
 
 
 class OpenAICompatiblePracticeQuestionGenerator:
