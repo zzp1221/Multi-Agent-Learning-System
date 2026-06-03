@@ -495,3 +495,13 @@ commit 7: add tests and documentation
 ```
 
 每次提交前运行相关测试，并在 `docs/experiment_log.md` 追加一行结果。
+
+## 8. 当前实现状态（2026-06-03）
+
+- 已在 `feature/personalized-learning-multi-agent` 完成实现，并合入 `master`。
+- 当前 `master` 的 `PERSONALIZED_LEARNING` 路由为 `profile -> evaluation -> query_rewrite -> retrieval -> path_planning -> resource_push -> critic`。
+- Java 提交 `PERSONALIZED_LEARNING` 前会通过 `PersonalizedLearningContextService` 自动聚合画像、学习进度、知识掌握、练习测试、错题复习和资源反馈。
+- 前端主入口已收敛为“个性化学习方案”，结果页面向学生展示学习路径、资源推荐、任务状态和真实产物；内部协同轨迹、评估诊断和质量审查保留在任务状态/日志数据中。
+- `PATH_PLANNING` 和 `RESOURCE_PUSH` 保留为兼容或高级调试入口，不作为评委演示主入口。
+- 已通过并记录的关键验证包括：`npx tsc --noEmit`、`npx vite build`、相关 Python Agent pytest、相关 Java 测试、RAG 测试、Java/Python health check 和 Docker `docker cp` 热更新。
+- 仍需单独实测：浏览器完整全链路巡检和 >5min 长任务不断连。

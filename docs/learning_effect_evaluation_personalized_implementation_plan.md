@@ -556,3 +556,14 @@ commit 8: add tests and update documentation
 
 每个 commit 前必须追加 `docs/experiment_log.md`，说明改动、验证结果、指标变化和保留/回滚判断。
 
+## 10. 当前实现状态（2026-06-03）
+
+- 已在 `feature/personalized-learning-multi-agent` 完成学习效果评估收敛，并合入 `master`。
+- `EvaluationAgent` 在个性化学习主链路中产出 `masteryDiagnosis`，消费画像、练习测试、错题复习、资源反馈和行为信号。
+- `QueryRewriteAgent`、`PathPlanningAgent`、`ResourcePushAgent` 已消费 `profileAnalysis`、`masteryDiagnosis` 和 `retrievalEvidence`，用于动态调整检索、学习步骤和资源推荐。
+- 前端主入口使用 `PERSONALIZED_LEARNING`；旧 `PATH_PLANNING`、`RESOURCE_PUSH`、`LEARNING_EVALUATION` 不作为评委演示主入口。
+- 用户界面已收敛为学习路径、资源推荐、任务状态和真实产物；`masteryDiagnosis`、`criticReview`、`agentTrace` 作为任务数据保留，不再在学生结果页直接铺开展示。
+- 学习方案刷新目前以用户手动生成方案时读取真实聚合数据为主；自动触发刷新仍属于后续扩展项。
+- 已通过并记录的关键验证包括：相关 Python Agent pytest、Java 个性化上下文/服务类型测试、前端 `tsc`/`vite build`、RAG 测试、health check 和 Docker `docker cp` 热更新。
+- 仍需单独实测：浏览器完整全链路巡检和 >5min 长任务不断连。
+

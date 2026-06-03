@@ -1,8 +1,8 @@
 # 智学引擎 ZhiXue Engine
 
-> 最后更新：2026-05-31
+> 最后更新：2026-06-03
 
-智学引擎是一个面向计算机学习场景的 AI 个性化学习系统。项目采用 React 前端、Java 控制平面、Python 多智能体运行时和 PostgreSQL/MongoDB/Redis 数据层，支持流式问答、资源生成、学习评测、路径规划、错题复习和学习画像。
+智学引擎是一个面向计算机学习场景的 AI 个性化学习系统。项目采用 React 前端、Java 控制平面、Python 多智能体运行时和 PostgreSQL/MongoDB/Redis 数据层，支持流式问答、资源生成、个性化学习方案、学习效果评估闭环、错题复习和学习画像。
 
 ## 当前运行态
 
@@ -36,13 +36,14 @@ flowchart LR
 ## 核心能力
 
 - **智能问答**：支持文字、图片、深度推理、联网搜索开关和多轮历史；前端通过 `fetch + ReadableStream` 解析 SSE，实现逐字渲染。
-- **长任务 SmartEngine**：资源生成、评测、路径规划、练习批改等任务由 Java 入队 Redis Streams，Python Worker 消费执行，再回调 Java 持久化事件，前端订阅 Java SSE。
+- **长任务 SmartEngine**：资源生成、个性化学习方案、学习效果诊断、练习批改等任务由 Java 入队 Redis Streams，Python Worker 消费执行，再回调 Java 持久化事件，前端订阅 Java SSE。
 - **多智能体运行时**：Python `PythonAgentSupervisor` 当前注册 18 个 Agent，并通过 `supervisor_routes.json` 和 QueryClassifier 选择任务链路；`resource_bundle` 是资源生成的虚拟 Graph 节点。
+- **个性化学习方案**：`PERSONALIZED_LEARNING` 串联 `profile -> evaluation -> query_rewrite -> retrieval -> path_planning -> resource_push -> critic`，自动聚合学生专业、学习进度、知识掌握、练习测试、错题复习和资源反馈，输出有顺序的学习路径和文档、视频、题库、实操案例等资源推荐。
 - **RAG 检索**：短语优先 grep、向量语义、知识图谱扩展和可选 Tavily Web 检索，经 RRF 融合；当前报告中基础 100 题 hit@3 98%，图谱型 100 题 hit@3 94%。
 - **资源包生成**：`RESOURCE_GENERATION` 使用 LangGraph `ResourceBundleWorkflow`，按 `resourceTypes[]` 并发 fan-out 到文档、PPT、思维导图、代码、练习、视频等资源 Agent。
 - **悬浮智能语音助手**：全局右下角麦克风入口，前端通过 AudioWorklet 采集 16k PCM，Java `/api/voice/**` 作为唯一语音网关，支持百炼 Qwen 实时 ASR partial/final、流式 TTS、停止/暂停/继续朗读、最近语音文本历史、页面上下文问答、学习动作控制和打断式 cancel，并复用现有聊天 SSE。
 - **无伪生成边界**：可发布生成资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 和 `fromCache`，Python、Java、前端三层共同校验。
-- **学习画像与错题本**：画像维度规则集中在 `profile_feature_registry.py`，错题本用 SM-2 间隔重复算法组织复习。
+- **学习画像与错题本**：画像维度规则集中在 `profile_feature_registry.py`，错题本用 SM-2 间隔重复算法组织复习；学习画像页提供按主题归并的知识掌握图谱，以“下一步优先关注”和紧凑概览帮助学生提取重点。
 
 ## 路由与服务类型
 
@@ -54,10 +55,11 @@ Java `ServiceType` 与 Python `supervisor_routes.json` 对齐：
 | `RESOURCE_GENERATION` | `query_rewrite -> retrieval -> resource_bundle` | LangGraph 资源包 Graph，按用户选择 fan-out |
 | `VIDEO_GENERATION` | `query_rewrite -> retrieval -> video_generator` | 视频脚本、语音、数字人素材和最终资源事件 |
 | `PRACTICE_JUDGE` | `practice -> judge -> profile` | 出题、判题、反馈和画像更新 |
-| `PATH_PLANNING` | `path_planning` | 生成学习路径 |
-| `EVALUATION` / `LEARNING_EVALUATION` | `evaluation` | 交互题或画像维度评估 |
+| `PERSONALIZED_LEARNING` | `profile -> evaluation -> query_rewrite -> retrieval -> path_planning -> resource_push -> critic` | 个性化学习主入口，生成动态学习路径和资源推送方案 |
+| `PATH_PLANNING` | `path_planning` | 保留为内部服务或高级调试入口 |
+| `EVALUATION` / `LEARNING_EVALUATION` | `evaluation` | 学习效果诊断，主链路中产出 `masteryDiagnosis` |
 | `PROFILE_BUILD` | `tutor -> profile` | 画像构建 |
-| `RESOURCE_PUSH` | `resource_push` | 资源推荐和可选联网搜索 |
+| `RESOURCE_PUSH` | `resource_push` | 保留为内部服务或高级调试入口 |
 
 当前注册 Agent 包括：`query_rewrite`、`retrieval`、`document_generator`、`slide_generator`、`reading_generator`、`mindmap_generator`、`code_generator`、`video_generator`、`deep_reasoning`、`tutor`、`profile`、`practice`、`judge`、`path_planning`、`evaluation`、`image_analysis`、`resource_push`、`critic`。
 
@@ -70,7 +72,7 @@ Java `ServiceType` 与 Python `supervisor_routes.json` 对齐：
 | `/` | 智能问答 |
 | `/engine` | 智能引擎任务 |
 | `/mistakes` | 错题本 |
-| `/profile` | 学习画像 |
+| `/profile` | 学习画像与知识掌握图谱 |
 
 ### Java 对外 API
 
@@ -84,7 +86,7 @@ Java `ServiceType` 与 Python `supervisor_routes.json` 对齐：
 | SmartEngine | `POST /api/smart-engine/submit`、`GET /api/smart-engine/tasks/{taskId}`、`GET /api/smart-engine/tasks/{taskId}/stream`、`POST /api/smart-engine/tasks/{taskId}/cancel` |
 | 下载 | `GET /api/assets/download/{token}` |
 | 错题本 | `GET /api/mistakes`、`PATCH /api/mistakes/{id}`、`POST /api/mistakes/review` |
-| 画像 | `GET /api/users/{userId}/profile/current`、`GET /api/users/{userId}/profile/analytics` |
+| 画像 | `GET /api/users/{userId}/profile/current`、`GET /api/users/{userId}/profile/analytics`、`GET /api/users/{userId}/knowledge-graph` |
 
 ### Python 内部 API
 

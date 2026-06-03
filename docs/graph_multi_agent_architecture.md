@@ -1,6 +1,6 @@
 # Graph 多智能体资源包架构说明
 
-更新日期：2026-05-31
+更新日期：2026-06-03
 
 ## 目标边界
 
@@ -74,6 +74,7 @@ sequenceDiagram
 ## 当前结论
 
 - 真正 Graph 化的是 `RESOURCE_GENERATION`，不能把整个系统说成“所有服务都已 Graph 化”。
+- `PERSONALIZED_LEARNING` 已是 Supervisor 顺序多智能体路由：`profile -> evaluation -> query_rewrite -> retrieval -> path_planning -> resource_push -> critic`，但它不是 LangGraph `resource_bundle` 这类 Graph fan-out。
 - 其他服务仍主要是 Supervisor 顺序路由或单 Agent 内部工作流：`TUTORING`、`VIDEO_GENERATION`、`PRACTICE_JUDGE`、`PATH_PLANNING`、`EVALUATION`。
 - 当前 Supervisor 注册 18 个真实 Agent；`resource_bundle` 是虚拟 Graph 节点，不算单独 Agent 类。
 - 无伪生成边界强约束在“可发布生成资源”上：`resource_file`、`question_batch`、携带脚本/音频/视频素材的 `video_gen:*` 必须带 LLM provenance。

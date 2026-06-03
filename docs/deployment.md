@@ -1,6 +1,6 @@
 # 智学引擎部署指南
 
-最后更新：2026-05-31
+最后更新：2026-06-03
 
 本文面向从代码仓库全新部署的同学。默认部署使用 Docker Compose，包含前端、Java 控制平面、Python Agent、PostgreSQL、MongoDB、Redis 六个服务。
 
@@ -220,7 +220,7 @@ docker compose logs -f frontend
 
 当前热更新环境不要执行 `docker compose down`、`docker compose up --build` 或 `docker compose up --force-recreate`。
 
-允许的热更新示例：
+当前 `master` 分支热更新标准步骤：
 
 ```bash
 # 前端：本地构建后覆盖 nginx 静态目录
@@ -230,17 +230,21 @@ npx vite build
 docker cp dist/. zhixue-frontend:/usr/share/nginx/html/
 docker exec zhixue-frontend nginx -s reload
 
-# Python：只复制改动的 .py/skill 文件到 /app 对应路径
-docker cp python-agent/src/ai_modules/runtime/resource_bundle_workflow.py zhixue-python-agent:/app/src/ai_modules/runtime/resource_bundle_workflow.py
-docker exec zhixue-python-agent python -m py_compile /app/src/ai_modules/runtime/resource_bundle_workflow.py
-docker exec zhixue-python-agent kill -HUP 1
-
 # Java：如确需更新后端，先本地打包，再覆盖 jar 并重启 app 容器
 cd project
 mvn.cmd -q -DskipTests package
 docker cp target/zhixue-control-plane-0.0.1-SNAPSHOT.jar zhixue-app:/app/app.jar
 docker restart zhixue-app
+
+# Python：如涉及 Agent 代码，复制对应源码/skill 到 /app 后校验并重启 Python Agent
+docker cp python-agent/server.py zhixue-python-agent:/app/server.py
+docker cp python-agent/src/. zhixue-python-agent:/app/src/
+docker cp python-agent/skills/. zhixue-python-agent:/app/skills/
+docker exec zhixue-python-agent python -m py_compile /app/server.py /app/src/ai_modules/supervisor.py
+docker restart zhixue-python-agent
 ```
+
+只修改前端展示时，不需要更新 Java 或 Python；只修改 Java 时，不需要覆盖前端静态目录；只修改 Python Agent 时，不需要重启 `zhixue-app`。无论哪种场景，都不要执行 build/recreate 类命令。
 
 当前热更新环境如需临时注入语音助手密钥，不要重建容器，也不要把 key 写入仓库。可通过 Spring Boot 外置配置覆盖容器内 `/app/config/application.yml`：
 

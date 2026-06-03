@@ -1,8 +1,8 @@
 # Planner + Reviewer 多智能体核心闭环实施计划
 
-日期：2026-05-31
+日期：2026-06-03
 分支记录：`plan`（历史实施分支）
-当前代码状态：Planner/Reviewer 能力已合入 Python Supervisor 路径，未新增公开 API、SSE event 类型或 Docker 服务。
+当前代码状态：Planner/Reviewer 能力已合入 Python Supervisor 路径，未新增公开 API、SSE event 类型或 Docker 服务；`PERSONALIZED_LEARNING` 已纳入允许服务类型和质量审查范围。
 
 ## 实施状态
 
@@ -48,7 +48,7 @@
 ### P1 后端 Planner
 
 - 新增独立对话计划模型 `ConversationPlan` / `ConversationPlanStep`。
-- Step 白名单固定为：`TUTORING`、`RESOURCE_GENERATION`、`RESOURCE_PUSH`、`PRACTICE_JUDGE`、`PATH_PLANNING`、`EVALUATION`、`PROFILE_BUILD`，以及已注册内部 Agent。
+- Step 白名单固定为：`PERSONALIZED_LEARNING`、`TUTORING`、`RESOURCE_GENERATION`、`RESOURCE_PUSH`、`PRACTICE_JUDGE`、`PATH_PLANNING`、`EVALUATION`、`PROFILE_BUILD`，以及已注册内部 Agent。
 - Planner 输出必须包含 provider/model，非法 Step 或缺元数据时失败。
 
 ### P2 Supervisor 自动执行
@@ -60,7 +60,7 @@
 
 ### P3 Reviewer 接入
 
-- 对关键结果接入 Critic：`RESOURCE_GENERATION`、`VIDEO_GENERATION`、`PATH_PLANNING`、`EVALUATION`、`LEARNING_EVALUATION`、深度/检索增强/图片类 `TUTORING`。
+- 对关键结果接入 Critic：`PERSONALIZED_LEARNING`、`RESOURCE_GENERATION`、`VIDEO_GENERATION`、`PATH_PLANNING`、`EVALUATION`、`LEARNING_EVALUATION`、深度/检索增强/图片类 `TUTORING`。
 - Critic 失败会输出 `error` 和 `done(status=FAILED)`。
 - `criticReview` 写入 `params`，最终 `done.payload` 合并 `learningPlan`、`criticReview`、`summary`。
 - `ResourceBundleWorkflow` 中 Critic/Safety/provenance/禁用 fallback 质量门失败会升级为整任务失败；普通资源失败仍保留 `PARTIAL_FAILED`。
