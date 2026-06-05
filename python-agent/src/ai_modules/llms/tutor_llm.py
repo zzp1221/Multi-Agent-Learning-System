@@ -64,6 +64,13 @@ class RuleBasedTutorLLM:
         if self._is_small_talk(query):
             return self._compose_small_talk_reply(query)
         documents = evidence.get("documents", []) if isinstance(evidence.get("documents"), list) else []
+        external_resources = (
+            evidence.get("externalResources", [])
+            if isinstance(evidence.get("externalResources"), list)
+            else []
+        )
+        if evidence.get("webSearchEnabled") is True and external_resources:
+            return self._compose_external_resource_answer(query=query, resources=external_resources)
         graph_pack = evidence.get("graphEvidencePack") if isinstance(evidence, dict) else {}
         return self._compose_direct_answer(
             query=query,
@@ -72,6 +79,30 @@ class RuleBasedTutorLLM:
             documents=documents,
             graph_pack=graph_pack if isinstance(graph_pack, dict) else {},
         )
+
+    def _compose_external_resource_answer(
+        self,
+        *,
+        query: str,
+        resources: list[dict[str, Any]],
+    ) -> str:
+        lines = [f"我找到了几条和“{query}”相关的外部资源链接："]
+        for index, resource in enumerate(resources[:5], start=1):
+            if not isinstance(resource, dict):
+                continue
+            title = str(resource.get("title") or resource.get("sourceTitle") or "外部资源").strip()
+            url = str(resource.get("url") or "").strip()
+            snippet = str(resource.get("snippet") or "").strip()
+            if not url:
+                continue
+            line = f"{index}. {title}: {url}"
+            if snippet:
+                line += f"\n   {snippet[:120]}"
+            lines.append(line)
+        if len(lines) == 1:
+            return "联网搜索已开启，但当前没有检索到可验证的外部链接。"
+        lines.append("建议先看标题最贴合你当前主题的一两个资源，再回来问我其中不理解的部分。")
+        return "\n".join(lines)
 
     def _is_small_talk(self, query: str) -> bool:
         normalized = "".join(query.lower().split())
@@ -244,10 +275,7 @@ class RuleBasedTutorLLM:
 
 
 class OpenAICompatibleTutorLLM(OpenAICompatibleToolCallingLLM):
-    """项目默认 OpenAI 兼容适配器的兼容别名。"""
-
-
-BailianToolCallingLLM = OpenAICompatibleTutorLLM
+    """Tutor 使用的 OpenAI 兼容工具调用适配器。"""
 
 
 class TutorLLMClientFactory:

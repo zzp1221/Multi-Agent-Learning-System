@@ -139,6 +139,14 @@ def test_tutoring_route_ignores_reading_only_resource_requests() -> None:
     )
 
 
+def test_tutoring_route_does_not_treat_video_link_request_as_resource_generation() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    assert not supervisor._has_conversational_resource_generation_intent(
+        {"query": "请给我视频链接"}
+    )
+
+
 def test_supervisor_route_templates_reference_registered_or_virtual_agents() -> None:
     supervisor = PythonAgentSupervisor()
     virtual_agents = {"resource_bundle"}

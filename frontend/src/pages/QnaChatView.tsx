@@ -3,8 +3,6 @@ import {
   BookOpenCheck,
   ClipboardList,
   FileText,
-  FolderOpen,
-  Network,
   Search,
   Sparkles,
 } from 'lucide-react';
@@ -31,38 +29,11 @@ interface QnaChatViewProps {
 }
 
 const suggestionChips = [
-  { label: '生成一套学习资源', prompt: '请根据我当前学习阶段生成一套学习资源，包括文档、PPT、思维导图、练习题、短视频和代码案例', icon: Sparkles },
-  { label: '帮我制定学习计划', prompt: '帮我制定一份适合我的学习计划', icon: ClipboardList },
-  { label: '解答一道数学题', prompt: '请帮我解答一道数学题，并讲清楚思路', icon: Search },
-  { label: '总结一篇文章', prompt: '请帮我总结这篇文章的核心观点', icon: FileText },
-  { label: '推荐学习资料', prompt: '请根据我的目标推荐学习资料', icon: BookOpenCheck },
-];
-
-const featureCards = [
-  {
-    title: '智能问答',
-    description: '快速解答各类学习问题',
-    icon: FileText,
-    tone: 'blue',
-  },
-  {
-    title: '学习规划',
-    description: '定制你的个性化学习路径',
-    icon: ClipboardList,
-    tone: 'violet',
-  },
-  {
-    title: '知识图谱',
-    description: '构建知识体系，理解更深刻',
-    icon: Network,
-    tone: 'mint',
-  },
-  {
-    title: '错题本',
-    description: '智能整理，精准攻克薄弱点',
-    icon: FolderOpen,
-    tone: 'orange',
-  },
+  { label: '解释概念', prompt: '请用清晰的结构解释这个概念，并给一个例子', icon: BookOpenCheck },
+  { label: '解一道题', prompt: '请帮我解答这道题，并把关键步骤讲清楚', icon: Search },
+  { label: '整理文章', prompt: '请提炼这篇文章的核心观点、论据和结论', icon: FileText },
+  { label: '生成资源', prompt: '请根据我当前学习阶段生成一套学习资源，包括文档、PPT、思维导图、练习题、短视频和代码案例', icon: Sparkles },
+  { label: '制定计划', prompt: '请帮我制定一份适合我的学习计划', icon: ClipboardList },
 ];
 
 export default function QnaChatView(props: QnaChatViewProps) {
@@ -75,25 +46,18 @@ export default function QnaChatView(props: QnaChatViewProps) {
           transition={{ duration: 0.5 }}
           className="qna-hero-panel"
         >
-          <div className="smart-orbit-logo" aria-hidden="true">
-            <span className="smart-orbit-ring" />
-            <span className="smart-orbit-cube smart-orbit-cube-back" />
-            <span className="smart-orbit-cube smart-orbit-cube-front">
-              <Sparkles className="h-8 w-8 text-white" />
-            </span>
-          </div>
           <h1 className="qna-hero-title">
-            你好，我是<span>智学引擎</span>
+            智学引擎
           </h1>
           <p className="qna-hero-subtitle">
-            智能驱动的个性化学习助手，随时为你解答问题
+            把问题讲清楚，把答案写明白。
           </p>
         </motion.div>
         <div className="qna-landing-composer">
           <InputPanel
             value={props.qnaInput}
             busy={props.qnaBusy}
-            placeholder="请输入你的学习问题或需求，按回车发送，按住上档键再按回车换行"
+            placeholder="输入学习问题，Enter 发送，Shift + Enter 换行"
             pendingImages={props.pendingImages ?? []}
             errorMessage={props.imageErrorMessage}
             deepReasoningEnabled={props.deepReasoningEnabled}
@@ -108,7 +72,6 @@ export default function QnaChatView(props: QnaChatViewProps) {
           />
         </div>
         <div className="qna-suggestion-row">
-          <span>你可以试试：</span>
           {suggestionChips.map((item) => (
             <button
               key={item.label}
@@ -121,19 +84,6 @@ export default function QnaChatView(props: QnaChatViewProps) {
             </button>
           ))}
         </div>
-        <div className="qna-feature-grid" aria-label="智学引擎能力">
-          {featureCards.map((item) => (
-            <div key={item.title} className={`qna-feature-card qna-feature-${item.tone}`}>
-              <div>
-                <h2>{item.title}</h2>
-                <p>{item.description}</p>
-              </div>
-              <div className="qna-feature-visual" aria-hidden="true">
-                <item.icon className="h-12 w-12" />
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
     );
   }
@@ -141,6 +91,7 @@ export default function QnaChatView(props: QnaChatViewProps) {
   return (
     <div className="qna-chat-shell">
       <ChatPanel
+        busy={props.qnaBusy}
         messages={props.qnaMessages}
         onConfirmSlideOutline={props.onConfirmSlideOutline}
         onRejectSlideOutline={props.onRejectSlideOutline}

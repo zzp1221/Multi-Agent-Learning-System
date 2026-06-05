@@ -369,6 +369,77 @@ class OpenAICompatibleConversationSummaryRefiner:
         return payload
 
 
+class ResourceIntentPayload(BaseModel):
+    """LLM 返回的对话资源生成意图。"""
+
+    should_generate: bool = Field(default=False, alias="shouldGenerate")
+    resource_types: list[str] = Field(default_factory=list, alias="resourceTypes")
+    topic: str = ""
+    question_count: int | None = Field(default=None, alias="questionCount")
+    question_type_preference: str = Field(default="", alias="questionTypePreference")
+    difficulty_preference: str = Field(default="", alias="difficultyPreference")
+    missing_slots: list[str] = Field(default_factory=list, alias="missingSlots")
+    confidence: float = 0.0
+    rationale: str = ""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+
+class OpenAICompatibleResourceIntentExtractor:
+    """使用 LLM 判断自然语言是否明确要求生成学习资源。"""
+
+    def __init__(self) -> None:
+        provider_name, model_name = _resolve_component_binding(
+            "tutor_llm",
+            default_logical_model="fast_model",
+        )
+        self.generator = OpenAICompatibleJSONGenerator(
+            model_name=model_name,
+            provider_name=provider_name,
+            temperature=0.0,
+            cache_namespace="resource_intent",
+        )
+
+    async def extract(
+        self,
+        *,
+        user_query: str,
+        recent_messages: list[dict[str, Any]],
+        learning_context: dict[str, Any],
+        structured_summary: dict[str, Any],
+    ) -> ResourceIntentPayload:
+        payload = await self.generator.generate(
+            system_prompt=(
+                "你是学习对话的意图抽取器，只判断用户是否明确要求生成新的学习资源。"
+                "可生成资源类型只能是 DOCUMENT、SLIDES、MINDMAP、QUIZ、VIDEO、CODE。"
+                "如果用户只是索要已有链接、下载链接、打开结果、询问某个视频链接、继续聊天、表达确认或信息不足，"
+                "shouldGenerate 必须为 false。"
+                "只有用户明确表达生成、制作、创建、整理、设计、编写、出题等新资源请求时才为 true。"
+                "当用户说“一套学习资源/资源包”时，resourceTypes 返回全部六类。"
+                "topic 必须是真实学习主题；不能把“链接、视频、文档、PPT、一份、资源”等资源词或占位词当主题。"
+                "如果主题缺失但上下文有当前学习阶段，可使用该阶段标题作为 topic。"
+                "如果用户要求练习题，可抽取 questionCount、questionTypePreference、difficultyPreference；"
+                "questionTypePreference 只能是 SINGLE_CHOICE、SHORT_ANSWER、MIXED 或空字符串，"
+                "difficultyPreference 只能是 BASIC、INTERMEDIATE、ADVANCED 或空字符串。"
+                "输出必须是 JSON，格式为 "
+                '{"shouldGenerate":false,"resourceTypes":["DOCUMENT"],"topic":"...",'
+                '"questionCount":5,"questionTypePreference":"MIXED","difficultyPreference":"BASIC",'
+                '"missingSlots":["topic"],"confidence":0.0,"rationale":"..."}。'
+            ),
+            user_prompt=dumps_json(
+                {
+                    "userQuery": user_query,
+                    "recentMessages": recent_messages[-6:],
+                    "learningContext": learning_context,
+                    "structuredSummary": structured_summary,
+                },
+                ensure_ascii=False,
+            ),
+            max_tokens=500,
+        )
+        return ResourceIntentPayload.model_validate(payload)
+
+
 class OpenAICompatibleEvaluationGenerator:
     """使用主提供商模型生成结构化学习者评估。"""
 
@@ -936,6 +1007,7 @@ StructuredJSONGenerator = OpenAICompatibleJSONGenerator
 QueryRewriteGenerator = OpenAICompatibleQueryRewriteGenerator
 RetrievalSummaryGenerator = OpenAICompatibleRetrievalSummaryGenerator
 ConversationSummaryRefiner = OpenAICompatibleConversationSummaryRefiner
+ResourceIntentExtractor = OpenAICompatibleResourceIntentExtractor
 EvaluationGenerator = OpenAICompatibleEvaluationGenerator
 LearningPathGenerator = OpenAICompatibleLearningPathGenerator
 PracticeQuestionGenerator = OpenAICompatiblePracticeQuestionGenerator
@@ -943,18 +1015,6 @@ ObjectiveJudgeGenerator = OpenAICompatibleObjectiveJudgeGenerator
 JudgeFeedbackGenerator = OpenAICompatibleJudgeFeedbackGenerator
 ProfileAnalyzer = OpenAICompatibleProfileAnalyzer
 ResourcePushReranker = OpenAICompatibleResourcePushReranker
-
-BailianJSONGenerator = OpenAICompatibleJSONGenerator
-BailianQueryRewriteGenerator = OpenAICompatibleQueryRewriteGenerator
-BailianRetrievalSummaryGenerator = OpenAICompatibleRetrievalSummaryGenerator
-BailianConversationSummaryRefiner = OpenAICompatibleConversationSummaryRefiner
-BailianEvaluationGenerator = OpenAICompatibleEvaluationGenerator
-BailianLearningPathGenerator = OpenAICompatibleLearningPathGenerator
-BailianPracticeQuestionGenerator = OpenAICompatiblePracticeQuestionGenerator
-BailianObjectiveJudgeGenerator = OpenAICompatibleObjectiveJudgeGenerator
-BailianJudgeFeedbackGenerator = OpenAICompatibleJudgeFeedbackGenerator
-BailianProfileAnalyzer = OpenAICompatibleProfileAnalyzer
-BailianResourcePushReranker = OpenAICompatibleResourcePushReranker
 
 
 class PracticeLLMClientFactory:
@@ -997,4 +1057,14 @@ class ConversationSummaryRefinerFactory:
     def create() -> Any | None:
         if _component_provider_ready("conversation_summary_llm"):
             return OpenAICompatibleConversationSummaryRefiner()
+        return None
+
+
+class ResourceIntentExtractorFactory:
+    """Create the optional LLM resource-intent extractor for Tutor turns."""
+
+    @staticmethod
+    def create() -> Any | None:
+        if _component_provider_ready("tutor_llm"):
+            return OpenAICompatibleResourceIntentExtractor()
         return None

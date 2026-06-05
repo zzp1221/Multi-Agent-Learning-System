@@ -51,19 +51,8 @@ interface QnaSendOverride {
   confirmedSlideOutline?: boolean;
 }
 
-interface ResourceIntentContext {
+interface QnaLearningContext {
   voiceContext?: QnaVoiceContext;
-  missingTopicMessage?: string;
-}
-
-interface ResourceConversationIntent {
-  isResourceIntent: boolean;
-  isSlides: boolean;
-  isQuiz: boolean;
-  explicitUserTopic: string;
-  questionCount?: number;
-  questionTypePreference?: string;
-  difficultyPreference?: string;
 }
 
 interface ActiveLearningStepContext {
@@ -72,9 +61,6 @@ interface ActiveLearningStepContext {
   progress: number;
   summary: string;
 }
-
-const GENERIC_RESOURCE_TOPIC_PATTERN =
-  /^(?:一份|一套|一个|一种|一张|几个|几道|一些|这个|这份|这套|此|本)?(?:PPT大纲|ppt大纲|PPT文件|ppt文件|PPT|ppt|slides?|课件|幻灯片|演示文稿|大纲|文档|资料|资源|学习资源|练习题|习题|题目|视频|代码案例)?$/i;
 
 interface UseLearningStudioQnaOptions {
   mode: 'qna' | 'engine';
@@ -720,39 +706,7 @@ export function useLearningStudioQna({
     const pendingPreviewUrls = override ? [] : pendingQnaImages.map((item) => item.previewUrl);
     const useWebSearch = override ? false : qnaWebSearchEnabled;
     const useDeepReasoning = override ? false : deepReasoningEnabled;
-    const resourceContext = await buildResourceIntentContext(text, override);
-    if (resourceContext.missingTopicMessage) {
-      const missingMessages: ChatMessage[] = [
-        ...qnaMessagesRef.current,
-        {
-          id: userMessageId,
-          role: 'user',
-          content: text,
-          imageUrls: uploadedImageUrls,
-          localImagePreviews: pendingPreviewUrls,
-          webSearchEnabled: useWebSearch,
-          deepReasoningEnabled: useDeepReasoning,
-        },
-        {
-          id: assistantMessageId,
-          role: 'assistant',
-          content: resourceContext.missingTopicMessage,
-        },
-      ];
-      qnaInputRef.current = '';
-      qnaMessagesRef.current = missingMessages;
-      setQnaInput('');
-      setQnaWebSearchEnabled(false);
-      setQnaImageError('');
-      setQnaMessages(missingMessages);
-      setPendingQnaImages([]);
-      cacheConversationView(conversationIdRef.current, {
-        qnaInput: '',
-        qnaMessages: missingMessages,
-        qnaState: 'QNA_IDLE',
-      });
-      return false;
-    }
+    const qnaLearningContext = await buildQnaLearningContext(override);
     const pendingMessages: ChatMessage[] = [
       ...qnaMessagesRef.current,
       {
@@ -817,7 +771,7 @@ export function useLearningStudioQna({
           serviceType: 'TUTORING',
           webSearchEnabled: useWebSearch,
           reasoningMode: useDeepReasoning ? 'DEEP' : 'NORMAL',
-          voiceContext: resourceContext.voiceContext,
+          voiceContext: qnaLearningContext.voiceContext,
         },
         {
           onOpen: () => {
@@ -958,37 +912,23 @@ export function useLearningStudioQna({
     }
   };
 
-  async function buildResourceIntentContext(
-    text: string,
-    override?: QnaSendOverride,
-  ): Promise<ResourceIntentContext> {
-    const intent = analyzeResourceConversationIntent(text, override);
-    if (!intent.isResourceIntent) {
+  async function buildQnaLearningContext(override?: QnaSendOverride): Promise<QnaLearningContext> {
+    const explicitUserTopic = cleanupConfirmedSlideTopic(override?.confirmedSlideTopic ?? '');
+    const activeStep = explicitUserTopic ? null : await loadActiveLearningStepContext();
+    if (!override?.confirmedSlideOutlineText && !activeStep) {
       return {};
-    }
-    const activeStep = intent.explicitUserTopic
-      ? null
-      : await loadActiveLearningStepContext();
-    if (!intent.explicitUserTopic && !activeStep) {
-      return {
-        missingTopicMessage: '当前没有可用学习阶段。请先生成学习路径，或在对话里补充明确的资源主题后再生成。',
-      };
     }
     const voiceContext: QnaVoiceContext = {
       pageType: 'learning_studio_qna',
-      source: 'conversation_resource_generation',
-      selectedService: 'RESOURCE_GENERATION',
-      commandIntent: intent.isQuiz ? 'generate_practice' : intent.isSlides ? 'generate_slides' : 'generate_resources',
+      source: 'learning_studio_qna',
+      selectedService: override?.confirmedSlideOutlineText ? 'RESOURCE_GENERATION' : undefined,
+      commandIntent: override?.confirmedSlideOutlineText ? 'generate_slides' : undefined,
       activeLearningStepId: activeStep?.stepId,
       activeLearningStepTitle: activeStep?.title,
       activeLearningStepProgress: activeStep ? String(activeStep.progress) : undefined,
       activeLearningStepSummary: activeStep?.summary,
-      explicitUserTopic: intent.explicitUserTopic || undefined,
-      questionCount: intent.questionCount ? String(intent.questionCount) : undefined,
-      questionTypePreference: intent.questionTypePreference,
-      difficultyPreference: intent.difficultyPreference,
-      requiresSlideOutlineConfirmation: intent.isSlides && !override?.confirmedSlideOutlineText ? 'true' : undefined,
-      confirmedSlideOutline: override?.confirmedSlideOutlineText || override?.confirmedSlideOutline ? 'true' : undefined,
+      explicitUserTopic: explicitUserTopic || undefined,
+      confirmedSlideOutline: override?.confirmedSlideOutlineText ? 'true' : undefined,
       confirmedSlideOutlineText: override?.confirmedSlideOutlineText,
     };
     return { voiceContext: pruneVoiceContext(voiceContext) };
@@ -1088,7 +1028,7 @@ export function useLearningStudioQna({
     if (!confirmation || confirmation.status !== 'pending') {
       return;
     }
-    const confirmedTopic = cleanupTopic(confirmation.topic || '');
+    const confirmedTopic = cleanupConfirmedSlideTopic(confirmation.topic || '');
     void handleQnaSend({
       text: '确认此大纲并生成 PPT 文件',
       confirmedSlideOutline: true,
@@ -1335,108 +1275,12 @@ function hasRealLlmProvenance(payload: Record<string, unknown> | undefined): boo
     && typeof payload.fromCache === 'boolean';
 }
 
-function analyzeResourceConversationIntent(text: string, override?: QnaSendOverride): ResourceConversationIntent {
-  const normalized = text.trim();
-  const isConfirmedSlide = Boolean(override?.confirmedSlideOutlineText);
-  const isSlides = isConfirmedSlide
-    || /ppt|slides?|课件|演示文稿|幻灯片/i.test(normalized);
-  const isQuiz = /出\s*\d*\s*道.*题|练习题|习题|测验|自测|刷题|题目/.test(normalized)
-    && !/解答|讲解|解析/.test(normalized);
-  const isResourceIntent = isConfirmedSlide
-    || isSlides
-    || isQuiz
-    || /生成|制作|创建|整理|来一套|出一套/.test(normalized)
-      && /资源|文档|资料|阅读|视频|代码案例|思维导图|导图|课件|ppt|slides?|练习|习题|题目/i.test(normalized);
-  const explicitUserTopic = cleanupTopic(override?.confirmedSlideTopic ?? '')
-    || (isConfirmedSlide ? '' : extractExplicitResourceTopic(normalized, { isSlides, isQuiz }));
-  return {
-    isResourceIntent,
-    isSlides,
-    isQuiz,
-    explicitUserTopic,
-    questionCount: extractQuestionCount(normalized),
-    questionTypePreference: extractQuestionTypePreference(normalized),
-    difficultyPreference: extractDifficultyPreference(normalized),
-  };
-}
-
-function extractExplicitResourceTopic(text: string, intent: { isSlides: boolean; isQuiz: boolean }): string {
-  if (/当前|现阶段|学习阶段|我的阶段|当前学习|当前想学|我想学的主题/.test(text)) {
-    return '';
-  }
-  const quoted = text.match(/[「《“"]([^」》”"]{2,80})[」》”"]/);
-  if (quoted?.[1]) {
-    return cleanupTopic(quoted[1]);
-  }
-  const topicMatch = text.match(/(?:关于|围绕|根据|针对|以)([^，。,.!?！？]{2,80})(?:生成|制作|创建|整理|出|来|的|为主题)/);
-  if (topicMatch?.[1]) {
-    return cleanupTopic(topicMatch[1]);
-  }
-  if (intent.isSlides) {
-    const slideMatch = text.match(/(?:生成|制作|创建)?\s*([^，。,.!?！？]{2,80}?)(?:PPT|ppt|课件|演示文稿|幻灯片)/);
-    if (slideMatch?.[1]) {
-      return cleanupTopic(slideMatch[1]);
-    }
-  }
-  if (intent.isQuiz) {
-    const quizMatch = text.match(/(?:出|生成|来)\s*(?:\d+\s*)?道?([^，。,.!?！？]{2,80}?)(?:练习题|习题|题目|题)/);
-    if (quizMatch?.[1]) {
-    return cleanupTopic(quizMatch[1]);
-    }
-  }
-  return '';
-}
-
-function cleanupTopic(value: string): string {
-  const cleaned = stripResourceCommandTail(value)
-    .replace(/^(一份|一个|一种|一张|一套|一些|几个|几道|当前|我的|请|帮我|给我|关于|围绕|根据|针对|以)/, '')
-    .replace(/(学习资源|资源|文档|资料|课件|练习题|习题|题目|PPT大纲|ppt大纲|PPT|ppt|大纲|的)$/i, '')
-    .trim();
-  return isRealResourceTopic(cleaned) ? cleaned : '';
-}
-
-function stripResourceCommandTail(value: string): string {
+function cleanupConfirmedSlideTopic(value: string): string {
   return value
-    .replace(
-      /[，,；;。]?\s*(?:包括|包含|含|涵盖)?\s*(?:文档|资料|PPT|ppt|课件|幻灯片|思维导图|导图|练习题|习题|题目|短视频|视频|代码案例|代码)(?:\s*[、,，和及与]\s*(?:文档|资料|PPT|ppt|课件|幻灯片|思维导图|导图|练习题|习题|题目|短视频|视频|代码案例|代码))*\s*$/i,
-      '',
-    )
-    .trim();
-}
-
-function extractQuestionCount(text: string): number | undefined {
-  const match = text.match(/(\d{1,2})\s*道/);
-  if (!match) {
-    return undefined;
-  }
-  const count = Number(match[1]);
-  return Number.isFinite(count) && count > 0 ? Math.min(count, 20) : undefined;
-}
-
-function extractQuestionTypePreference(text: string): string | undefined {
-  if (/选择题|客观题|单选/.test(text) && !/主观题|简答/.test(text)) {
-    return 'SINGLE_CHOICE';
-  }
-  if (/主观题|简答题|问答题/.test(text) && !/选择题|客观题|单选/.test(text)) {
-    return 'SHORT_ANSWER';
-  }
-  if (/混合|都有|搭配|组合/.test(text)) {
-    return 'MIXED';
-  }
-  return undefined;
-}
-
-function extractDifficultyPreference(text: string): string | undefined {
-  if (/困难|高难|进阶|高级/.test(text)) {
-    return 'ADVANCED';
-  }
-  if (/简单|基础|入门/.test(text)) {
-    return 'BASIC';
-  }
-  if (/中等|适中/.test(text)) {
-    return 'INTERMEDIATE';
-  }
-  return undefined;
+    .replace(/\.(?:pptx?|pdf|md|markdown)$/i, '')
+    .replace(/(?:PPT|ppt|课件|幻灯片|演示文稿|大纲)$/i, '')
+    .trim()
+    .slice(0, 80);
 }
 
 function resolveActiveLearningStep(data: LearningPathCurrentResponse | null): ActiveLearningStepContext | null {
@@ -1487,29 +1331,6 @@ function isActiveLearningStepStatus(status: string, allowMissing: boolean): bool
     return true;
   }
   return normalized.split(/_+/).some((token) => token === 'RUNNING' || token === 'RUN' || token === 'PROGRESS' || token === 'ACTIVE');
-}
-
-function isRealResourceTopic(value: string): boolean {
-  const normalized = value.replace(/\s+/g, '').trim();
-  if (normalized.length < 2 || normalized.length > 80) {
-    return false;
-  }
-  if (GENERIC_RESOURCE_TOPIC_PATTERN.test(normalized)) {
-    return false;
-  }
-  if (/^(生成|制作|创建|整理|给我|帮我|请|来一套|出|写|做)?(一份|一套|一些|几个|几道)?(文档|资料|资源|学习资源|PPT|课件|幻灯片|练习题|习题|题目|视频|代码案例)$/i.test(normalized)) {
-    return false;
-  }
-  if (/^(当前|现阶段|我的)?(学习阶段|当前学习|当前想学的主题|我想学的主题)$/i.test(normalized)) {
-    return false;
-  }
-  if (/^(包括|包含|含|涵盖)?(文档|资料|PPT|ppt|课件|幻灯片|思维导图|导图|练习题|习题|题目|短视频|视频|代码案例|代码)([、,，和及与]*(文档|资料|PPT|ppt|课件|幻灯片|思维导图|导图|练习题|习题|题目|短视频|视频|代码案例|代码))*$/i.test(normalized)) {
-    return false;
-  }
-  if (!/[\u4e00-\u9fa5A-Za-z0-9]/.test(normalized)) {
-    return false;
-  }
-  return true;
 }
 
 function normalizeLearningPathStep(step: unknown, index: number): (ActiveLearningStepContext & { order: number; status: string }) | null {

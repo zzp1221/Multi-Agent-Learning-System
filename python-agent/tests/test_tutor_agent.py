@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 
 from src.ai_modules.agents.tutor_agent import TutorAgent
 from src.ai_modules.llms import RuleBasedTutorLLM
@@ -160,28 +161,92 @@ class _RecordingResourceBundleRunner:
         )
 
 
-def test_tutor_resource_intent_does_not_match_plain_question() -> None:
+class _FakeResourceIntentExtractor:
+    def __init__(
+        self,
+        *,
+        should_generate: bool,
+        resource_types: list[str] | None = None,
+        topic: str = "",
+        confidence: float = 0.95,
+        missing_slots: list[str] | None = None,
+        question_count: int | None = None,
+        question_type_preference: str = "",
+        difficulty_preference: str = "",
+    ) -> None:
+        self.should_generate = should_generate
+        self.resource_types = resource_types or []
+        self.topic = topic
+        self.confidence = confidence
+        self.missing_slots = missing_slots or []
+        self.question_count = question_count
+        self.question_type_preference = question_type_preference
+        self.difficulty_preference = difficulty_preference
+        self.calls: list[dict] = []
+
+    async def extract(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            should_generate=self.should_generate,
+            resource_types=self.resource_types,
+            topic=self.topic,
+            question_count=self.question_count,
+            question_type_preference=self.question_type_preference,
+            difficulty_preference=self.difficulty_preference,
+            confidence=self.confidence,
+            missing_slots=self.missing_slots,
+            rationale="test fixture",
+        )
+
+
+def _resource_intent(
+    resource_types: list[str],
+    topic: str = "",
+    *,
+    missing_topic: bool = False,
+) -> _FakeResourceIntentExtractor:
+    return _FakeResourceIntentExtractor(
+        should_generate=True,
+        resource_types=resource_types,
+        topic=topic,
+        missing_slots=["topic"] if missing_topic else [],
+    )
+
+
+@pytest.mark.asyncio
+async def test_tutor_resource_intent_does_not_match_plain_question() -> None:
+    extractor = _FakeResourceIntentExtractor(should_generate=False)
     tutor = TutorAgent(
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=extractor,
     )
 
-    intent = tutor._detect_resource_generation_intent(
+    intent = await tutor._detect_resource_generation_intent(
         user_query="Explain how a B+ tree handles range queries.",
+        conversation=[],
         params={},
     )
 
     assert intent is None
 
 
-def test_tutor_resource_intent_defaults_bundle_types() -> None:
+@pytest.mark.asyncio
+async def test_tutor_resource_intent_defaults_bundle_types() -> None:
+    extractor = _FakeResourceIntentExtractor(
+        should_generate=True,
+        resource_types=["DOCUMENT", "SLIDES", "MINDMAP", "QUIZ", "VIDEO", "CODE"],
+        topic="联合索引",
+    )
     tutor = TutorAgent(
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=extractor,
     )
 
-    intent = tutor._detect_resource_generation_intent(
+    intent = await tutor._detect_resource_generation_intent(
         user_query="请围绕联合索引生成一套学习资源",
+        conversation=[],
         params={},
     )
 
@@ -197,24 +262,48 @@ def test_tutor_resource_intent_defaults_bundle_types() -> None:
     ]
 
 
-def test_tutor_resource_intent_extracts_specific_types() -> None:
+@pytest.mark.asyncio
+async def test_tutor_resource_intent_accepts_llm_specific_types() -> None:
+    cases = [
+        ("帮我做数据库索引的 PPT", ["SLIDES"], "数据库索引"),
+        ("给我围绕死锁出 3 道练习题", ["QUIZ"], "死锁"),
+        ("请生成 B+ 树思维导图", ["MINDMAP"], "B+ 树"),
+        ("制作 Java 并发短视频", ["VIDEO"], "Java 并发"),
+        ("整理 Redis 缓存穿透代码案例", ["CODE"], "Redis 缓存穿透"),
+    ]
+
+    for query, expected_types, topic in cases:
+        tutor = TutorAgent(
+            summary_store=InMemoryConversationSummaryStore(),
+            llm_client=RuleBasedTutorLLM(),
+            resource_intent_extractor=_FakeResourceIntentExtractor(
+                should_generate=True,
+                resource_types=expected_types,
+                topic=topic,
+            ),
+        )
+        intent = await tutor._detect_resource_generation_intent(user_query=query, conversation=[], params={})
+        assert intent is not None, query
+        assert intent.resource_types == expected_types
+
+
+@pytest.mark.asyncio
+async def test_tutor_resource_intent_rejects_video_link_request() -> None:
+    extractor = _FakeResourceIntentExtractor(should_generate=False)
     tutor = TutorAgent(
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=extractor,
     )
 
-    cases = [
-        ("帮我做数据库索引的 PPT", ["SLIDES"]),
-        ("给我围绕死锁出 3 道练习题", ["QUIZ"]),
-        ("请生成 B+ 树思维导图", ["MINDMAP"]),
-        ("制作 Java 并发短视频", ["VIDEO"]),
-        ("整理 Redis 缓存穿透代码案例", ["CODE"]),
-    ]
+    intent = await tutor._detect_resource_generation_intent(
+        user_query="请给我视频链接",
+        conversation=[],
+        params={},
+    )
 
-    for query, expected_types in cases:
-        intent = tutor._detect_resource_generation_intent(user_query=query, params={})
-        assert intent is not None, query
-        assert intent.resource_types == expected_types
+    assert intent is None
+    assert extractor.calls[0]["user_query"] == "请给我视频链接"
 
 
 def test_tutor_question_count_requires_explicit_question_unit() -> None:
@@ -237,6 +326,7 @@ async def test_tutor_agent_prompts_for_topic_when_resource_request_has_no_contex
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=llm,
+        resource_intent_extractor=_resource_intent(["SLIDES"], missing_topic=True),
         resource_bundle_runner=runner,
     )
     params = {
@@ -272,6 +362,7 @@ async def test_tutor_agent_uses_active_learning_step_for_topicless_resource_requ
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=_resource_intent(["SLIDES"]),
         resource_bundle_runner=runner,
     )
     params = {
@@ -307,6 +398,7 @@ async def test_tutor_agent_ignores_generic_explicit_topic_when_active_step_exist
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=_resource_intent(["SLIDES"]),
         resource_bundle_runner=runner,
     )
     params = {
@@ -346,6 +438,9 @@ async def test_tutor_agent_uses_current_stage_for_resource_bundle_prompt() -> No
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=_resource_intent(
+            ["DOCUMENT", "SLIDES", "MINDMAP", "QUIZ", "VIDEO", "CODE"],
+        ),
         resource_bundle_runner=runner,
     )
     query = "请根据我当前学习阶段生成一套学习资源，包括文档、PPT、思维导图、练习题、短视频和代码案例"
@@ -385,6 +480,10 @@ async def test_tutor_agent_triggers_resource_bundle_from_conversation() -> None:
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=_resource_intent(
+            ["DOCUMENT", "SLIDES", "MINDMAP", "QUIZ", "VIDEO", "CODE"],
+            "联合索引",
+        ),
         resource_bundle_runner=runner,
     )
     params = {
@@ -428,6 +527,7 @@ async def test_tutor_agent_remembers_pending_slide_outline_from_resource_bundle(
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=_resource_intent(["SLIDES"], "联合索引"),
         resource_bundle_runner=runner,
     )
     params = {
@@ -461,6 +561,7 @@ async def test_tutor_agent_promotes_confirmed_slide_outline_from_learning_contex
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=_resource_intent(["SLIDES"], "B+ tree indexes"),
         resource_bundle_runner=runner,
     )
     params = {
@@ -499,6 +600,51 @@ async def test_tutor_agent_promotes_confirmed_slide_outline_from_learning_contex
 
 
 @pytest.mark.asyncio
+async def test_tutor_agent_applies_llm_quiz_parameter_intent() -> None:
+    runner = _RecordingResourceBundleRunner()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=_FakeResourceIntentExtractor(
+            should_generate=True,
+            resource_types=["QUIZ"],
+            topic="Java Stream",
+            question_count=12,
+            question_type_preference="SINGLE_CHOICE",
+            difficulty_preference="BASIC",
+        ),
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-quiz-intent",
+        "messages": [{"role": "user", "content": "围绕 Java Stream 出 12 道简单选择题"}],
+        "query": "围绕 Java Stream 出 12 道简单选择题",
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-quiz-intent",
+            trace_id="trace-quiz-intent",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert len(runner.calls) == 1
+    runner_params = runner.calls[0]["params"]
+    assert runner_params["resourceTypes"] == ["QUIZ"]
+    assert runner_params["count"] == 12
+    assert runner_params["questionTypePreference"] == "SINGLE_CHOICE"
+    assert runner_params["difficulty"] == "BASIC"
+    assert [event.event for event in events] == ["progress", "result_chunk", "progress", "resource_file"]
+
+
+@pytest.mark.asyncio
 async def test_tutor_agent_plain_question_does_not_trigger_resource_bundle() -> None:
     runner = _RecordingResourceBundleRunner()
     llm = _StreamingTutorLLM()
@@ -506,6 +652,7 @@ async def test_tutor_agent_plain_question_does_not_trigger_resource_bundle() -> 
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
         summary_store=InMemoryConversationSummaryStore(),
         llm_client=llm,
+        resource_intent_extractor=_FakeResourceIntentExtractor(should_generate=False),
         resource_bundle_runner=runner,
     )
     params = {
@@ -543,6 +690,7 @@ def test_tutor_agent_system_prompt_loads_skill_and_context() -> None:
     assert "# 辅导智能体" in prompt
     assert "回复原则" in prompt
     assert "read_retrieval_evidence" in prompt
+    assert "外部 URL" in prompt
     assert "## 当前上下文" in prompt
     assert f"课程: {_build_snapshot().current_course}" in prompt
 
@@ -677,6 +825,155 @@ def test_tutor_runtime_context_includes_graph_evidence_pack() -> None:
     assert "source=" not in context
     assert "graphIntent:" not in context
     assert "学习路径相关候选集合（非严格顺序）：数据库索引、B树、B+树" in context
+
+
+def test_tutor_retrieval_evidence_collects_web_external_resources() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "query": "给我有关数据结构的视频链接",
+        "rewrittenQuery": "数据结构 视频 教程 链接",
+        "webSearchEnabled": True,
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "数据结构课程视频",
+                    "channel": "web",
+                    "evidence": "面向入门学习者的数据结构视频课程。",
+                    "url": "https://example.edu/ds-video",
+                    "sourceTitle": "Example EDU",
+                    "score": 0.91,
+                },
+                {
+                    "title": "本地数据结构讲义",
+                    "channel": "hybrid",
+                    "evidence": "数组、链表、树的基础定义。",
+                },
+            ],
+        },
+        "webRetrievalResult": {
+            "enabled": True,
+            "results": [
+                (
+                    "https://example.edu/ds-video",
+                    "数据结构课程视频重复项",
+                    0.8,
+                    {"url": "https://example.edu/ds-video", "snippet": "重复链接"},
+                ),
+                (
+                    "https://example.org/algorithms",
+                    "算法与数据结构公开视频",
+                    0.77,
+                    {"snippet": "包含栈、队列、树、图等章节。"},
+                ),
+            ],
+        },
+    }
+
+    evidence = tutor._tool_read_retrieval_evidence(tool_input={}, params=params)
+
+    assert evidence["webSearchEnabled"] is True
+    assert [item["url"] for item in evidence["externalResources"]] == [
+        "https://example.edu/ds-video",
+        "https://example.org/algorithms",
+    ]
+    assert evidence["externalResources"][0]["title"] == "数据结构课程视频"
+
+
+def test_tutor_runtime_context_allows_verified_external_links_when_web_search_enabled() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    evidence = {
+        "webSearchEnabled": True,
+        "externalResources": [
+            {
+                "title": "数据结构课程视频",
+                "url": "https://example.edu/ds-video",
+                "snippet": "面向入门学习者的数据结构视频课程。",
+            }
+        ],
+        "documents": [
+            {
+                "title": "数据结构课程视频",
+                "channel": "web",
+                "evidence": "面向入门学习者的数据结构视频课程。",
+                "url": "https://example.edu/ds-video",
+            }
+        ],
+    }
+
+    context = tutor._build_enriched_message(
+        user_query="给我有关数据结构的视频链接",
+        memory={},
+        context={},
+        evidence=evidence,
+        profile={},
+        image_analysis={},
+        recent_dialogue={},
+        input_mode="clear_question",
+        params={"webSearchEnabled": True},
+    )
+
+    assert "联网搜索状态：已开启" in context
+    assert "可以直接引用以下外部检索结果中的 URL" in context
+    assert "https://example.edu/ds-video" in context
+    assert "不得编造未提供的 URL" in context
+
+
+@pytest.mark.asyncio
+async def test_tutor_web_search_video_link_request_returns_external_links_without_generation() -> None:
+    runner = _RecordingResourceBundleRunner()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=_FakeResourceIntentExtractor(should_generate=False),
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-video-link",
+        "messages": [{"role": "user", "content": "给我有关数据结构的视频链接"}],
+        "query": "给我有关数据结构的视频链接",
+        "rewrittenQuery": "数据结构 视频 教程 链接",
+        "webSearchEnabled": True,
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "数据结构课程视频",
+                    "channel": "web",
+                    "evidence": "面向入门学习者的数据结构视频课程。",
+                    "url": "https://example.edu/ds-video",
+                    "sourceTitle": "Example EDU",
+                    "score": 0.91,
+                }
+            ]
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-video-link",
+            trace_id="trace-video-link",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    result_text = "".join(
+        event.payload.text for event in events if event.event == "result_chunk"
+    )
+    assert runner.calls == []
+    assert "https://example.edu/ds-video" in result_text
+    assert "外部资源链接" in result_text
+    assert not any(event.event in {"resource_file", "video_gen:start"} for event in events)
 
 
 def test_tutor_runtime_context_omits_graph_pack_for_plain_retrieval() -> None:

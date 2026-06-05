@@ -11,7 +11,7 @@ from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.generation.resource_builder import ResourceGenerationService
-from src.ai_modules.llms import ConversationSummaryRefinerFactory, TutorLLMClientFactory
+from src.ai_modules.llms import ConversationSummaryRefinerFactory, ResourceIntentExtractorFactory, TutorLLMClientFactory
 from src.ai_modules.memory import MongoConversationSummaryStore
 from src.ai_modules.models import (
     DialogState,
@@ -82,6 +82,8 @@ CONVERSATIONAL_RESOURCE_TYPES: tuple[str, ...] = (
     "CODE",
 )
 
+_DEFAULT_RESOURCE_INTENT_EXTRACTOR = object()
+
 
 @dataclass(slots=True)
 class ResourceGenerationIntent:
@@ -89,6 +91,11 @@ class ResourceGenerationIntent:
 
     resource_types: list[str]
     topic: str
+    question_count: int | None = None
+    question_type_preference: str = ""
+    difficulty_preference: str = ""
+    confidence: float = 0.0
+    rationale: str = ""
 
 
 class TutorAgent(PlaceholderAgent):
@@ -101,6 +108,7 @@ class TutorAgent(PlaceholderAgent):
         llm_client: Any | None = None,
         llm_fallback_clients: list[Any] | None = None,
         summary_refiner: Any | None = None,
+        resource_intent_extractor: Any = _DEFAULT_RESOURCE_INTENT_EXTRACTOR,
         resource_bundle_runner: Any | None = None,
     ) -> None:
         super().__init__("Tutor Agent", "tutoring")
@@ -118,6 +126,10 @@ class TutorAgent(PlaceholderAgent):
             self.llm_clients.extend(llm_fallback_clients)
         self.llm_client = self.llm_clients[0] if self.llm_clients else None
         self.skill_loader = SkillPromptLoader()
+        if resource_intent_extractor is _DEFAULT_RESOURCE_INTENT_EXTRACTOR:
+            self.resource_intent_extractor = ResourceIntentExtractorFactory.create() if llm_client is None else None
+        else:
+            self.resource_intent_extractor = resource_intent_extractor
         self.resource_bundle_runner = resource_bundle_runner
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
@@ -172,12 +184,9 @@ class TutorAgent(PlaceholderAgent):
         params["recentDialogueContext"] = recent_dialogue
         params["inputMode"] = input_mode
 
-        resource_intent_source = self._resource_intent_source_text(
+        resource_intent = await self._detect_resource_generation_intent(
             user_query=user_query,
             conversation=conversation,
-        )
-        resource_intent = self._detect_resource_generation_intent(
-            user_query=resource_intent_source,
             params=params,
         )
 
@@ -239,7 +248,7 @@ class TutorAgent(PlaceholderAgent):
                 yield event.model_copy(update={"dialog_state": event.dialog_state or dialog_state})
             return
 
-        if self._is_topicless_resource_generation_request(resource_intent_source, params=params):
+        if params.pop("resourceIntentMissingTopic", False):
             yield ResultChunkSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
@@ -430,145 +439,95 @@ class TutorAgent(PlaceholderAgent):
             )
         return normalized
 
-    def _detect_resource_generation_intent(
+    async def _detect_resource_generation_intent(
         self,
         *,
         user_query: str,
+        conversation: list[dict[str, Any]] | None = None,
         params: dict[str, Any],
     ) -> ResourceGenerationIntent | None:
         text = str(user_query or "").strip()
-        if not text:
+        if not text or self.resource_intent_extractor is None:
             return None
-        normalized = text.lower()
-        has_action = self._has_resource_generation_action(text)
-        requested_types = self._extract_requested_resource_types(text)
-        is_bundle_request = self._is_resource_bundle_request(text)
-        if is_bundle_request and has_action:
-            requested_types = list(CONVERSATIONAL_RESOURCE_TYPES)
-        elif not has_action or not requested_types:
+        try:
+            payload = await self.resource_intent_extractor.extract(
+                user_query=text,
+                recent_messages=conversation or [],
+                learning_context=params.get("learningContext") if isinstance(params.get("learningContext"), dict) else {},
+                structured_summary=params.get("structuredConversationSummary") if isinstance(params.get("structuredConversationSummary"), dict) else {},
+            )
+        except Exception as exc:
+            LOGGER.warning("Resource intent LLM extraction failed; continuing as normal tutoring", exc_info=True)
             return None
 
-        topic = self._extract_resource_topic(text, params=params)
+        if not bool(getattr(payload, "should_generate", False)):
+            return None
+
+        confidence = self._coerce_confidence(getattr(payload, "confidence", 0.0))
+        if confidence < 0.65:
+            return None
+        topic = self._resolve_llm_resource_topic(str(getattr(payload, "topic", "") or ""), params=params)
         if not topic:
+            params["resourceIntentMissingTopic"] = True
+            params["resourceIntentMissingSlots"] = list(getattr(payload, "missing_slots", []) or ["topic"])
             return None
-        if "pdf" in normalized and "ppt" not in normalized and "幻灯" not in text and "演示文稿" not in text:
-            requested_types = [item for item in requested_types if item != "SLIDES"]
+        requested_types = self._unique_resource_types([
+            str(item).strip().upper()
+            for item in getattr(payload, "resource_types", [])
+        ])
+        if not requested_types:
+            params["resourceIntentMissingTypes"] = True
+            return None
         return ResourceGenerationIntent(
-            resource_types=self._unique_resource_types(requested_types),
+            resource_types=requested_types,
             topic=topic,
+            question_count=self._coerce_resource_question_count(getattr(payload, "question_count", None)),
+            question_type_preference=self._coerce_question_type_preference(
+                getattr(payload, "question_type_preference", "")
+            ),
+            difficulty_preference=self._coerce_difficulty_preference(
+                getattr(payload, "difficulty_preference", "")
+            ),
+            confidence=confidence,
+            rationale=str(getattr(payload, "rationale", "") or ""),
         )
 
-    def _resource_intent_source_text(self, *, user_query: str, conversation: list[dict[str, Any]]) -> str:
-        query_text = str(user_query or "").strip()
-        if self._looks_like_resource_generation_request(query_text):
-            return query_text
-        for item in reversed(conversation):
-            if item.get("role") != "user":
-                continue
-            content = str(item.get("content") or "").strip()
-            if content and self._looks_like_resource_generation_request(content):
-                return content
-            if content and not query_text:
-                return content
-            break
-        return query_text
+    def _resolve_llm_resource_topic(self, raw_topic: str, *, params: dict[str, Any]) -> str:
+        topic = str(raw_topic or "").strip()
+        if ResourceGenerationService._is_real_topic(topic):
+            return topic[:80]
+        return self._topic_from_context(params)
 
-    def _looks_like_resource_generation_request(self, text: str) -> bool:
-        if not str(text or "").strip():
-            return False
-        return self._has_resource_generation_action(text) and bool(
-            self._extract_requested_resource_types(text)
-            or self._is_resource_bundle_request(text)
-        )
+    @staticmethod
+    def _coerce_confidence(value: Any) -> float:
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, min(1.0, confidence))
 
-    def _is_topicless_resource_generation_request(self, text: str, *, params: dict[str, Any]) -> bool:
-        if not self._looks_like_resource_generation_request(text):
-            return False
-        return not self._extract_resource_topic(text, params=params)
+    @staticmethod
+    def _coerce_resource_question_count(value: Any) -> int | None:
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            return None
+        if count <= 0:
+            return None
+        return min(count, 20)
+
+    @staticmethod
+    def _coerce_question_type_preference(value: Any) -> str:
+        normalized = str(value or "").strip().upper()
+        return normalized if normalized in {"SINGLE_CHOICE", "SHORT_ANSWER", "MIXED"} else ""
+
+    @staticmethod
+    def _coerce_difficulty_preference(value: Any) -> str:
+        normalized = str(value or "").strip().upper()
+        return normalized if normalized in {"BASIC", "INTERMEDIATE", "ADVANCED"} else ""
 
     def _missing_resource_topic_message(self) -> str:
         return "请补充要生成资源的具体主题，例如“围绕联合索引生成 PPT”，或先进入一个学习阶段后再说“根据当前阶段生成 PPT”。"
-
-    def _has_resource_generation_action(self, text: str) -> bool:
-        return bool(
-            re.search(
-                r"(生成|制作|创建|整理|准备|设计|编写|产出|做[一份一套个张些几道]?|出题|出[几0-9一二三四五六七八九十]*道|帮我|请你|给我)",
-                text,
-                flags=re.IGNORECASE,
-            )
-        )
-
-    def _is_resource_bundle_request(self, text: str) -> bool:
-        return bool(
-            re.search(
-                r"(一套|整套|完整|全套|资源包|学习资源|资料包|组合资源)",
-                text,
-                flags=re.IGNORECASE,
-            )
-        )
-
-    def _extract_requested_resource_types(self, text: str) -> list[str]:
-        checks: list[tuple[str, str]] = [
-            ("DOCUMENT", r"(文档|讲义|说明文档|知识文档|学习资料|复习资料)"),
-            ("SLIDES", r"(ppt|slides?|幻灯片|演示文稿|课件)"),
-            ("MINDMAP", r"(思维导图|脑图|mind\s*map|mindmap)"),
-            ("QUIZ", r"(练习题|习题|题目|测验|小测|quiz|刷题|出题|出[几0-9一二三四五六七八九十]*道)"),
-            ("VIDEO", r"(短视频|视频|微课|讲解视频|video)"),
-            ("CODE", r"(代码案例|代码示例|案例代码|实操案例|实践案例|demo|示例程序|编程案例)"),
-        ]
-        return [resource_type for resource_type, pattern in checks if re.search(pattern, text, flags=re.IGNORECASE)]
-
-    def _extract_resource_topic(self, text: str, *, params: dict[str, Any]) -> str:
-        if self._references_current_learning_stage(text):
-            return self._topic_from_context(params)
-        for pattern in (
-            r"(?:关于|围绕|针对|基于|以)(?P<topic>[^，。！？,.!?；;]{2,80}?)(?:的|来|生成|制作|创建|整理|准备|设计|编写|做|出|$)",
-            r"(?:生成|制作|创建|整理|准备|设计|编写|做|出题|出[几0-9一二三四五六七八九十]*道)(?:一套|一份|几个|几道|一些|完整|全套)?(?:关于|围绕|针对|基于)?(?P<topic>[^，。！？,.!?；;]{2,80})",
-        ):
-            match = re.search(pattern, text, flags=re.IGNORECASE)
-            if match:
-                topic = self._clean_resource_topic(match.group("topic"))
-                if topic:
-                    return topic
-        cleaned = self._clean_resource_topic(text)
-        if cleaned and cleaned != text:
-            return cleaned
-        return self._topic_from_context(params)
-
-    def _clean_resource_topic(self, value: str) -> str:
-        text = str(value or "").strip()
-        if not text:
-            return ""
-        text = re.sub(
-            r"(请|帮我|给我|可以|能不能|能否|一下|一个|一份|一套|整套|完整|全套|学习资源|资源包|资料包)",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-        text = re.sub(
-            r"(生成|制作|创建|整理|准备|设计|编写|做|出题|出[几0-9一二三四五六七八九十]*道)",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-        text = re.sub(
-            r"(文档|讲义|ppt|slides?|幻灯片|演示文稿|课件|思维导图|脑图|练习题|习题|题目|测验|短视频|视频|微课|代码案例|代码示例|案例代码|实操案例|实践案例|示例程序|编程案例|pdf)",
-            "",
-            text,
-            flags=re.IGNORECASE,
-        )
-        text = re.sub(r"(包括|包含|含|涵盖|以及|和|与|及)", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"^[：:，,。.、\s]+|[：:，,。.、\s]+$", "", text)
-        cleaned = text[:80].strip()
-        if self._references_current_learning_stage(cleaned):
-            return ""
-        if not ResourceGenerationService._is_real_topic(cleaned):
-            return ""
-        return cleaned
-
-    @staticmethod
-    def _references_current_learning_stage(text: str) -> bool:
-        return bool(re.search(r"(当前|现阶段|学习阶段|我的阶段|当前学习|当前想学)", str(text or "")))
 
     def _topic_from_context(self, params: dict[str, Any]) -> str:
         learning_context = params.get("learningContext", {})
@@ -604,13 +563,19 @@ class TutorAgent(PlaceholderAgent):
         params["topic"] = intent.topic
         params["keyPoints"] = params.get("keyPoints") or intent.topic
         params["resourceTypes"] = intent.resource_types
+        if intent.question_count:
+            params["count"] = intent.question_count
+        if intent.question_type_preference:
+            params["questionTypePreference"] = intent.question_type_preference
+        if intent.difficulty_preference:
+            params["difficulty"] = intent.difficulty_preference
         learning_context = params.get("learningContext", {})
         if isinstance(learning_context, dict):
-            if learning_context.get("questionCount"):
+            if learning_context.get("questionCount") and not params.get("count"):
                 params["count"] = learning_context.get("questionCount")
-            if learning_context.get("questionTypePreference"):
+            if learning_context.get("questionTypePreference") and not params.get("questionTypePreference"):
                 params["questionTypePreference"] = learning_context.get("questionTypePreference")
-            if learning_context.get("difficultyPreference"):
+            if learning_context.get("difficultyPreference") and not params.get("difficulty"):
                 params["difficulty"] = learning_context.get("difficultyPreference")
             if learning_context.get("requiresSlideOutlineConfirmation"):
                 params["requiresSlideOutlineConfirmation"] = learning_context.get("requiresSlideOutlineConfirmation")
@@ -922,14 +887,38 @@ class TutorAgent(PlaceholderAgent):
             if concepts_str:
                 parts.append(f"已掌握概念（可用于交叉练习混入）：{concepts_str}")
         documents = evidence.get("documents", []) if isinstance(evidence.get("documents"), list) else []
+        external_resources = (
+            evidence.get("externalResources", [])
+            if isinstance(evidence.get("externalResources"), list)
+            else []
+        )
+        if evidence.get("webSearchEnabled") is True:
+            if external_resources:
+                parts.append(
+                    "联网搜索状态：已开启。用户请求外部资料、媒体或链接时，"
+                    "可以直接引用以下外部检索结果中的 URL；不得编造未提供的 URL。"
+                )
+                for i, resource in enumerate(external_resources[:5], 1):
+                    if not isinstance(resource, dict):
+                        continue
+                    title = str(resource.get("title") or resource.get("sourceTitle") or "外部来源").strip()
+                    url = str(resource.get("url") or "").strip()
+                    snippet = str(resource.get("snippet") or resource.get("evidence") or "").strip()[:160]
+                    if title and url:
+                        suffix = f": {snippet}" if snippet else ""
+                        parts.append(f"  {i}. {title} [{url}]{suffix}")
+            else:
+                parts.append(
+                    "联网搜索状态：已开启，但当前检索证据没有可验证外部 URL。"
+                    "如果用户要链接，只能说明暂未检索到可靠链接，不要编造链接。"
+                )
         if documents:
             parts.append("检索到的知识来源：")
             for i, doc in enumerate(documents[:5], 1):
                 title = str(doc.get("title") or "")
                 snippet = str(doc.get("evidence") or doc.get("snippet") or "")[:200]
                 url = str(doc.get("url") or "").strip()
-                channel = str(doc.get("channel") or "").strip()
-                source_hint = f" [{url}]" if channel == "web" and url else ""
+                source_hint = f" [{url}]" if url else ""
                 parts.append(f"  {i}. {title}{source_hint}: {snippet}")
         graph_pack = evidence.get("graphEvidencePack")
         if isinstance(graph_pack, dict) and graph_pack.get("intent"):
@@ -1155,16 +1144,120 @@ class TutorAgent(PlaceholderAgent):
         retrieval_result = params.get("retrievalResult", {})
         if not isinstance(retrieval_result, dict):
             retrieval_result = {}
+        documents = retrieval_result.get("documents", [])
+        if not isinstance(documents, list):
+            documents = []
+        web_search_enabled = self._web_search_enabled(params)
         return {
             "query": params.get("query"),
             "rewrittenQuery": params.get("rewrittenQuery"),
-            "documents": retrieval_result.get("documents", []),
+            "documents": documents,
             "sourcesSummary": retrieval_result.get("sourcesSummary", ""),
+            "webSearchEnabled": web_search_enabled,
+            "externalResources": self._collect_external_resources(
+                params=params,
+                documents=documents,
+            ) if web_search_enabled else [],
             "graphEvidencePack": self._build_graph_evidence_pack(
                 params=params,
-                documents=retrieval_result.get("documents", []),
+                documents=documents,
             ),
         }
+
+    def _web_search_enabled(self, params: dict[str, Any]) -> bool:
+        web_result = params.get("webRetrievalResult")
+        return bool(
+            params.get("webSearchEnabled") is True
+            or params.get("enableWebSearch") is True
+            or params.get("tavilySearchEnabled") is True
+            or (
+                isinstance(web_result, dict)
+                and web_result.get("enabled") is True
+            )
+        )
+
+    def _collect_external_resources(
+        self,
+        *,
+        params: dict[str, Any],
+        documents: list[Any],
+    ) -> list[dict[str, Any]]:
+        resources: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+
+        def add_resource(
+            *,
+            title: Any,
+            url: Any,
+            snippet: Any = "",
+            source_title: Any = "",
+            published_date: Any = "",
+            score: Any = None,
+        ) -> None:
+            normalized_url = str(url or "").strip()
+            if not normalized_url.startswith(("http://", "https://")):
+                return
+            dedupe_key = normalized_url.lower()
+            if dedupe_key in seen_urls:
+                return
+            seen_urls.add(dedupe_key)
+            resources.append(
+                {
+                    "title": str(title or source_title or normalized_url).strip(),
+                    "url": normalized_url,
+                    "snippet": str(snippet or "").strip(),
+                    "sourceTitle": str(source_title or title or "").strip(),
+                    "publishedDate": str(published_date or "").strip(),
+                    "score": self._safe_float(score),
+                }
+            )
+
+        for document in documents:
+            if not isinstance(document, dict):
+                continue
+            add_resource(
+                title=document.get("title"),
+                url=document.get("url"),
+                snippet=document.get("snippet") or document.get("evidence"),
+                source_title=document.get("sourceTitle"),
+                published_date=document.get("publishedDate"),
+                score=document.get("score"),
+            )
+
+        for item in self._iter_web_retrieval_items(params):
+            if isinstance(item, dict):
+                add_resource(
+                    title=item.get("title") or item.get("sourceTitle"),
+                    url=item.get("url") or item.get("slug"),
+                    snippet=item.get("snippet") or item.get("evidence") or item.get("content"),
+                    source_title=item.get("sourceTitle"),
+                    published_date=item.get("publishedDate"),
+                    score=item.get("score"),
+                )
+                continue
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            metadata = next((extra for extra in item[3:] if isinstance(extra, dict)), {})
+            add_resource(
+                title=item[1],
+                url=metadata.get("url") or item[0],
+                snippet=metadata.get("snippet") or metadata.get("content"),
+                source_title=metadata.get("sourceTitle") or item[1],
+                published_date=metadata.get("publishedDate"),
+                score=item[2] if len(item) > 2 else None,
+            )
+        return resources[:8]
+
+    def _iter_web_retrieval_items(self, params: dict[str, Any]) -> list[Any]:
+        web_result = params.get("webRetrievalResult")
+        if isinstance(web_result, dict) and isinstance(web_result.get("results"), list):
+            return list(web_result["results"])
+        raw_result = params.get("retrievalRawResult")
+        if isinstance(raw_result, dict):
+            channels = raw_result.get("channels")
+            if isinstance(channels, dict) and isinstance(channels.get("web"), list):
+                return list(channels["web"])
+        return []
 
     def _build_graph_evidence_pack(
         self,

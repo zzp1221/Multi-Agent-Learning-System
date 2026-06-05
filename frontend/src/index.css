@@ -244,8 +244,9 @@
     min-height: calc(100dvh - 78px);
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     overflow: hidden;
-    padding: 44px 40px 72px;
+    padding: 56px 32px 72px;
     isolation: isolate;
   }
 
@@ -254,24 +255,7 @@
     position: absolute;
     inset: 0;
     z-index: -2;
-    background:
-      radial-gradient(circle at 51% 9%, rgba(83, 125, 255, 0.13), transparent 24%),
-      radial-gradient(circle at 91% 13%, rgba(68, 119, 255, 0.18), transparent 32%),
-      radial-gradient(circle at 9% 84%, rgba(149, 197, 255, 0.18), transparent 30%),
-      linear-gradient(180deg, #f9fbff 0%, #eff6ff 48%, #fbfdff 100%);
-  }
-
-  .qna-landing-shell::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    opacity: 0.72;
-    background:
-      radial-gradient(ellipse at 28% 20%, transparent 0 35%, rgba(122, 170, 255, 0.16) 36%, transparent 37%),
-      radial-gradient(ellipse at 87% 28%, transparent 0 44%, rgba(122, 170, 255, 0.18) 45%, transparent 46%),
-      linear-gradient(135deg, transparent 0 70%, rgba(171, 204, 255, 0.16) 70.2%, transparent 72%);
-    filter: blur(0.2px);
+    background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
   }
 
   .qna-hero-panel {
@@ -280,89 +264,26 @@
     text-align: center;
   }
 
-  .smart-orbit-logo {
-    position: relative;
-    margin: 0 auto 28px;
-    height: 124px;
-    width: 150px;
-  }
-
-  .smart-orbit-ring {
-    position: absolute;
-    left: 7px;
-    top: 45px;
-    height: 48px;
-    width: 136px;
-    border: 3px solid rgba(108, 154, 255, 0.25);
-    border-radius: 999px;
-    transform: rotate(8deg);
-  }
-
-  .smart-orbit-ring::after {
-    content: "";
-    position: absolute;
-    right: 0;
-    top: 16px;
-    height: 16px;
-    width: 16px;
-    border-radius: 999px;
-    background: #3c6ff4;
-    box-shadow: 0 8px 18px rgba(60, 111, 244, 0.28);
-  }
-
-  .smart-orbit-cube {
-    position: absolute;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 22px;
-  }
-
-  .smart-orbit-cube-back {
-    left: 58px;
-    top: 16px;
-    height: 76px;
-    width: 72px;
-    background: linear-gradient(145deg, #76a4ff, #3867f2);
-    box-shadow: 0 20px 40px rgba(47, 94, 219, 0.18);
-    opacity: 0.82;
-    transform: rotate(32deg);
-  }
-
-  .smart-orbit-cube-front {
-    left: 36px;
-    top: 30px;
-    height: 76px;
-    width: 76px;
-    background: linear-gradient(145deg, #4f88ff 0%, #2d56e7 78%);
-    box-shadow: 0 22px 42px rgba(48, 91, 220, 0.26), inset 8px 8px 18px rgba(255, 255, 255, 0.18);
-    transform: rotate(12deg);
-  }
-
   .qna-hero-title {
     margin: 0;
-    color: #15213c;
-    font-size: 54px;
-    font-weight: 800;
+    color: #111827;
+    font-size: 46px;
+    font-weight: 760;
     line-height: 1.12;
   }
 
-  .qna-hero-title span {
-    color: #2d62e9;
-  }
-
   .qna-hero-subtitle {
-    margin-top: 14px;
-    color: #6f7f9b;
-    font-size: 18px;
-    font-weight: 500;
+    margin-top: 12px;
+    color: #64748b;
+    font-size: 17px;
+    font-weight: 450;
   }
 
   .qna-landing-composer {
     position: relative;
     z-index: 1;
-    margin-top: 26px;
-    width: min(100%, 1090px);
+    margin-top: 30px;
+    width: min(100%, 920px);
   }
 
   .qna-input-frame {
@@ -371,32 +292,32 @@
   }
 
   .qna-input-frame-chat {
-    padding: 0 16px 22px;
+    padding: 0 18px 18px;
   }
 
   .qna-composer {
     margin: 0 auto;
-    border: 1px solid rgba(218, 229, 247, 0.92);
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 28px 70px rgba(70, 101, 155, 0.16);
-    backdrop-filter: blur(24px);
+    border: 1px solid rgba(205, 217, 235, 0.86);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 12px 36px rgba(30, 64, 120, 0.08);
+    backdrop-filter: blur(18px);
     transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
   }
 
   .qna-composer:focus-within {
-    border-color: rgba(104, 147, 255, 0.58);
-    box-shadow: 0 34px 82px rgba(62, 102, 210, 0.18);
+    border-color: rgba(80, 124, 235, 0.56);
+    box-shadow: 0 16px 44px rgba(39, 93, 180, 0.12);
   }
 
   .qna-composer-landing {
-    min-height: 170px;
-    border-radius: 32px;
+    min-height: 154px;
+    border-radius: 28px;
   }
 
   .qna-composer-chat {
-    width: min(100%, 980px);
-    border-radius: 26px;
-    box-shadow: 0 18px 50px rgba(70, 101, 155, 0.14);
+    width: min(100%, 900px);
+    border-radius: 24px;
+    box-shadow: 0 10px 32px rgba(30, 64, 120, 0.08);
   }
 
   .qna-composer-drop {
@@ -406,7 +327,7 @@
   }
 
   .qna-composer-drop.is-drag-active {
-    background: rgba(232, 241, 255, 0.72);
+    background: rgba(233, 241, 255, 0.68);
   }
 
   .qna-pending-images {
@@ -420,11 +341,11 @@
     display: flex;
     min-height: inherit;
     flex-direction: column;
-    padding: 26px 32px 20px 40px;
+    padding: 24px 28px 18px;
   }
 
   .qna-composer-chat .qna-composer-main {
-    padding: 18px 22px 16px 24px;
+    padding: 16px 18px 14px 20px;
   }
 
   .qna-composer-textarea {
@@ -434,10 +355,11 @@
     resize: none;
     border: 0;
     background: transparent;
-    color: #26344f;
+    color: #182235;
     font-size: 16px;
     line-height: 1.75;
     outline: none;
+    text-wrap: pretty;
   }
 
   .qna-composer-chat .qna-composer-textarea {
@@ -445,7 +367,7 @@
   }
 
   .qna-composer-textarea::placeholder {
-    color: #b7c0d2;
+    color: #9aa8bb;
   }
 
   .qna-composer-textarea:disabled {
@@ -472,19 +394,18 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
   }
 
   .qna-icon-button,
   .qna-mode-button {
     display: inline-flex;
-    height: 40px;
+    height: 38px;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(215, 226, 246, 0.95);
-    background: rgba(255, 255, 255, 0.78);
-    color: #52617c;
-    box-shadow: 0 8px 20px rgba(80, 103, 150, 0.06);
+    border: 1px solid rgba(211, 221, 236, 0.88);
+    background: #fff;
+    color: #4f5f75;
     transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   }
 
@@ -497,23 +418,22 @@
   .qna-mode-button {
     gap: 8px;
     border-radius: 999px;
-    padding: 0 16px;
+    padding: 0 14px;
     font-size: 13px;
-    font-weight: 650;
+    font-weight: 620;
   }
 
   .qna-icon-button:hover,
   .qna-mode-button:hover {
-    border-color: rgba(94, 137, 247, 0.55);
+    border-color: rgba(72, 112, 218, 0.5);
     background: #f8fbff;
-    color: #2d62e9;
-    box-shadow: 0 10px 24px rgba(62, 98, 200, 0.1);
+    color: #255fd6;
   }
 
   .qna-mode-button.is-active {
-    border-color: rgba(79, 120, 242, 0.48);
-    background: #edf4ff;
-    color: #2d62e9;
+    border-color: rgba(73, 116, 222, 0.4);
+    background: #eef5ff;
+    color: #255fd6;
   }
 
   .qna-icon-button[aria-disabled="true"],
@@ -532,21 +452,21 @@
 
   .qna-send-button {
     display: flex;
-    height: 58px;
-    width: 58px;
+    height: 54px;
+    width: 54px;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: linear-gradient(135deg, #5d8bff 0%, #2f62e8 100%);
+    background: #2563eb;
     color: white;
-    box-shadow: 0 18px 34px rgba(52, 98, 228, 0.34);
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25);
     transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
   }
 
   .qna-send-button:hover {
     transform: translateY(-1px);
-    box-shadow: 0 20px 38px rgba(52, 98, 228, 0.38);
+    box-shadow: 0 12px 26px rgba(37, 99, 235, 0.3);
   }
 
   .qna-send-button:active {
@@ -572,116 +492,31 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    margin-top: 30px;
-    color: #6f7f9b;
+    gap: 10px;
+    margin-top: 22px;
+    color: #64748b;
     font-size: 14px;
   }
 
   .qna-suggestion-chip {
     display: inline-flex;
-    min-height: 38px;
+    min-height: 36px;
     align-items: center;
     gap: 8px;
-    border: 1px solid rgba(216, 226, 245, 0.96);
+    border: 1px solid rgba(215, 225, 239, 0.92);
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.72);
-    padding: 0 18px;
-    color: #60708d;
-    font-size: 14px;
-    font-weight: 600;
-    box-shadow: 0 10px 24px rgba(68, 96, 148, 0.06);
-    transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    background: rgba(255, 255, 255, 0.74);
+    padding: 0 15px;
+    color: #52647d;
+    font-size: 13px;
+    font-weight: 580;
+    transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
   }
 
   .qna-suggestion-chip:hover {
-    border-color: rgba(91, 135, 248, 0.45);
-    color: #2d62e9;
-    transform: translateY(-1px);
-    box-shadow: 0 14px 28px rgba(64, 102, 202, 0.11);
-  }
-
-  .qna-feature-grid {
-    position: relative;
-    z-index: 1;
-    display: grid;
-    width: min(100%, 1460px);
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 26px;
-    margin-top: 48px;
-  }
-
-  .qna-feature-card {
-    position: relative;
-    min-height: 198px;
-    overflow: hidden;
-    border: 1px solid rgba(214, 228, 250, 0.9);
-    border-radius: 18px;
-    padding: 30px 28px;
-    box-shadow: 0 20px 50px rgba(63, 97, 157, 0.09);
-  }
-
-  .qna-feature-card h2 {
-    margin: 0;
-    font-size: 24px;
-    font-weight: 800;
-    line-height: 1.2;
-  }
-
-  .qna-feature-card p {
-    margin-top: 12px;
-    color: #77849b;
-    font-size: 14px;
-    font-weight: 500;
-  }
-
-  .qna-feature-visual {
-    position: absolute;
-    bottom: 28px;
-    right: 34px;
-    display: flex;
-    height: 88px;
-    width: 118px;
-    align-items: center;
-    justify-content: center;
-    border-radius: 24px;
-    opacity: 0.9;
-  }
-
-  .qna-feature-blue {
-    background: linear-gradient(135deg, rgba(229, 239, 255, 0.96), rgba(245, 249, 255, 0.8));
-  }
-
-  .qna-feature-blue h2,
-  .qna-feature-blue .qna-feature-visual {
-    color: #2e67ef;
-  }
-
-  .qna-feature-violet {
-    background: linear-gradient(135deg, rgba(239, 235, 255, 0.96), rgba(250, 248, 255, 0.84));
-  }
-
-  .qna-feature-violet h2,
-  .qna-feature-violet .qna-feature-visual {
-    color: #7559ef;
-  }
-
-  .qna-feature-mint {
-    background: linear-gradient(135deg, rgba(223, 248, 240, 0.96), rgba(245, 253, 250, 0.84));
-  }
-
-  .qna-feature-mint h2,
-  .qna-feature-mint .qna-feature-visual {
-    color: #22a179;
-  }
-
-  .qna-feature-orange {
-    background: linear-gradient(135deg, rgba(255, 239, 224, 0.96), rgba(255, 250, 245, 0.84));
-  }
-
-  .qna-feature-orange h2,
-  .qna-feature-orange .qna-feature-visual {
-    color: #f07a29;
+    border-color: rgba(76, 116, 218, 0.42);
+    background: #fff;
+    color: #255fd6;
   }
 
   .qna-chat-shell {
@@ -689,11 +524,172 @@
     display: flex;
     height: calc(100dvh - 78px);
     min-height: 0;
-    width: min(100%, 1120px);
+    width: min(100%, 1080px);
     flex-direction: column;
     margin: 0 auto;
     overflow: hidden;
-    padding: 22px 16px 0;
+    padding: 0;
+  }
+
+  .qna-chat-scroll {
+    height: 100%;
+    overflow-y: auto;
+    padding: 28px 18px 18px;
+  }
+
+  .qna-chat-content {
+    display: grid;
+    gap: 30px;
+    margin: 0 auto;
+    max-width: 940px;
+    padding-bottom: 8px;
+  }
+
+  .qna-message-row {
+    display: flex;
+    width: 100%;
+  }
+
+  .qna-message-row.is-user {
+    justify-content: flex-end;
+  }
+
+  .qna-message-row.is-assistant {
+    justify-content: flex-start;
+  }
+
+  .qna-message-wrap {
+    max-width: min(100%, 900px);
+  }
+
+  .qna-message-wrap.is-user {
+    max-width: min(78%, 680px);
+  }
+
+  .qna-message-wrap.is-assistant {
+    width: 100%;
+  }
+
+  .qna-user-bubble {
+    border-radius: 24px 24px 8px 24px;
+    background: #eaf4ff;
+    color: #111827;
+    padding: 14px 18px;
+    font-size: 16px;
+    line-height: 1.75;
+    text-wrap: pretty;
+  }
+
+  .qna-user-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.08);
+    padding: 4px 9px;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 620;
+  }
+
+  .qna-message-image-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .qna-message-image-button {
+    overflow: hidden;
+    border: 1px solid rgba(147, 197, 253, 0.48);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.62);
+  }
+
+  .qna-assistant-message {
+    color: #111827;
+    font-size: 16px;
+    line-height: 1.78;
+    text-wrap: pretty;
+  }
+
+  .qna-assistant-message.is-pending {
+    padding-top: 2px;
+  }
+
+  .qna-markdown > :first-child,
+  .qna-markdown > :first-child > :first-child {
+    margin-top: 0;
+  }
+
+  .qna-markdown > :last-child,
+  .qna-markdown > :last-child > :last-child {
+    margin-bottom: 0;
+  }
+
+  .qna-markdown p {
+    text-wrap: pretty;
+  }
+
+  .qna-stream-cursor {
+    display: inline-block;
+    height: 1.05em;
+    width: 2px;
+    margin-left: 3px;
+    transform: translateY(3px);
+    border-radius: 999px;
+    background: #2563eb;
+    animation: qna-cursor-blink 1s steps(2, start) infinite;
+  }
+
+  .qna-message-actions {
+    display: flex;
+    margin-top: 6px;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .qna-message-actions.is-user {
+    justify-content: flex-end;
+  }
+
+  .qna-message-actions.is-assistant {
+    justify-content: flex-start;
+  }
+
+  .qna-message-action-button {
+    border-radius: 8px;
+    padding: 3px 7px;
+    color: #94a3b8;
+    transition: background-color 0.16s ease, color 0.16s ease;
+  }
+
+  .qna-message-action-button:hover {
+    background: rgba(226, 232, 240, 0.7);
+    color: #475569;
+  }
+
+  .qna-scroll-bottom-button {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 8px 14px;
+    color: #52647d;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: 0 12px 28px rgba(30, 41, 59, 0.1);
+    transition: border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .qna-scroll-bottom-button:hover {
+    border-color: rgba(96, 165, 250, 0.72);
+    color: #2563eb;
+    box-shadow: 0 16px 34px rgba(30, 41, 59, 0.13);
   }
 
   .dark .qna-composer,
@@ -711,15 +707,41 @@
     color: #f8fafc;
   }
 
-  .dark .qna-feature-card {
-    border-color: rgba(51, 65, 85, 0.86);
-    background: rgba(15, 23, 42, 0.76);
+  .dark .qna-landing-shell::before {
+    background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
   }
-}
 
-@media (max-width: 1280px) {
-  .qna-feature-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .dark .qna-hero-subtitle {
+    color: #94a3b8;
+  }
+
+  .dark .qna-user-bubble {
+    background: rgba(37, 99, 235, 0.22);
+    color: #eff6ff;
+  }
+
+  .dark .qna-user-chip {
+    background: rgba(59, 130, 246, 0.18);
+    color: #bfdbfe;
+  }
+
+  .dark .qna-assistant-message {
+    color: #e5e7eb;
+  }
+
+  .dark .qna-message-action-button {
+    color: #64748b;
+  }
+
+  .dark .qna-message-action-button:hover {
+    background: rgba(30, 41, 59, 0.92);
+    color: #cbd5e1;
+  }
+
+  .dark .qna-scroll-bottom-button {
+    border-color: rgba(51, 65, 85, 0.92);
+    background: rgba(15, 23, 42, 0.95);
+    color: #cbd5e1;
   }
 }
 
@@ -739,15 +761,16 @@
 
   .qna-landing-shell {
     min-height: calc(100dvh - 68px);
-    padding: 28px 14px 40px;
+    padding: 30px 14px 44px;
   }
 
-  .smart-orbit-logo {
-    height: 96px;
-    width: 122px;
-    margin-bottom: 20px;
-    transform: scale(0.82);
-    transform-origin: center bottom;
+  .qna-landing-composer {
+    width: 100%;
+    max-width: calc(100vw - 28px);
+  }
+
+  .qna-composer {
+    width: 100%;
   }
 
   .qna-hero-title {
@@ -787,6 +810,8 @@
   }
 
   .qna-composer-actions {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr);
     gap: 8px;
     width: 100%;
   }
@@ -801,12 +826,15 @@
   }
 
   .qna-mode-button {
-    flex: 1 1 118px;
+    min-width: 0;
+    overflow: hidden;
     padding: 0 12px;
   }
 
   .qna-send-button {
+    box-sizing: border-box;
     height: 48px;
+    max-width: 100%;
     width: 100%;
   }
 
@@ -815,42 +843,33 @@
   }
 
   .qna-suggestion-row {
-    justify-content: flex-start;
-    width: 100%;
+    justify-content: center;
+    width: min(100%, 560px);
     gap: 10px;
     margin-top: 22px;
-  }
-
-  .qna-suggestion-row > span {
-    width: 100%;
-  }
-
-  .qna-feature-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
-    margin-top: 24px;
-  }
-
-  .qna-feature-card {
-    min-height: 142px;
-    padding: 20px;
-  }
-
-  .qna-feature-card h2 {
-    font-size: 21px;
-  }
-
-  .qna-feature-visual {
-    bottom: 18px;
-    right: 18px;
-    height: 72px;
-    width: 92px;
   }
 
   .qna-chat-shell {
     height: calc(100dvh - 68px);
     width: 100%;
-    padding: 8px 8px 0;
+  }
+
+  .qna-chat-scroll {
+    padding: 18px 12px 12px;
+  }
+
+  .qna-chat-content {
+    gap: 24px;
+  }
+
+  .qna-message-wrap.is-user {
+    max-width: 86%;
+  }
+
+  .qna-user-bubble {
+    border-radius: 20px 20px 7px 20px;
+    padding: 11px 14px;
+    font-size: 15px;
   }
 }
 
@@ -859,9 +878,9 @@
     padding: 22px 12px 32px;
   }
 
-  .smart-orbit-logo {
-    margin-bottom: 14px;
-    transform: scale(0.72);
+  .qna-landing-composer {
+    max-width: calc(100vw - 24px);
+    width: calc(100vw - 24px);
   }
 
   .qna-hero-title {
@@ -876,6 +895,19 @@
   .qna-composer-landing {
     min-height: 150px;
     border-radius: 22px;
+  }
+
+  .qna-composer-main,
+  .qna-composer-chat .qna-composer-main {
+    padding: 14px 12px;
+  }
+
+  .qna-composer-actions {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .qna-composer-actions .qna-mode-button:last-of-type {
+    grid-column: 1 / -1;
   }
 
   .qna-composer-textarea {
@@ -896,23 +928,27 @@
   }
 
   .qna-suggestion-chip {
+    min-width: 0;
     width: 100%;
     justify-content: center;
+    padding: 0 10px;
   }
 
-  .qna-feature-card {
-    min-height: 124px;
-    padding: 18px;
-  }
-
-  .qna-feature-visual {
-    opacity: 0.52;
+  .qna-suggestion-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: calc(100vw - 24px);
+    width: calc(100vw - 24px);
   }
 }
 
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+@keyframes qna-cursor-blink {
+  0%, 45% { opacity: 1; }
+  46%, 100% { opacity: 0; }
 }
 @keyframes voice-pulse {
   0%, 100% { box-shadow: 0 18px 38px rgba(37, 99, 235, 0.28); }

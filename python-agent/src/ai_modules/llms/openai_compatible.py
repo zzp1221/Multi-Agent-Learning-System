@@ -423,8 +423,3 @@ class OpenAICompatibleToolCallingLLM:
         if isinstance(value, str):
             return value
         return dumps_json(value, ensure_ascii=False)
-
-
-# 从旧的提供商特定命名迁移期间的向后兼容别名。
-BailianCompatibleClient = OpenAICompatibleClient
-BailianCompatibleToolCallingLLM = OpenAICompatibleToolCallingLLM

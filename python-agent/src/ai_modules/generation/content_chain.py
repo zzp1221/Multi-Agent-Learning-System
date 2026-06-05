@@ -938,9 +938,6 @@ class OpenAICompatibleStructuredGenerator:
         return text.strip().strip('"').strip("'")
 
 
-BailianStructuredGenerator = OpenAICompatibleStructuredGenerator
-
-
 class ContentGenerationChain:
     """仅由已配置 LLM 驱动的结构化文档内容链。"""
 

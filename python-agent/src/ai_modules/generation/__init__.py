@@ -1,7 +1,6 @@
 """资源资产的生成服务。"""
 
 from src.ai_modules.generation.content_chain import (
-    BailianStructuredGenerator,
     ContentGenerationChain,
     GeneratedCodeAsset,
     GenerationOutputInvalidError,
@@ -20,7 +19,6 @@ from src.ai_modules.generation.resource_builder import (
 )
 
 __all__ = [
-    "BailianStructuredGenerator",
     "ContentGenerationChain",
     "GeneratedCodeAsset",
     "GenerationOutputInvalidError",

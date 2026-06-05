@@ -48,7 +48,7 @@ from src.ai_modules.runtime.resource_bundle_workflow import ResourceBundleWorkfl
 LOGGER = logging.getLogger(__name__)
 
 CONVERSATIONAL_RESOURCE_INTENT_PATTERN = re.compile(
-    r"(生成|制作|创建|整理|准备|设计|编写|做[一份一套个张些几道]?|出题|出[几0-9一二三四五六七八九十]*道|帮我|请你|给我)"
+    r"(生成|制作|创建|整理|准备|设计|编写|产出|做[一份一套个张些几道]?|出题|出[几0-9一二三四五六七八九十]*道)"
     r".{0,40}"
     r"(学习资源|资源包|资料包|文档|讲义|ppt|slides?|幻灯片|演示文稿|课件|思维导图|脑图|练习题|习题|题目|测验|小测|短视频|视频|微课|代码案例|代码示例|案例代码|实操案例|实践案例|demo|示例程序|编程案例)",
     re.IGNORECASE,

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, BrainCircuit, CheckCircle2, FileImage, Globe2, LoaderCircle, Paperclip, SendHorizontal, Sparkles, X, XCircle } from 'lucide-react';
+import { ArrowDown, BrainCircuit, CheckCircle2, FileImage, Globe2, LoaderCircle, Paperclip, SendHorizontal, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
@@ -24,23 +24,25 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
   onConfirmSlideOutline,
   onRejectSlideOutline,
 }: ChatMessageBubbleProps) {
+  const assistantIsPending = message.role === 'assistant' && !message.content.trim();
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+      className={`qna-message-row ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}
     >
-      <div className={`max-w-[90%] md:max-w-[82%] ${message.role === 'user' ? '' : 'w-full md:w-auto'}`}>
+      <div className={`qna-message-wrap ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}>
         {message.role === 'user' ? (
-          <div className="rounded-2xl rounded-br-md bg-primary-600 px-4 py-2.5 text-[15px] leading-7 text-white shadow-sm">
+          <div className="qna-user-bubble">
             {message.imageUrls?.length ? (
-              <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="qna-message-image-grid">
                 {message.imageUrls.map((imageUrl, index) => (
                   <button
                     key={`${message.id}-image-${index}`}
                     type="button"
-                    className="overflow-hidden rounded-xl border border-white/20 bg-white/10"
+                    className="qna-message-image-button"
                     onClick={() => onPreviewImage(imageUrl)}
                   >
                     <img src={imageUrl} alt={`上传图片 ${index + 1}`} className="h-24 w-full object-cover" />
@@ -49,7 +51,7 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
               </div>
             ) : null}
             {message.webSearchEnabled ? (
-              <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-1 text-xs font-medium text-white/90 ring-1 ring-white/20">
+              <div className="qna-user-chip">
                 <Globe2 className="h-3 w-3" />
                 联网搜索
               </div>
@@ -57,7 +59,7 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
             {message.content ? <div>{message.content}</div> : <div className="text-white/80">[图片提问]</div>}
           </div>
         ) : (
-          <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          <div className={`qna-assistant-message ${assistantIsPending ? 'is-pending' : ''}`}>
             {message.content ? (
               <MarkdownRenderer content={message.content} isStreaming={isStreaming} />
             ) : (
@@ -72,17 +74,12 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
             ) : null}
           </div>
         )}
-        {message.content ? (
-          <div className={`mt-1.5 flex items-center gap-2 text-xs ${message.role === 'user' ? 'justify-end' : ''}`}>
-            {message.role === 'assistant' ? (
-              <span className="text-slate-400 dark:text-slate-500">
-                <Sparkles className="inline h-3 w-3" /> 智学引擎
-              </span>
-            ) : null}
+        {message.content.trim() ? (
+          <div className={`qna-message-actions ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}>
             <button
               type="button"
               onClick={() => onCopy(message)}
-              className="rounded-md px-1.5 py-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+              className="qna-message-action-button"
             >
               {copiedMessageId === message.id ? '已复制' : '复制'}
             </button>
@@ -142,10 +139,12 @@ function SlideOutlineConfirmationCard(props: {
 }
 
 export const ChatPanel = memo(function ChatPanel({
+  busy,
   messages,
   onConfirmSlideOutline,
   onRejectSlideOutline,
 }: {
+  busy: boolean;
   messages: ChatMessage[];
   onConfirmSlideOutline?: (message: ChatMessage) => void;
   onRejectSlideOutline?: (message: ChatMessage) => void;
@@ -158,7 +157,7 @@ export const ChatPanel = memo(function ChatPanel({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const lastMessage = messages[messages.length - 1];
-  const isStreaming = Boolean(lastMessage && lastMessage.role === 'assistant' && !lastMessage.content);
+  const isStreaming = Boolean(busy && lastMessage && lastMessage.role === 'assistant');
   const messageListKey = messages.map((message) => message.id).join('\u0001');
   const scrollToBottom = useCallback(() => {
     const container = containerRef.current;
@@ -226,8 +225,8 @@ export const ChatPanel = memo(function ChatPanel({
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={containerRef} onScroll={handleScroll} className="h-full overflow-y-auto px-2 py-4 scrollbar-thin md:px-8">
-        <div ref={contentRef} className="space-y-6 md:space-y-8">
+      <div ref={containerRef} onScroll={handleScroll} className="qna-chat-scroll scrollbar-thin">
+        <div ref={contentRef} className="qna-chat-content">
           <AnimatePresence>
             {messages.map((message) => (
               <ChatMessageBubble
@@ -258,7 +257,7 @@ export const ChatPanel = memo(function ChatPanel({
             container.scrollTop = container.scrollHeight;
             setAutoFollow(true);
           }}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-lg transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          className="qna-scroll-bottom-button"
         >
           <ArrowDown className="mr-1.5 inline h-3.5 w-3.5" />
           回到底部

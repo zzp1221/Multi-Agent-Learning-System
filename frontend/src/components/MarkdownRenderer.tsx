@@ -61,7 +61,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
 
   return (
     <>
-      <div className="prose prose-slate max-w-none dark:prose-invert prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:text-[15px] prose-p:leading-7 prose-pre:my-0 prose-pre:bg-transparent prose-code:text-[13px] prose-code:before:content-none prose-code:after:content-none prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-table:text-sm prose-table:overflow-x-auto prose-img:rounded-xl prose-li:text-[15px]">
+      <div className="qna-markdown prose prose-slate max-w-none dark:prose-invert prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:text-[15px] prose-p:leading-7 prose-pre:my-0 prose-pre:bg-transparent prose-code:text-[13px] prose-code:before:content-none prose-code:after:content-none prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-table:text-sm prose-table:overflow-x-auto prose-img:rounded-xl prose-li:text-[15px]">
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkBreaks]}
           components={{
@@ -89,7 +89,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
             },
             table({ children }) {
               return (
-                <div className="my-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                <div className="my-4 overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
                   <table className="min-w-full text-sm">{children}</table>
                 </div>
               );
@@ -129,7 +129,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
             },
             blockquote({ children }) {
               return (
-                <blockquote className="my-3 border-l-4 border-primary-300 bg-primary-50/50 py-2 pl-4 pr-3 text-[15px] italic text-slate-600 dark:border-primary-700 dark:bg-primary-500/5 dark:text-slate-400">
+                <blockquote className="my-3 border-l-2 border-slate-300 py-1 pl-4 pr-3 text-[15px] text-slate-600 dark:border-slate-600 dark:text-slate-400">
                   {children}
                 </blockquote>
               );
@@ -147,6 +147,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
         >
           {safeContent}
         </ReactMarkdown>
+        {isStreaming && safeContent.trim() ? <span className="qna-stream-cursor" aria-label="正在生成" /> : null}
       </div>
       {previewImage ? (
         <button

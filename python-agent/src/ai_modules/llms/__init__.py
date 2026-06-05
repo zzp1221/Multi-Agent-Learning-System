@@ -1,15 +1,6 @@
 """Python Agent 运行时的 LLM 适配器。"""
 
 from src.ai_modules.llms.agent_models import (
-    BailianEvaluationGenerator,
-    BailianJudgeFeedbackGenerator,
-    BailianLearningPathGenerator,
-    BailianConversationSummaryRefiner,
-    BailianObjectiveJudgeGenerator,
-    BailianPracticeQuestionGenerator,
-    BailianProfileAnalyzer,
-    BailianQueryRewriteGenerator,
-    BailianRetrievalSummaryGenerator,
     EvaluationGenerator,
     JudgeLLMClientFactory,
     JudgeFeedbackGenerator,
@@ -24,6 +15,7 @@ from src.ai_modules.llms.agent_models import (
     OpenAICompatibleProfileAnalyzer,
     OpenAICompatibleQueryRewriteGenerator,
     OpenAICompatibleRetrievalSummaryGenerator,
+    OpenAICompatibleResourceIntentExtractor,
     ObjectiveJudgeGenerator,
     PracticeLLMClientFactory,
     PracticeQuestionGenerator,
@@ -31,13 +23,14 @@ from src.ai_modules.llms.agent_models import (
     ConversationSummaryRefiner,
     ConversationSummaryRefinerFactory,
     QueryRewriteGenerator,
+    ResourceIntentExtractor,
+    ResourceIntentExtractorFactory,
+    ResourceIntentPayload,
     ResourcePushReranker,
     RetrievalSummaryGenerator,
     TutorToolLLMClientFactory,
 )
 from src.ai_modules.llms.openai_compatible import (
-    BailianCompatibleClient,
-    BailianCompatibleToolCallingLLM,
     OpenAICompatibleClient,
     OpenAICompatibleToolCallingLLM,
 )
@@ -52,8 +45,6 @@ from src.ai_modules.llms.spark_compatible import (
 )
 from src.ai_modules.llms.practice_llm import RuleBasedJudgeLLM, RuleBasedPracticeLLM
 from src.ai_modules.llms.review_llm import (
-    BailianCriticReviewer,
-    BailianSafetyReviewer,
     CriticReviewer,
     OpenAICompatibleCriticReviewer,
     OpenAICompatibleSafetyReviewer,
@@ -61,7 +52,6 @@ from src.ai_modules.llms.review_llm import (
     SafetyReviewer,
 )
 from src.ai_modules.llms.tutor_llm import (
-    BailianToolCallingLLM,
     OpenAICompatibleTutorLLM,
     RuleBasedTutorLLM,
     TutorLLMClientFactory,
@@ -74,20 +64,6 @@ from src.ai_modules.llms.workflow_llm import (
 )
 
 __all__ = [
-    "BailianCompatibleClient",
-    "BailianCompatibleToolCallingLLM",
-    "BailianCriticReviewer",
-    "BailianEvaluationGenerator",
-    "BailianJudgeFeedbackGenerator",
-    "BailianLearningPathGenerator",
-    "BailianConversationSummaryRefiner",
-    "BailianObjectiveJudgeGenerator",
-    "BailianPracticeQuestionGenerator",
-    "BailianProfileAnalyzer",
-    "BailianQueryRewriteGenerator",
-    "BailianRetrievalSummaryGenerator",
-    "BailianSafetyReviewer",
-    "BailianToolCallingLLM",
     "CriticReviewer",
     "EvaluationGenerator",
     "GenerationToolLLMClientFactory",
@@ -107,6 +83,7 @@ __all__ = [
     "OpenAICompatibleProfileAnalyzer",
     "OpenAICompatibleQueryRewriteGenerator",
     "OpenAICompatibleRetrievalSummaryGenerator",
+    "OpenAICompatibleResourceIntentExtractor",
     "OpenAICompatibleSafetyReviewer",
     "OpenAICompatibleSubjectiveJudgeEvaluator",
     "OpenAICompatibleToolCallingLLM",
@@ -119,6 +96,9 @@ __all__ = [
     "ProfileAnalyzer",
     "QueryRewriteGenerator",
     "QueryRewriteToolLLMClientFactory",
+    "ResourceIntentExtractor",
+    "ResourceIntentExtractorFactory",
+    "ResourceIntentPayload",
     "ResourcePushReranker",
     "ReviewLLMClientFactory",
     "RetrievalSummaryGenerator",

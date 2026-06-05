@@ -194,4 +194,3 @@ class SubjectiveJudgeEvaluatorFactory:
 
 
 SubjectiveJudgeEvaluator = OpenAICompatibleSubjectiveJudgeEvaluator
-BailianSubjectiveJudgeEvaluator = OpenAICompatibleSubjectiveJudgeEvaluator

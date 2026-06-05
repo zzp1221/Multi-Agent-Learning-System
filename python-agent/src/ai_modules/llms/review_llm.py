@@ -150,6 +150,3 @@ class ReviewLLMClientFactory:
 
 CriticReviewer = OpenAICompatibleCriticReviewer
 SafetyReviewer = OpenAICompatibleSafetyReviewer
-
-BailianCriticReviewer = OpenAICompatibleCriticReviewer
-BailianSafetyReviewer = OpenAICompatibleSafetyReviewer
