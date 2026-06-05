@@ -200,6 +200,11 @@ public class TaskStateMachineService {
     }
 
     @Transactional(readOnly = true)
+    public SmartEngineTask getTask(UUID taskId) {
+        return getTaskInternal(taskId);
+    }
+
+    @Transactional(readOnly = true)
     public TaskStatusResponse getOwnedTaskStatus(UUID taskId, UUID userId) {
         SmartEngineTask task = getOwnedTask(taskId, userId);
         return new TaskStatusResponse(
@@ -302,10 +307,16 @@ public class TaskStateMachineService {
         String normalizedStatus = statusValue == null ? "" : String.valueOf(statusValue);
         boolean failed = "FAILED".equalsIgnoreCase(normalizedStatus);
         boolean partialFailed = "PARTIAL_FAILED".equalsIgnoreCase(normalizedStatus);
-        task.setTaskStatus(failed ? TaskStatus.FAILED : TaskStatus.COMPLETED);
-        task.setCurrentStage(failed ? "failed" : partialFailed ? "partial_failed" : "completed");
-        task.setProgressPercent(BigDecimal.valueOf(100));
-        task.setCompletedAt(OffsetDateTime.now());
+        boolean waitingConfirmation = "WAITING_CONFIRMATION".equalsIgnoreCase(normalizedStatus);
+        if (waitingConfirmation) {
+            task.setTaskStatus(TaskStatus.RUNNING);
+            task.setCurrentStage("waiting_confirmation");
+        } else {
+            task.setTaskStatus(failed ? TaskStatus.FAILED : TaskStatus.COMPLETED);
+            task.setCurrentStage(failed ? "failed" : partialFailed ? "partial_failed" : "completed");
+            task.setProgressPercent(BigDecimal.valueOf(100));
+            task.setCompletedAt(OffsetDateTime.now());
+        }
         if (failed) {
             task.setErrorCode("PYTHON_AGENT_DONE_FAILED");
             Object summaryValue = payload.getOrDefault("summary", "Python Agent execution failed");
@@ -327,6 +338,9 @@ public class TaskStateMachineService {
 
     private boolean isInvalidGeneratedArtifactEvent(StreamEventType eventType, Map<String, Object> payload) {
         if (eventType == StreamEventType.RESOURCE_FILE) {
+            if (isPendingSlideOutline(payload)) {
+                return false;
+            }
             return requiresGeneratedResourceProvenance(payload) && !hasRealLlmProvenance(payload);
         }
         if (eventType == StreamEventType.QUESTION_BATCH) {
@@ -403,6 +417,11 @@ public class TaskStateMachineService {
     }
 
     private Map<String, Object> applyResourceFileEvent(SmartEngineTask task, Map<String, Object> payload) {
+        if (isPendingSlideOutline(payload)) {
+            Map<String, Object> sanitizedPayload = stripSandboxPaths(payload);
+            task.setResponseSummary(new LinkedHashMap<>(sanitizedPayload));
+            return sanitizedPayload;
+        }
         String sandboxPath = (String) payload.getOrDefault("sandboxPath", payload.get("localPath"));
         String fileName = (String) payload.get("fileName");
         if (sandboxPath == null || fileName == null) {
@@ -444,6 +463,18 @@ public class TaskStateMachineService {
         }
         task.setResponseSummary(new LinkedHashMap<>(signedPayload));
         return signedPayload;
+    }
+
+    private Map<String, Object> stripSandboxPaths(Map<String, Object> payload) {
+        Map<String, Object> sanitized = new LinkedHashMap<>(payload);
+        sanitized.remove("sandboxPath");
+        sanitized.remove("localPath");
+        return sanitized;
+    }
+
+    private boolean isPendingSlideOutline(Map<String, Object> payload) {
+        return "SLIDES".equalsIgnoreCase(stringValue(payload.get("assetType")))
+            && "SLIDE_OUTLINE_CONFIRMATION".equalsIgnoreCase(stringValue(payload.get("displayMode")));
     }
 
     private ResourceType resolveResourceType(Object rawValue) {

@@ -162,6 +162,35 @@ class ConversationAndProfileIntegrationTest {
             .andExpect(jsonPath("$.summary").value("数据库原理基础中等，偏好图文结合讲解"));
     }
 
+    @Test
+    void onboardingProfileCanBeCompletedByCurrentUser() throws Exception {
+        AuthContext authContext = register("onboarding_" + System.nanoTime());
+
+        mockMvc.perform(post("/api/users/me/profile/onboarding")
+                .header("Authorization", "Bearer " + authContext.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "majorCode": "CS",
+                      "knowledgeBase": "中等基础，需要查漏补缺",
+                      "learningGoal": "掌握数据库索引优化",
+                      "learningPreference": "图文结合，步骤清晰",
+                      "resourcePreference": "DOCUMENT"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.userId").value(authContext.userId()))
+            .andExpect(jsonPath("$.profile.onboardingCompleted").value(true))
+            .andExpect(jsonPath("$.profile.learningGoal").value("掌握数据库索引优化"))
+            .andExpect(jsonPath("$.summary").value("中等基础，需要查漏补缺，目标：掌握数据库索引优化，学习偏好：图文结合，步骤清晰，资源偏好：DOCUMENT"));
+
+        mockMvc.perform(get("/api/users/" + authContext.userId() + "/profile/current")
+                .header("Authorization", "Bearer " + authContext.token()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.profile.source").value("onboarding"))
+            .andExpect(jsonPath("$.history[0].profile.learningGoal").value("掌握数据库索引优化"));
+    }
+
     private AuthContext register(String loginId) throws Exception {
         MvcResult registerResult = mockMvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)

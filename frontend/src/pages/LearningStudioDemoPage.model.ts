@@ -224,7 +224,6 @@ function normalizeLearningPlan(value: unknown): LearningPlanView | null {
           agentName: step.agentName ? String(step.agentName) : undefined,
           serviceType: step.serviceType ? String(step.serviceType) : undefined,
           status: step.status ? String(step.status) : undefined,
-          qualityGate: step.qualityGate ? String(step.qualityGate) : undefined,
         }))
         .filter((step) => step.stepId || step.title)
     : [];

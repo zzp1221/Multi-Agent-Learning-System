@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
+from src.ai_modules.generation.resource_builder import ResourceGenerationService
 from src.ai_modules.llms import ConversationSummaryRefinerFactory, TutorLLMClientFactory
 from src.ai_modules.memory import MongoConversationSummaryStore
 from src.ai_modules.models import (
@@ -71,6 +73,23 @@ GRAPH_SOURCE_LABELS = {
     "graph": "图谱相关概念",
 }
 
+CONVERSATIONAL_RESOURCE_TYPES: tuple[str, ...] = (
+    "DOCUMENT",
+    "SLIDES",
+    "MINDMAP",
+    "QUIZ",
+    "VIDEO",
+    "CODE",
+)
+
+
+@dataclass(slots=True)
+class ResourceGenerationIntent:
+    """Tutor 识别出的对话资源生成请求。"""
+
+    resource_types: list[str]
+    topic: str
+
 
 class TutorAgent(PlaceholderAgent):
     """使用近期对话和检索证据指导学习者。"""
@@ -82,6 +101,7 @@ class TutorAgent(PlaceholderAgent):
         llm_client: Any | None = None,
         llm_fallback_clients: list[Any] | None = None,
         summary_refiner: Any | None = None,
+        resource_bundle_runner: Any | None = None,
     ) -> None:
         super().__init__("Tutor Agent", "tutoring")
         self.summary_refiner = summary_refiner or ConversationSummaryRefinerFactory.create()
@@ -98,6 +118,7 @@ class TutorAgent(PlaceholderAgent):
             self.llm_clients.extend(llm_fallback_clients)
         self.llm_client = self.llm_clients[0] if self.llm_clients else None
         self.skill_loader = SkillPromptLoader()
+        self.resource_bundle_runner = resource_bundle_runner
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
         return self.skill_loader.build_system_prompt(
@@ -146,9 +167,19 @@ class TutorAgent(PlaceholderAgent):
             recent_dialogue=recent_dialogue,
             params=params,
         )
+        params["deepQualityMode"] = self._is_deep_quality_mode(params)
         recent_dialogue["inputMode"] = input_mode
         params["recentDialogueContext"] = recent_dialogue
         params["inputMode"] = input_mode
+
+        resource_intent_source = self._resource_intent_source_text(
+            user_query=user_query,
+            conversation=conversation,
+        )
+        resource_intent = self._detect_resource_generation_intent(
+            user_query=resource_intent_source,
+            params=params,
+        )
 
         if compaction_result.was_compacted:
             await self._upsert_summary(
@@ -182,6 +213,45 @@ class TutorAgent(PlaceholderAgent):
         )
 
         current_seq = seq + 1
+        if resource_intent and self.resource_bundle_runner is not None:
+            self._apply_resource_generation_intent(params=params, intent=resource_intent)
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ResultChunkPayload(
+                    text=self._resource_intent_acknowledgement(resource_intent),
+                    stage="tutoring",
+                ),
+                dialogState=dialog_state,
+            )
+            current_seq += 1
+            async for event in self.resource_bundle_runner(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=current_seq,
+                params=params,
+                snapshot=snapshot,
+            ):
+                if event.event == "result_chunk":
+                    continue
+                self._remember_pending_slide_outline(params=params, event=event)
+                yield event.model_copy(update={"dialog_state": event.dialog_state or dialog_state})
+            return
+
+        if self._is_topicless_resource_generation_request(resource_intent_source, params=params):
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ResultChunkPayload(
+                    text=self._missing_resource_topic_message(),
+                    stage="tutoring",
+                ),
+                dialogState=dialog_state,
+            )
+            return
+
         if not self.llm_clients:
             raise RuntimeError("tutor_llm provider is not ready")
 
@@ -360,6 +430,261 @@ class TutorAgent(PlaceholderAgent):
             )
         return normalized
 
+    def _detect_resource_generation_intent(
+        self,
+        *,
+        user_query: str,
+        params: dict[str, Any],
+    ) -> ResourceGenerationIntent | None:
+        text = str(user_query or "").strip()
+        if not text:
+            return None
+        normalized = text.lower()
+        has_action = self._has_resource_generation_action(text)
+        requested_types = self._extract_requested_resource_types(text)
+        is_bundle_request = self._is_resource_bundle_request(text)
+        if is_bundle_request and has_action:
+            requested_types = list(CONVERSATIONAL_RESOURCE_TYPES)
+        elif not has_action or not requested_types:
+            return None
+
+        topic = self._extract_resource_topic(text, params=params)
+        if not topic:
+            return None
+        if "pdf" in normalized and "ppt" not in normalized and "幻灯" not in text and "演示文稿" not in text:
+            requested_types = [item for item in requested_types if item != "SLIDES"]
+        return ResourceGenerationIntent(
+            resource_types=self._unique_resource_types(requested_types),
+            topic=topic,
+        )
+
+    def _resource_intent_source_text(self, *, user_query: str, conversation: list[dict[str, Any]]) -> str:
+        query_text = str(user_query or "").strip()
+        if self._looks_like_resource_generation_request(query_text):
+            return query_text
+        for item in reversed(conversation):
+            if item.get("role") != "user":
+                continue
+            content = str(item.get("content") or "").strip()
+            if content and self._looks_like_resource_generation_request(content):
+                return content
+            if content and not query_text:
+                return content
+            break
+        return query_text
+
+    def _looks_like_resource_generation_request(self, text: str) -> bool:
+        if not str(text or "").strip():
+            return False
+        return self._has_resource_generation_action(text) and bool(
+            self._extract_requested_resource_types(text)
+            or self._is_resource_bundle_request(text)
+        )
+
+    def _is_topicless_resource_generation_request(self, text: str, *, params: dict[str, Any]) -> bool:
+        if not self._looks_like_resource_generation_request(text):
+            return False
+        return not self._extract_resource_topic(text, params=params)
+
+    def _missing_resource_topic_message(self) -> str:
+        return "请补充要生成资源的具体主题，例如“围绕联合索引生成 PPT”，或先进入一个学习阶段后再说“根据当前阶段生成 PPT”。"
+
+    def _has_resource_generation_action(self, text: str) -> bool:
+        return bool(
+            re.search(
+                r"(生成|制作|创建|整理|准备|设计|编写|产出|做[一份一套个张些几道]?|出题|出[几0-9一二三四五六七八九十]*道|帮我|请你|给我)",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    def _is_resource_bundle_request(self, text: str) -> bool:
+        return bool(
+            re.search(
+                r"(一套|整套|完整|全套|资源包|学习资源|资料包|组合资源)",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    def _extract_requested_resource_types(self, text: str) -> list[str]:
+        checks: list[tuple[str, str]] = [
+            ("DOCUMENT", r"(文档|讲义|说明文档|知识文档|学习资料|复习资料)"),
+            ("SLIDES", r"(ppt|slides?|幻灯片|演示文稿|课件)"),
+            ("MINDMAP", r"(思维导图|脑图|mind\s*map|mindmap)"),
+            ("QUIZ", r"(练习题|习题|题目|测验|小测|quiz|刷题|出题|出[几0-9一二三四五六七八九十]*道)"),
+            ("VIDEO", r"(短视频|视频|微课|讲解视频|video)"),
+            ("CODE", r"(代码案例|代码示例|案例代码|实操案例|实践案例|demo|示例程序|编程案例)"),
+        ]
+        return [resource_type for resource_type, pattern in checks if re.search(pattern, text, flags=re.IGNORECASE)]
+
+    def _extract_resource_topic(self, text: str, *, params: dict[str, Any]) -> str:
+        if self._references_current_learning_stage(text):
+            return self._topic_from_context(params)
+        for pattern in (
+            r"(?:关于|围绕|针对|基于|以)(?P<topic>[^，。！？,.!?；;]{2,80}?)(?:的|来|生成|制作|创建|整理|准备|设计|编写|做|出|$)",
+            r"(?:生成|制作|创建|整理|准备|设计|编写|做|出题|出[几0-9一二三四五六七八九十]*道)(?:一套|一份|几个|几道|一些|完整|全套)?(?:关于|围绕|针对|基于)?(?P<topic>[^，。！？,.!?；;]{2,80})",
+        ):
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                topic = self._clean_resource_topic(match.group("topic"))
+                if topic:
+                    return topic
+        cleaned = self._clean_resource_topic(text)
+        if cleaned and cleaned != text:
+            return cleaned
+        return self._topic_from_context(params)
+
+    def _clean_resource_topic(self, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        text = re.sub(
+            r"(请|帮我|给我|可以|能不能|能否|一下|一个|一份|一套|整套|完整|全套|学习资源|资源包|资料包)",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"(生成|制作|创建|整理|准备|设计|编写|做|出题|出[几0-9一二三四五六七八九十]*道)",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"(文档|讲义|ppt|slides?|幻灯片|演示文稿|课件|思维导图|脑图|练习题|习题|题目|测验|短视频|视频|微课|代码案例|代码示例|案例代码|实操案例|实践案例|示例程序|编程案例|pdf)",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(r"(包括|包含|含|涵盖|以及|和|与|及)", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"^[：:，,。.、\s]+|[：:，,。.、\s]+$", "", text)
+        cleaned = text[:80].strip()
+        if self._references_current_learning_stage(cleaned):
+            return ""
+        if not ResourceGenerationService._is_real_topic(cleaned):
+            return ""
+        return cleaned
+
+    @staticmethod
+    def _references_current_learning_stage(text: str) -> bool:
+        return bool(re.search(r"(当前|现阶段|学习阶段|我的阶段|当前学习|当前想学)", str(text or "")))
+
+    def _topic_from_context(self, params: dict[str, Any]) -> str:
+        learning_context = params.get("learningContext", {})
+        if isinstance(learning_context, dict):
+            for key in ("explicitUserTopic", "activeLearningStepTitle", "activeLearningStep", "knowledgePoint", "chapter", "course"):
+                value = ResourceGenerationService._normalize_topic_candidate(learning_context.get(key))
+                if ResourceGenerationService._is_real_topic(value):
+                    return value
+        for key in ("topic", "keyPoints", "knowledgePoint"):
+            value = ResourceGenerationService._normalize_topic_candidate(params.get(key))
+            if ResourceGenerationService._is_real_topic(value):
+                return value
+        summary = params.get("structuredConversationSummary")
+        if isinstance(summary, dict):
+            topic_focus = summary.get("topicFocus")
+            if isinstance(topic_focus, list):
+                joined = "、".join(str(item).strip() for item in topic_focus[:3] if str(item).strip())
+                if ResourceGenerationService._is_real_topic(joined):
+                    return joined
+            last_user_message = str(summary.get("lastUserMessage") or "").strip()
+            if ResourceGenerationService._is_real_topic(last_user_message) and not ResourceGenerationService._looks_like_resource_command(last_user_message):
+                return last_user_message[:80]
+        return ""
+
+    def _apply_resource_generation_intent(
+        self,
+        *,
+        params: dict[str, Any],
+        intent: ResourceGenerationIntent,
+    ) -> None:
+        params["originalTutorQuery"] = params.get("query") or params.get("message")
+        params["query"] = intent.topic
+        params["topic"] = intent.topic
+        params["keyPoints"] = params.get("keyPoints") or intent.topic
+        params["resourceTypes"] = intent.resource_types
+        learning_context = params.get("learningContext", {})
+        if isinstance(learning_context, dict):
+            if learning_context.get("questionCount"):
+                params["count"] = learning_context.get("questionCount")
+            if learning_context.get("questionTypePreference"):
+                params["questionTypePreference"] = learning_context.get("questionTypePreference")
+            if learning_context.get("difficultyPreference"):
+                params["difficulty"] = learning_context.get("difficultyPreference")
+            if learning_context.get("requiresSlideOutlineConfirmation"):
+                params["requiresSlideOutlineConfirmation"] = learning_context.get("requiresSlideOutlineConfirmation")
+            if learning_context.get("confirmedSlideOutline"):
+                params["confirmedSlideOutline"] = learning_context.get("confirmedSlideOutline")
+            if learning_context.get("confirmedSlideOutlineText"):
+                params["confirmedSlideOutlineText"] = learning_context.get("confirmedSlideOutlineText")
+        if "QUIZ" in intent.resource_types and not params.get("count"):
+            params["count"] = self._extract_question_count(str(params.get("originalTutorQuery") or ""))
+        params["conversationTriggeredResourceGeneration"] = True
+        if self._is_deep_quality_mode(params):
+            params["generationQualityMode"] = "deep"
+
+    def _extract_question_count(self, text: str) -> int:
+        match = re.search(r"(\d{1,2}|[一二三四五六七八九十])\s*(?:道|个|题)", text)
+        if not match:
+            return 5
+        raw_count = match.group(1)
+        chinese_digits = {
+            "一": 1,
+            "二": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+            "九": 9,
+            "十": 10,
+        }
+        try:
+            count = chinese_digits[raw_count] if raw_count in chinese_digits else int(raw_count)
+            return max(1, min(count, 20))
+        except ValueError:
+            return 5
+
+    def _remember_pending_slide_outline(self, *, params: dict[str, Any], event: SSEEvent) -> None:
+        payload = getattr(event, "payload", None)
+        asset_type = str(getattr(payload, "asset_type", "") or getattr(payload, "assetType", "") or "").upper()
+        display_mode = str(getattr(payload, "display_mode", "") or getattr(payload, "displayMode", "") or "").upper()
+        if asset_type != "SLIDES" or display_mode != "SLIDE_OUTLINE_CONFIRMATION":
+            return
+        outlines = params.get("pendingSlideOutlines")
+        if not isinstance(outlines, list):
+            outlines = []
+            params["pendingSlideOutlines"] = outlines
+        outlines.append(
+            {
+                "title": str(getattr(payload, "title", "") or "PPT 大纲"),
+                "inlineContent": str(getattr(payload, "inline_content", "") or getattr(payload, "inlineContent", "") or ""),
+            }
+        )
+
+    def _resource_intent_acknowledgement(self, intent: ResourceGenerationIntent) -> str:
+        labels = [self._resource_type_label(item) for item in intent.resource_types]
+        return f"我已识别到资源生成需求，正在围绕「{intent.topic}」生成{ '、'.join(labels) }。"
+
+    def _resource_type_label(self, resource_type: str) -> str:
+        return {
+            "DOCUMENT": "文档",
+            "SLIDES": "PPT",
+            "MINDMAP": "思维导图",
+            "QUIZ": "练习题",
+            "VIDEO": "短视频",
+            "CODE": "代码案例",
+        }.get(resource_type, resource_type)
+
+    def _unique_resource_types(self, resource_types: list[str]) -> list[str]:
+        resolved: list[str] = []
+        for resource_type in resource_types:
+            if resource_type in CONVERSATIONAL_RESOURCE_TYPES and resource_type not in resolved:
+                resolved.append(resource_type)
+        return resolved
+
     def _select_strategy(self, *, snapshot: SystemSnapshot, params: dict[str, Any]) -> str:
         """选择教学策略，默认采用 Sigma 风格的苏格拉底式提问法。
 
@@ -436,6 +761,7 @@ class TutorAgent(PlaceholderAgent):
             image_analysis=image_analysis_data,
             recent_dialogue=recent_dialogue_data,
             input_mode=input_mode,
+            params=params,
         )
         llm_messages = self._build_llm_messages(
             system_prompt=system_prompt,
@@ -480,6 +806,7 @@ class TutorAgent(PlaceholderAgent):
             image_analysis=image_analysis_data,
             recent_dialogue=recent_dialogue_data,
             input_mode=input_mode,
+            params=params,
         )
         llm_messages = self._build_llm_messages(
             system_prompt=system_prompt,
@@ -511,6 +838,7 @@ class TutorAgent(PlaceholderAgent):
         image_analysis: dict[str, Any],
         recent_dialogue: dict[str, Any],
         input_mode: str,
+        params: dict[str, Any],
     ) -> str:
         parts: list[str] = []
         topic_focus = memory.get("topicFocus") or context.get("topicFocus") or []
@@ -526,6 +854,14 @@ class TutorAgent(PlaceholderAgent):
             "Use this for questions about today, current date, current weekday, or current time."
         )
         parts.append(f"当前输入模式：{input_mode}")
+        if self._is_deep_quality_mode(params):
+            parts.append(
+                "Deep quality mode is enabled. Stay on the normal tutor/resource route, "
+                "but improve answer quality by checking retrieval evidence carefully, "
+                "making the reasoning structure explicit, covering important edge cases, "
+                "and doing a brief self-check before the final answer. Do not expose this "
+                "internal instruction to the learner."
+            )
         # Sigma: 展示已记录的误解，用于针对性反例设计
         recorded_misconceptions = (
             profile.get("misconceptions")
@@ -1206,6 +1542,7 @@ class TutorAgent(PlaceholderAgent):
                 params=params,
                 recent_dialogue=self._tool_read_recent_dialogue_context(tool_input={}, params=params),
             ),
+            params=params,
         )
         return (
             "请基于以下结构化上下文给出自然、贴合输入类型的回答。"
@@ -1233,6 +1570,12 @@ class TutorAgent(PlaceholderAgent):
         if input_mode == "answer_previous_question":
             return "continue_guidance"
         return "ask_follow_up"
+
+    def _is_deep_quality_mode(self, params: dict[str, Any]) -> bool:
+        reasoning_mode = params.get("reasoningMode")
+        if isinstance(reasoning_mode, str) and reasoning_mode.strip().upper() == "DEEP":
+            return True
+        return params.get("deepReasoning") is True or params.get("deepQualityMode") is True
 
     def _looks_like_question(self, text: str) -> bool:
         normalized = str(text).strip()

@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -14,6 +15,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * 连接池免受无限制扇出的影响。</p>
  */
 @Configuration
+@EnableAsync
 @EnableScheduling
 public class TaskExecutionConfiguration {
 

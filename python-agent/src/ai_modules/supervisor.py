@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.ai_modules.agents import (
     CodeGeneratorAgent,
     CriticAgent,
-    DeepReasoningAgent,
     DocumentGeneratorAgent,
     EvaluationAgent,
     ImageAnalysisAgent,
@@ -38,17 +37,22 @@ from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest
 from src.ai_modules.models import ProgressPayload, ProgressSSEEvent
 from src.ai_modules.retrieval.query_classifier import (
     QUERY_TYPE_ANSWER_PREVIOUS,
-    QUERY_TYPE_DEEP_REASONING,
     QUERY_TYPE_FOLLOW_UP,
     QUERY_TYPE_IMAGE_QUESTION,
     QUERY_TYPE_SMALL_TALK,
     QueryClassifier,
 )
 from src.ai_modules.runtime import SnapshotBuilder, SystemSnapshot
-from src.ai_modules.runtime.conversation_planner import ConversationPlanner
 from src.ai_modules.runtime.resource_bundle_workflow import ResourceBundleWorkflow
 
 LOGGER = logging.getLogger(__name__)
+
+CONVERSATIONAL_RESOURCE_INTENT_PATTERN = re.compile(
+    r"(生成|制作|创建|整理|准备|设计|编写|做[一份一套个张些几道]?|出题|出[几0-9一二三四五六七八九十]*道|帮我|请你|给我)"
+    r".{0,40}"
+    r"(学习资源|资源包|资料包|文档|讲义|ppt|slides?|幻灯片|演示文稿|课件|思维导图|脑图|练习题|习题|题目|测验|小测|短视频|视频|微课|代码案例|代码示例|案例代码|实操案例|实践案例|demo|示例程序|编程案例)",
+    re.IGNORECASE,
+)
 
 REVIEW_REQUIRED_SERVICE_TYPES = {
     "PERSONALIZED_LEARNING",
@@ -109,8 +113,7 @@ class PythonAgentSupervisor:
             "mindmap_generator": MindMapGeneratorAgent(),
             "code_generator": CodeGeneratorAgent(),
             "video_generator": VideoGenerationAgent(),
-            "deep_reasoning": DeepReasoningAgent(),
-            "tutor": TutorAgent(),
+            "tutor": TutorAgent(resource_bundle_runner=self._run_tutoring_resource_bundle),
             "profile": ProfileAgent(),
             "practice": PracticeAgent(),
             "judge": JudgeAgent(),
@@ -122,9 +125,6 @@ class PythonAgentSupervisor:
         }
         self.route_templates = self._load_route_templates()
         self.query_classifier = QueryClassifier()
-        self.planner_factory = lambda allowed_agent_names: ConversationPlanner(
-            allowed_agent_names=allowed_agent_names,
-        )
 
     def resolve_route(self, service_type: str, params: dict) -> RoutePlan:
         route_template = self.route_templates.get(service_type)
@@ -142,9 +142,11 @@ class PythonAgentSupervisor:
             graph_intent = classification.graph_intent
             classification_confidence = classification.confidence
             classification_reason = classification.reason
-            route_template = self._resolve_tutoring_route(classification)
+            route_template = self._resolve_tutoring_route(classification, params=params)
         if service_type == "RESOURCE_GENERATION":
             resolved_route = ["query_rewrite", "retrieval", "resource_bundle"]
+        elif service_type == "PRACTICE_JUDGE":
+            resolved_route = self._resolve_practice_judge_route(params, route_template)
         else:
             resolved_route = list(route_template)
 
@@ -169,11 +171,27 @@ class PythonAgentSupervisor:
             route_templates[service_type.strip().upper()] = [str(agent_name) for agent_name in agent_names]
         return route_templates
 
-    def _resolve_tutoring_route(self, classification) -> list[str]:
+    def _resolve_practice_judge_route(self, params: dict, route_template: list[str]) -> list[str]:
+        answers = params.get("answers")
+        has_answers = (
+            isinstance(answers, dict)
+            and any(str(value).strip() for value in answers.values())
+        ) or (
+            isinstance(answers, list)
+            and any(
+                isinstance(item, dict) and str(item.get("answer", "")).strip()
+                for item in answers
+            )
+        )
+        if has_answers:
+            return ["judge", "profile"]
+        return [agent_name for agent_name in route_template if agent_name == "practice"]
+
+    def _resolve_tutoring_route(self, classification, *, params: dict | None = None) -> list[str]:
+        if self._has_conversational_resource_generation_intent(params or {}):
+            return ["query_rewrite", "retrieval", "tutor"]
         if classification.confidence < self.query_classifier.low_confidence_threshold:
             return ["query_rewrite", "retrieval", "tutor"]
-        if classification.query_type == QUERY_TYPE_DEEP_REASONING:
-            return ["query_rewrite", "retrieval", "image_analysis", "deep_reasoning"]
         if classification.query_type in {
             QUERY_TYPE_SMALL_TALK,
             QUERY_TYPE_FOLLOW_UP,
@@ -183,6 +201,22 @@ class PythonAgentSupervisor:
         if classification.query_type == QUERY_TYPE_IMAGE_QUESTION:
             return ["image_analysis", "query_rewrite", "retrieval", "tutor"]
         return ["query_rewrite", "retrieval", "tutor"]
+
+    def _has_conversational_resource_generation_intent(self, params: dict[str, Any]) -> bool:
+        text_parts: list[str] = []
+        for key in ("query", "message", "topic", "keyPoints"):
+            value = params.get(key)
+            if isinstance(value, str) and value.strip():
+                text_parts.append(value.strip())
+        messages = params.get("messages")
+        if isinstance(messages, list):
+            for item in messages[-3:]:
+                if isinstance(item, dict) and item.get("role") == "user":
+                    content = item.get("content")
+                    if isinstance(content, str) and content.strip():
+                        text_parts.append(content.strip())
+        text = "\n".join(text_parts)
+        return bool(text and CONVERSATIONAL_RESOURCE_INTENT_PATTERN.search(text))
 
     async def build_snapshot(self, request: EngineStreamRequest) -> SystemSnapshot:
         return await self.snapshot_builder.build(
@@ -213,15 +247,6 @@ class PythonAgentSupervisor:
         state = ExecutionState(request=request, params=current_params, snapshot=snapshot)
 
         try:
-            if self._should_run_conversation_planner(route_plan, state.params):
-                async for event in self._run_planned_tutoring_route(
-                    state=state,
-                    route_plan=route_plan,
-                    cancelled=cancelled,
-                ):
-                    yield event
-                return
-
             async for event in self._execute_service_route(
                 state=state,
                 route_plan=route_plan,
@@ -248,11 +273,11 @@ class PythonAgentSupervisor:
                 ),
             )
         except Exception as exc:
-            code = exc.code if isinstance(exc, SupervisorExecutionError) else "PLANNER_REVIEWER_FAILED"
+            code = exc.code if isinstance(exc, SupervisorExecutionError) else "SUPERVISOR_FAILED"
             message = (
                 exc.message
                 if isinstance(exc, SupervisorExecutionError)
-                else f"Planner/Reviewer execution failed: {type(exc).__name__}: {exc}"
+                else f"Supervisor execution failed: {type(exc).__name__}: {exc}"
             )
             LOGGER.exception(message)
             yield ErrorSSEEvent(
@@ -364,6 +389,48 @@ class PythonAgentSupervisor:
         state.seq = final_state.seq
         state.snapshot = final_state.snapshot
 
+    async def _run_tutoring_resource_bundle(
+        self,
+        *,
+        task_id: str,
+        trace_id: str,
+        seq: int,
+        params: dict[str, Any],
+        snapshot: SystemSnapshot,
+    ) -> AsyncIterator[SSEEvent]:
+        workflow_request = EngineStreamRequest(
+            serviceType="RESOURCE_GENERATION",
+            params=params,
+            userId=str(params.get("userId")) if params.get("userId") else None,
+            taskId=task_id,
+            traceId=trace_id,
+            conversationId=str(params.get("conversationId")) if params.get("conversationId") else None,
+        )
+        workflow = ResourceBundleWorkflow(
+            agent_registry=self.agent_registry,
+            snapshot_builder=self.snapshot_builder,
+            system_prompt_builder=lambda agent_name, current_snapshot: self.build_agent_system_prompt(
+                agent_name=agent_name,
+                snapshot=current_snapshot,
+            ),
+        )
+        try:
+            async for event in workflow.stream(
+                request=workflow_request,
+                params=params,
+                snapshot=snapshot,
+                seq=seq,
+            ):
+                yield event
+            final_state = workflow.last_state
+            if final_state is None:
+                raise RuntimeError("Resource bundle workflow finished without final state")
+        except Exception as exc:
+            message = f"Resource bundle generation failed: {type(exc).__name__}: {exc}"
+            LOGGER.exception(message)
+            raise SupervisorExecutionError(code="RESOURCE_BUNDLE_FAILED", message=message) from exc
+        params.update(final_state.params)
+
     def _prepare_resource_bundle_params(self, params: dict[str, Any]) -> None:
         if not isinstance(params.get("learningPath"), dict):
             return
@@ -394,122 +461,6 @@ class PythonAgentSupervisor:
             if str(step.get("title") or "").strip():
                 return str(step["title"]).strip()
         return str(learning_path.get("goal") or "个性化学习方案").strip()
-
-    async def _run_planned_tutoring_route(
-        self,
-        *,
-        state: ExecutionState,
-        route_plan: RoutePlan,
-        cancelled: Container[str] | None = None,
-    ) -> AsyncIterator[SSEEvent]:
-        planner = self.planner_factory(set(self.agent_registry))
-        plan = await planner.plan(
-            service_type=route_plan.service_type,
-            params=state.params,
-            snapshot=state.snapshot,
-            route_agent_names=route_plan.agent_names,
-            query_type=route_plan.query_type,
-            graph_intent=route_plan.graph_intent,
-        )
-        state.params["learningPlan"] = plan.model_dump(by_alias=True)
-        self._update_plan_status(state.params, "RUNNING")
-        yield self._progress_event(
-            state=state,
-            stage="planning",
-            percent=3,
-            message=f"已生成 {len(plan.steps)} 步协作计划：{'、'.join(step.title for step in plan.steps[:5])}",
-            agent_name="planner",
-            phase="plan_created",
-            status="RUNNING",
-        )
-
-        total_steps = max(len(plan.steps), 1)
-        for index, step in enumerate(plan.steps):
-            self._raise_if_cancelled(state=state, cancelled=cancelled)
-            self._update_plan_step_status(state.params, step.step_id, "RUNNING")
-            percent = min(90, 8 + int(index / total_steps * 74))
-            yield self._progress_event(
-                state=state,
-                stage="plan_step",
-                percent=percent,
-                message=f"正在执行：{step.title}",
-                agent_name=step.agent_name or step.service_type or "planner",
-                phase="step_running",
-                status="RUNNING",
-            )
-
-            try:
-                if step.service_type:
-                    async for event in self._run_planned_service_step(
-                        state=state,
-                        service_type=step.service_type,
-                        cancelled=cancelled,
-                    ):
-                        yield event
-                elif step.agent_name:
-                    async for event in self._run_single_agent(
-                        state=state,
-                        agent_name=step.agent_name,
-                        service_type=route_plan.service_type,
-                    ):
-                        self._collect_final_answer_from_event(state=state, agent_name=step.agent_name, event=event)
-                        yield event
-
-                if step.quality_gate == "critic":
-                    async for event in self._run_critic_review(state=state, service_type=route_plan.service_type):
-                        yield event
-            except Exception:
-                self._update_plan_step_status(state.params, step.step_id, "FAILED")
-                self._update_plan_status(state.params, "FAILED")
-                raise
-            self._update_plan_step_status(state.params, step.step_id, "SUCCESS")
-            yield self._progress_event(
-                state=state,
-                stage="plan_step",
-                percent=min(94, percent + 8),
-                message=f"已完成：{step.title}",
-                agent_name=step.agent_name or step.service_type or "planner",
-                phase="step_done",
-                status="SUCCESS",
-            )
-
-        self._update_plan_status(state.params, "SUCCESS")
-        if self._should_review_route(route_plan=route_plan, params=state.params):
-            async for event in self._run_critic_review(state=state, service_type=route_plan.service_type):
-                yield event
-        if self._should_schedule_background_profile(service_type=route_plan.service_type, params=state.params):
-            self._schedule_background_profile(state=state, service_type=state.request.service_type)
-        yield DoneSSEEvent(
-            taskId=state.request.task_id,
-            traceId=state.request.trace_id,
-            seq=state.seq,
-            payload=self._build_done_payload(
-                service_type=route_plan.service_type,
-                agent_names=route_plan.agent_names,
-                params=state.params,
-            ),
-        )
-
-    async def _run_planned_service_step(
-        self,
-        *,
-        state: ExecutionState,
-        service_type: str,
-        cancelled: Container[str] | None,
-    ) -> AsyncIterator[SSEEvent]:
-        nested_params = state.params
-        nested_params["plannerNested"] = True
-        nested_route = self.resolve_route(service_type, nested_params)
-        self._seed_query_routing_params(nested_params, nested_route)
-        async for event in self._execute_service_route(
-            state=state,
-            route_plan=nested_route,
-            cancelled=cancelled,
-        ):
-            yield event
-        if self._should_review_route(route_plan=nested_route, params=state.params):
-            async for event in self._run_critic_review(state=state, service_type=nested_route.service_type):
-                yield event
 
     async def _run_agent_pair_rewrite_retrieval(
         self,
@@ -619,6 +570,7 @@ class PythonAgentSupervisor:
         mastery_diagnosis = self._safe_dict(params.get("masteryDiagnosis"))
         learning_plan = self._safe_dict(params.get("learningPlan"))
         critic_review = self._safe_dict(params.get("criticReview"))
+        judge_result = self._safe_dict(params.get("judgeResult"))
         learning_path = params.get("learningPath")
         resource_push_plan = self._safe_dict(params.get("resourcePushPlan"))
         pushed_resources = params.get("pushedResources")
@@ -628,9 +580,30 @@ class PythonAgentSupervisor:
         if not isinstance(agent_trace, list):
             agent_trace = []
         generated_assets = params.get("generatedAssets")
+        pending_slide_outlines = params.get("pendingSlideOutlines")
+        if not isinstance(pending_slide_outlines, list):
+            pending_slide_outlines = []
         resource_failures = params.get("resourceFailures")
         if not isinstance(resource_failures, list):
             resource_failures = []
+        if pending_slide_outlines and (
+            service_type == "RESOURCE_GENERATION"
+            or params.get("conversationTriggeredResourceGeneration") is True
+        ):
+            asset_count = len(generated_assets) if isinstance(generated_assets, list) else 0
+            failure_suffix = f"；{len(resource_failures)} 个资源失败" if resource_failures else ""
+            return DonePayload(
+                status="WAITING_CONFIRMATION",
+                summary=(
+                    f"已生成 {asset_count} 个资源，PPT 大纲等待确认后生成演示文件{failure_suffix}"
+                    if asset_count
+                    else f"PPT 大纲已生成，等待确认后生成演示文件{failure_suffix}"
+                ),
+                masteryDiagnosis=mastery_diagnosis,
+                learningPlan=learning_plan,
+                criticReview=critic_review,
+                resourceFailures=resource_failures,
+            )
         if service_type == "RESOURCE_GENERATION" and isinstance(generated_assets, list) and generated_assets:
             if resource_failures:
                 failed_types = "、".join(
@@ -727,6 +700,7 @@ class PythonAgentSupervisor:
             summary=f"{service_type} 路由完成，执行链路: {' -> '.join(agent_names)}",
             masteryDiagnosis=mastery_diagnosis,
             learningPlan=learning_plan,
+            judgeResult=judge_result,
             agentTrace=agent_trace,
             criticReview=critic_review,
         )
@@ -807,9 +781,6 @@ class PythonAgentSupervisor:
         if cancelled and state.request.task_id in cancelled:
             raise RuntimeError("任务已被取消")
 
-    def _should_run_conversation_planner(self, route_plan: RoutePlan, params: dict) -> bool:
-        return False
-
     def _has_explicit_response_length_limit(self, params: dict) -> bool:
         text = str(
             params.get("query")
@@ -823,6 +794,13 @@ class PythonAgentSupervisor:
     def _should_review_route(self, *, route_plan: RoutePlan, params: dict) -> bool:
         if "critic" in route_plan.agent_names:
             return False
+        if route_plan.service_type == "RESOURCE_GENERATION":
+            generated_assets = params.get("generatedAssets")
+            pending_slide_outlines = params.get("pendingSlideOutlines")
+            has_generated_assets = isinstance(generated_assets, list) and bool(generated_assets)
+            has_pending_slide_outlines = isinstance(pending_slide_outlines, list) and bool(pending_slide_outlines)
+            if has_pending_slide_outlines and not has_generated_assets:
+                return False
         if route_plan.service_type in REVIEW_REQUIRED_SERVICE_TYPES:
             return True
         return False
@@ -833,23 +811,6 @@ class PythonAgentSupervisor:
             trace = []
             params["agentTrace"] = trace
         trace.append({"agentName": agent_name, "status": status})
-
-    def _update_plan_step_status(self, params: dict, step_id: str, status: str) -> None:
-        learning_plan = params.get("learningPlan")
-        if not isinstance(learning_plan, dict):
-            return
-        steps = learning_plan.get("steps")
-        if not isinstance(steps, list):
-            return
-        for step in steps:
-            if isinstance(step, dict) and step.get("stepId") == step_id:
-                step["status"] = status
-                break
-
-    def _update_plan_status(self, params: dict, status: str) -> None:
-        learning_plan = params.get("learningPlan")
-        if isinstance(learning_plan, dict):
-            learning_plan["status"] = status
 
     @staticmethod
     def _safe_dict(value: Any) -> dict[str, Any] | None:

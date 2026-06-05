@@ -3,22 +3,19 @@ from pathlib import Path
 import pytest
 
 from src.ai_modules.config import Settings
-from src.ai_modules.llms import agent_models, planning_llm, review_llm, tutor_llm, workflow_llm
+from src.ai_modules.llms import agent_models, review_llm, tutor_llm, workflow_llm
 from src.ai_modules.llms.agent_models import (
     JudgeLLMClientFactory,
     OpenAICompatibleEvaluationGenerator,
     OpenAICompatibleProfileAnalyzer,
     OpenAICompatibleQueryRewriteGenerator,
     PracticeLLMClientFactory,
-    ProfileLLMClientFactory,
     TutorToolLLMClientFactory,
 )
 from src.ai_modules.llms import judge_subjective_evaluator
 from src.ai_modules.llms.judge_subjective_evaluator import OpenAICompatibleSubjectiveJudgeEvaluator
 from src.ai_modules.llms.openai_compatible import OpenAICompatibleToolCallingLLM
-from src.ai_modules.llms.planning_llm import PlanningLLMClientFactory
 from src.ai_modules.llms.practice_llm import RuleBasedJudgeLLM, RuleBasedPracticeLLM
-from src.ai_modules.llms.profile_llm import RuleBasedProfileLLM
 from src.ai_modules.llms.review_llm import ReviewLLMClientFactory
 from src.ai_modules.llms.spark_compatible import SparkCompatibleToolCallingLLM
 from src.ai_modules.llms.tutor_llm import RuleBasedTutorLLM, TutorLLMClientFactory
@@ -188,7 +185,6 @@ def test_tool_orchestration_factories_handle_missing_provider_key(monkeypatch: p
     )
     monkeypatch.setattr(workflow_llm, "get_settings", lambda: unavailable_settings)
     monkeypatch.setattr(tutor_llm, "get_settings", lambda: unavailable_settings)
-    monkeypatch.setattr(planning_llm, "get_settings", lambda: unavailable_settings)
     monkeypatch.setattr(review_llm, "get_settings", lambda: unavailable_settings)
     monkeypatch.setattr(agent_models, "get_settings", lambda: unavailable_settings)
 
@@ -196,11 +192,8 @@ def test_tool_orchestration_factories_handle_missing_provider_key(monkeypatch: p
     assert isinstance(GenerationToolLLMClientFactory.create(), RuleBasedGenerationLLM)
     assert isinstance(PracticeLLMClientFactory.create(), RuleBasedPracticeLLM)
     assert isinstance(JudgeLLMClientFactory.create(), RuleBasedJudgeLLM)
-    assert isinstance(ProfileLLMClientFactory.create(), RuleBasedProfileLLM)
     assert isinstance(TutorToolLLMClientFactory.create(), RuleBasedTutorLLM)
     assert isinstance(TutorLLMClientFactory.create(), RuleBasedTutorLLM)
-    with pytest.raises(RuntimeError, match="planning fallback is disabled"):
-        PlanningLLMClientFactory.create()
     with pytest.raises(RuntimeError, match="review fallback is disabled"):
         ReviewLLMClientFactory.create()
 
@@ -225,7 +218,6 @@ def test_tool_orchestration_factories_use_provider_aware_clients_when_provider_r
     ready_settings = Settings(OPENAI_COMPATIBLE_API_KEY="test-key", MODEL_NAME="qwen3.6-plus")
     monkeypatch.setattr(workflow_llm, "get_settings", lambda: ready_settings)
     monkeypatch.setattr(tutor_llm, "get_settings", lambda: ready_settings)
-    monkeypatch.setattr(planning_llm, "get_settings", lambda: ready_settings)
     monkeypatch.setattr(review_llm, "get_settings", lambda: ready_settings)
     monkeypatch.setattr(agent_models, "get_settings", lambda: ready_settings)
 
@@ -233,10 +225,8 @@ def test_tool_orchestration_factories_use_provider_aware_clients_when_provider_r
     assert isinstance(GenerationToolLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
     assert isinstance(PracticeLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
     assert isinstance(JudgeLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
-    assert isinstance(ProfileLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
     assert isinstance(TutorToolLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
     assert isinstance(TutorLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
-    assert isinstance(PlanningLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
     assert isinstance(ReviewLLMClientFactory.create(), OpenAICompatibleToolCallingLLM)
 
 
@@ -247,16 +237,13 @@ def test_component_factories_support_component_level_provider_switch(monkeypatch
         MIMO_API_KEY="",
         SPARK_API_KEY="spark-key",
         QUERY_REWRITE_LLM={"provider": "spark", "model": "fast_model"},
-        PLANNING_LLM={"provider": "spark", "model": "reasoning_model"},
         JUDGE_LLM={"provider": "spark", "model": "fast_model"},
     )
     monkeypatch.setattr(workflow_llm, "get_settings", lambda: spark_settings)
-    monkeypatch.setattr(planning_llm, "get_settings", lambda: spark_settings)
     monkeypatch.setattr(agent_models, "get_settings", lambda: spark_settings)
     monkeypatch.setattr(judge_subjective_evaluator, "get_settings", lambda: spark_settings)
 
     query_rewrite_llm = QueryRewriteToolLLMClientFactory.create()
-    planning_client = PlanningLLMClientFactory.create()
     judge_client = JudgeLLMClientFactory.create()
     query_rewrite_generator = OpenAICompatibleQueryRewriteGenerator()
     evaluation_generator = OpenAICompatibleEvaluationGenerator()
@@ -264,10 +251,8 @@ def test_component_factories_support_component_level_provider_switch(monkeypatch
     subjective_evaluator = OpenAICompatibleSubjectiveJudgeEvaluator()
 
     assert isinstance(query_rewrite_llm, SparkCompatibleToolCallingLLM)
-    assert isinstance(planning_client, SparkCompatibleToolCallingLLM)
     assert isinstance(judge_client, SparkCompatibleToolCallingLLM)
     assert query_rewrite_llm.client.model_name == spark_settings.spark_fast_model_name
-    assert planning_client.client.model_name == spark_settings.spark_reasoning_model_name
     assert judge_client.client.model_name == spark_settings.spark_fast_model_name
     assert query_rewrite_generator.generator.client.provider_name == "spark"
     assert evaluation_generator.generator.client.provider_name == "openai_compatible"

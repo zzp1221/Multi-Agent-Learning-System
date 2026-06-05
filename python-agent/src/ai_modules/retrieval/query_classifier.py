@@ -20,7 +20,6 @@ QUERY_TYPE_PROCEDURAL = "PROCEDURAL"
 QUERY_TYPE_ERROR_DEBUG = "ERROR_DEBUG"
 QUERY_TYPE_CURRENT_INFO = "CURRENT_INFO"
 QUERY_TYPE_IMAGE_QUESTION = "IMAGE_QUESTION"
-QUERY_TYPE_DEEP_REASONING = "DEEP_REASONING"
 
 RETRIEVAL_NONE = "NONE"
 RETRIEVAL_CONTEXT_ONLY = "CONTEXT_ONLY"
@@ -65,106 +64,106 @@ class QueryClassifier:
         query = self._extract_query(params)
         normalized = self._normalize(query)
         lowered = query.lower()
+        deep_quality_mode = self._is_deep_quality_mode(params, lowered)
 
-        if self._is_deep_reasoning(params, lowered):
-            return self._decision(
-                QUERY_TYPE_DEEP_REASONING,
-                RETRIEVAL_DEEP_EVIDENCE,
-                0.99,
-                "explicit_deep_reasoning",
-            )
         if self._has_image(params):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_IMAGE_QUESTION,
                 RETRIEVAL_LOCAL_HYBRID,
                 0.92,
                 "image_input",
-            )
+            ), deep_quality_mode)
         if not normalized:
-            return self._decision(QUERY_TYPE_SMALL_TALK, RETRIEVAL_NONE, 0.9, "empty_input")
+            return self._apply_deep_quality_mode(
+                self._decision(QUERY_TYPE_SMALL_TALK, RETRIEVAL_NONE, 0.9, "empty_input"),
+                deep_quality_mode,
+            )
         if self._is_small_talk(normalized):
-            return self._decision(QUERY_TYPE_SMALL_TALK, RETRIEVAL_NONE, 0.95, "small_talk_rule")
+            return self._apply_deep_quality_mode(
+                self._decision(QUERY_TYPE_SMALL_TALK, RETRIEVAL_NONE, 0.95, "small_talk_rule"),
+                deep_quality_mode,
+            )
         if self._is_answer_to_previous_question(params, query):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_ANSWER_PREVIOUS,
                 RETRIEVAL_CONTEXT_ONLY,
                 0.86,
                 "answer_previous_question",
-            )
+            ), deep_quality_mode)
         graph_intent = self._detect_graph_intent(lowered)
         if graph_intent:
             if self._contains_any(lowered, "currentInfoTerms") or self._web_search_enabled(params):
-                return self._decision(
+                return self._apply_deep_quality_mode(self._decision(
                     QUERY_TYPE_CURRENT_INFO,
                     RETRIEVAL_WEB_AUGMENTED,
                     0.84,
                     f"current_info_with_graph_{graph_intent.lower()}",
                     graph_intent=graph_intent,
-                )
-            return self._decision(
+                ), deep_quality_mode)
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_NEW_CONCEPT,
                 RETRIEVAL_LOCAL_HYBRID,
                 0.74,
                 f"graph_{graph_intent.lower()}_signal",
                 graph_intent=graph_intent,
-            )
+            ), deep_quality_mode)
         if self._contains_any(lowered, "currentInfoTerms") or self._web_search_enabled(params):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_CURRENT_INFO,
                 RETRIEVAL_WEB_AUGMENTED,
                 0.84,
                 "current_info_or_web",
-            )
+            ), deep_quality_mode)
         if self._looks_like_error_or_code(lowered):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_ERROR_DEBUG,
                 RETRIEVAL_LOCAL_HYBRID,
                 0.86,
                 "error_debug_signal",
-            )
+            ), deep_quality_mode)
         if self._contains_any(lowered, "comparisonTerms"):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_COMPARISON,
                 RETRIEVAL_LOCAL_HYBRID,
                 0.82,
                 "comparison_signal",
                 graph_intent=GRAPH_INTENT_COMPARISON,
-            )
+            ), deep_quality_mode)
         if self._contains_any(lowered, "proceduralTerms"):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_PROCEDURAL,
                 RETRIEVAL_LOCAL_GREP_FIRST,
                 0.8,
                 "procedural_signal",
                 graph_intent=self._detect_graph_intent(lowered),
-            )
+            ), deep_quality_mode)
         if self._is_follow_up(lowered, normalized):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_FOLLOW_UP,
                 RETRIEVAL_CONTEXT_ONLY,
                 0.72,
                 "follow_up_signal",
-            )
+            ), deep_quality_mode)
         if self._looks_like_question(query):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_NEW_CONCEPT,
                 RETRIEVAL_LOCAL_HYBRID,
                 0.76,
                 "question_signal",
-            )
+            ), deep_quality_mode)
         if len(normalized) <= int(self.rules.get("ambiguousMaxLength", 12)):
-            return self._decision(
+            return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_NEW_CONCEPT,
                 RETRIEVAL_LOCAL_HYBRID,
                 0.45,
                 "ambiguous_short_input",
-            )
-        return self._decision(
+            ), deep_quality_mode)
+        return self._apply_deep_quality_mode(self._decision(
             QUERY_TYPE_NEW_CONCEPT,
             RETRIEVAL_LOCAL_HYBRID,
             0.6,
             "default_new_concept",
-        )
+        ), deep_quality_mode)
 
     def _decision(
         self,
@@ -180,6 +179,26 @@ class QueryClassifier:
             confidence=round(float(confidence), 4),
             reason=reason,
             graph_intent=graph_intent,
+        )
+
+    def _apply_deep_quality_mode(
+        self,
+        classification: QueryClassification,
+        enabled: bool,
+    ) -> QueryClassification:
+        if not enabled:
+            return classification
+        if classification.retrieval_strategy not in {
+            RETRIEVAL_LOCAL_GREP_FIRST,
+            RETRIEVAL_LOCAL_HYBRID,
+        }:
+            return classification
+        return QueryClassification(
+            query_type=classification.query_type,
+            retrieval_strategy=RETRIEVAL_DEEP_EVIDENCE,
+            confidence=classification.confidence,
+            reason=f"{classification.reason}+deep_quality_mode",
+            graph_intent=classification.graph_intent,
         )
 
     def _load_rules(self) -> dict[str, Any]:
@@ -287,7 +306,7 @@ class QueryClassifier:
             return True
         return bool(re.search(r"\b[a-z]+(?:exception|error)\b", lowered_text))
 
-    def _is_deep_reasoning(self, params: dict[str, Any], lowered_text: str) -> bool:
+    def _is_deep_quality_mode(self, params: dict[str, Any], lowered_text: str) -> bool:
         reasoning_mode = params.get("reasoningMode")
         if isinstance(reasoning_mode, str) and reasoning_mode.strip().upper() == "DEEP":
             return True

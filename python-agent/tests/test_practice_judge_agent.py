@@ -2,6 +2,7 @@ import pytest
 
 from src.ai_modules.agents.judge_agent import JudgeAgent
 from src.ai_modules.agents.practice_agent import PracticeAgent
+from src.ai_modules.llms.agent_models import OpenAICompatiblePracticeQuestionGenerator
 from src.ai_modules.memory import InMemoryPracticeStore
 from src.ai_modules.models import QuestionBatchPayload, SubjectiveJudgeEvaluation
 from src.ai_modules.runtime import SystemSnapshot
@@ -78,6 +79,62 @@ def test_practice_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_openai_practice_generator_uses_6000_tokens_and_retries_short_batch() -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeJsonGenerator:
+        async def generate(self, *, system_prompt, user_prompt, max_tokens):
+            calls.append({
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "max_tokens": max_tokens,
+            })
+            if len(calls) == 1:
+                return {
+                    "questionId": "q7",
+                    "questionType": "SINGLE_CHOICE",
+                    "stem": "Thread.sleep 的作用是什么？",
+                    "options": ["让当前线程休眠", "启动线程", "终止 JVM", "创建锁"],
+                    "answer": "A",
+                    "knowledgeTags": ["Thread.sleep"],
+                    "difficultyLevel": "BASIC",
+                    "explanation": "sleep 会让当前线程暂停一段时间。",
+                }
+            return {
+                "title": "Java并发 阶段测试",
+                "topic": "Java并发",
+                "difficulty": "MIXED",
+                "questions": [
+                    {
+                        "questionId": f"q{index}",
+                        "questionType": "SINGLE_CHOICE" if index == 1 else "SHORT_ANSWER",
+                        "stem": f"题目 {index}",
+                        "options": ["A", "B", "C", "D"] if index == 1 else [],
+                        "answer": "A" if index == 1 else "说明理由",
+                        "knowledgeTags": ["Java并发"],
+                        "difficultyLevel": "BASIC",
+                        "explanation": "解析",
+                    }
+                    for index in range(1, 4)
+                ],
+            }
+
+    generator = object.__new__(OpenAICompatiblePracticeQuestionGenerator)
+    generator.generator = FakeJsonGenerator()
+
+    batch = await generator.generate_batch(
+        topic="Java并发",
+        difficulty="MIXED",
+        count=3,
+        learning_context={"chapter": "Java并发"},
+    )
+
+    assert [call["max_tokens"] for call in calls] == [6000, 6000]
+    assert len(batch.questions) == 3
+    assert [question.question_id for question in batch.questions] == ["q1", "q2", "q3"]
+
+
+@pytest.mark.asyncio
 async def test_practice_agent_generates_question_batch() -> None:
     class FakeQuestionGenerator:
         provider_name = "unit-test-provider"
@@ -106,7 +163,10 @@ async def test_practice_agent_generates_question_batch() -> None:
                 }
             )
 
-    agent = PracticeAgent(question_generator=FakeQuestionGenerator())
+    agent = PracticeAgent(
+        practice_store=InMemoryPracticeStore(),
+        question_generator=FakeQuestionGenerator(),
+    )
     params = {
         "topic": "联合索引",
         "difficulty": "BASIC",
@@ -134,13 +194,247 @@ async def test_practice_agent_generates_question_batch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_practice_agent_conversation_triggered_batch_persists_without_task_id() -> None:
+    class CapturingPracticeStore(InMemoryPracticeStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.saved_task_id = "not-called"
+
+        async def save_question_batch(self, *, user_id, batch, task_id=None):
+            self.saved_task_id = task_id
+            return await super().save_question_batch(
+                user_id=user_id,
+                batch=batch,
+                task_id=task_id,
+            )
+
+    class FakeQuestionGenerator:
+        provider_name = "unit-test-provider"
+        model_name = "unit-test-practice-model"
+
+        async def generate_batch(self, *, topic, difficulty, count, learning_context):
+            del learning_context
+            return QuestionBatchPayload.model_validate(
+                {
+                    "title": f"{topic} 练习题",
+                    "topic": topic,
+                    "difficulty": difficulty,
+                    "questions": [
+                        {
+                            "questionId": f"conv-q{index}",
+                            "questionType": "SINGLE_CHOICE" if index < count else "SHORT_ANSWER",
+                            "stem": f"对话触发题目 {index}",
+                            "options": ["A", "B", "C", "D"] if index < count else [],
+                            "answer": "A" if index < count else "说明理由",
+                            "knowledgeTags": [topic, f"标签{index}"],
+                            "difficultyLevel": difficulty,
+                            "explanation": f"对话触发解析 {index}",
+                        }
+                        for index in range(1, count + 1)
+                    ],
+                }
+            )
+
+    practice_store = CapturingPracticeStore()
+    agent = PracticeAgent(
+        practice_store=practice_store,
+        question_generator=FakeQuestionGenerator(),
+    )
+    params = {
+        "topic": "联合索引",
+        "difficulty": "BASIC",
+        "count": 5,
+        "conversationTriggeredResourceGeneration": True,
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-conversation-practice",
+            trace_id="trace-conversation-practice",
+            seq=1,
+            service_type="PRACTICE_JUDGE",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert practice_store.saved_task_id is None
+    assert params["practicePersistence"]["taskId"] is None
+    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert events[1].payload.topic == "联合索引"
+
+
+@pytest.mark.asyncio
+async def test_practice_agent_passes_question_type_preference_to_generator() -> None:
+    captured: dict[str, str | None] = {}
+
+    class FakeQuestionGenerator:
+        provider_name = "unit-test-provider"
+        model_name = "unit-test-practice-model"
+
+        async def generate_batch(self, *, topic, difficulty, count, learning_context, question_type_preference):
+            del learning_context
+            captured["question_type_preference"] = question_type_preference
+            return QuestionBatchPayload.model_validate(
+                {
+                    "title": f"{topic} 练习题",
+                    "topic": topic,
+                    "difficulty": difficulty,
+                    "questions": [
+                        {
+                            "questionId": f"q{index}",
+                            "questionType": "SINGLE_CHOICE",
+                            "stem": f"LLM 生成选择题 {index}",
+                            "options": ["A", "B", "C", "D"],
+                            "answer": "C",
+                            "knowledgeTags": [topic, f"标签{index}"],
+                            "difficultyLevel": difficulty,
+                            "explanation": f"LLM 解析 {index}",
+                        }
+                        for index in range(1, count + 1)
+                    ],
+                }
+            )
+
+    agent = PracticeAgent(
+        practice_store=InMemoryPracticeStore(),
+        question_generator=FakeQuestionGenerator(),
+    )
+    params = {
+        "topic": "联合索引",
+        "difficulty": "BASIC",
+        "count": 3,
+        "questionTypePreference": "SINGLE_CHOICE",
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-practice-choice",
+            trace_id="trace-practice-choice",
+            seq=1,
+            service_type="PRACTICE_JUDGE",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert captured["question_type_preference"] == "SINGLE_CHOICE"
+    assert {question["questionType"] for question in params["practiceQuestionBatch"]["questions"]} == {"SINGLE_CHOICE"}
+
+
+@pytest.mark.asyncio
+async def test_practice_agent_normalizes_single_question_object_from_llm() -> None:
+    class SingleQuestionGenerator:
+        provider_name = "unit-test-provider"
+        model_name = "unit-test-practice-model"
+
+        async def generate_batch(self, *, topic, difficulty, count, learning_context):
+            del topic, difficulty, count, learning_context
+            return {
+                "questionId": "single-q1",
+                "questionType": "SINGLE_CHOICE",
+                "stem": "联合索引最左匹配原则主要要求什么？",
+                "options": ["只看第一个字段", "按索引字段顺序匹配查询条件", "只对主键生效", "只影响排序"],
+                "answer": "B",
+                "knowledgeTags": ["联合索引", "最左匹配"],
+                "difficultyLevel": "BASIC",
+                "explanation": "联合索引需要按字段顺序命中查询条件。",
+            }
+
+    agent = PracticeAgent(
+        practice_store=InMemoryPracticeStore(),
+        question_generator=SingleQuestionGenerator(),
+    )
+    params = {"topic": "联合索引", "difficulty": "BASIC", "count": 1}
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-single-question",
+            trace_id="trace-single-question",
+            seq=1,
+            service_type="PRACTICE_JUDGE",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert params["practiceQuestionBatch"]["topic"] == "联合索引"
+    assert params["practiceQuestionBatch"]["questions"][0]["questionId"] == "single-q1"
+
+
+@pytest.mark.asyncio
+async def test_practice_agent_normalizes_question_array_from_llm() -> None:
+    class QuestionArrayGenerator:
+        provider_name = "unit-test-provider"
+        model_name = "unit-test-practice-model"
+
+        async def generate_batch(self, *, topic, difficulty, count, learning_context):
+            del learning_context
+            return [
+                {
+                    "questionId": f"array-q{index}",
+                    "questionType": "SINGLE_CHOICE",
+                    "stem": f"{topic} 客观题 {index}",
+                    "options": ["A", "B", "C", "D"],
+                    "answer": "A",
+                    "knowledgeTags": [topic, f"标签{index}"],
+                    "difficultyLevel": difficulty,
+                    "explanation": f"解析 {index}",
+                }
+                for index in range(1, count + 1)
+            ]
+
+    agent = PracticeAgent(
+        practice_store=InMemoryPracticeStore(),
+        question_generator=QuestionArrayGenerator(),
+    )
+    params = {
+        "topic": "联合索引",
+        "difficulty": "BASIC",
+        "count": 3,
+        "questionTypePreference": "SINGLE_CHOICE",
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-question-array",
+            trace_id="trace-question-array",
+            seq=1,
+            service_type="PRACTICE_JUDGE",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert [item["questionId"] for item in params["practiceQuestionBatch"]["questions"]] == [
+        "array-q1",
+        "array-q2",
+        "array-q3",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_practice_agent_reuses_existing_question_batch() -> None:
     class FakeQuestionGenerator:
         async def generate_batch(self, *, topic, difficulty, count, learning_context):
             del topic, difficulty, count, learning_context
             raise AssertionError("should not regenerate when practiceQuestionBatch is provided")
 
-    agent = PracticeAgent(question_generator=FakeQuestionGenerator())
+    agent = PracticeAgent(
+        practice_store=InMemoryPracticeStore(),
+        question_generator=FakeQuestionGenerator(),
+    )
     params = {
         "topic": "学习主动性：并发编程",
         "practiceQuestionBatch": {
@@ -292,35 +586,16 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
                     "difficulty": difficulty,
                     "questions": [
                         {
-                            "questionId": "q1",
-                            "questionType": "SINGLE_CHOICE",
-                            "stem": "LLM 生成客观题 1",
-                            "options": ["A", "B", "C", "D"],
-                            "answer": "C",
-                            "knowledgeTags": [topic, "核心概念"],
+                            "questionId": f"q{index}",
+                            "questionType": "SINGLE_CHOICE" if index < count else "SHORT_ANSWER",
+                            "stem": f"LLM 生成题目 {index}",
+                            "options": ["A", "B", "C", "D"] if index < count else [],
+                            "answer": "C" if index < count else "需要先判断条件",
+                            "knowledgeTags": [topic, f"标签{index}"],
                             "difficultyLevel": difficulty,
-                            "explanation": "LLM 解析 1",
-                        },
-                        {
-                            "questionId": "q2",
-                            "questionType": "SINGLE_CHOICE",
-                            "stem": "LLM 生成客观题 2",
-                            "options": ["A", "B", "C", "D"],
-                            "answer": "A",
-                            "knowledgeTags": [topic, "易错点"],
-                            "difficultyLevel": difficulty,
-                            "explanation": "LLM 解析 2",
-                        },
-                        {
-                            "questionId": "q3",
-                            "questionType": "SHORT_ANSWER",
-                            "stem": "LLM 生成主观题 3",
-                            "options": [],
-                            "answer": "需要先判断条件",
-                            "knowledgeTags": [topic, "使用条件"],
-                            "difficultyLevel": difficulty,
-                            "explanation": "LLM 解析 3",
-                        },
+                            "explanation": f"LLM 解析 {index}",
+                        }
+                        for index in range(1, count + 1)
                     ],
                 }
             )
@@ -348,7 +623,10 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
                 confidenceLevel="LOW",
             )
 
-    practice_agent = PracticeAgent(question_generator=FakeQuestionGenerator())
+    practice_agent = PracticeAgent(
+        practice_store=InMemoryPracticeStore(),
+        question_generator=FakeQuestionGenerator(),
+    )
     params = {
         "topic": "联合索引",
         "difficulty": "BASIC",
@@ -677,7 +955,38 @@ async def test_judge_agent_uses_subjective_evaluator_result_when_available() -> 
                 confidenceLevel="MEDIUM",
             )
 
-    practice_agent = PracticeAgent()
+    class FakeQuestionGenerator:
+        provider_name = "unit-test-provider"
+        model_name = "unit-test-practice-model"
+
+        async def generate_batch(self, *, topic, difficulty, count, learning_context, question_type_preference):
+            del learning_context
+            assert question_type_preference is None
+            return QuestionBatchPayload.model_validate(
+                {
+                    "title": f"{topic} 练习题",
+                    "topic": topic,
+                    "difficulty": difficulty,
+                    "questions": [
+                        {
+                            "questionId": f"q{index}",
+                            "questionType": "SINGLE_CHOICE" if index < count else "SHORT_ANSWER",
+                            "stem": f"LLM 生成题目 {index}",
+                            "options": ["A", "B", "C", "D"] if index < count else [],
+                            "answer": "C" if index < count else "需要先判断条件",
+                            "knowledgeTags": [topic, f"标签{index}"],
+                            "difficultyLevel": difficulty,
+                            "explanation": f"LLM 解析 {index}",
+                        }
+                        for index in range(1, count + 1)
+                    ],
+                }
+            )
+
+    practice_agent = PracticeAgent(
+        practice_store=InMemoryPracticeStore(),
+        question_generator=FakeQuestionGenerator(),
+    )
     params = {
         "topic": "联合索引",
         "difficulty": "BASIC",

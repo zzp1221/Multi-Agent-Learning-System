@@ -1,5 +1,13 @@
 import { motion } from 'framer-motion';
-import { BookOpenCheck, ClipboardList, FileText, FolderOpen, Network, Search, Sparkles } from 'lucide-react';
+import {
+  BookOpenCheck,
+  ClipboardList,
+  FileText,
+  FolderOpen,
+  Network,
+  Search,
+  Sparkles,
+} from 'lucide-react';
 import { ChatPanel, InputPanel } from './LearningStudioDemoPage.qna-components';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
 
@@ -18,9 +26,12 @@ interface QnaChatViewProps {
   onToggleWebSearch: () => void;
   onPickImages?: (files: File[]) => void;
   onRemoveImage?: (id: string) => void;
+  onConfirmSlideOutline?: (message: ChatMessage) => void;
+  onRejectSlideOutline?: (message: ChatMessage) => void;
 }
 
 const suggestionChips = [
+  { label: '生成一套学习资源', prompt: '请根据我当前学习阶段生成一套学习资源，包括文档、PPT、思维导图、练习题、短视频和代码案例', icon: Sparkles },
   { label: '帮我制定学习计划', prompt: '帮我制定一份适合我的学习计划', icon: ClipboardList },
   { label: '解答一道数学题', prompt: '请帮我解答一道数学题，并讲清楚思路', icon: Search },
   { label: '总结一篇文章', prompt: '请帮我总结这篇文章的核心观点', icon: FileText },
@@ -129,7 +140,11 @@ export default function QnaChatView(props: QnaChatViewProps) {
 
   return (
     <div className="qna-chat-shell">
-      <ChatPanel messages={props.qnaMessages} />
+      <ChatPanel
+        messages={props.qnaMessages}
+        onConfirmSlideOutline={props.onConfirmSlideOutline}
+        onRejectSlideOutline={props.onRejectSlideOutline}
+      />
       <InputPanel
         value={props.qnaInput}
         busy={props.qnaBusy}

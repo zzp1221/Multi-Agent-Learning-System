@@ -14,8 +14,6 @@ class RecoveryFailureType(str, Enum):
     LLM_API_TIMEOUT = "LLM_API_TIMEOUT"
     LLM_API_RATE_LIMIT = "LLM_API_RATE_LIMIT"
     RETRIEVAL_UNAVAILABLE = "RETRIEVAL_UNAVAILABLE"
-    VECTOR_DB_TIMEOUT = "VECTOR_DB_TIMEOUT"
-    CONTENT_GENERATION_FAILED = "CONTENT_GENERATION_FAILED"
     PROFILE_UPDATE_FAILED = "PROFILE_UPDATE_FAILED"
     TOOL_EXECUTION_ERROR = "TOOL_EXECUTION_ERROR"
 
@@ -45,8 +43,6 @@ class RecoveryEngine:
             RecoveryFailureType.LLM_API_TIMEOUT: 1,
             RecoveryFailureType.LLM_API_RATE_LIMIT: 2,
             RecoveryFailureType.RETRIEVAL_UNAVAILABLE: 1,
-            RecoveryFailureType.VECTOR_DB_TIMEOUT: 2,
-            RecoveryFailureType.CONTENT_GENERATION_FAILED: 1,
             RecoveryFailureType.PROFILE_UPDATE_FAILED: 2,
         }.get(failure_type, 0)
         last_error: Exception | None = None
@@ -100,49 +96,6 @@ class RecoveryEngine:
             "fallback_payload": fallback_payload,
             "recovered": True,
             "failure_type": RecoveryFailureType.RETRIEVAL_UNAVAILABLE.value,
-        }
-        self.audit_log.append(payload)
-        return payload
-
-    async def recover_vector_db_timeout(
-        self,
-        *,
-        query: str,
-    ) -> dict[str, Any]:
-        payload = {
-            "query": query,
-            "recovered": True,
-            "failure_type": RecoveryFailureType.VECTOR_DB_TIMEOUT.value,
-        }
-        self.audit_log.append(payload)
-        return payload
-
-    async def recover_content_generation_failed(
-        self,
-        *,
-        asset_type: str,
-        fallback_payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        payload = {
-            "asset_type": asset_type,
-            "fallback_payload": fallback_payload,
-            "recovered": True,
-            "failure_type": RecoveryFailureType.CONTENT_GENERATION_FAILED.value,
-        }
-        self.audit_log.append(payload)
-        return payload
-
-    async def recover_profile_update_failed(
-        self,
-        *,
-        user_id: str,
-        fallback_payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        payload = {
-            "user_id": user_id,
-            "fallback_payload": fallback_payload,
-            "recovered": True,
-            "failure_type": RecoveryFailureType.PROFILE_UPDATE_FAILED.value,
         }
         self.audit_log.append(payload)
         return payload

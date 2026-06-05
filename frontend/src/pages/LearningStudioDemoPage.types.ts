@@ -25,6 +25,15 @@ export interface ChatMessage {
   localImagePreviews?: string[];
   webSearchEnabled?: boolean;
   deepReasoningEnabled?: boolean;
+  slideConfirmation?: SlideOutlineConfirmation;
+}
+
+export interface SlideOutlineConfirmation {
+  id: string;
+  title: string;
+  outline: string;
+  topic?: string;
+  status: 'pending' | 'confirmed' | 'rejected';
 }
 
 export interface PendingChatImage {
@@ -63,6 +72,10 @@ export interface VideoResult {
   fileName?: string;
   renderStatus?: 'rendering' | 'ready' | 'failed';
   renderMessage?: string;
+  audioBase64?: string;
+  audioFormat?: string;
+  avatarDataUrl?: string;
+  renderTaskId?: string;
 }
 
 export interface InlineResourceView {
@@ -91,7 +104,6 @@ export interface LearningPlanStepView {
   agentName?: string;
   serviceType?: string;
   status?: string;
-  qualityGate?: string;
 }
 
 export interface LearningPlanView {
@@ -381,7 +393,7 @@ export interface WeakPointRank {
 }
 
 export interface TaskRunHandlers {
-  onProgress: (progress: number, statusHint?: string) => void;
+  onProgress: (progress: number, statusHint?: string, options?: { allowDecrease?: boolean; maxProgress?: number }) => void;
   onLine: (line: string) => void;
   onSummary: (summary: string) => void;
   onDownload: (item: TempDownloadLink) => void;

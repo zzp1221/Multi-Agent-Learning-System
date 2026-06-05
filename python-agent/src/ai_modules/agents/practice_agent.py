@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+import inspect
 from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.async_utils import cancel_and_await
+from src.ai_modules.generation.resource_builder import ResourceGenerationService
 from src.ai_modules.llms import PracticeQuestionGenerator
-from src.ai_modules.memory import InMemoryPracticeStore, PostgresPracticeStore, PracticeStore
+from src.ai_modules.memory import PostgresPracticeStore, PracticeStore
 from src.ai_modules.models import (
     ProgressPayload,
     ProgressSSEEvent,
@@ -37,7 +39,6 @@ class PracticeAgent(PlaceholderAgent):
     ) -> None:
         super().__init__("Practice Agent", "practice")
         self.practice_store = practice_store or PostgresPracticeStore()
-        self.fallback_practice_store = InMemoryPracticeStore()
         self.question_generator = question_generator or PracticeQuestionGenerator()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.skill_loader = SkillPromptLoader()
@@ -100,9 +101,14 @@ class PracticeAgent(PlaceholderAgent):
             question_batch = await question_batch_task
         params["practiceQuestionBatch"] = question_batch
         params["practiceQuestions"] = question_batch["questions"]
+        persistence_task_id = (
+            None
+            if params.get("conversationTriggeredResourceGeneration") is True
+            else task_id
+        )
         params["practicePersistence"] = await self._safe_save_question_batch(
             user_id=user_id,
-            task_id=task_id,
+            task_id=persistence_task_id,
             question_batch=QuestionBatchPayload.model_validate(question_batch),
         )
 
@@ -137,7 +143,7 @@ class PracticeAgent(PlaceholderAgent):
         raw_batch = await self._tool_generate_questions(tool_input={}, params=params)
 
         # 步骤 2: 验证（确定性操作）
-        validated = self._tool_validate_question(raw_batch)
+        validated = self._tool_validate_question(raw_batch, params=params)
 
         # 步骤 3: 格式化（确定性操作）
         formatted = self._tool_format_question_batch(tool_input=validated, params=params)
@@ -154,20 +160,45 @@ class PracticeAgent(PlaceholderAgent):
         topic = self._resolve_topic(params)
         difficulty = self._resolve_difficulty(params)
         count = self._question_count(params)
+        kwargs = {
+            "topic": topic,
+            "difficulty": difficulty,
+            "count": count,
+            "learning_context": params.get("learningContext", {}),
+        }
+        if self._supports_question_type_preference():
+            kwargs["question_type_preference"] = self._question_type_preference(params)
         try:
-            question_batch = await self.question_generator.generate_batch(
-                topic=topic,
-                difficulty=difficulty,
-                count=count,
-                learning_context=params.get("learningContext", {}),
-            )
-            return question_batch.model_dump(by_alias=True)
+            question_batch = await self.question_generator.generate_batch(**kwargs)
+            return self._normalize_generated_question_batch(question_batch, params=params)
         except Exception as exc:
             raise RuntimeError(
                 "Practice question LLM generation failed; template fallback is not allowed"
             ) from exc
 
-    def _tool_validate_question(self, tool_input: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_generated_question_batch(self, raw_output: Any, *, params: dict[str, Any]) -> dict[str, Any]:
+        if hasattr(raw_output, "model_dump"):
+            raw_output = raw_output.model_dump(by_alias=True)
+        if isinstance(raw_output, list):
+            raw_output = {"questions": raw_output}
+        elif isinstance(raw_output, dict) and not isinstance(raw_output.get("questions"), list):
+            if self._looks_like_question(raw_output):
+                raw_output = {"questions": [raw_output]}
+        if not isinstance(raw_output, dict):
+            raise RuntimeError("练习题生成结果不是可识别的题批结构")
+        topic = str(raw_output.get("topic") or self._resolve_topic(params))
+        difficulty = str(raw_output.get("difficulty") or self._resolve_difficulty(params))
+        return {
+            **raw_output,
+            "topic": topic,
+            "difficulty": difficulty,
+        }
+
+    @staticmethod
+    def _looks_like_question(payload: dict[str, Any]) -> bool:
+        return any(key in payload for key in ("stem", "questionId", "questionType", "answer"))
+
+    def _tool_validate_question(self, tool_input: dict[str, Any], *, params: dict[str, Any]) -> dict[str, Any]:
         questions = [
             PracticeQuestion.model_validate(question)
             for question in tool_input.get("questions", [])
@@ -177,8 +208,14 @@ class PracticeAgent(PlaceholderAgent):
             for question in questions
             if question.stem and question.answer and question.knowledge_tags
         ]
+        expected_count = self._question_count(params)
+        if len(validated_questions) != expected_count:
+            raise RuntimeError(
+                f"练习题生成数量不符合要求：期望 {expected_count} 道，实际 {len(validated_questions)} 道"
+            )
+        self._validate_question_type_mix(validated_questions, params=params)
         return {
-            "topic": tool_input.get("topic", "当前主题"),
+            "topic": tool_input.get("topic") or "",
             "difficulty": tool_input.get("difficulty", "MIXED"),
             "questions": validated_questions,
         }
@@ -212,7 +249,9 @@ class PracticeAgent(PlaceholderAgent):
         return self._sanitize_existing_question_batch(batch)
 
     def _sanitize_existing_question_batch(self, batch: dict[str, Any]) -> dict[str, Any]:
-        topic = str(batch.get("topic") or "当前主题")
+        topic = str(batch.get("topic") or batch.get("title") or "").strip()
+        if not topic:
+            raise RuntimeError("练习题批次缺少真实主题")
         batch["title"] = f"{topic} 练习题"
         batch["submitLabel"] = None
         batch["assessmentDimension"] = None
@@ -227,26 +266,86 @@ class PracticeAgent(PlaceholderAgent):
 
     def _resolve_topic(self, params: dict[str, Any]) -> str:
         learning_context = params.get("learningContext", {})
-        return str(
-            params.get("topic")
-            or params.get("query")
-            or learning_context.get("chapter")
-            or learning_context.get("course")
-            or "当前主题"
-        )
+        strict_candidates = [
+            params.get("explicitUserTopic"),
+            learning_context.get("explicitUserTopic") if isinstance(learning_context, dict) else None,
+            params.get("activeLearningStepTitle"),
+            learning_context.get("activeLearningStepTitle") if isinstance(learning_context, dict) else None,
+            learning_context.get("activeLearningStep") if isinstance(learning_context, dict) else None,
+            params.get("topic"),
+            params.get("keyPoints"),
+            params.get("knowledgePoint"),
+            learning_context.get("knowledgePoint") if isinstance(learning_context, dict) else None,
+            learning_context.get("chapter") if isinstance(learning_context, dict) else None,
+            learning_context.get("course") if isinstance(learning_context, dict) else None,
+        ]
+        for candidate in strict_candidates:
+            value = ResourceGenerationService._normalize_topic_candidate(candidate)
+            if ResourceGenerationService._is_real_topic(value):
+                return value
+        for candidate in (params.get("rewrittenQuery"), params.get("query")):
+            value = ResourceGenerationService._normalize_topic_candidate(candidate)
+            if ResourceGenerationService._is_real_topic(value) and not ResourceGenerationService._looks_like_resource_command(value):
+                return value
+        raise RuntimeError("缺少练习题真实主题，禁止生成模板题")
 
     def _resolve_difficulty(self, params: dict[str, Any]) -> str:
-        return str(params.get("difficulty") or "MIXED")
+        learning_context = params.get("learningContext", {})
+        difficulty = params.get("difficulty")
+        if not difficulty and isinstance(learning_context, dict):
+            difficulty = learning_context.get("difficultyPreference")
+        return str(difficulty or "MIXED")
 
     def _question_count(self, params: dict[str, Any]) -> int:
-        count = int(params.get("count", 5))
-        return max(1, min(count, 5))
+        learning_context = params.get("learningContext", {})
+        raw_count = params.get("questionCount") or params.get("count")
+        if raw_count is None and isinstance(learning_context, dict):
+            raw_count = learning_context.get("questionCount")
+        try:
+            count = int(raw_count or 5)
+        except (TypeError, ValueError):
+            count = 5
+        return max(1, min(count, 20))
+
+    def _question_type_preference(self, params: dict[str, Any]) -> str | None:
+        learning_context = params.get("learningContext", {})
+        preference = params.get("questionTypePreference")
+        if not preference and isinstance(learning_context, dict):
+            preference = learning_context.get("questionTypePreference")
+        normalized = str(preference or "").strip().upper()
+        return normalized or None
+
+    def _validate_question_type_mix(self, questions: list[dict[str, Any]], *, params: dict[str, Any]) -> None:
+        preference = self._question_type_preference(params)
+        question_types = {str(question.get("questionType") or "").strip().upper() for question in questions}
+        objective_types = {"SINGLE_CHOICE"}
+        subjective_types = {"SHORT_ANSWER"}
+        unknown_types = question_types - objective_types - subjective_types
+        if unknown_types:
+            raise RuntimeError(f"练习题包含不支持的题型：{sorted(unknown_types)}")
+        if preference in {"SINGLE_CHOICE", "OBJECTIVE", "CHOICE"}:
+            if question_types - objective_types:
+                raise RuntimeError("用户要求客观题，但生成结果包含主观题")
+            return
+        if preference in {"SHORT_ANSWER", "SUBJECTIVE"}:
+            if question_types - subjective_types:
+                raise RuntimeError("用户要求主观题，但生成结果包含客观题")
+            return
+        if len(questions) >= 2 and not (question_types & objective_types and question_types & subjective_types):
+            raise RuntimeError("默认练习题必须混合客观题和主观题")
+
+    def _supports_question_type_preference(self) -> bool:
+        try:
+            signature = inspect.signature(self.question_generator.generate_batch)
+        except (TypeError, ValueError):
+            return True
+        return "question_type_preference" in signature.parameters
 
     async def _safe_save_question_batch(
         self,
         *,
         user_id: str,
-        task_id: str,
+        task_id: str | None,
         question_batch: QuestionBatchPayload,
     ) -> dict[str, Any]:
         try:
@@ -256,9 +355,5 @@ class PracticeAgent(PlaceholderAgent):
                 task_id=task_id,
             )
             return metadata
-        except Exception:
-            return await self.fallback_practice_store.save_question_batch(
-                user_id=user_id,
-                batch=question_batch,
-                task_id=task_id,
-            )
+        except Exception as exc:
+            raise RuntimeError("Practice question persistence failed; in-memory fallback is not allowed") from exc

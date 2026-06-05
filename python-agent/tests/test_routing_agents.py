@@ -123,6 +123,17 @@ def test_path_planning_agent_system_prompt_loads_skill_and_context() -> None:
     assert f"课程: {_build_snapshot().current_course}" in prompt
 
 
+def test_path_planning_normalizes_backend_trigger_source_for_persistence() -> None:
+    agent = PathPlanningAgent(
+        llm_client=_UnusedPlanningLLM(),
+        learning_plan_store=InMemoryLearningPlanStore(),
+    )
+
+    assert agent._resolve_trigger_source({"triggerSource": "INITIAL_PROFILE"}) == "PROFILE_UPDATE"
+    assert agent._resolve_trigger_source({"triggerSource": "PRACTICE_PROGRESS"}) == "PRACTICE_RESULT"
+    assert agent._resolve_trigger_source({"triggerSource": "MANUAL_ADJUSTMENT"}) == "MANUAL_REFRESH"
+
+
 def test_path_planning_skill_prompt_falls_back_when_skill_is_missing(tmp_path) -> None:
     loader = SkillPromptLoader(skills_root=tmp_path)
 

@@ -4,7 +4,6 @@ import pytest
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.models import (
-    ConversationPlan,
     DialogState,
     EngineStreamRequest,
     CriticReviewPayload,
@@ -89,6 +88,24 @@ def test_resource_generation_done_summary_hides_internal_generation_details() ->
     assert "java Bean" not in payload.summary
 
 
+def test_tutoring_resource_generation_done_waits_for_slide_confirmation() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    payload = supervisor._build_done_payload(
+        service_type="TUTORING",
+        agent_names=["query_rewrite", "retrieval", "tutor"],
+        params={
+            "conversationTriggeredResourceGeneration": True,
+            "pendingSlideOutlines": [
+                {"assetType": "SLIDES", "displayMode": "SLIDE_OUTLINE_CONFIRMATION", "title": "联合索引 PPT 大纲"}
+            ],
+        },
+    )
+
+    assert payload.status == "WAITING_CONFIRMATION"
+    assert "等待确认" in payload.summary
+
+
 def test_supervisor_resolves_video_generation_route() -> None:
     supervisor = PythonAgentSupervisor()
 
@@ -102,6 +119,24 @@ def test_supervisor_resolves_video_generation_route() -> None:
         "retrieval",
         "video_generator",
     ]
+
+
+def test_tutoring_route_ignores_reading_only_resource_requests() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    route = supervisor.resolve_route(
+        "TUTORING",
+        {"query": "请围绕联合索引生成拓展阅读材料"},
+    )
+
+    assert route.agent_names == [
+        "query_rewrite",
+        "retrieval",
+        "tutor",
+    ]
+    assert not supervisor._has_conversational_resource_generation_intent(
+        {"query": "请围绕联合索引生成拓展阅读材料"}
+    )
 
 
 def test_supervisor_route_templates_reference_registered_or_virtual_agents() -> None:
@@ -139,7 +174,7 @@ def test_supervisor_routes_small_talk_to_tutor_only() -> None:
     assert route.retrieval_strategy == "NONE"
 
 
-def test_supervisor_routes_deep_reasoning_to_deep_agent() -> None:
+def test_supervisor_keeps_deep_mode_on_tutor_route() -> None:
     supervisor = PythonAgentSupervisor()
 
     route = supervisor.resolve_route(
@@ -150,9 +185,28 @@ def test_supervisor_routes_deep_reasoning_to_deep_agent() -> None:
     assert route.agent_names == [
         "query_rewrite",
         "retrieval",
-        "image_analysis",
-        "deep_reasoning",
+        "tutor",
     ]
+    assert route.retrieval_strategy == "DEEP_EVIDENCE"
+
+
+def test_supervisor_routes_resource_intent_to_tutor_even_in_deep_mode() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    route = supervisor.resolve_route(
+        "TUTORING",
+        {
+            "query": "生成一份关于java并发的文档",
+            "reasoningMode": "DEEP",
+        },
+    )
+
+    assert route.agent_names == [
+        "query_rewrite",
+        "retrieval",
+        "tutor",
+    ]
+    assert route.query_type == "NEW_CONCEPT"
     assert route.retrieval_strategy == "DEEP_EVIDENCE"
 
 
@@ -270,45 +324,6 @@ class _StubProfileAgent(PlaceholderAgent):
         )
 
 
-class _FakePlanner:
-    def __init__(self, steps: list[dict] | None = None) -> None:
-        self.steps = steps or [
-            {
-                "stepId": "rewrite",
-                "title": "改写问题",
-                "intent": "标准化当前学习问题",
-                "agentName": "query_rewrite",
-            },
-            {
-                "stepId": "retrieve",
-                "title": "检索证据",
-                "intent": "检索课程相关证据",
-                "agentName": "retrieval",
-            },
-            {
-                "stepId": "tutor",
-                "title": "分层讲解",
-                "intent": "结合证据完成辅导",
-                "agentName": "tutor",
-                "qualityGate": "critic",
-            },
-        ]
-
-    async def plan(self, **kwargs) -> ConversationPlan:
-        return ConversationPlan.model_validate(
-            {
-                "planId": "test-plan",
-                "goal": kwargs.get("params", {}).get("query") or "测试学习目标",
-                "serviceType": kwargs.get("service_type") or "TUTORING",
-                "steps": self.steps,
-                "createdBy": "llm_planner",
-                "status": "PLANNED",
-                "provider": "test-provider",
-                "model": "test-model",
-            }
-        )
-
-
 class _StubCriticAgent(PlaceholderAgent):
     def __init__(self, *, fail: bool = False) -> None:
         super().__init__("stub critic", "critic")
@@ -332,10 +347,6 @@ class _StubCriticAgent(PlaceholderAgent):
         params["criticReview"] = review.model_dump(by_alias=True)
         if False:
             yield
-
-
-def _install_fake_planner(supervisor: PythonAgentSupervisor, steps: list[dict] | None = None) -> None:
-    supervisor.planner_factory = lambda allowed_agent_names: _FakePlanner(steps)
 
 
 def _install_stub_critic(supervisor: PythonAgentSupervisor, *, fail: bool = False) -> None:
@@ -969,12 +980,25 @@ async def test_supervisor_streams_practice_judge_route_with_profile_feedback() -
                 "professionalBackground": "计算机本科生",
             },
             "learningContext": {"course": "数据库原理", "chapter": "联合索引"},
+            "practiceQuestionBatch": {
+                "title": "联合索引练习",
+                "topic": "联合索引",
+                "difficulty": "BASIC",
+                "questions": [
+                    {
+                        "questionId": "q1",
+                        "questionType": "SINGLE_CHOICE",
+                        "stem": "最左匹配规则是什么？",
+                        "options": ["A", "B", "C", "D"],
+                        "answer": "A",
+                        "knowledgeTags": ["最左匹配"],
+                        "difficultyLevel": "BASIC",
+                    }
+                ],
+                **_test_provenance("practice"),
+            },
             "answers": {
                 "q1": "C",
-                "q2": "B",
-                "q3": "我知道要判断条件，但还不会举出误判场景。",
-                "q4": "A",
-                "q5": "",
             },
         },
         taskId="task-practice-judge",
@@ -983,14 +1007,84 @@ async def test_supervisor_streams_practice_judge_route_with_profile_feedback() -
 
     events = [event async for event in supervisor.stream(request)]
 
-    assert events[0].event == "progress"
-    assert any(e.event == "question_batch" for e in events)
+    assert not any(e.event == "question_batch" for e in events)
     assert any(e.event == "judge_result" for e in events)
     assert events[-1].event == "done"
-    question_batch = next(e for e in events if e.event == "question_batch")
-    assert question_batch.payload.topic == "联合索引"
     judge_result = next(e for e in events if e.event == "judge_result")
     assert judge_result.payload.accuracy < 1.0
+
+
+@pytest.mark.asyncio
+async def test_supervisor_stage_test_generation_runs_practice_only_without_answers() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["practice"] = _StubPracticeAgent()
+    supervisor.agent_registry["judge"] = _StubJudgeAgent()
+    supervisor.agent_registry["profile"] = _StubProfileAgent()
+    request = EngineStreamRequest(
+        serviceType="PRACTICE_JUDGE",
+        params={
+            "purpose": "STAGE_TEST",
+            "topic": "Java并发编程基础：线程创建与休眠",
+            "count": 10,
+            "learningContext": {"activeLearningStepId": "step-1"},
+        },
+        taskId="task-stage-test-generate",
+        traceId="trace-stage-test-generate",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert any(event.event == "question_batch" for event in events)
+    assert not any(event.event == "judge_result" for event in events)
+    assert events[-1].event == "done"
+
+
+@pytest.mark.asyncio
+async def test_supervisor_stage_test_submit_runs_judge_and_profile_with_answers() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["practice"] = _StubPracticeAgent()
+    supervisor.agent_registry["judge"] = _StubJudgeAgent()
+    supervisor.agent_registry["profile"] = _StubProfileAgent()
+    request = EngineStreamRequest(
+        serviceType="PRACTICE_JUDGE",
+        params={
+            "purpose": "STAGE_TEST",
+            "topic": "联合索引",
+            "practiceQuestionBatch": {
+                "title": "联合索引 阶段测试",
+                "topic": "联合索引",
+                "difficulty": "BASIC",
+                "questions": [
+                    {
+                        "questionId": "q1",
+                        "questionType": "SINGLE_CHOICE",
+                        "stem": "题目",
+                        "options": ["A", "B"],
+                        "answer": "A",
+                        "knowledgeTags": ["联合索引"],
+                        "difficultyLevel": "BASIC",
+                    }
+                ],
+                "generatedBy": "LLM",
+                "contentOrigin": "LLM",
+                "provider": "unit",
+                "model": "unit",
+                "agentName": "practice",
+                "evidenceIds": [],
+                "fallback": False,
+                "fromCache": False,
+            },
+            "answers": {"q1": "A"},
+        },
+        taskId="task-stage-test-submit",
+        traceId="trace-stage-test-submit",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert not any(event.event == "question_batch" for event in events)
+    assert any(event.event == "judge_result" for event in events)
+    assert events[-1].event == "done"
 
 
 @pytest.mark.asyncio
@@ -1136,103 +1230,6 @@ async def test_supervisor_marks_critic_result_chunks_internal() -> None:
 
 
 @pytest.mark.asyncio
-async def test_supervisor_skips_planner_for_explicit_length_limit() -> None:
-    supervisor = PythonAgentSupervisor()
-    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
-    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
-    supervisor.agent_registry["tutor"] = _StubTutorAgent()
-    supervisor.agent_registry["profile"] = _StubProfileAgent()
-    _install_fake_planner(
-        supervisor,
-        steps=[
-            {
-                "stepId": "tutor-1",
-                "title": "第一次回答",
-                "agentName": "tutor",
-                "qualityGate": "critic",
-            },
-            {
-                "stepId": "tutor-2",
-                "title": "第二次回答",
-                "agentName": "tutor",
-            },
-        ],
-    )
-    _install_stub_critic(supervisor)
-    request = EngineStreamRequest(
-        serviceType="TUTORING",
-        params={
-            "query": "请在80字内总结红黑树的核心思想",
-            "messages": [{"role": "user", "content": "请在80字内总结红黑树的核心思想"}],
-        },
-        taskId="task-length-planner",
-        traceId="trace-length-planner",
-    )
-
-    events = [event async for event in supervisor.stream(request)]
-
-    assert not any(event.event == "progress" and event.payload.stage == "planning" for event in events)
-    tutor_chunks = [
-        event.payload.text
-        for event in events
-        if event.event == "result_chunk" and event.payload.stage == "tutoring"
-    ]
-    assert tutor_chunks == ["联合索引需要先理解最左匹配规则。"]
-
-
-@pytest.mark.asyncio
-async def test_supervisor_skips_conversation_planner_for_tutoring() -> None:
-    supervisor = PythonAgentSupervisor()
-    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
-    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
-    supervisor.agent_registry["tutor"] = _StubTutorAgent()
-    supervisor.agent_registry["profile"] = _StubProfileAgent()
-    _install_resource_bundle_stubs(supervisor)
-    critic_agent = _StubCriticAgent()
-    supervisor.agent_registry["critic"] = critic_agent
-    _install_fake_planner(
-        supervisor,
-        steps=[
-            {
-                "stepId": "resource",
-                "title": "生成专项学习包",
-                "intent": "复用资源生成服务",
-                "serviceType": "RESOURCE_GENERATION",
-                "qualityGate": "critic",
-            }
-        ],
-    )
-    request = EngineStreamRequest(
-        serviceType="TUTORING",
-        params={
-            "query": "我想系统学习联合索引",
-            "resourceType": "DOCUMENT",
-            "learningContext": {"course": "数据库原理", "chapter": "索引"},
-        },
-        taskId="task-planned-resource",
-        traceId="trace-planned-resource",
-    )
-
-    events = [event async for event in supervisor.stream(request)]
-
-    assert events[-1].event == "done"
-    assert not any(event.event == "resource_file" for event in events)
-    assert not any(event.event == "progress" and event.payload.stage == "planning" for event in events)
-    assert any(
-        event.event == "result_chunk"
-        and event.payload.stage == "tutoring"
-        and "联合索引" in event.payload.text
-        for event in events
-    )
-    assert critic_agent.seen_params is None
-    assert request.params == {
-        "query": "我想系统学习联合索引",
-        "resourceType": "DOCUMENT",
-        "learningContext": {"course": "数据库原理", "chapter": "索引"},
-    }
-
-
-@pytest.mark.asyncio
 async def test_supervisor_fails_when_critic_fails_after_key_result() -> None:
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["evaluation"] = _StubEvaluationAgent()
@@ -1250,7 +1247,7 @@ async def test_supervisor_fails_when_critic_fails_after_key_result() -> None:
     events = [event async for event in supervisor.stream(request)]
 
     assert [event.event for event in events][-2:] == ["error", "done"]
-    assert events[-2].payload.code == "PLANNER_REVIEWER_FAILED"
+    assert events[-2].payload.code == "SUPERVISOR_FAILED"
     assert events[-1].payload.status == "FAILED"
 
 
@@ -1262,7 +1259,6 @@ async def test_supervisor_runs_tutoring_profile_in_background() -> None:
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["tutor"] = _StubTutorAgent()
     supervisor.agent_registry["profile"] = profile_agent
-    _install_fake_planner(supervisor)
     _install_stub_critic(supervisor)
     request = EngineStreamRequest(
         serviceType="TUTORING",
@@ -1302,7 +1298,6 @@ async def test_supervisor_skips_tutoring_profile_before_third_turn() -> None:
     supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
     supervisor.agent_registry["tutor"] = _StubTutorAgent()
     supervisor.agent_registry["profile"] = profile_agent
-    _install_fake_planner(supervisor)
     _install_stub_critic(supervisor)
     request = EngineStreamRequest(
         serviceType="TUTORING",

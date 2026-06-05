@@ -363,7 +363,8 @@ class PathPlanningAgent(PlaceholderAgent):
                 "summaryText": plan.summary_text,
             }
             return metadata
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning("Failed to persist learning plan user_id=%s: %s", user_id, exc)
             return await self.fallback_learning_plan_store.save_plan(
                 user_id=user_id,
                 course_id=course_id,
@@ -391,6 +392,9 @@ class PathPlanningAgent(PlaceholderAgent):
         )
 
     def _resolve_trigger_source(self, params: dict[str, Any]) -> str:
+        explicit_source = str(params.get("triggerSource") or "").strip()
+        if explicit_source:
+            return self._normalize_trigger_source(explicit_source, params=params)
         if params.get("manualRefresh"):
             return "MANUAL_REFRESH"
         if params.get("judgeResult"):
@@ -399,6 +403,22 @@ class PathPlanningAgent(PlaceholderAgent):
             return "EVALUATION"
         if params.get("profileAnalysis"):
             return "PROFILE_ANALYSIS"
+        if params.get("profileUpdate"):
+            return "PROFILE_UPDATE"
+        return "INITIAL"
+
+    def _normalize_trigger_source(self, trigger_source: str, *, params: dict[str, Any]) -> str:
+        normalized = trigger_source.strip().upper()
+        if normalized in {"INITIAL", "PROFILE_UPDATE", "PRACTICE_RESULT", "EVALUATION", "MANUAL_REFRESH"}:
+            return normalized
+        if normalized in {"INITIAL_PROFILE", "PROFILE_ONBOARDING"}:
+            return "PROFILE_UPDATE"
+        if normalized in {"PRACTICE_PROGRESS", "PRACTICE_REFRESH"}:
+            return "PRACTICE_RESULT"
+        if normalized in {"MANUAL_ADJUSTMENT", "RESOURCE_RECOMMENDATION_REFRESH"}:
+            return "MANUAL_REFRESH"
+        if params.get("manualRefresh"):
+            return "MANUAL_REFRESH"
         if params.get("profileUpdate"):
             return "PROFILE_UPDATE"
         return "INITIAL"

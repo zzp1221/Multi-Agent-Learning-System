@@ -194,6 +194,32 @@ class TaskStateMachineProvenanceTest {
     }
 
     @Test
+    void pendingSlideOutlineKeepsInlineContentWithoutDownloadSigning() {
+        TaskStreamEventPayload result = service.recordPythonEvent(
+            taskId,
+            new PythonStreamEvent(
+                "resource_file",
+                "slides_outline",
+                Map.of(
+                    "assetType", "SLIDES",
+                    "displayMode", "SLIDE_OUTLINE_CONFIRMATION",
+                    "title", "联合索引 PPT 大纲",
+                    "inlineContent", "# 联合索引 PPT 大纲",
+                    "localPath", "/tmp/outline.md",
+                    "sandboxPath", "/sandbox/outline.md"
+                )
+            )
+        );
+
+        assertThat(result.event()).isEqualTo("resource_file");
+        assertThat(result.payload()).containsEntry("inlineContent", "# 联合索引 PPT 大纲");
+        assertThat(result.payload()).doesNotContainKeys("downloadUrl", "localPath", "sandboxPath");
+        assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.RUNNING);
+        assertThat(task.getResponseSummary()).containsEntry("inlineContent", "# 联合索引 PPT 大纲");
+        verify(artifactDownloadService, never()).issueDownload(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void partialFailedDoneCompletesTaskWithPartialStage() {
         TaskStreamEventPayload result = service.recordPythonEvent(
             taskId,
@@ -212,6 +238,31 @@ class TaskStateMachineProvenanceTest {
         assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.COMPLETED);
         assertThat(task.getCurrentStage()).isEqualTo("partial_failed");
         assertThat(task.getResponseSummary()).containsEntry("status", "PARTIAL_FAILED");
+    }
+
+    @Test
+    void waitingConfirmationDoneKeepsTaskRunningWithoutFakeCompletion() {
+        task.setProgressPercent(new java.math.BigDecimal("42"));
+
+        TaskStreamEventPayload result = service.recordPythonEvent(
+            taskId,
+            new PythonStreamEvent(
+                "done",
+                "resource_bundle",
+                Map.of(
+                    "status", "WAITING_CONFIRMATION",
+                    "summary", "PPT 大纲已生成，等待确认",
+                    "pendingSlideOutlines", List.of(Map.of("title", "SQL 基础 PPT 大纲"))
+                )
+            )
+        );
+
+        assertThat(result.event()).isEqualTo("done");
+        assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.RUNNING);
+        assertThat(task.getCurrentStage()).isEqualTo("waiting_confirmation");
+        assertThat(task.getProgressPercent()).isEqualByComparingTo("42");
+        assertThat(task.getCompletedAt()).isNull();
+        assertThat(task.getResponseSummary()).containsEntry("status", "WAITING_CONFIRMATION");
     }
 
     @Test

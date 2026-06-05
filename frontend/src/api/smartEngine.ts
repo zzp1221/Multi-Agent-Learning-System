@@ -72,6 +72,14 @@ export interface UserProfileResponse {
   }>;
 }
 
+export interface ProfileOnboardingPayload {
+  majorCode: string;
+  knowledgeBase: string;
+  learningGoal: string;
+  learningPreference: string;
+  resourcePreference: string;
+}
+
 export interface ProfileBehaviorTrendPoint {
   date: string;
   conversationCount: number;
@@ -156,6 +164,27 @@ export interface KnowledgeGraphResponse {
   nextRecommended: string[];
 }
 
+export interface LearningPathCurrentResponse {
+  planId?: string | null;
+  userId: string;
+  courseId?: string | null;
+  status?: string;
+  learningPath?: Record<string, unknown>;
+  activeStep?: Record<string, unknown> | null;
+  resourcePushPlan?: Record<string, unknown>;
+  pushedResources?: Array<Record<string, unknown>>;
+  version?: number | null;
+  triggerSource?: string | null;
+  summary?: string | null;
+  updatedAt?: string | null;
+  refreshTask?: SmartEngineTaskResponse | null;
+  resourceRefreshTask?: SmartEngineTaskResponse | null;
+}
+
+export interface LearningPathAdjustRequest {
+  adjustmentIntent?: string;
+}
+
 export const smartEngineApi = {
   submit(payload: SmartEngineSubmitRequest): Promise<SmartEngineSubmitResponse> {
     return request.post<SmartEngineSubmitResponse>('/api/smart-engine/submit', payload);
@@ -221,6 +250,10 @@ export const smartEngineApi = {
     return request.get<UserProfileResponse>(`/api/users/${userId}/profile/current`);
   },
 
+  completeProfileOnboarding(payload: ProfileOnboardingPayload): Promise<UserProfileResponse> {
+    return request.post<UserProfileResponse>('/api/users/me/profile/onboarding', payload);
+  },
+
   getProfileAnalytics(userId: string, days = 30): Promise<UserProfileAnalyticsResponse> {
     return request.get<UserProfileAnalyticsResponse>(`/api/users/${userId}/profile/analytics`, {
       params: { days },
@@ -229,5 +262,17 @@ export const smartEngineApi = {
 
   getKnowledgeGraph(userId: string): Promise<KnowledgeGraphResponse> {
     return request.get<KnowledgeGraphResponse>(`/api/users/${userId}/knowledge-graph`);
+  },
+};
+
+export const learningPathApi = {
+  current(): Promise<LearningPathCurrentResponse> {
+    return request.get<LearningPathCurrentResponse>('/api/learning-path/current', { dedupe: false });
+  },
+  adjust(payload: LearningPathAdjustRequest): Promise<SmartEngineSubmitResponse> {
+    return request.post<SmartEngineSubmitResponse>('/api/learning-path/adjust', payload);
+  },
+  refreshResources(payload: LearningPathAdjustRequest): Promise<SmartEngineSubmitResponse> {
+    return request.post<SmartEngineSubmitResponse>('/api/learning-path/resources/refresh', payload);
   },
 };

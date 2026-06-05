@@ -13,7 +13,6 @@ from src.ai_modules.llms.spark_compatible import (
     SparkCompatibleToolCallingLLM,
 )
 from src.ai_modules.llms.practice_llm import RuleBasedJudgeLLM, RuleBasedPracticeLLM
-from src.ai_modules.llms.profile_llm import RuleBasedProfileLLM
 from src.ai_modules.llms.json_utils import dumps_json
 from src.ai_modules.llms.tutor_llm import OpenAICompatibleTutorLLM, RuleBasedTutorLLM
 from src.ai_modules.models import (
@@ -576,6 +575,8 @@ class OpenAICompatibleLearningPathGenerator:
 class OpenAICompatiblePracticeQuestionGenerator:
     """使用主提供商模型生成结构化练习批次。"""
 
+    STAGE_TEST_MAX_TOKENS = 6000
+
     def __init__(self) -> None:
         provider_name, model_name = _resolve_component_binding("practice_llm", default_logical_model="main_chat_model")
         self.generator = OpenAICompatibleJSONGenerator(model_name=model_name, provider_name=provider_name)
@@ -587,34 +588,117 @@ class OpenAICompatiblePracticeQuestionGenerator:
         difficulty: str,
         count: int,
         learning_context: dict[str, Any],
+        question_type_preference: str | None = None,
     ) -> QuestionBatchPayload:
-        payload = await self.generator.generate(
-            system_prompt=(
-                "你是教学系统中的 Practice Agent。"
-                "请围绕指定主题生成高质量中文练习题。"
-                "输出必须是 JSON，结构为 "
-                '{"title":"...","topic":"...","difficulty":"...","questions":'
-                '[{"questionId":"q1","questionType":"SINGLE_CHOICE或SHORT_ANSWER","stem":"...",'
-                '"options":["..."],"answer":"...","knowledgeTags":["..."],'
-                '"difficultyLevel":"...","explanation":"..."}]}.'
-            ),
-            user_prompt="\n".join(
-                [
-                    f"主题: {topic}",
-                    f"难度: {difficulty}",
-                    f"题量: {count}",
-                    f"学习上下文: {dumps_json(learning_context, ensure_ascii=False)}",
-                    "要求同时覆盖概念、条件判断、易错点和自测/迁移。",
-                ]
-            ),
-            max_tokens=1800,
+        type_instruction = self._question_type_instruction(question_type_preference)
+        system_prompt = (
+            "你是教学系统中的 Practice Agent。"
+            "请围绕指定主题生成高质量中文练习题。"
+            "默认同时混合客观题和主观题；若用户指定题型，必须按指定题型生成。"
+            "输出必须是单个 JSON 对象，顶层必须包含 title、topic、difficulty、questions。"
+            "questions 必须恰好等于题量，不要只返回单道题对象。"
+            "结构为 "
+            '{"title":"...","topic":"...","difficulty":"...","questions":'
+            '[{"questionId":"q1","questionType":"SINGLE_CHOICE或SHORT_ANSWER","stem":"...",'
+            '"options":["..."],"answer":"...","knowledgeTags":["..."],'
+            '"difficultyLevel":"...","explanation":"..."}]}。'
         )
-        batch = QuestionBatchPayload.model_validate(payload)
+        user_prompt = "\n".join(
+            [
+                f"主题: {topic}",
+                f"难度: {difficulty}",
+                f"题量: {count}",
+                f"题型要求: {type_instruction}",
+                f"学习上下文: {dumps_json(learning_context, ensure_ascii=False)}",
+                "要求同时覆盖概念、条件判断、易错点和自测/迁移。",
+            ]
+        )
+        payload = await self.generator.generate(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=self.STAGE_TEST_MAX_TOKENS,
+        )
+        batch = self._validate_practice_batch(
+            payload,
+            topic=topic,
+            difficulty=difficulty,
+            count=count,
+        )
+        if len(batch.questions) != count:
+            retry_payload = await self.generator.generate(
+                system_prompt=system_prompt,
+                user_prompt="\n".join(
+                    [
+                        user_prompt,
+                        "",
+                        f"上一次返回了 {len(batch.questions)} 道题，不符合题量 {count}。",
+                        "请重新返回完整批次 JSON，questions 必须恰好包含指定题量，题号从 q1 连续编号。",
+                    ]
+                ),
+                max_tokens=self.STAGE_TEST_MAX_TOKENS,
+            )
+            batch = self._validate_practice_batch(
+                retry_payload,
+                topic=topic,
+                difficulty=difficulty,
+                count=count,
+            )
         normalized_questions = []
         for index, question in enumerate(batch.questions[:count], start=1):
             normalized_question = question.model_copy(update={"question_id": f"q{index}"})
             normalized_questions.append(normalized_question)
         return batch.model_copy(update={"questions": normalized_questions})
+
+    def _validate_practice_batch(
+        self,
+        payload: Any,
+        *,
+        topic: str,
+        difficulty: str,
+        count: int,
+    ) -> QuestionBatchPayload:
+        normalized = self._normalize_practice_payload(
+            payload,
+            topic=topic,
+            difficulty=difficulty,
+        )
+        return QuestionBatchPayload.model_validate(normalized)
+
+    def _normalize_practice_payload(
+        self,
+        payload: Any,
+        *,
+        topic: str,
+        difficulty: str,
+    ) -> dict[str, Any]:
+        if hasattr(payload, "model_dump"):
+            payload = payload.model_dump(by_alias=True)
+        if isinstance(payload, list):
+            payload = {"questions": payload}
+        elif isinstance(payload, dict) and not isinstance(payload.get("questions"), list):
+            if self._looks_like_question(payload):
+                payload = {"questions": [payload]}
+        if not isinstance(payload, dict):
+            raise ValueError("practice question payload is not a JSON object")
+        return {
+            **payload,
+            "title": str(payload.get("title") or f"{topic} 练习题"),
+            "topic": str(payload.get("topic") or topic),
+            "difficulty": str(payload.get("difficulty") or difficulty),
+        }
+
+    @staticmethod
+    def _looks_like_question(payload: dict[str, Any]) -> bool:
+        return any(key in payload for key in ("questionId", "questionType", "stem", "answer"))
+
+    @staticmethod
+    def _question_type_instruction(question_type_preference: str | None) -> str:
+        normalized = str(question_type_preference or "").strip().upper()
+        if normalized in {"SINGLE_CHOICE", "OBJECTIVE", "CHOICE"}:
+            return "全部生成 SINGLE_CHOICE，每题必须提供 4 个选项和唯一标准答案。"
+        if normalized in {"SHORT_ANSWER", "SUBJECTIVE"}:
+            return "全部生成 SHORT_ANSWER，不提供 options，标准答案要可用于判题。"
+        return "混合 SINGLE_CHOICE 与 SHORT_ANSWER，比例随机但两类都要出现。"
 
 
 class OpenAICompatibleObjectiveJudgeGenerator:
@@ -893,17 +977,6 @@ class JudgeLLMClientFactory:
             provider_name, model_name = _resolve_component_binding("judge_llm", default_logical_model="main_chat_model")
             return create_tool_calling_llm(model_name=model_name, provider_name=provider_name)
         return RuleBasedJudgeLLM()
-
-
-class ProfileLLMClientFactory:
-    """创建画像 Agent LLM，支持提供商路由和规则回退。"""
-
-    @staticmethod
-    def create() -> Any:
-        if _component_provider_ready("profile_llm"):
-            provider_name, model_name = _resolve_component_binding("profile_llm", default_logical_model="main_chat_model")
-            return create_tool_calling_llm(model_name=model_name, provider_name=provider_name)
-        return RuleBasedProfileLLM()
 
 
 class TutorToolLLMClientFactory:

@@ -6,6 +6,8 @@ import com.project.api.conversation.dto.ConversationMessageItemResponse;
 import com.project.api.conversation.dto.CreateConversationResponse;
 import com.project.application.common.ApplicationException;
 import com.project.application.common.ClientDisconnectDetector;
+import com.project.application.artifact.ArtifactDownloadDescriptor;
+import com.project.application.artifact.ArtifactDownloadService;
 import com.project.application.smartengine.PythonAgentClient;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
@@ -16,6 +18,11 @@ import com.project.application.voice.VoiceTurnMetricsService;
 import com.project.domain.conversation.ConversationMode;
 import com.project.domain.conversation.QnaSession;
 import com.project.domain.conversation.QnaSessionRepository;
+import com.project.domain.artifact.ResourceType;
+import com.project.domain.task.ServiceType;
+import com.project.domain.task.SmartEngineTask;
+import com.project.domain.task.SmartEngineTaskRepository;
+import com.project.domain.task.TaskStatus;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
@@ -29,7 +36,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
+import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -57,6 +67,8 @@ public class ConversationService {
     private final VoiceMetricLogger voiceMetricLogger;
     private final VoiceTurnMetricsService voiceTurnMetricsService;
     private final VoicePartialDraftService voicePartialDraftService;
+    private final SmartEngineTaskRepository smartEngineTaskRepository;
+    private final ArtifactDownloadService artifactDownloadService;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
@@ -66,7 +78,9 @@ public class ConversationService {
         UserProfileCurrentRepository userProfileCurrentRepository,
         VoiceMetricLogger voiceMetricLogger,
         VoiceTurnMetricsService voiceTurnMetricsService,
-        VoicePartialDraftService voicePartialDraftService
+        VoicePartialDraftService voicePartialDraftService,
+        SmartEngineTaskRepository smartEngineTaskRepository,
+        ArtifactDownloadService artifactDownloadService
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
@@ -76,6 +90,8 @@ public class ConversationService {
         this.voiceMetricLogger = voiceMetricLogger;
         this.voiceTurnMetricsService = voiceTurnMetricsService;
         this.voicePartialDraftService = voicePartialDraftService;
+        this.smartEngineTaskRepository = smartEngineTaskRepository;
+        this.artifactDownloadService = artifactDownloadService;
     }
 
     @Transactional
@@ -206,7 +222,9 @@ public class ConversationService {
                     assistantReply.length(),
                     ""
                 );
-                appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), List.of(), false);
+                if (!assistantReply.isEmpty()) {
+                    appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), List.of(), false);
+                }
                 emitter.complete();
             } catch (Exception ex) {
                 if (ClientDisconnectDetector.isClientDisconnect(ex)) {
@@ -285,16 +303,31 @@ public class ConversationService {
             voicePartialDraftService.streamDraft(reusableDraft, eventConsumer);
             return;
         }
+        UUID taskId = UUID.randomUUID();
+        String traceId = UUID.randomUUID().toString();
+        ServiceType serviceType = request.resolvedServiceType();
+        Map<String, Object> params = buildConversationParams(currentUser, conversationId, request, history);
+        java.util.concurrent.atomic.AtomicReference<SmartEngineTask> conversationTaskRef = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.function.Consumer<PythonStreamEvent> signedEventConsumer = event -> {
+            PythonStreamEvent outboundEvent = event;
+            if ("resource_file".equals(event.eventType())) {
+                SmartEngineTask conversationTask = conversationTaskRef.updateAndGet(existing -> existing == null
+                    ? createConversationStreamTask(currentUser.userId(), taskId, traceId, serviceType, params)
+                    : existing);
+                outboundEvent = signConversationResourceFileEvent(conversationTask, event);
+            }
+            eventConsumer.accept(outboundEvent);
+        };
         pythonAgentClient.stream(
             new SmartEngineInvocation(
                 currentUser.userId(),
-                UUID.randomUUID(),
-                UUID.randomUUID().toString(),
+                taskId,
+                traceId,
                 conversationId,
-                request.resolvedServiceType(),
-                buildConversationParams(currentUser, conversationId, request, history)
+                serviceType,
+                params
             ),
-            eventConsumer
+            signedEventConsumer
         );
     }
 
@@ -319,6 +352,181 @@ public class ConversationService {
         }
         VoiceMetricContext context = voiceTurnMetricsService.context(voiceTurn.voiceSessionId(), voiceTurn.turnId());
         voiceMetricLogger.record(metric, context, durationMs, "python-agent", "conversation-stream", outcome, inputLength, outputLength, errorCode);
+    }
+
+    private SmartEngineTask createConversationStreamTask(
+        UUID userId,
+        UUID taskId,
+        String traceId,
+        ServiceType serviceType,
+        Map<String, Object> requestPayload
+    ) {
+        SmartEngineTask task = new SmartEngineTask();
+        task.setId(taskId);
+        task.setUserId(userId);
+        task.setTraceId(traceId);
+        task.setServiceType(serviceType);
+        task.setTaskStatus(TaskStatus.RUNNING);
+        task.setCurrentStage("conversation_stream");
+        task.setProgressPercent(BigDecimal.ZERO);
+        task.setRequestPayload(new LinkedHashMap<>(requestPayload));
+        task.setResponseSummary(new LinkedHashMap<>());
+        task.setStartedAt(OffsetDateTime.now());
+        return smartEngineTaskRepository == null ? task : smartEngineTaskRepository.save(task);
+    }
+
+    private PythonStreamEvent signConversationResourceFileEvent(SmartEngineTask task, PythonStreamEvent event) {
+        if (!"resource_file".equals(event.eventType())) {
+            return event;
+        }
+        Map<String, Object> payload = event.safePayload();
+        if (isPendingSlideOutline(payload)) {
+            return new PythonStreamEvent(event.eventType(), event.stage(), stripSandboxPaths(payload));
+        }
+        if (requiresGeneratedResourceProvenance(payload) && !hasRealLlmProvenance(payload)) {
+            return new PythonStreamEvent(
+                "error",
+                event.stage(),
+                provenanceFailurePayload(payload)
+            );
+        }
+        if (artifactDownloadService == null) {
+            return new PythonStreamEvent(event.eventType(), event.stage(), stripSandboxPaths(payload));
+        }
+        String sandboxPath = firstText(payload.get("sandboxPath"), payload.get("localPath"));
+        String fileName = stringValue(payload.get("fileName"));
+        if (sandboxPath == null || sandboxPath.isBlank() || fileName == null || fileName.isBlank()) {
+            return new PythonStreamEvent(event.eventType(), event.stage(), stripSandboxPaths(payload));
+        }
+        try {
+            Map<String, Object> signedPayload = signResourceFilePayload(task, payload, sandboxPath, fileName);
+            return new PythonStreamEvent(event.eventType(), event.stage(), signedPayload);
+        } catch (Exception ex) {
+            LOGGER.warn("Conversation resource_file signing failed taskId={} title={}", task.getId(), payload.get("title"), ex);
+            return new PythonStreamEvent(
+                "error",
+                event.stage(),
+                Map.of(
+                    "code", "ARTIFACT_SIGNING_FAILED",
+                    "message", "生成资源下载链接签发失败",
+                    "sourceEvent", "resource_file"
+                )
+            );
+        }
+    }
+
+    private Map<String, Object> signResourceFilePayload(
+        SmartEngineTask task,
+        Map<String, Object> payload,
+        String sandboxPath,
+        String fileName
+    ) {
+        ResourceType resourceType = resolveResourceType(payload.get("assetType"));
+        ArtifactDownloadDescriptor descriptor = artifactDownloadService.issueDownload(
+            task,
+            resourceType,
+            firstText(payload.get("title"), fileName),
+            fileName,
+            sandboxPath,
+            stringValue(payload.get("mimeType"))
+        );
+        Map<String, Object> signedPayload = stripSandboxPaths(payload);
+        signedPayload.put("downloadUrl", descriptor.downloadUrl());
+        signedPayload.put("expiresInSec", descriptor.expiresInSec());
+        signedPayload.put("expiresAt", descriptor.expiresAt());
+        String thumbnailPath = stringValue(payload.get("thumbnailPath"));
+        if (thumbnailPath != null && !thumbnailPath.isBlank()) {
+            String thumbnailFileName = firstText(
+                payload.get("thumbnailFileName"),
+                Path.of(thumbnailPath).getFileName().toString()
+            );
+            ArtifactDownloadDescriptor thumbnailDescriptor = artifactDownloadService.issueDownload(
+                task,
+                resourceType,
+                firstText(payload.get("title"), thumbnailFileName),
+                thumbnailFileName,
+                thumbnailPath,
+                stringValue(payload.get("thumbnailMimeType"))
+            );
+            signedPayload.remove("thumbnailPath");
+            signedPayload.put("thumbnailUrl", thumbnailDescriptor.downloadUrl());
+        }
+        return signedPayload;
+    }
+
+    private Map<String, Object> stripSandboxPaths(Map<String, Object> payload) {
+        Map<String, Object> sanitized = new LinkedHashMap<>(payload);
+        sanitized.remove("sandboxPath");
+        sanitized.remove("localPath");
+        return sanitized;
+    }
+
+    private boolean isPendingSlideOutline(Map<String, Object> payload) {
+        return "SLIDES".equalsIgnoreCase(stringValue(payload.get("assetType")))
+            && "SLIDE_OUTLINE_CONFIRMATION".equalsIgnoreCase(stringValue(payload.get("displayMode")));
+    }
+
+    private boolean requiresGeneratedResourceProvenance(Map<String, Object> payload) {
+        String displayMode = stringValue(payload.get("displayMode"));
+        if ("external_link".equalsIgnoreCase(displayMode)) {
+            return false;
+        }
+        String sourceName = stringValue(payload.get("sourceName"));
+        return sourceName == null || sourceName.isBlank() || "generated".equalsIgnoreCase(sourceName);
+    }
+
+    private boolean hasRealLlmProvenance(Map<String, Object> payload) {
+        return "LLM".equalsIgnoreCase(stringValue(payload.get("generatedBy")))
+            && "LLM".equalsIgnoreCase(stringValue(payload.get("contentOrigin")))
+            && hasText(payload.get("provider"))
+            && hasText(payload.get("model"))
+            && hasText(payload.get("agentName"))
+            && payload.get("evidenceIds") instanceof Collection<?>
+            && Boolean.FALSE.equals(payload.get("fallback"))
+            && payload.get("fromCache") instanceof Boolean;
+    }
+
+    private Map<String, Object> provenanceFailurePayload(Map<String, Object> originalPayload) {
+        Map<String, Object> failure = new LinkedHashMap<>();
+        failure.put("code", "PROVENANCE_INVALID");
+        failure.put("message", "Generated artifact is missing required LLM provenance metadata");
+        failure.put("sourceEvent", "resource_file");
+        Object title = originalPayload.get("title");
+        if (title != null) {
+            failure.put("title", title);
+        }
+        Object assetType = originalPayload.get("assetType");
+        if (assetType != null) {
+            failure.put("assetType", assetType);
+        }
+        return failure;
+    }
+
+    private ResourceType resolveResourceType(Object rawValue) {
+        if (rawValue instanceof ResourceType resourceType) {
+            return resourceType;
+        }
+        if (rawValue instanceof String text && !text.isBlank()) {
+            return ResourceType.fromValue(text);
+        }
+        return ResourceType.DOCUMENT;
+    }
+
+    private boolean hasText(Object value) {
+        String text = stringValue(value);
+        return text != null && !text.isBlank();
+    }
+
+    private String firstText(Object first, Object second) {
+        String firstValue = stringValue(first);
+        if (firstValue != null && !firstValue.isBlank()) {
+            return firstValue;
+        }
+        return stringValue(second);
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private long elapsedMs(long startedAtNanos) {
@@ -512,6 +720,8 @@ public class ConversationService {
         if (!voiceContext.isEmpty()) {
             params.put("voiceContext", voiceContext);
             params.put("learningContext", buildLearningContext(voiceContext));
+            putLearningContext(params, "confirmedSlideOutline", voiceContext.get("confirmedSlideOutline"));
+            putLearningContext(params, "confirmedSlideOutlineText", voiceContext.get("confirmedSlideOutlineText"));
         }
 
         List<Map<String, Object>> messages = new java.util.ArrayList<>();
@@ -556,6 +766,17 @@ public class ConversationService {
         putLearningContext(learningContext, "resourceResultSummary", voiceContext.get("resourceResultSummary"));
         putLearningContext(learningContext, "downloadResourceSummary", voiceContext.get("downloadResourceSummary"));
         putLearningContext(learningContext, "recommendedAction", voiceContext.get("recommendedAction"));
+        putLearningContext(learningContext, "activeLearningStepId", voiceContext.get("activeLearningStepId"));
+        putLearningContext(learningContext, "activeLearningStepTitle", voiceContext.get("activeLearningStepTitle"));
+        putLearningContext(learningContext, "activeLearningStepProgress", voiceContext.get("activeLearningStepProgress"));
+        putLearningContext(learningContext, "activeLearningStepSummary", voiceContext.get("activeLearningStepSummary"));
+        putLearningContext(learningContext, "explicitUserTopic", voiceContext.get("explicitUserTopic"));
+        putLearningContext(learningContext, "questionCount", voiceContext.get("questionCount"));
+        putLearningContext(learningContext, "questionTypePreference", voiceContext.get("questionTypePreference"));
+        putLearningContext(learningContext, "difficultyPreference", voiceContext.get("difficultyPreference"));
+        putLearningContext(learningContext, "requiresSlideOutlineConfirmation", voiceContext.get("requiresSlideOutlineConfirmation"));
+        putLearningContext(learningContext, "confirmedSlideOutline", voiceContext.get("confirmedSlideOutline"));
+        putLearningContext(learningContext, "confirmedSlideOutlineText", voiceContext.get("confirmedSlideOutlineText"));
         return learningContext;
     }
 

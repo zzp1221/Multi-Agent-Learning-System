@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, BrainCircuit, FileImage, Globe2, LoaderCircle, Paperclip, SendHorizontal, Sparkles, X, XCircle } from 'lucide-react';
+import { ArrowDown, BrainCircuit, CheckCircle2, FileImage, Globe2, LoaderCircle, Paperclip, SendHorizontal, Sparkles, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
@@ -11,6 +11,8 @@ interface ChatMessageBubbleProps {
   onPreviewImage: (imageUrl: string) => void;
   onCopy: (message: ChatMessage) => void;
   copiedMessageId: string | null;
+  onConfirmSlideOutline?: (message: ChatMessage) => void;
+  onRejectSlideOutline?: (message: ChatMessage) => void;
 }
 
 const ChatMessageBubble = memo(function ChatMessageBubble({
@@ -19,6 +21,8 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
   onPreviewImage,
   onCopy,
   copiedMessageId,
+  onConfirmSlideOutline,
+  onRejectSlideOutline,
 }: ChatMessageBubbleProps) {
   return (
     <motion.div
@@ -59,6 +63,13 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
             ) : (
               <MarkdownRenderer content="" isStreaming={true} />
             )}
+            {message.slideConfirmation ? (
+              <SlideOutlineConfirmationCard
+                message={message}
+                onConfirm={onConfirmSlideOutline}
+                onReject={onRejectSlideOutline}
+              />
+            ) : null}
           </div>
         )}
         {message.content ? (
@@ -82,7 +93,63 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
   );
 });
 
-export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatMessage[] }) {
+function SlideOutlineConfirmationCard(props: {
+  message: ChatMessage;
+  onConfirm?: (message: ChatMessage) => void;
+  onReject?: (message: ChatMessage) => void;
+}) {
+  const confirmation = props.message.slideConfirmation;
+  if (!confirmation) {
+    return null;
+  }
+  const pending = confirmation.status === 'pending';
+  return (
+    <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-3 dark:border-primary-500/20 dark:bg-primary-500/10">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-primary-600 dark:text-primary-300">PPT 大纲待确认</div>
+          <div className="mt-1 truncate text-sm font-bold text-slate-800 dark:text-slate-100">{confirmation.title}</div>
+        </div>
+        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-blue-100 dark:bg-slate-900 dark:text-slate-300 dark:ring-primary-500/20">
+          {confirmation.status === 'confirmed' ? '已确认' : confirmation.status === 'rejected' ? '未生成' : '等待确认'}
+        </span>
+      </div>
+      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-blue-100 bg-white px-3 py-2 text-sm leading-6 text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+        <MarkdownRenderer content={confirmation.outline} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={!pending}
+          onClick={() => props.onConfirm?.(props.message)}
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary-600 px-3 text-sm font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <CheckCircle2 className="h-4 w-4" />
+          确认生成 PPT
+        </button>
+        <button
+          type="button"
+          disabled={!pending}
+          onClick={() => props.onReject?.(props.message)}
+          className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-rose-200 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+        >
+          <XCircle className="h-4 w-4" />
+          暂不生成
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export const ChatPanel = memo(function ChatPanel({
+  messages,
+  onConfirmSlideOutline,
+  onRejectSlideOutline,
+}: {
+  messages: ChatMessage[];
+  onConfirmSlideOutline?: (message: ChatMessage) => void;
+  onRejectSlideOutline?: (message: ChatMessage) => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
@@ -170,6 +237,8 @@ export const ChatPanel = memo(function ChatPanel({ messages }: { messages: ChatM
                 onPreviewImage={setPreviewImage}
                 onCopy={handleCopy}
                 copiedMessageId={copiedMessageId}
+                onConfirmSlideOutline={onConfirmSlideOutline}
+                onRejectSlideOutline={onRejectSlideOutline}
               />
             ))}
           </AnimatePresence>

@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
-import { conversationApi } from '../api/conversation';
+import { conversationApi, type ConversationMessageStreamRequest } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
+import { learningPathApi, type LearningPathCurrentResponse } from '../api/smartEngine';
 import type { LayoutOutletContext } from '../components/Layout';
 import {
   QNA_GREETING,
   type ChatMessage,
   type PendingChatImage,
+  type SlideOutlineConfirmation,
   type QnaState,
 } from './LearningStudioDemoPage.types';
-import { readConversationChunk } from './LearningStudioDemoPage.utils';
+import {
+  readConversationChunk,
+  readPracticeQuestionBatch,
+} from './LearningStudioDemoPage.utils';
 import {
   VOICE_CONVERSATION_STREAM_EVENT,
   readVoiceConversationStreamDetail,
 } from '../utils/voiceConversationBridge';
+import { loadResourceGenerationSession, markSlideOutlineRejected, recordConversationResourceEvent } from './resourceGenerationStore';
+import { openPracticeSession } from './practiceSessionStore';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
   QNA_CONVERSATION_CACHE_STORAGE_KEY,
@@ -35,10 +42,44 @@ import {
 
 const QNA_STREAM_HISTORY_MAX_ATTEMPTS = 60;
 const QNA_HISTORY_POLL_INTERVAL_MS = 2000;
+type QnaVoiceContext = NonNullable<ConversationMessageStreamRequest['voiceContext']>;
+
+interface QnaSendOverride {
+  text: string;
+  confirmedSlideOutlineText?: string;
+  confirmedSlideTopic?: string;
+  confirmedSlideOutline?: boolean;
+}
+
+interface ResourceIntentContext {
+  voiceContext?: QnaVoiceContext;
+  missingTopicMessage?: string;
+}
+
+interface ResourceConversationIntent {
+  isResourceIntent: boolean;
+  isSlides: boolean;
+  isQuiz: boolean;
+  explicitUserTopic: string;
+  questionCount?: number;
+  questionTypePreference?: string;
+  difficultyPreference?: string;
+}
+
+interface ActiveLearningStepContext {
+  stepId: string;
+  title: string;
+  progress: number;
+  summary: string;
+}
+
+const GENERIC_RESOURCE_TOPIC_PATTERN =
+  /^(?:一份|一套|一个|一种|一张|几个|几道|一些|这个|这份|这套|此|本)?(?:PPT大纲|ppt大纲|PPT文件|ppt文件|PPT|ppt|slides?|课件|幻灯片|演示文稿|大纲|文档|资料|资源|学习资源|练习题|习题|题目|视频|代码案例)?$/i;
 
 interface UseLearningStudioQnaOptions {
   mode: 'qna' | 'engine';
   isAuthenticated: boolean;
+  currentUser: LayoutOutletContext['currentUser'];
   openAuthModal: LayoutOutletContext['openAuthModal'];
   conversationId: string;
   setConversationId: Dispatch<SetStateAction<string>>;
@@ -49,6 +90,7 @@ interface UseLearningStudioQnaOptions {
 export function useLearningStudioQna({
   mode,
   isAuthenticated,
+  currentUser,
   openAuthModal,
   conversationId,
   setConversationId,
@@ -65,6 +107,7 @@ export function useLearningStudioQna({
   const qnaConversationCacheRef = useRef<PersistedQnaConversationCache>({});
   const qnaStreamTokensRef = useRef<Record<string, string>>({});
   const qnaHistorySyncTokensRef = useRef<Record<string, number>>({});
+  const confirmedSlideOutlineStreamsRef = useRef<Record<string, boolean>>({});
   const qnaRequestVersionRef = useRef(0);
   const previousModeRef = useRef(mode);
 
@@ -75,7 +118,6 @@ export function useLearningStudioQna({
   const [qnaImageError, setQnaImageError] = useState('');
   const [qnaWebSearchEnabled, setQnaWebSearchEnabled] = useState(false);
   const [deepReasoningEnabled, setDeepReasoningEnabled] = useState(false);
-
   const qnaBusy = qnaState === 'QNA_STREAMING';
   const hasStartedConversation = Boolean(conversationId)
     || qnaMessages.length > 1
@@ -277,19 +319,20 @@ export function useLearningStudioQna({
           shouldShowStreamingState && hasPendingAssistantResponse(preferredMessages) && !mappedHasResolvedAssistant
             ? 'QNA_STREAMING'
             : 'QNA_IDLE';
-        latestMessages = preferredMessages;
-        qnaMessagesRef.current = preferredMessages;
-        setQnaMessages(preferredMessages);
+        const restoredMessages = restorePendingSlideOutlineMessages(normalizedConversationId, preferredMessages);
+        latestMessages = restoredMessages;
+        qnaMessagesRef.current = restoredMessages;
+        setQnaMessages(restoredMessages);
         if (shouldPollStreaming) {
           setQnaStateView(nextState);
         }
         cacheConversationView(normalizedConversationId, {
           qnaInput: nextInput ?? qnaInputRef.current,
-          qnaMessages: preferredMessages,
+          qnaMessages: restoredMessages,
           qnaState: nextState,
         });
 
-        const currentSignature = buildConversationSyncSignature(preferredMessages);
+        const currentSignature = buildConversationSyncSignature(restoredMessages);
         if (currentSignature === previousSignature) {
           unchangedPolls += 1;
         } else {
@@ -301,9 +344,9 @@ export function useLearningStudioQna({
           if (
             shouldShowStreamingState
             && !mappedHasResolvedAssistant
-            && hasPendingAssistantResponse(preferredMessages)
+            && hasPendingAssistantResponse(restoredMessages)
           ) {
-            const cleanedMessages = removePendingAssistantPlaceholder(preferredMessages);
+            const cleanedMessages = removePendingAssistantPlaceholder(restoredMessages);
             latestMessages = cleanedMessages;
             qnaMessagesRef.current = cleanedMessages;
             setQnaMessages(cleanedMessages);
@@ -592,7 +635,10 @@ export function useLearningStudioQna({
       }
 
       if (detail.phase === 'chunk') {
-        const chunk = detail.chunk ?? '';
+        const chunk = readConversationChunk(
+          { payload: { text: detail.chunk ?? '', stage: 'tutoring' } },
+          'result_chunk',
+        );
         if (!chunk) {
           return;
         }
@@ -654,24 +700,59 @@ export function useLearningStudioQna({
     };
   }, [updateQnaConversationMessages]);
 
-  const handleQnaSend = async () => {
-    const text = qnaInput.trim();
-    const uploadedImageUrls = pendingQnaImages
-      .filter((item) => item.uploadStatus === 'uploaded' && item.uploadedUrl)
-      .map((item) => item.uploadedUrl as string);
+  const handleQnaSend = async (override?: QnaSendOverride): Promise<boolean> => {
+    const text = (override?.text ?? qnaInput).trim();
+    const uploadedImageUrls = override
+      ? []
+      : pendingQnaImages
+        .filter((item) => item.uploadStatus === 'uploaded' && item.uploadedUrl)
+        .map((item) => item.uploadedUrl as string);
     if ((!text && uploadedImageUrls.length === 0) || qnaBusy) {
-      return;
+      return false;
     }
     if (!isAuthenticated) {
       openAuthModal('login', '请先登录');
-      return;
+      return false;
     }
 
     const assistantMessageId = `qna-assistant-${Date.now()}`;
     const userMessageId = `qna-user-${Date.now()}`;
-    const pendingPreviewUrls = pendingQnaImages.map((item) => item.previewUrl);
-    const useWebSearch = qnaWebSearchEnabled;
-    const useDeepReasoning = deepReasoningEnabled;
+    const pendingPreviewUrls = override ? [] : pendingQnaImages.map((item) => item.previewUrl);
+    const useWebSearch = override ? false : qnaWebSearchEnabled;
+    const useDeepReasoning = override ? false : deepReasoningEnabled;
+    const resourceContext = await buildResourceIntentContext(text, override);
+    if (resourceContext.missingTopicMessage) {
+      const missingMessages: ChatMessage[] = [
+        ...qnaMessagesRef.current,
+        {
+          id: userMessageId,
+          role: 'user',
+          content: text,
+          imageUrls: uploadedImageUrls,
+          localImagePreviews: pendingPreviewUrls,
+          webSearchEnabled: useWebSearch,
+          deepReasoningEnabled: useDeepReasoning,
+        },
+        {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: resourceContext.missingTopicMessage,
+        },
+      ];
+      qnaInputRef.current = '';
+      qnaMessagesRef.current = missingMessages;
+      setQnaInput('');
+      setQnaWebSearchEnabled(false);
+      setQnaImageError('');
+      setQnaMessages(missingMessages);
+      setPendingQnaImages([]);
+      cacheConversationView(conversationIdRef.current, {
+        qnaInput: '',
+        qnaMessages: missingMessages,
+        qnaState: 'QNA_IDLE',
+      });
+      return false;
+    }
     const pendingMessages: ChatMessage[] = [
       ...qnaMessagesRef.current,
       {
@@ -708,7 +789,7 @@ export function useLearningStudioQna({
       const currentConversationId = conversationId || (await conversationApi.createConversation()).conversationId;
       streamConversationId = currentConversationId;
       if (abortController.signal.aborted || !mountedRef.current) {
-        return;
+        return false;
       }
       const stillViewingOrigin = conversationIdRef.current === originConversationId;
       if (!conversationId && stillViewingOrigin) {
@@ -726,6 +807,7 @@ export function useLearningStudioQna({
       qnaStreamControllersRef.current[currentConversationId]?.abort();
       qnaStreamControllersRef.current[currentConversationId] = abortController;
       qnaStreamTokensRef.current[currentConversationId] = streamToken;
+      confirmedSlideOutlineStreamsRef.current[streamToken] = Boolean(override?.confirmedSlideOutlineText);
 
       await conversationApi.streamMessage(
         currentConversationId,
@@ -735,6 +817,7 @@ export function useLearningStudioQna({
           serviceType: 'TUTORING',
           webSearchEnabled: useWebSearch,
           reasoningMode: useDeepReasoning ? 'DEEP' : 'NORMAL',
+          voiceContext: resourceContext.voiceContext,
         },
         {
           onOpen: () => {
@@ -746,6 +829,23 @@ export function useLearningStudioQna({
           onEvent: (event) => {
             if (qnaStreamTokensRef.current[currentConversationId] !== streamToken) {
               return;
+            }
+            recordResourceStreamEvent(currentConversationId, event.event, event.data);
+            if (event.event === 'resource_file') {
+              const handledSlideOutline = handleConversationSlideOutline(
+                currentConversationId,
+                event.data.payload,
+                {
+                  confirmedRequest: Boolean(confirmedSlideOutlineStreamsRef.current[streamToken]),
+                  assistantMessageId,
+                },
+              );
+              if (handledSlideOutline) {
+                return;
+              }
+            }
+            if (event.event === 'question_batch') {
+              handleConversationQuestionBatch(event.data.payload);
             }
             const chunk = readConversationChunk(event.data, event.event);
             if (!chunk) {
@@ -774,10 +874,11 @@ export function useLearningStudioQna({
               return;
             }
             delete qnaStreamTokensRef.current[currentConversationId];
+            delete confirmedSlideOutlineStreamsRef.current[streamToken];
             if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
               delete qnaStreamControllersRef.current[currentConversationId];
             }
-            updateQnaConversationMessages(currentConversationId, (messages) => messages, { qnaState: 'QNA_IDLE' });
+            updateQnaConversationMessages(currentConversationId, removePendingAssistantPlaceholder, { qnaState: 'QNA_IDLE' });
             window.dispatchEvent(new Event('app:conversation-updated'));
           },
           onError: (error) => {
@@ -785,6 +886,7 @@ export function useLearningStudioQna({
               return;
             }
             delete qnaStreamTokensRef.current[currentConversationId];
+            delete confirmedSlideOutlineStreamsRef.current[streamToken];
             if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
               delete qnaStreamControllersRef.current[currentConversationId];
             }
@@ -819,6 +921,7 @@ export function useLearningStudioQna({
         },
         abortController.signal,
       );
+      return true;
     } catch (error) {
       const message = getErrorMessage(error);
       const targetConversationId = streamConversationId || (
@@ -828,6 +931,7 @@ export function useLearningStudioQna({
       );
       if (targetConversationId) {
         delete qnaStreamTokensRef.current[targetConversationId];
+        delete confirmedSlideOutlineStreamsRef.current[`${targetConversationId}:${assistantMessageId}`];
         if (qnaStreamControllersRef.current[targetConversationId] === abortController) {
           delete qnaStreamControllersRef.current[targetConversationId];
         }
@@ -841,17 +945,64 @@ export function useLearningStudioQna({
             ),
           { qnaState: 'QNA_IDLE' },
         );
-        return;
+        return false;
       }
       if (conversationIdRef.current !== originConversationId) {
-        return;
+        return false;
       }
       setQnaMessages((prev) =>
         prev.map((item) => (item.id === assistantMessageId ? { ...item, content: `会话失败：${message}` } : item)),
       );
       setQnaStateView('QNA_IDLE');
+      return false;
     }
   };
+
+  async function buildResourceIntentContext(
+    text: string,
+    override?: QnaSendOverride,
+  ): Promise<ResourceIntentContext> {
+    const intent = analyzeResourceConversationIntent(text, override);
+    if (!intent.isResourceIntent) {
+      return {};
+    }
+    const activeStep = intent.explicitUserTopic
+      ? null
+      : await loadActiveLearningStepContext();
+    if (!intent.explicitUserTopic && !activeStep) {
+      return {
+        missingTopicMessage: '当前没有可用学习阶段。请先生成学习路径，或在对话里补充明确的资源主题后再生成。',
+      };
+    }
+    const voiceContext: QnaVoiceContext = {
+      pageType: 'learning_studio_qna',
+      source: 'conversation_resource_generation',
+      selectedService: 'RESOURCE_GENERATION',
+      commandIntent: intent.isQuiz ? 'generate_practice' : intent.isSlides ? 'generate_slides' : 'generate_resources',
+      activeLearningStepId: activeStep?.stepId,
+      activeLearningStepTitle: activeStep?.title,
+      activeLearningStepProgress: activeStep ? String(activeStep.progress) : undefined,
+      activeLearningStepSummary: activeStep?.summary,
+      explicitUserTopic: intent.explicitUserTopic || undefined,
+      questionCount: intent.questionCount ? String(intent.questionCount) : undefined,
+      questionTypePreference: intent.questionTypePreference,
+      difficultyPreference: intent.difficultyPreference,
+      requiresSlideOutlineConfirmation: intent.isSlides && !override?.confirmedSlideOutlineText ? 'true' : undefined,
+      confirmedSlideOutline: override?.confirmedSlideOutlineText || override?.confirmedSlideOutline ? 'true' : undefined,
+      confirmedSlideOutlineText: override?.confirmedSlideOutlineText,
+    };
+    return { voiceContext: pruneVoiceContext(voiceContext) };
+  }
+
+  async function loadActiveLearningStepContext(): Promise<ActiveLearningStepContext | null> {
+    try {
+      const response = await learningPathApi.current();
+      return resolveActiveLearningStep(response);
+    } catch (error) {
+      console.warn('Failed to load active learning path context:', error);
+      return null;
+    }
+  }
 
   const revokePendingImage = useCallback((image: PendingChatImage) => {
     if (image.previewUrl.startsWith('blob:')) {
@@ -932,6 +1083,52 @@ export function useLearningStudioQna({
     pendingQnaImages.forEach(revokePendingImage);
   }, [pendingQnaImages, revokePendingImage]);
 
+  const handleConfirmSlideOutline = useCallback((message: ChatMessage) => {
+    const confirmation = message.slideConfirmation;
+    if (!confirmation || confirmation.status !== 'pending') {
+      return;
+    }
+    const confirmedTopic = cleanupTopic(confirmation.topic || '');
+    void handleQnaSend({
+      text: '确认此大纲并生成 PPT 文件',
+      confirmedSlideOutline: true,
+      confirmedSlideOutlineText: confirmation.outline,
+      confirmedSlideTopic: confirmedTopic || undefined,
+    }).then((accepted) => {
+      if (!accepted) {
+        return;
+      }
+      updateQnaConversationMessages(
+        conversationIdRef.current,
+        (messages) => messages.map((item) =>
+          item.id === message.id
+            ? { ...item, slideConfirmation: { ...confirmation, status: 'confirmed' } }
+            : item,
+        ),
+      );
+    });
+  }, [conversationIdRef, handleQnaSend, updateQnaConversationMessages]);
+
+  const handleRejectSlideOutline = useCallback((message: ChatMessage) => {
+    const confirmation = message.slideConfirmation;
+    if (!confirmation || confirmation.status !== 'pending') {
+      return;
+    }
+    updateQnaConversationMessages(
+      conversationIdRef.current,
+      (messages) => messages.map((item) =>
+        item.id === message.id
+          ? {
+            ...item,
+            content: item.content || '已取消本次 PPT 生成。',
+            slideConfirmation: { ...confirmation, status: 'rejected' },
+          }
+          : item,
+      ),
+    );
+    markSlideOutlineRejected(conversationIdRef.current, confirmation.title);
+  }, [conversationIdRef, updateQnaConversationMessages]);
+
   return {
     resetQnaConversation,
     abortQnaStreams,
@@ -950,8 +1147,113 @@ export function useLearningStudioQna({
       onToggleWebSearch: () => setQnaWebSearchEnabled((prev) => !prev),
       onPickImages: handlePickQnaImages,
       onRemoveImage: handleRemovePendingQnaImage,
+      onConfirmSlideOutline: handleConfirmSlideOutline,
+      onRejectSlideOutline: handleRejectSlideOutline,
     },
   };
+
+  function handleConversationSlideOutline(
+    targetConversationId: string,
+    payload: Record<string, unknown> | undefined,
+    options?: { confirmedRequest?: boolean; assistantMessageId?: string },
+  ): boolean {
+    if (!isSlideOutlineConfirmationPayload(payload)) {
+      return false;
+    }
+    if (options?.confirmedRequest) {
+      appendConfirmedSlideOutlineRepeatedMessage(targetConversationId, options.assistantMessageId);
+      return true;
+    }
+    const confirmation = readSlideOutlineConfirmation(payload);
+    if (!confirmation) {
+      appendSlideOutlineErrorMessage(targetConversationId);
+      return true;
+    }
+    updateQnaConversationMessages(
+      targetConversationId,
+      (messages) => {
+        const existingIndex = messages.findIndex((item) => item.slideConfirmation?.id === confirmation.id);
+        if (existingIndex >= 0) {
+          return messages.map((item, index) =>
+            index === existingIndex
+              ? {
+                ...item,
+                content: item.content || 'PPT 大纲已生成，请确认后继续生成演示文件。',
+                slideConfirmation: confirmation,
+              }
+              : item,
+          );
+        }
+        return [
+          ...removePendingAssistantPlaceholder(messages),
+          {
+            id: `qna-slide-outline-${Date.now()}`,
+            role: 'assistant',
+            content: 'PPT 大纲已生成，请确认后继续生成演示文件。',
+            slideConfirmation: confirmation,
+          },
+        ];
+      },
+      { qnaState: 'QNA_STREAMING' },
+    );
+    return true;
+  }
+
+  function appendSlideOutlineErrorMessage(targetConversationId: string): void {
+    updateQnaConversationMessages(
+      targetConversationId,
+      (messages) => [
+        ...removePendingAssistantPlaceholder(messages),
+        {
+          id: `qna-slide-outline-error-${Date.now()}`,
+          role: 'assistant',
+          content: 'PPT 大纲事件缺少正文，请重新生成',
+        },
+      ],
+      { qnaState: 'QNA_STREAMING' },
+    );
+  }
+
+  function appendConfirmedSlideOutlineRepeatedMessage(targetConversationId: string, assistantMessageId?: string): void {
+    updateQnaConversationMessages(
+      targetConversationId,
+      (messages) => {
+        const message = '确认已提交，但后端仍要求 PPT 大纲确认。请重新生成或稍后重试。';
+        if (assistantMessageId && messages.some((item) => item.id === assistantMessageId)) {
+          return messages.map((item) =>
+            item.id === assistantMessageId
+              ? { ...item, content: message }
+              : item,
+          );
+        }
+        return [
+          ...removePendingAssistantPlaceholder(messages),
+          {
+            id: `qna-slide-outline-repeat-error-${Date.now()}`,
+            role: 'assistant',
+            content: message,
+          },
+        ];
+      },
+      { qnaState: 'QNA_STREAMING' },
+    );
+  }
+
+  function handleConversationQuestionBatch(payload: Record<string, unknown> | undefined): void {
+    if (!hasRealLlmProvenance(payload)) {
+      return;
+    }
+    const batch = readPracticeQuestionBatch(payload);
+    if (!batch) {
+      return;
+    }
+    openPracticeSession({
+      batch,
+      source: 'conversation',
+      ownerUserId: currentUser?.userId ?? currentUser?.id,
+      conversationId: conversationIdRef.current.trim() || conversationId.trim() || undefined,
+    });
+  }
 }
 
 function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage[] {
@@ -960,4 +1262,329 @@ function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage
   }
   const lastIndex = messages.length - 1;
   return messages.filter((_, index) => index !== lastIndex);
+}
+
+function restorePendingSlideOutlineMessages(conversationId: string, messages: ChatMessage[]): ChatMessage[] {
+  if (!conversationId.trim() || typeof window === 'undefined') {
+    return messages;
+  }
+  const session = loadResourceGenerationSession(conversationId);
+  const pendingSlides = session.resources.filter(
+    (resource) => resource.type === 'SLIDES'
+      && resource.status === 'waiting_confirmation'
+      && resource.slideOutline?.trim(),
+  );
+  if (!pendingSlides.length) {
+    return messages;
+  }
+  let nextMessages = messages;
+  for (const resource of pendingSlides) {
+    const confirmation = {
+      id: `slides:${resource.title}`,
+      title: resource.title,
+      outline: resource.slideOutline?.trim() || '',
+      topic: session.topic || resource.title,
+      status: 'pending' as const,
+    };
+    if (!confirmation.outline || nextMessages.some((item) => item.slideConfirmation?.id === confirmation.id)) {
+      continue;
+    }
+    nextMessages = [
+      ...removePendingAssistantPlaceholder(nextMessages),
+      {
+        id: `qna-slide-outline-restored-${resource.id}`,
+        role: 'assistant',
+        content: 'PPT 大纲已生成，请确认后继续生成演示文件。',
+        slideConfirmation: confirmation,
+      },
+    ];
+  }
+  return nextMessages;
+}
+
+function recordResourceStreamEvent(
+  conversationId: string,
+  eventName: string,
+  data: Parameters<typeof recordConversationResourceEvent>[2],
+): void {
+  if (
+    eventName !== 'progress' &&
+    eventName !== 'resource_file' &&
+    eventName !== 'question_batch' &&
+    eventName !== 'done' &&
+    eventName !== 'error' &&
+    !eventName.startsWith('video_gen:')
+  ) {
+    return;
+  }
+  recordConversationResourceEvent(conversationId, eventName, data);
+}
+
+function hasRealLlmProvenance(payload: Record<string, unknown> | undefined): boolean {
+  if (!payload) {
+    return false;
+  }
+  const evidenceIds = payload.evidenceIds;
+  return readLooseString(payload.generatedBy).toUpperCase() === 'LLM'
+    && readLooseString(payload.contentOrigin).toUpperCase() === 'LLM'
+    && Boolean(readLooseString(payload.provider))
+    && Boolean(readLooseString(payload.model))
+    && Boolean(readLooseString(payload.agentName))
+    && Array.isArray(evidenceIds)
+    && payload.fallback === false
+    && typeof payload.fromCache === 'boolean';
+}
+
+function analyzeResourceConversationIntent(text: string, override?: QnaSendOverride): ResourceConversationIntent {
+  const normalized = text.trim();
+  const isConfirmedSlide = Boolean(override?.confirmedSlideOutlineText);
+  const isSlides = isConfirmedSlide
+    || /ppt|slides?|课件|演示文稿|幻灯片/i.test(normalized);
+  const isQuiz = /出\s*\d*\s*道.*题|练习题|习题|测验|自测|刷题|题目/.test(normalized)
+    && !/解答|讲解|解析/.test(normalized);
+  const isResourceIntent = isConfirmedSlide
+    || isSlides
+    || isQuiz
+    || /生成|制作|创建|整理|来一套|出一套/.test(normalized)
+      && /资源|文档|资料|阅读|视频|代码案例|思维导图|导图|课件|ppt|slides?|练习|习题|题目/i.test(normalized);
+  const explicitUserTopic = cleanupTopic(override?.confirmedSlideTopic ?? '')
+    || (isConfirmedSlide ? '' : extractExplicitResourceTopic(normalized, { isSlides, isQuiz }));
+  return {
+    isResourceIntent,
+    isSlides,
+    isQuiz,
+    explicitUserTopic,
+    questionCount: extractQuestionCount(normalized),
+    questionTypePreference: extractQuestionTypePreference(normalized),
+    difficultyPreference: extractDifficultyPreference(normalized),
+  };
+}
+
+function extractExplicitResourceTopic(text: string, intent: { isSlides: boolean; isQuiz: boolean }): string {
+  if (/当前|现阶段|学习阶段|我的阶段|当前学习|当前想学|我想学的主题/.test(text)) {
+    return '';
+  }
+  const quoted = text.match(/[「《“"]([^」》”"]{2,80})[」》”"]/);
+  if (quoted?.[1]) {
+    return cleanupTopic(quoted[1]);
+  }
+  const topicMatch = text.match(/(?:关于|围绕|根据|针对|以)([^，。,.!?！？]{2,80})(?:生成|制作|创建|整理|出|来|的|为主题)/);
+  if (topicMatch?.[1]) {
+    return cleanupTopic(topicMatch[1]);
+  }
+  if (intent.isSlides) {
+    const slideMatch = text.match(/(?:生成|制作|创建)?\s*([^，。,.!?！？]{2,80}?)(?:PPT|ppt|课件|演示文稿|幻灯片)/);
+    if (slideMatch?.[1]) {
+      return cleanupTopic(slideMatch[1]);
+    }
+  }
+  if (intent.isQuiz) {
+    const quizMatch = text.match(/(?:出|生成|来)\s*(?:\d+\s*)?道?([^，。,.!?！？]{2,80}?)(?:练习题|习题|题目|题)/);
+    if (quizMatch?.[1]) {
+    return cleanupTopic(quizMatch[1]);
+    }
+  }
+  return '';
+}
+
+function cleanupTopic(value: string): string {
+  const cleaned = stripResourceCommandTail(value)
+    .replace(/^(一份|一个|一种|一张|一套|一些|几个|几道|当前|我的|请|帮我|给我|关于|围绕|根据|针对|以)/, '')
+    .replace(/(学习资源|资源|文档|资料|课件|练习题|习题|题目|PPT大纲|ppt大纲|PPT|ppt|大纲|的)$/i, '')
+    .trim();
+  return isRealResourceTopic(cleaned) ? cleaned : '';
+}
+
+function stripResourceCommandTail(value: string): string {
+  return value
+    .replace(
+      /[，,；;。]?\s*(?:包括|包含|含|涵盖)?\s*(?:文档|资料|PPT|ppt|课件|幻灯片|思维导图|导图|练习题|习题|题目|短视频|视频|代码案例|代码)(?:\s*[、,，和及与]\s*(?:文档|资料|PPT|ppt|课件|幻灯片|思维导图|导图|练习题|习题|题目|短视频|视频|代码案例|代码))*\s*$/i,
+      '',
+    )
+    .trim();
+}
+
+function extractQuestionCount(text: string): number | undefined {
+  const match = text.match(/(\d{1,2})\s*道/);
+  if (!match) {
+    return undefined;
+  }
+  const count = Number(match[1]);
+  return Number.isFinite(count) && count > 0 ? Math.min(count, 20) : undefined;
+}
+
+function extractQuestionTypePreference(text: string): string | undefined {
+  if (/选择题|客观题|单选/.test(text) && !/主观题|简答/.test(text)) {
+    return 'SINGLE_CHOICE';
+  }
+  if (/主观题|简答题|问答题/.test(text) && !/选择题|客观题|单选/.test(text)) {
+    return 'SHORT_ANSWER';
+  }
+  if (/混合|都有|搭配|组合/.test(text)) {
+    return 'MIXED';
+  }
+  return undefined;
+}
+
+function extractDifficultyPreference(text: string): string | undefined {
+  if (/困难|高难|进阶|高级/.test(text)) {
+    return 'ADVANCED';
+  }
+  if (/简单|基础|入门/.test(text)) {
+    return 'BASIC';
+  }
+  if (/中等|适中/.test(text)) {
+    return 'INTERMEDIATE';
+  }
+  return undefined;
+}
+
+function resolveActiveLearningStep(data: LearningPathCurrentResponse | null): ActiveLearningStepContext | null {
+  const directActiveStep = normalizeLearningPathStep(data?.activeStep, 0);
+  if (directActiveStep && isActiveLearningStepStatus(directActiveStep.status, true)) {
+    return {
+      stepId: directActiveStep.stepId,
+      title: directActiveStep.title,
+      progress: directActiveStep.progress,
+      summary: directActiveStep.summary,
+    };
+  }
+  const steps = Array.isArray(data?.learningPath?.steps) ? data.learningPath.steps : [];
+  const normalizedSteps = steps
+    .map((step, index) => normalizeLearningPathStep(step, index))
+    .filter((step): step is ActiveLearningStepContext & { order: number; status: string } => Boolean(step))
+    .sort((left, right) => left.order - right.order);
+  if (!normalizedSteps.length) {
+    return null;
+  }
+  const active = normalizedSteps.find((step) => isActiveLearningStepStatus(step.status, false));
+  if (!active) {
+    return null;
+  }
+  return {
+    stepId: active.stepId,
+    title: active.title,
+    progress: active.progress,
+    summary: active.summary,
+  };
+}
+
+function isActiveLearningStepStatus(status: string, allowMissing: boolean): boolean {
+  const normalized = status.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (!normalized) {
+    return allowMissing;
+  }
+  if (
+    normalized.startsWith('NOT_')
+    || normalized.includes('INACTIVE')
+    || normalized === 'PENDING'
+    || normalized === 'COMPLETED'
+    || normalized === 'DONE'
+  ) {
+    return false;
+  }
+  if (normalized === 'IN_PROGRESS') {
+    return true;
+  }
+  return normalized.split(/_+/).some((token) => token === 'RUNNING' || token === 'RUN' || token === 'PROGRESS' || token === 'ACTIVE');
+}
+
+function isRealResourceTopic(value: string): boolean {
+  const normalized = value.replace(/\s+/g, '').trim();
+  if (normalized.length < 2 || normalized.length > 80) {
+    return false;
+  }
+  if (GENERIC_RESOURCE_TOPIC_PATTERN.test(normalized)) {
+    return false;
+  }
+  if (/^(生成|制作|创建|整理|给我|帮我|请|来一套|出|写|做)?(一份|一套|一些|几个|几道)?(文档|资料|资源|学习资源|PPT|课件|幻灯片|练习题|习题|题目|视频|代码案例)$/i.test(normalized)) {
+    return false;
+  }
+  if (/^(当前|现阶段|我的)?(学习阶段|当前学习|当前想学的主题|我想学的主题)$/i.test(normalized)) {
+    return false;
+  }
+  if (/^(包括|包含|含|涵盖)?(文档|资料|PPT|ppt|课件|幻灯片|思维导图|导图|练习题|习题|题目|短视频|视频|代码案例|代码)([、,，和及与]*(文档|资料|PPT|ppt|课件|幻灯片|思维导图|导图|练习题|习题|题目|短视频|视频|代码案例|代码))*$/i.test(normalized)) {
+    return false;
+  }
+  if (!/[\u4e00-\u9fa5A-Za-z0-9]/.test(normalized)) {
+    return false;
+  }
+  return true;
+}
+
+function normalizeLearningPathStep(step: unknown, index: number): (ActiveLearningStepContext & { order: number; status: string }) | null {
+  if (!step || typeof step !== 'object' || Array.isArray(step)) {
+    return null;
+  }
+  const record = step as Record<string, unknown>;
+  const title = readLooseString(record.title) || readLooseString(record.intent) || readLooseString(record.objective);
+  if (!title) {
+    return null;
+  }
+  const status = readLooseString(record.status);
+  const targetPoints = readLooseStringArray(record.targetKnowledgePoints);
+  const checkpoint = readLooseString(record.checkpoint) || readLooseString(record.successCriteria);
+  return {
+    stepId: readLooseString(record.stepId) || readLooseString(record.id) || `step-${index + 1}`,
+    title,
+    progress: readLooseNumber(record.progress) ?? readLooseNumber(record.progressPercent) ?? 0,
+    summary: [checkpoint, targetPoints.length ? `知识点：${targetPoints.join('、')}` : ''].filter(Boolean).join('；'),
+    order: readLooseNumber(record.order) ?? index + 1,
+    status,
+  };
+}
+
+function readSlideOutlineConfirmation(payload: Record<string, unknown> | undefined): SlideOutlineConfirmation | null {
+  if (!payload) {
+    return null;
+  }
+  const outline = readLooseString(payload.inlineContent);
+  if (!isSlideOutlineConfirmationPayload(payload) || !outline) {
+    return null;
+  }
+  const title = readLooseString(payload.title) || readLooseString(payload.fileName) || 'PPT 大纲';
+  return {
+    id: `slides:${title}`,
+    title,
+    outline,
+    topic: readLooseString(payload.topic) || title,
+    status: 'pending',
+  };
+}
+
+function isSlideOutlineConfirmationPayload(payload: Record<string, unknown> | undefined): boolean {
+  if (!payload) {
+    return false;
+  }
+  const assetType = readLooseString(payload.assetType).toUpperCase();
+  const displayMode = readLooseString(payload.displayMode).toUpperCase();
+  return (assetType === 'SLIDES' || assetType === 'PPT') && displayMode === 'SLIDE_OUTLINE_CONFIRMATION';
+}
+
+function pruneVoiceContext(context: QnaVoiceContext): QnaVoiceContext {
+  return Object.fromEntries(
+    Object.entries(context).filter(([, value]) => value !== undefined && value !== ''),
+  ) as QnaVoiceContext;
+}
+
+function readLooseString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readLooseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function readLooseNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }

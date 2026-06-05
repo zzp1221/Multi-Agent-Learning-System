@@ -23,6 +23,9 @@ public class UserProfileCurrent {
     @Column(name = "user_id", nullable = false, updatable = false)
     private UUID userId;
 
+    @Column(name = "active_snapshot_id")
+    private UUID activeSnapshotId;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "profile_json", nullable = false)
     private Map<String, Object> profileJson = new LinkedHashMap<>();
@@ -39,6 +42,14 @@ public class UserProfileCurrent {
 
     public void setUserId(UUID userId) {
         this.userId = userId;
+    }
+
+    public UUID getActiveSnapshotId() {
+        return activeSnapshotId;
+    }
+
+    public void setActiveSnapshotId(UUID activeSnapshotId) {
+        this.activeSnapshotId = activeSnapshotId;
     }
 
     public Map<String, Object> getProfileJson() {

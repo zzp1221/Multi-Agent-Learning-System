@@ -94,7 +94,7 @@ export async function runByApiTask({
   setCriticReview,
   setAgentTrace,
   taskStreamAbortRef,
-}: RunByApiTaskArgs): Promise<'completed' | 'running' | 'failed' | 'aborted' | 'unauthorized'> {
+}: RunByApiTaskArgs): Promise<'completed' | 'running' | 'waiting_confirmation' | 'failed' | 'aborted' | 'unauthorized'> {
   const browserRenderState = {
     taskId: currentTaskId,
     started: false,
@@ -103,8 +103,9 @@ export async function runByApiTask({
     errorMessage: '',
   };
   const handlers: TaskRunHandlers = {
-    onProgress: (value, statusHint) => {
-      setTaskProgress((prev) => Math.max(prev, value));
+    onProgress: (value, statusHint, options) => {
+      const nextValue = Math.max(0, Math.min(options?.maxProgress ?? 100, value));
+      setTaskProgress((prev) => (options?.allowDecrease ? nextValue : Math.max(prev, nextValue)));
       if (statusHint) {
         setTaskStatus(statusHint);
       }
@@ -184,11 +185,16 @@ export async function runByApiTask({
   taskStreamAbortRef.current = streamAbortController;
   let streamErrorMessage = '';
   let streamDone = false;
+  let waitingConfirmation = false;
 
   await smartEngineApi.streamTask(
     currentTaskId,
     {
       onEvent: (event) => {
+        const envelope = parseTaskStreamEnvelope(event.data);
+        if (event.event === 'done' && readString(envelope.payload?.status).toUpperCase() === 'WAITING_CONFIRMATION') {
+          waitingConfirmation = true;
+        }
         void consumeTaskStreamEvent(event, handlers, browserRenderState);
       },
       onDone: () => {
@@ -205,6 +211,11 @@ export async function runByApiTask({
   flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
 
   if (streamDone && !streamErrorMessage) {
+    if (waitingConfirmation) {
+      setTaskProgress((prev) => Math.min(prev, 99));
+      setTaskStatus('等待确认');
+      return 'waiting_confirmation';
+    }
     const browserRenderSucceeded = await settleBrowserRender(handlers, browserRenderState);
     if (!browserRenderSucceeded) {
       setTaskStatus('视频生成失败');
@@ -234,6 +245,11 @@ export async function runByApiTask({
       }
       const task = await smartEngineApi.getTask(currentTaskId, { dedupe: false, retry: 2 });
       await applyTaskSnapshot(task, service, handlers, browserRenderState);
+
+      if (isWaitingConfirmationTask(task)) {
+        flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
+        return 'waiting_confirmation';
+      }
 
       if (task.status === 'COMPLETED') {
         const browserRenderSucceeded = await settleBrowserRender(handlers, browserRenderState);
@@ -266,6 +282,11 @@ export async function runByApiTask({
     flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
     return 'failed';
   }
+}
+
+function isWaitingConfirmationTask(task: { currentStage?: string; responseSummary?: Record<string, unknown> }): boolean {
+  return readString(task.currentStage).toLowerCase() === 'waiting_confirmation'
+    || readString(task.responseSummary?.status).toUpperCase() === 'WAITING_CONFIRMATION';
 }
 
 async function consumeTaskStreamEvent(
@@ -429,8 +450,15 @@ async function consumeTaskStreamEvent(
       ? '任务失败'
       : status === 'PARTIAL_FAILED'
         ? '部分完成'
-        : '任务完成';
-    handlers.onProgress(100, doneLabel);
+        : status === 'WAITING_CONFIRMATION'
+          ? '等待确认'
+          : '任务完成';
+    if (status === 'WAITING_CONFIRMATION') {
+      const currentProgress = readNumeric(envelope.payload?.percent) ?? readNumeric(envelope.payload?.progress) ?? 99;
+      handlers.onProgress(currentProgress, doneLabel, { allowDecrease: true, maxProgress: 99 });
+    } else {
+      handlers.onProgress(100, doneLabel);
+    }
     if (summary) {
       handlers.onSummary(formatUserFacingTaskMessage(summary));
     }
@@ -438,6 +466,8 @@ async function consumeTaskStreamEvent(
       handlers.onLine(formatUserFacingTaskMessage(summary || '任务执行失败'));
     } else if (doneLabel === '部分完成') {
       handlers.onLine(formatUserFacingTaskMessage(summary || '任务部分完成，部分资源生成失败'));
+    } else if (doneLabel === '等待确认') {
+      handlers.onLine(formatUserFacingTaskMessage(summary || '等待确认后继续生成'));
     }
     return;
   }
@@ -475,7 +505,7 @@ async function applyTaskSnapshot(
     readNumeric(task.progress);
 
   if (progress !== undefined) {
-    handlers.onProgress(progress, toUiTaskStatus(task.status));
+    handlers.onProgress(progress, toUiTaskStatus(task.status), isWaitingConfirmationTask(task) ? { maxProgress: 99 } : undefined);
   }
 
   if (task.responseSummary) {
@@ -705,29 +735,77 @@ export function readConversationChunk(data: ConversationStreamEventPayload, even
   }
 
   const stage = readString(payload.stage);
-  if (eventName === 'progress') {
-    return '';
-  }
-  if (eventName === 'error') {
-    const errorMessage = readString(payload.message) || readString(payload.text);
-    return errorMessage ? `\n[出错] ${errorMessage}\n` : '';
-  }
-  if (eventName === 'done') {
+  if (shouldSuppressConversationEvent(eventName, payload)) {
     return '';
   }
   if (eventName === 'result_chunk') {
     if (stage && stage !== 'tutoring') {
       return '';
     }
+    if (shouldSuppressConversationPayload(payload)) {
+      return '';
+    }
     const chunkText = readString(payload.text);
-    return chunkText ? sanitizeConversationLiveChunk(chunkText) : '';
+    return chunkText && !looksLikeStructuredPayloadText(chunkText)
+      ? sanitizeConversationLiveChunk(chunkText)
+      : '';
   }
 
-  const text = readString(payload.text) || readString(payload.message) || readString(payload.summaryText);
-  if (text) {
-    return sanitizeConversationMessageContent(text);
+  return '';
+}
+
+function shouldSuppressConversationEvent(eventName: string, payload: Record<string, unknown>): boolean {
+  if (
+    eventName === 'progress'
+    || eventName === 'resource_file'
+    || eventName === 'question_batch'
+    || eventName === 'judge_result'
+    || eventName === 'done'
+    || eventName === 'error'
+    || eventName.startsWith('video_gen:')
+  ) {
+    return true;
   }
-  return stringifyCompact(payload);
+  return shouldSuppressConversationPayload(payload);
+}
+
+function shouldSuppressConversationPayload(payload: Record<string, unknown>): boolean {
+  const stage = readString(payload.stage).toLowerCase();
+  return [
+    'query_rewrite',
+    'retrieving',
+    'retrieval',
+    'critic',
+    'resource',
+    'resource_generation',
+    'practice',
+    'judge',
+    'video',
+    'tool',
+  ].some((item) => stage.includes(item))
+    || Boolean(payload.traceId)
+    || Boolean(payload.taskId)
+    || Boolean(payload.agentTrace)
+    || Boolean(payload.agentName && stage !== 'tutoring')
+    || Boolean(payload.toolName)
+    || Boolean(payload.toolCall)
+    || Boolean(payload.resourceFailures)
+    || Boolean(payload.artifactType)
+    || Boolean(payload.assetType)
+    || Boolean(payload.questions)
+    || Boolean(payload.inlineContent)
+    || Boolean(payload.downloadUrl);
+}
+
+function looksLikeStructuredPayloadText(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    return true;
+  }
+  return /"(eventType|payload|agentName|traceId|taskId|toolName|questions|inlineContent)"\s*:/.test(trimmed);
 }
 
 function looksLikeTutorChain(text: string): boolean {
@@ -736,7 +814,6 @@ function looksLikeTutorChain(text: string): boolean {
     || normalized.includes('检索查询')
     || normalized.includes('来源摘要')
     || normalized.includes('查询处理')
-    || normalized.includes('协作计划')
     || normalized.includes('质量复核')
     || normalized.includes('优先参考的来源')
     || normalized.includes('建议你这样学')
@@ -1336,6 +1413,7 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
     const selectedResourceTypes = resolveSelectedResourceTypes(resourceForm.resourceTypes, resourceForm.resourceType);
     const normalizedResourceTypes = uniqueResourceTypes(selectedResourceTypes.map(normalizeResourceType));
     const includeVideo = normalizedResourceTypes.includes('VIDEO');
+    const includeSlides = normalizedResourceTypes.includes('SLIDES');
     const resourceTypeLabelText = selectedResourceTypes.map(resourceTypeLabel).join('、');
     const difficultyLabel = resourceDifficultyLabel(resourceForm.difficulty);
     const query = [
@@ -1358,7 +1436,9 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
       learningContext: {
         course: resourceForm.course,
         chapter: resourceForm.keyPoints,
+        requiresSlideOutlineConfirmation: includeSlides ? true : undefined,
       },
+      requiresSlideOutlineConfirmation: includeSlides ? true : undefined,
       style: includeVideo ? 'talking_head' : undefined,
       duration: includeVideo ? 60 : undefined,
     };
@@ -2056,32 +2136,35 @@ function readInlineResource(payload: Record<string, unknown> | undefined): Inlin
   return null;
 }
 
-function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined): PracticeQuestionBatch | null {
+export function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined): PracticeQuestionBatch | null {
   const record = readRecord(payload);
-  const questions = Array.isArray(record?.questions) ? record.questions : null;
-  if (!record || !questions) {
+  const source = readRecord(record?.practiceQuestionBatch)
+    ?? readRecord(record?.questionBatch)
+    ?? record;
+  const questions = Array.isArray(source?.questions) ? source.questions : null;
+  if (!source || !questions) {
     return null;
   }
   return {
-    title: readString(record.title) || '练习题',
-    topic: readString(record.topic),
-    difficulty: readString(record.difficulty),
-    description: readString(record.description),
-    assessmentDimension: readString(record.assessmentDimension),
-    submitLabel: readString(record.submitLabel),
-    generatedBy: readString(record.generatedBy),
-    contentOrigin: readString(record.contentOrigin),
-    provider: readString(record.provider),
-    model: readString(record.model),
-    agentName: readString(record.agentName),
-    evidenceIds: Array.isArray(record.evidenceIds) ? record.evidenceIds.map((id) => readString(id)).filter(Boolean) : undefined,
-    fallback: typeof record.fallback === 'boolean' ? record.fallback : undefined,
-    fromCache: typeof record.fromCache === 'boolean' ? record.fromCache : undefined,
+    title: readString(source.title) || '练习题',
+    topic: readString(source.topic),
+    difficulty: readString(source.difficulty),
+    description: readString(source.description),
+    assessmentDimension: readString(source.assessmentDimension),
+    submitLabel: readString(source.submitLabel),
+    generatedBy: readString(source.generatedBy),
+    contentOrigin: readString(source.contentOrigin),
+    provider: readString(source.provider),
+    model: readString(source.model),
+    agentName: readString(source.agentName),
+    evidenceIds: Array.isArray(source.evidenceIds) ? source.evidenceIds.map((id) => readString(id)).filter(Boolean) : undefined,
+    fallback: typeof source.fallback === 'boolean' ? source.fallback : undefined,
+    fromCache: typeof source.fromCache === 'boolean' ? source.fromCache : undefined,
     questions: questions
       .map((item) => readRecord(item))
       .filter((item): item is Record<string, unknown> => Boolean(item))
-      .map((item) => ({
-        questionId: readString(item.questionId),
+      .map((item, index) => ({
+        questionId: readString(item.questionId) || `question-${index + 1}`,
         questionType: readString(item.questionType) || 'SHORT_ANSWER',
         stem: readString(item.stem),
         options: Array.isArray(item.options) ? item.options.map((option) => readString(option)).filter(Boolean) : undefined,
@@ -2093,19 +2176,20 @@ function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined)
   };
 }
 
-function readPracticeJudgeResult(payload: Record<string, unknown> | undefined): PracticeJudgeResult | null {
+export function readPracticeJudgeResult(payload: Record<string, unknown> | undefined): PracticeJudgeResult | null {
   const record = readRecord(payload);
-  const items = Array.isArray(record?.items) ? record.items : null;
-  if (!record || !items) {
+  const source = readRecord(record?.judgeResult) ?? record;
+  const items = Array.isArray(source?.items) ? source.items : null;
+  if (!source || !items) {
     return null;
   }
   return {
-    title: readString(record.title) || '判题结果',
-    summary: readString(record.summary),
-    totalScore: readNumericRaw(record.totalScore) ?? 0,
-    accuracy: readNumericRaw(record.accuracy) ?? 0,
-    weakKnowledgeTags: Array.isArray(record.weakKnowledgeTags)
-      ? record.weakKnowledgeTags.map((tag) => readString(tag)).filter(Boolean)
+    title: readString(source.title) || '判题结果',
+    summary: readString(source.summary),
+    totalScore: readNumericRaw(source.totalScore) ?? 0,
+    accuracy: readNumericRaw(source.accuracy) ?? 0,
+    weakKnowledgeTags: Array.isArray(source.weakKnowledgeTags)
+      ? source.weakKnowledgeTags.map((tag) => readString(tag)).filter(Boolean)
       : undefined,
     items: items
       .map((item) => readRecord(item))
@@ -2146,7 +2230,6 @@ function readLearningPlan(payload: Record<string, unknown> | undefined): Learnin
       agentName: readString(item.agentName) || undefined,
       serviceType: readString(item.serviceType) || undefined,
       status: readString(item.status) || undefined,
-      qualityGate: readString(item.qualityGate) || undefined,
     }))
     .filter((step) => step.stepId || step.title);
   if (!readString(record.planId) && !readString(record.goal) && steps.length === 0) {
@@ -2433,6 +2516,9 @@ function stringifyCompact(value: unknown): string {
 export function toUiTaskStatus(status?: string): string {
   if (!status) {
     return '执行中';
+  }
+  if (status === 'WAITING_CONFIRMATION') {
+    return '等待确认';
   }
   if (status === 'COMPLETED') {
     return '任务完成';

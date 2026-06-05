@@ -51,11 +51,12 @@ def test_query_classifier_routes_image_question() -> None:
     assert result.retrieval_strategy == "LOCAL_HYBRID"
 
 
-def test_query_classifier_routes_deep_reasoning() -> None:
+def test_query_classifier_keeps_deep_mode_as_quality_signal() -> None:
     result = QueryClassifier().classify({"query": "分析所有边界", "reasoningMode": "DEEP"})
 
-    assert result.query_type == "DEEP_REASONING"
+    assert result.query_type == "NEW_CONCEPT"
     assert result.retrieval_strategy == "DEEP_EVIDENCE"
+    assert "deep_quality_mode" in result.reason
 
 
 def test_query_classifier_prefers_mechanism_over_comparison_and_path_terms() -> None:

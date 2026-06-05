@@ -9,7 +9,6 @@ import {
   type EngineService,
   type EngineTaskSnapshot,
   type PathForm,
-  type PracticeQuestionBatch,
   type PushForm,
   type ResourceForm,
 } from './LearningStudioDemoPage.types';
@@ -369,6 +368,15 @@ export function useLearningStudioEngine({
         return;
       }
 
+      if (outcome === 'waiting_confirmation') {
+        updateServiceSnapshot(service, (current) => ({
+          ...current,
+          engineState: 'ENGINE_RUNNING',
+          taskStatus: '等待确认',
+        }));
+        return;
+      }
+
       if (outcome === 'unauthorized') {
         updateServiceSnapshot(service, (current) => ({
           ...current,
@@ -490,82 +498,6 @@ export function useLearningStudioEngine({
         engineState: 'ENGINE_FAILED',
         taskStatus: '任务失败',
         serviceResultLines: [...current.serviceResultLines, `服务请求失败：${message}`],
-      }));
-    }
-  };
-
-  const handleSubmitPracticeAnswers = async (batch: PracticeQuestionBatch, answers: Record<string, string>) => {
-    if (!isAuthenticated) {
-      openAuthModal('login', '请先登录');
-      return;
-    }
-    const targetService: EngineService = selectedService ?? 'resource';
-    if (hasLockedTask(serviceSnapshots[targetService])) {
-      return;
-    }
-
-    const refs = taskMonitorRefsRef.current[targetService];
-    refs.taskStreamAbortRef.current?.abort();
-    refs.taskStreamAbortRef.current = null;
-    refs.streamQueueRef.current = [];
-    cleanupStreamSchedulers(refs.streamFlushTimerRef, refs.streamRafRef);
-    updateServiceSnapshot(targetService, (current) => ({
-      ...current,
-      engineState: 'ENGINE_SUBMITTING',
-      taskId: '',
-      taskProgress: 12,
-      taskStatus: '已提交判题任务',
-      taskSummary: '',
-      serviceResultLines: [],
-      downloadLinks: [],
-      videoResult: null,
-      inlineResource: null,
-      inlineResources: [],
-      completedResources: [],
-      judgeResult: null,
-      masteryDiagnosis: null,
-      learningPlan: null,
-      resourcePushPlan: null,
-      criticReview: null,
-      agentTrace: [],
-      resultHistory: current.resultHistory,
-      selectedResultTaskId: current.selectedResultTaskId,
-    }));
-
-    try {
-      const ensuredConversationId = await ensureEngineConversationId();
-      const batchTopic = batch.topic || resourceForm.keyPoints || resourceForm.course;
-      const judgeQuery = `${resourceForm.course} ${batchTopic} 练习题判题`.trim();
-      const submitResp = await smartEngineApi.submit({
-        conversationId: ensuredConversationId,
-        serviceType: 'PRACTICE_JUDGE',
-        params: {
-          topic: batchTopic,
-          query: judgeQuery,
-          practiceQuestionBatch: batch,
-          practiceQuestions: batch.questions,
-          answers,
-          learningContext: {
-            course: resourceForm.course,
-            chapter: batchTopic,
-          },
-        },
-      });
-      updateServiceSnapshot(targetService, (current) => ({
-        ...current,
-        taskId: submitResp.taskId,
-        engineState: 'ENGINE_RUNNING',
-        taskStatus: toUiTaskStatus(submitResp.status),
-        selectedResultTaskId: submitResp.taskId,
-      }));
-      void monitorTask(targetService, submitResp.taskId);
-    } catch (error) {
-      const message = getErrorMessage(error);
-      updateServiceSnapshot(targetService, (current) => ({
-        ...current,
-        engineState: 'ENGINE_FAILED',
-        taskStatus: '判题失败',
-        serviceResultLines: [...current.serviceResultLines, `提交答案失败：${message}`],
       }));
     }
   };
@@ -727,7 +659,6 @@ export function useLearningStudioEngine({
     markFormEditing,
     handleSelectService,
     handleSubmitService,
-    handleSubmitPracticeAnswers,
     handleStopService,
     handleSelectResultTask,
     resetEngineView,

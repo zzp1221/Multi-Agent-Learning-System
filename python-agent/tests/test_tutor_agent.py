@@ -1,6 +1,5 @@
 import pytest
 
-from src.ai_modules.agents.deep_reasoning_agent import DeepReasoningAgent
 from src.ai_modules.agents.tutor_agent import TutorAgent
 from src.ai_modules.llms import RuleBasedTutorLLM
 from src.ai_modules.memory import (
@@ -9,12 +8,17 @@ from src.ai_modules.memory import (
     MongoConversationSummaryStore,
 )
 from src.ai_modules.runtime import (
-    AssistantTurn,
     ConversationCompactor,
     StructuredConversationSummary,
     SystemSnapshot,
 )
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
+from src.ai_modules.models import (
+    ProgressPayload,
+    ProgressSSEEvent,
+    ResourceFilePayload,
+    ResourceFileSSEEvent,
+)
 
 
 def _build_snapshot() -> SystemSnapshot:
@@ -118,14 +122,414 @@ class _LengthAwareTutorLLM:
         self.client = _LengthAwareTutorClient()
 
 
-class _DeepReasoningLLM:
-    def __init__(self) -> None:
-        self.calls = 0
+class _RecordingResourceBundleRunner:
+    def __init__(self, display_mode: str = "INLINE") -> None:
+        self.calls: list[dict] = []
+        self.display_mode = display_mode
 
-    async def complete(self, **kwargs):
-        del kwargs
-        self.calls += 1
-        return AssistantTurn(content=f"LLM deep step {self.calls}")
+    async def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        yield ProgressSSEEvent(
+            taskId=kwargs["task_id"],
+            traceId=kwargs["trace_id"],
+            seq=kwargs["seq"],
+            payload=ProgressPayload(
+                stage="resource_bundle",
+                percent=50,
+                message="resource bundle running",
+            ),
+        )
+        yield ResourceFileSSEEvent(
+            taskId=kwargs["task_id"],
+            traceId=kwargs["trace_id"],
+            seq=kwargs["seq"] + 1,
+            payload=ResourceFilePayload(
+                assetType=kwargs["params"]["resourceTypes"][0],
+                title=f"{kwargs['params']['topic']} resource",
+                summary="generated",
+                displayMode=self.display_mode,
+                fileName="resource.md",
+                inlineContent="# generated",
+                generatedBy="llm",
+                contentOrigin="llm",
+                provider="test",
+                model="test-model",
+                agentName="test-agent",
+                fallback=False,
+            ),
+        )
+
+
+def test_tutor_resource_intent_does_not_match_plain_question() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+
+    intent = tutor._detect_resource_generation_intent(
+        user_query="Explain how a B+ tree handles range queries.",
+        params={},
+    )
+
+    assert intent is None
+
+
+def test_tutor_resource_intent_defaults_bundle_types() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+
+    intent = tutor._detect_resource_generation_intent(
+        user_query="请围绕联合索引生成一套学习资源",
+        params={},
+    )
+
+    assert intent is not None
+    assert intent.topic == "联合索引"
+    assert intent.resource_types == [
+        "DOCUMENT",
+        "SLIDES",
+        "MINDMAP",
+        "QUIZ",
+        "VIDEO",
+        "CODE",
+    ]
+
+
+def test_tutor_resource_intent_extracts_specific_types() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+
+    cases = [
+        ("帮我做数据库索引的 PPT", ["SLIDES"]),
+        ("给我围绕死锁出 3 道练习题", ["QUIZ"]),
+        ("请生成 B+ 树思维导图", ["MINDMAP"]),
+        ("制作 Java 并发短视频", ["VIDEO"]),
+        ("整理 Redis 缓存穿透代码案例", ["CODE"]),
+    ]
+
+    for query, expected_types in cases:
+        intent = tutor._detect_resource_generation_intent(user_query=query, params={})
+        assert intent is not None, query
+        assert intent.resource_types == expected_types
+
+
+def test_tutor_question_count_requires_explicit_question_unit() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+
+    assert tutor._extract_question_count("给我出 Java 8 Stream 练习题") == 5
+    assert tutor._extract_question_count("给我出 8 道 Java Stream 练习题") == 8
+    assert tutor._extract_question_count("围绕死锁出五道题") == 5
+
+
+@pytest.mark.parametrize("query", ["生成一份PPT", "生成5道题目给我", "给我一份文档"])
+@pytest.mark.asyncio
+async def test_tutor_agent_prompts_for_topic_when_resource_request_has_no_context(query: str) -> None:
+    runner = _RecordingResourceBundleRunner()
+    llm = _StreamingTutorLLM()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=llm,
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-topicless-resource",
+        "messages": [{"role": "user", "content": query}],
+        "query": query,
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-topicless-resource",
+            trace_id="trace-topicless-resource",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert runner.calls == []
+    assert llm.client.stream_calls == 0
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert "补充" in events[-1].payload.text
+    assert "主题" in events[-1].payload.text
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_uses_active_learning_step_for_topicless_resource_request() -> None:
+    runner = _RecordingResourceBundleRunner()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-active-step-resource",
+        "messages": [{"role": "user", "content": "根据当前阶段生成PPT"}],
+        "query": "根据当前阶段生成PPT",
+        "learningContext": {"activeLearningStepTitle": "联合索引"},
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-active-step-resource",
+            trace_id="trace-active-step-resource",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["params"]["topic"] == "联合索引"
+    assert runner.calls[0]["params"]["resourceTypes"] == ["SLIDES"]
+    assert [event.event for event in events] == ["progress", "result_chunk", "progress", "resource_file"]
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_ignores_generic_explicit_topic_when_active_step_exists() -> None:
+    runner = _RecordingResourceBundleRunner()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-generic-topic-active-step",
+        "messages": [{"role": "user", "content": "生成一份PPT"}],
+        "query": "生成一份PPT",
+        "learningContext": {
+            "explicitUserTopic": "一份",
+            "activeLearningStepTitle": "Java线程创建基础概念学习",
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-generic-topic-active-step",
+            trace_id="trace-generic-topic-active-step",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["params"]["topic"] == "Java线程创建基础概念学习"
+    assert runner.calls[0]["params"]["resourceTypes"] == ["SLIDES"]
+    assert "Java线程创建基础概念学习" in events[1].payload.text
+    assert "一份" not in events[1].payload.text
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_uses_current_stage_for_resource_bundle_prompt() -> None:
+    runner = _RecordingResourceBundleRunner()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_bundle_runner=runner,
+    )
+    query = "请根据我当前学习阶段生成一套学习资源，包括文档、PPT、思维导图、练习题、短视频和代码案例"
+    params = {
+        "conversationId": "conv-current-stage-resource",
+        "messages": [{"role": "user", "content": query}],
+        "query": query,
+        "learningContext": {
+            "activeLearningStepTitle": "Java并发编程基础：线程创建与休眠",
+            "activeLearningStepId": "step-1",
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-current-stage-resource",
+            trace_id="trace-current-stage-resource",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["params"]["topic"] == "Java并发编程基础：线程创建与休眠"
+    assert "Java并发编程基础：线程创建与休眠" in events[1].payload.text
+    assert "根据我当前学习阶段" not in events[1].payload.text
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_triggers_resource_bundle_from_conversation() -> None:
+    runner = _RecordingResourceBundleRunner()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-resource",
+        "messages": [{"role": "user", "content": "请围绕联合索引生成一套学习资源"}],
+        "query": "请围绕联合索引生成一套学习资源",
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-resource",
+            trace_id="trace-resource",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["params"]["topic"] == "联合索引"
+    assert runner.calls[0]["params"]["resourceTypes"] == [
+        "DOCUMENT",
+        "SLIDES",
+        "MINDMAP",
+        "QUIZ",
+        "VIDEO",
+        "CODE",
+    ]
+    assert [event.event for event in events] == ["progress", "result_chunk", "progress", "resource_file"]
+    assert "资源生成需求" in events[1].payload.text
+    assert events[-1].payload.asset_type == "DOCUMENT"
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_remembers_pending_slide_outline_from_resource_bundle() -> None:
+    runner = _RecordingResourceBundleRunner(display_mode="SLIDE_OUTLINE_CONFIRMATION")
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-slides",
+        "messages": [{"role": "user", "content": "请围绕联合索引生成 PPT"}],
+        "query": "请围绕联合索引生成 PPT",
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-slides",
+            trace_id="trace-slides",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert events[-1].event == "resource_file"
+    assert params["pendingSlideOutlines"][0]["title"] == "联合索引 resource"
+    assert params["pendingSlideOutlines"][0]["inlineContent"] == "# generated"
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_promotes_confirmed_slide_outline_from_learning_context() -> None:
+    runner = _RecordingResourceBundleRunner(display_mode="DOWNLOAD_CARD")
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-confirmed-slides",
+        "messages": [{"role": "user", "content": "请围绕 B+ tree indexes 生成 PPT"}],
+        "query": "请围绕 B+ tree indexes 生成 PPT",
+        "learningContext": {
+            "selectedService": "RESOURCE_GENERATION",
+            "commandIntent": "generate_slides",
+            "explicitUserTopic": "B+ tree indexes",
+            "confirmedSlideOutline": "true",
+            "confirmedSlideOutlineText": "# B+ tree indexes\n## Search\n## Range scan",
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-confirmed-slides",
+            trace_id="trace-confirmed-slides",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert len(runner.calls) == 1
+    runner_params = runner.calls[0]["params"]
+    assert runner_params["resourceTypes"] == ["SLIDES"]
+    assert runner_params["confirmedSlideOutline"] == "true"
+    assert runner_params["confirmedSlideOutlineText"] == "# B+ tree indexes\n## Search\n## Range scan"
+    assert events[-1].payload.display_mode == "DOWNLOAD_CARD"
+    assert "pendingSlideOutlines" not in params
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_plain_question_does_not_trigger_resource_bundle() -> None:
+    runner = _RecordingResourceBundleRunner()
+    llm = _StreamingTutorLLM()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=llm,
+        resource_bundle_runner=runner,
+    )
+    params = {
+        "conversationId": "conv-plain",
+        "messages": [{"role": "user", "content": "What is Java?"}],
+        "query": "What is Java?",
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-plain",
+            trace_id="trace-plain",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="tutor prompt",
+        )
+    ]
+
+    assert runner.calls == []
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert "".join(event.payload.text for event in events if event.event == "result_chunk") == "LLM generated answer"
 
 
 def test_tutor_agent_system_prompt_loads_skill_and_context() -> None:
@@ -263,6 +667,7 @@ def test_tutor_runtime_context_includes_graph_evidence_pack() -> None:
         image_analysis={},
         recent_dialogue={},
         input_mode="clear_question",
+        params={},
     )
 
     assert "图谱证据包" in context
@@ -300,6 +705,7 @@ def test_tutor_runtime_context_omits_graph_pack_for_plain_retrieval() -> None:
         image_analysis={},
         recent_dialogue={},
         input_mode="clear_question",
+        params={},
     )
 
     assert evidence["graphEvidencePack"] == {}
@@ -388,61 +794,27 @@ async def test_tutor_agent_uses_real_llm_compression_for_explicit_length_limit()
     assert params["responseConstraints"]["maxChars"] == 80
 
 
-@pytest.mark.asyncio
-async def test_deep_reasoning_agent_passes_params_to_input_mode_classifier() -> None:
-    llm = _DeepReasoningLLM()
-    agent = DeepReasoningAgent(
-        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+def test_tutor_deep_mode_adds_quality_instruction_without_changing_route() -> None:
+    tutor = TutorAgent(
         summary_store=InMemoryConversationSummaryStore(),
-        llm_client=llm,
-    )
-    params = {
-        "conversationId": "conv-deep",
-        "messages": [{"role": "user", "content": "Analyze synchronized lock design deeply"}],
-        "query": "Analyze synchronized lock design deeply",
-        "queryType": "DEEP_REASONING",
-        "retrievalResult": {"documents": [{"title": "SSE lock design", "channel": "hybrid"}]},
-    }
-
-    events = [
-        event
-        async for event in agent.run(
-            task_id="task-deep",
-            trace_id="trace-deep",
-            seq=1,
-            service_type="TUTORING",
-            params=params,
-            snapshot=_build_snapshot(),
-            system_prompt="test",
-        )
-    ]
-
-    assert [event.event for event in events] == [
-        "progress",
-        "progress",
-        "progress",
-        "progress",
-        "result_chunk",
-    ]
-    assert params["inputMode"] == "clear_question"
-    assert events[-1].payload.text == "LLM deep step 4"
-
-
-@pytest.mark.asyncio
-async def test_deep_reasoning_agent_disables_deterministic_direct_fallback() -> None:
-    agent = DeepReasoningAgent(
-        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
-        summary_store=InMemoryConversationSummaryStore(),
-        llm_client=object(),
+        llm_client=RuleBasedTutorLLM(),
     )
 
-    with pytest.raises(RuntimeError, match="deterministic fallback is not allowed"):
-        await agent._run_direct_reasoning_step(
-            system_prompt="test",
-            user_query="Explain indexes deeply",
-            step_key="analysis",
-            artifacts={},
-        )
+    context = tutor._build_enriched_message(
+        user_query="Analyze synchronized lock design deeply",
+        memory={},
+        context={},
+        evidence={"documents": [{"title": "SSE lock design", "evidence": "lock evidence"}]},
+        profile={},
+        image_analysis={},
+        recent_dialogue={},
+        input_mode="clear_question",
+        params={"reasoningMode": "DEEP"},
+    )
+
+    assert "Deep quality mode is enabled" in context
+    assert "normal tutor/resource route" in context
+    assert "self-check" in context
 
 
 @pytest.mark.asyncio

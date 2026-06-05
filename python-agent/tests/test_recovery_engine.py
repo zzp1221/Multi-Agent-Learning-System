@@ -114,50 +114,6 @@ async def test_recovery_engine_falls_back_for_retrieval_unavailable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_recovery_engine_retries_vector_db_timeout_then_uses_fallback() -> None:
-    engine = RecoveryEngine()
-    attempts = 0
-
-    async def operation() -> dict:
-        nonlocal attempts
-        attempts += 1
-        raise TimeoutError("vector db timeout")
-
-    async def fallback_operation() -> dict:
-        return {"results": [], "degraded": True}
-
-    payload = await engine.call_with_recovery(
-        failure_type=RecoveryFailureType.VECTOR_DB_TIMEOUT,
-        operation=operation,
-        fallback_operation=fallback_operation,
-    )
-
-    assert attempts == 3
-    assert payload["degraded"] is True
-    assert engine.audit_log[-1]["failure_type"] == "VECTOR_DB_TIMEOUT"
-
-
-@pytest.mark.asyncio
-async def test_recovery_engine_falls_back_for_content_generation_failed() -> None:
-    engine = RecoveryEngine()
-
-    async def operation() -> dict:
-        raise RuntimeError("generation failed")
-
-    async def fallback_operation() -> dict:
-        return {"asset": {"title": "fallback"}}
-
-    payload = await engine.call_with_recovery(
-        failure_type=RecoveryFailureType.CONTENT_GENERATION_FAILED,
-        operation=operation,
-        fallback_operation=fallback_operation,
-    )
-
-    assert payload["asset"]["title"] == "fallback"
-    assert engine.audit_log[-1]["failure_type"] == "CONTENT_GENERATION_FAILED"
-
-
-@pytest.mark.asyncio
 async def test_recovery_engine_falls_back_for_profile_update_failed() -> None:
     engine = RecoveryEngine()
 

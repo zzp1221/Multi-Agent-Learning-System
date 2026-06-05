@@ -103,45 +103,6 @@ class MiMoClient:
             raise RuntimeError("mimo tts response missing audio.data")
         return base64.b64decode(audio_b64)
 
-    def synthesize_speech_sync(
-        self,
-        *,
-        text: str,
-        style_description: str = "用清晰自然的语速播报，声音沉稳专业",
-        voice: str = "mimo_default",
-        audio_format: str = "mp3",
-    ) -> bytes:
-        """同步调用 MiMo-V2.5-TTS 并返回原始音频字节。"""
-        if not self.api_key:
-            raise RuntimeError("missing mimo api key for tts")
-
-        payload: dict[str, Any] = {
-            "model": "mimo-v2.5-tts",
-            "messages": [
-                {"role": "user", "content": style_description},
-                {"role": "assistant", "content": text},
-            ],
-            "audio": {"format": audio_format, "voice": voice},
-        }
-
-        with TRACER.start_as_current_span("mimo.tts.synthesize_sync"):
-            client = self._get_sync_client()
-            response = client.post(
-                f"{self.base_url}/chat/completions",
-                headers=self._headers(),
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
-
-        choices = data.get("choices", [])
-        if not choices:
-            raise RuntimeError("mimo tts response missing choices")
-        audio_b64 = choices[0].get("message", {}).get("audio", {}).get("data", "")
-        if not audio_b64:
-            raise RuntimeError("mimo tts response missing audio.data")
-        return base64.b64decode(audio_b64)
-
     # ── Omni 聊天（异步） ───────────────────────────────────────
 
     async def omni_chat(

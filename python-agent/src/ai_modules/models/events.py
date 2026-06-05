@@ -153,11 +153,12 @@ class ResourceFilePayload(BaseModel):
 class DonePayload(BaseModel):
     """Completion payload."""
 
-    status: Literal["SUCCESS", "FAILED", "PARTIAL_FAILED"] = "SUCCESS"
+    status: Literal["SUCCESS", "FAILED", "PARTIAL_FAILED", "WAITING_CONFIRMATION"] = "SUCCESS"
     summary: str
     mastery_diagnosis: dict[str, Any] | None = Field(default=None, alias="masteryDiagnosis")
     learning_path: dict[str, Any] | None = Field(default=None, alias="learningPath")
     learning_plan: dict[str, Any] | None = Field(default=None, alias="learningPlan")
+    judge_result: dict[str, Any] | None = Field(default=None, alias="judgeResult")
     resource_push_plan: dict[str, Any] | None = Field(default=None, alias="resourcePushPlan")
     pushed_resources: list[dict[str, Any]] = Field(default_factory=list, alias="pushedResources")
     agent_trace: list[dict[str, Any]] = Field(default_factory=list, alias="agentTrace")

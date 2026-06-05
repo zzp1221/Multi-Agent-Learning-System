@@ -252,7 +252,6 @@ def _install_success_bundle(supervisor: PythonAgentSupervisor) -> None:
     supervisor.agent_registry["document_generator"] = _StubResourceAgent("DOCUMENT", "document_generation")
     supervisor.agent_registry["slide_generator"] = _StubResourceAgent("SLIDES", "slide_generation")
     supervisor.agent_registry["mindmap_generator"] = _StubResourceAgent("MINDMAP", "mindmap_generation")
-    supervisor.agent_registry["reading_generator"] = _StubResourceAgent("READING", "reading_generation")
     supervisor.agent_registry["practice"] = _StubResourceAgent("QUIZ", "practice")
     supervisor.agent_registry["critic"] = _StubCriticAgent()
 
@@ -264,6 +263,7 @@ def test_resource_types_honor_requested_arbitrary_agents() -> None:
     assert ResourceBundleWorkflow.resolve_resource_types({"resourceTypes": ["QUIZ"]}) == ["QUIZ"]
     assert ResourceBundleWorkflow.resolve_resource_types({"resourceType": "EXPLANATION"}) == ["DOCUMENT"]
     assert ResourceBundleWorkflow.resolve_resource_types({"query": "联合索引"}) == ["DOCUMENT"]
+    assert ResourceBundleWorkflow.resolve_resource_types({"resourceTypes": ["DOCUMENT", "READING", "VIDEO"]}) == ["DOCUMENT", "VIDEO"]
     assert ResourceBundleWorkflow.resolve_resource_types({"resourceTypes": ["UNKNOWN"]}) == []
 
 
@@ -305,7 +305,7 @@ async def test_resource_bundle_partial_failed_publishes_only_successful_real_out
     events = [event async for event in supervisor.stream(request)]
 
     published = [event for event in events if event.event in {"resource_file", "question_batch"}]
-    assert len(published) == 4
+    assert len(published) == 3
     assert all(event.payload.generated_by == "LLM" for event in published)
     assert not any(getattr(event.payload, "asset_type", "") == "SLIDES" for event in published)
     assert any(

@@ -958,10 +958,8 @@ class ContentGenerationChain:
         snapshot: dict[str, Any],
         section_plans: list[dict[str, Any]],
         sources: list[dict[str, Any]],
-        fallback_builder: Any,
     ) -> GeneratedSectionBundle:
         with TRACER.start_as_current_span("content_chain.generate_document_sections"):
-            del fallback_builder
             generator = self.primary_generator
             if hasattr(generator, "generate_document_sections_async"):
                 return await generator.generate_document_sections_async(
@@ -986,10 +984,8 @@ class ContentGenerationChain:
         topic: str,
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
-        fallback_builder: Any,
     ) -> GeneratedTextAsset:
         with TRACER.start_as_current_span("content_chain.generate_reading_asset"):
-            del fallback_builder
             return await self.primary_generator.generate_reading_asset(
                 title=title,
                 topic=topic,
@@ -1004,10 +1000,8 @@ class ContentGenerationChain:
         topic: str,
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
-        fallback_builder: Any,
     ) -> GeneratedSlideDeck:
         with TRACER.start_as_current_span("content_chain.generate_slides_asset"):
-            del fallback_builder
             return await self.primary_generator.generate_slides_asset(
                 title=title,
                 topic=topic,
@@ -1022,10 +1016,8 @@ class ContentGenerationChain:
         topic: str,
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
-        fallback_builder: Any,
     ) -> GeneratedMindMap:
         with TRACER.start_as_current_span("content_chain.generate_mindmap_asset"):
-            del fallback_builder
             return await self.primary_generator.generate_mindmap_asset(
                 title=title,
                 topic=topic,
@@ -1040,10 +1032,8 @@ class ContentGenerationChain:
         topic: str,
         snapshot: dict[str, Any],
         sources: list[dict[str, Any]],
-        fallback_builder: Any,
     ) -> GeneratedCodeAsset:
         with TRACER.start_as_current_span("content_chain.generate_code_asset"):
-            del fallback_builder
             return await self.primary_generator.generate_code_asset(
                 title=title,
                 topic=topic,
@@ -1060,10 +1050,8 @@ class ContentGenerationChain:
         sources: list[dict[str, Any]],
         duration_seconds: int,
         style: str,
-        fallback_builder: Any,
     ) -> VideoScriptPayload:
         with TRACER.start_as_current_span("content_chain.generate_video_script"):
-            del fallback_builder
             return await self.primary_generator.generate_video_script(
                 title=title,
                 topic=topic,
@@ -1082,10 +1070,8 @@ class ContentGenerationChain:
         sources: list[dict[str, Any]],
         duration_seconds: int,
         style: str,
-        fallback_builder: Any,
     ) -> VideoScriptPayload:
         with TRACER.start_as_current_span("content_chain.generate_video_script"):
-            del fallback_builder
             return await self.primary_generator.generate_video_script_async(
                 title=title,
                 topic=topic,

@@ -1,6 +1,7 @@
 package com.project;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.project.application.learningpath.PersonalizedLearningRefreshService;
 import com.project.application.mistake.MistakeBookService;
 import com.project.application.mistake.MistakeBookService.MistakeSchedule;
 import org.junit.jupiter.api.Test;
@@ -9,10 +10,15 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class MistakeBookServiceTest {
 
-    private final MistakeBookService service = new MistakeBookService(null, new ObjectMapper());
+    private final MistakeBookService service = new MistakeBookService(
+        null,
+        new ObjectMapper(),
+        mock(PersonalizedLearningRefreshService.class)
+    );
     private final OffsetDateTime now = OffsetDateTime.parse("2026-05-17T12:00:00+08:00");
 
     @Test

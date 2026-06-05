@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpenCheck, Clock3, Compass, History, LayoutGrid, Menu, MessageCirclePlus, Search, Sparkles, UserRoundSearch } from 'lucide-react';
+import { BookOpenCheck, Clock3, Compass, History, Layers3, LayoutGrid, LoaderCircle, Menu, MessageCirclePlus, Search, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import FloatingVoiceAssistant from './FloatingVoiceAssistant';
+import FloatingPracticeAssistant from './FloatingPracticeAssistant';
+import StageTestExamPage from '../pages/StageTestExamPage';
 import ThemeToggle from './ThemeToggle';
 
 import { authApi, type AuthUser } from '../api/auth';
 import { conversationApi, type ConversationHistoryItem } from '../api/conversation';
+import { smartEngineApi, type ProfileOnboardingPayload } from '../api/smartEngine';
 import { AUTH_USER_STORAGE_KEY, clearAuthSession, getAuthToken, isUnauthorizedError } from '../api/request';
+import { clearPracticeSession } from '../pages/practiceSessionStore';
+import { clearStageTestSession } from '../pages/stageTestSessionStore';
+import {
+  ACTIVE_CONVERSATION_ID_STORAGE_KEY,
+  ENGINE_TASK_STORAGE_KEY,
+  QNA_CONVERSATION_CACHE_STORAGE_KEY,
+  QNA_SNAPSHOT_STORAGE_KEY,
+  SELECTED_CONVERSATION_STORAGE_KEY,
+} from '../pages/LearningStudioDemoPage.model';
 
 type AuthTab = 'login' | 'register';
 
@@ -17,11 +29,6 @@ export interface LayoutOutletContext {
   currentUser: AuthUser | null;
   openAuthModal: (tab?: AuthTab, hint?: string) => void;
 }
-
-const SELECTED_CONVERSATION_STORAGE_KEY = 'learning_studio_selected_conversation';
-const ACTIVE_CONVERSATION_ID_STORAGE_KEY = 'learning_studio_active_conversation_id';
-const ENGINE_TASK_STORAGE_KEY = 'learning_studio_engine_tasks';
-const QNA_SNAPSHOT_STORAGE_KEY = 'learning_studio_qna_snapshot';
 
 function normalizeAuthUser(input: Awaited<ReturnType<typeof authApi.me>>): AuthUser | null {
   if (input.user) {
@@ -52,10 +59,34 @@ function normalizeAuthUser(input: Awaited<ReturnType<typeof authApi.me>>): AuthU
   };
 }
 
+function resolveAuthUserId(user: AuthUser | null): string {
+  const rawId = user?.userId ?? user?.id;
+  if (rawId === undefined || rawId === null) {
+    return '';
+  }
+  return String(rawId).trim();
+}
+
+function clearUserScopedFrontendState(): void {
+  clearPracticeSession();
+  clearStageTestSession();
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.sessionStorage.removeItem(SELECTED_CONVERSATION_STORAGE_KEY);
+  window.sessionStorage.removeItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY);
+  window.sessionStorage.removeItem(ENGINE_TASK_STORAGE_KEY);
+  window.sessionStorage.removeItem(QNA_SNAPSHOT_STORAGE_KEY);
+  window.sessionStorage.removeItem(QNA_CONVERSATION_CACHE_STORAGE_KEY);
+  window.dispatchEvent(new CustomEvent('app:active-conversation-changed', { detail: { conversationId: '' } }));
+  window.dispatchEvent(new Event('app:new-chat'));
+}
+
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const inEngine = location.pathname.startsWith('/engine');
+  const inResources = location.pathname.startsWith('/resources');
   const inMistakes = location.pathname.startsWith('/mistakes');
   const inProfile = location.pathname.startsWith('/profile');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -68,9 +99,24 @@ export default function Layout() {
   const [historySearch, setHistorySearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const currentUserIdRef = useRef('');
 
   const isAuthenticated = Boolean(currentUser);
+
+  const applyAuthenticatedUser = useCallback((user: AuthUser) => {
+    const previousUserId = currentUserIdRef.current;
+    const nextUserId = resolveAuthUserId(user);
+    if (previousUserId && nextUserId && previousUserId !== nextUserId) {
+      clearUserScopedFrontendState();
+      setConversationHistory([]);
+      setLastSyncAt('');
+      setActiveConversationId('');
+    }
+    currentUserIdRef.current = nextUserId;
+    setCurrentUser(user);
+  }, []);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -84,6 +130,7 @@ export default function Layout() {
     try {
       const parsed = JSON.parse(rawAuthUser) as AuthUser;
       if (parsed?.id !== undefined && parsed?.id !== null) {
+        currentUserIdRef.current = resolveAuthUserId(parsed);
         setCurrentUser(parsed);
       }
     } catch {
@@ -115,6 +162,24 @@ export default function Layout() {
     }
   };
 
+  const ensureProfileOnboarding = useCallback(async (user: AuthUser | null) => {
+    const userId = user?.userId ?? user?.id;
+    if (userId === undefined || userId === null) {
+      return;
+    }
+    const normalizedUserId = String(userId);
+    try {
+      const response = await smartEngineApi.getCurrentProfile(normalizedUserId);
+      const hasProfile = Boolean(response.profile && Object.keys(response.profile).length > 0);
+      setProfileOnboardingOpen(!hasProfile);
+      if (!hasProfile) {
+        navigate('/profile');
+      }
+    } catch (error) {
+      console.error('Failed to check profile onboarding:', error);
+    }
+  }, [navigate]);
+
   useEffect(() => {
     const bootstrapAuth = async () => {
       const token = getAuthToken();
@@ -132,21 +197,25 @@ export default function Layout() {
           return;
         }
         window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(resolved));
-        setCurrentUser(resolved);
+        applyAuthenticatedUser(resolved);
+        void ensureProfileOnboarding(resolved);
         await loadRecentConversations();
       } catch (error) {
         if (isUnauthorizedError(error)) {
           clearAuthSession();
+          clearUserScopedFrontendState();
+          currentUserIdRef.current = '';
           setCurrentUser(null);
           setConversationHistory([]);
           setLastSyncAt('');
+          setActiveConversationId('');
           return;
         }
       }
     };
 
     bootstrapAuth();
-  }, []);
+  }, [applyAuthenticatedUser, ensureProfileOnboarding]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -209,6 +278,12 @@ export default function Layout() {
     navigate('/engine');
   }, [navigate]);
 
+  const handleOpenResourceGenerationPage = useCallback(() => {
+    setMoreMenuOpen(false);
+    closeSidebar();
+    navigate('/resources');
+  }, [navigate]);
+
   const handleOpenMistakeBook = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
@@ -232,9 +307,13 @@ export default function Layout() {
       // 忽略退出登录时的网络错误
     } finally {
       clearAuthSession();
+      clearUserScopedFrontendState();
+      currentUserIdRef.current = '';
       setCurrentUser(null);
       setConversationHistory([]);
       setLastSyncAt('');
+      setActiveConversationId('');
+      setProfileOnboardingOpen(false);
     }
   };
 
@@ -350,7 +429,7 @@ export default function Layout() {
           <button
             type="button"
             onClick={() => setMoreMenuOpen((prev) => !prev)}
-            className={`app-sidebar-nav-item ${moreMenuOpen || inEngine || inMistakes || inProfile ? 'is-active' : ''}`}
+            className={`app-sidebar-nav-item ${moreMenuOpen || inEngine || inResources || inMistakes || inProfile ? 'is-active' : ''}`}
           >
             <LayoutGrid className="h-4 w-4" />
             更多功能
@@ -378,7 +457,15 @@ export default function Layout() {
                   className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
                 >
                   <Sparkles className="h-4 w-4" />
-                  学习服务
+                  个性化学习路径
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenResourceGenerationPage}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
+                >
+                  <Layers3 className="h-4 w-4" />
+                  多智能体协同资源生成
                 </button>
                 <button
                   type="button"
@@ -535,10 +622,10 @@ export default function Layout() {
             </button>
             <div className="app-breadcrumb min-w-0">
               <Compass className="h-4 w-4 text-primary-500" />
-              <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '学习服务' : '新对话'}</span>
+              <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源生成' : inEngine ? '个性化学习路径' : '新对话'}</span>
               <span className="hidden text-slate-300 sm:inline">/</span>
-              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inMistakes ? '自动错题复习' : inEngine ? '独立服务页面' : '智能学习与解题助手'}</span>
-              <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inEngine ? '学习服务' : '智能对话'}</span>
+              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inMistakes ? '自动错题复习' : inResources ? '协同进度与资源总览' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
+              <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : '智能对话'}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
@@ -557,9 +644,9 @@ export default function Layout() {
         </header>
 
         {/* Page Content */}
-        <div className={inEngine || inMistakes || inProfile ? 'px-3 py-4 sm:px-4 md:px-8 md:py-6' : ''}>
+        <div className={inEngine || inResources || inMistakes || inProfile ? 'px-3 py-4 sm:px-4 md:px-8 md:py-6' : ''}>
           <motion.div
-            key={inProfile ? 'profile-shell' : inMistakes ? 'mistake-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
+            key={inProfile ? 'profile-shell' : inMistakes ? 'mistake-shell' : inResources ? 'resource-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
@@ -576,16 +663,159 @@ export default function Layout() {
         hint={authHint}
         onClose={() => setModalOpen(false)}
         onSuccess={(user) => {
-          setCurrentUser(user);
+          applyAuthenticatedUser(user);
           setModalOpen(false);
+          void ensureProfileOnboarding(user);
           void loadRecentConversations();
         }}
       />
+      {isAuthenticated ? (
+        <ProfileOnboardingModal
+          open={profileOnboardingOpen}
+          currentUser={currentUser}
+          onCompleted={() => {
+            setProfileOnboardingOpen(false);
+            navigate('/profile');
+          }}
+        />
+      ) : null}
       <FloatingVoiceAssistant
         isAuthenticated={isAuthenticated}
         voiceUserId={currentUser?.id}
         openAuthModal={openAuthModal}
       />
+      <FloatingPracticeAssistant
+        isAuthenticated={isAuthenticated}
+        currentUser={currentUser}
+        openAuthModal={openAuthModal}
+      />
+      <StageTestExamPage />
+    </div>
+  );
+}
+
+function ProfileOnboardingModal(props: {
+  open: boolean;
+  currentUser: AuthUser | null;
+  onCompleted: () => void;
+}) {
+  const [majorCode, setMajorCode] = useState(props.currentUser?.majorCode ?? '');
+  const [knowledgeBase, setKnowledgeBase] = useState('');
+  const [learningGoal, setLearningGoal] = useState('');
+  const [learningPreference, setLearningPreference] = useState('');
+  const [resourcePreference, setResourcePreference] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (props.open) {
+      setMajorCode(props.currentUser?.majorCode ?? '');
+      setError('');
+    }
+  }, [props.currentUser?.majorCode, props.open]);
+
+  if (!props.open) {
+    return null;
+  }
+
+  const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200';
+  const optionsClass = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200';
+
+  const submit = async () => {
+    const payload: ProfileOnboardingPayload = {
+      majorCode: majorCode.trim(),
+      knowledgeBase: knowledgeBase.trim(),
+      learningGoal: learningGoal.trim(),
+      learningPreference: learningPreference.trim(),
+      resourcePreference: resourcePreference.trim(),
+    };
+    if (Object.values(payload).some((value) => !value)) {
+      setError('请先完成所有基础画像选择');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await smartEngineApi.completeProfileOnboarding(payload);
+      window.dispatchEvent(new Event('app:profile-updated'));
+      props.onCompleted();
+    } catch (submitError) {
+      console.error('Failed to complete profile onboarding:', submitError);
+      setError('画像保存失败，请稍后重试');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center px-4 py-6">
+      <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" />
+      <div className="relative max-h-[92dvh] w-full max-w-[560px] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white">
+              <UserRoundSearch className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white">完成基础学习画像</h3>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">新用户需要先补全画像，系统会据此生成首版个性化学习路径。</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3.5 px-5 py-4">
+          <label className="block">
+            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">专业方向</div>
+            <input value={majorCode} onChange={(event) => setMajorCode(event.target.value)} className={inputClass} placeholder="例如：计算机科学、软件工程、数据科学" />
+          </label>
+          <label className="block">
+            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">当前基础</div>
+            <select value={knowledgeBase} onChange={(event) => setKnowledgeBase(event.target.value)} className={optionsClass}>
+              <option value="">请选择当前基础</option>
+              <option value="零基础，刚开始学习">零基础，刚开始学习</option>
+              <option value="有基础，但知识不系统">有基础，但知识不系统</option>
+              <option value="中等基础，需要查漏补缺">中等基础，需要查漏补缺</option>
+              <option value="基础较好，希望项目实战">基础较好，希望项目实战</option>
+            </select>
+          </label>
+          <label className="block">
+            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">学习目标</div>
+            <input value={learningGoal} onChange={(event) => setLearningGoal(event.target.value)} className={inputClass} placeholder="例如：两个月内掌握数据库索引并完成项目实战" />
+          </label>
+          <label className="block">
+            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">学习偏好</div>
+            <select value={learningPreference} onChange={(event) => setLearningPreference(event.target.value)} className={optionsClass}>
+              <option value="">请选择学习偏好</option>
+              <option value="先讲概念，再给例题">先讲概念，再给例题</option>
+              <option value="项目实战驱动">项目实战驱动</option>
+              <option value="多做题巩固">多做题巩固</option>
+              <option value="图文结合，步骤清晰">图文结合，步骤清晰</option>
+            </select>
+          </label>
+          <label className="block">
+            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">资源偏好</div>
+            <select value={resourcePreference} onChange={(event) => setResourcePreference(event.target.value)} className={optionsClass}>
+              <option value="">请选择资源偏好</option>
+              <option value="DOCUMENT">文档教程</option>
+              <option value="VIDEO">视频讲解</option>
+              <option value="QUIZ">练习题</option>
+              <option value="CODE_CASE">代码案例</option>
+            </select>
+          </label>
+
+          {error ? <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">{error}</div> : null}
+
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={submitting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            保存画像并生成学习路径
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

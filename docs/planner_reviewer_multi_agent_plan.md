@@ -1,8 +1,10 @@
 # Planner + Reviewer 多智能体核心闭环实施计划
 
+> 2026-06-05 归档说明：对话 Planner 运行时已作为遗留死代码删除；当前生产链路保留 Critic/Reviewer 复核，不再包含 `conversation_planner.py`、`conversation_plan.py` 或 `PlanningLLMClientFactory`。
+
 日期：2026-06-03
 分支记录：`plan`（历史实施分支）
-当前代码状态：Planner/Reviewer 能力已合入 Python Supervisor 路径，未新增公开 API、SSE event 类型或 Docker 服务；`PERSONALIZED_LEARNING` 已纳入允许服务类型和质量审查范围。
+当前代码状态：对话 Planner 已归档并从运行时代码删除；Python Supervisor 当前仅保留既有路由执行和 Critic/Reviewer 质量复核能力，未新增公开 API、SSE event 类型或 Docker 服务；`PERSONALIZED_LEARNING` 已纳入允许服务类型和质量审查范围。
 
 ## 实施状态
 
@@ -21,20 +23,18 @@
 ## 硬约束
 
 - 当前联调/演示环境只允许通过 `docker cp` 热更新，禁止 `docker compose build`、`docker compose up --build`、`--force-recreate` 和重建容器。
-- Planner、Reviewer、可发布生成内容不得使用模板、规则或启发式兜底冒充 LLM；LLM provider 不可用、JSON 不合法、Step 非白名单、缺 provider/model 时必须失败。
+- Reviewer、Critic 和可发布生成内容不得使用模板、规则或启发式兜底冒充 LLM；LLM provider 不可用、JSON 不合法、缺 provider/model 时必须失败。
 - 不修改 SSE wire format，不新增强依赖 SSE event 类型；只复用现有 `progress` / `done` payload 字段。
 - 不新增公开 API、DTO、环境变量或 Docker 服务拓扑。
-- Java 仍是唯一外部入口；Planner/Reviewer 位于 Python Supervisor 内部。
+- Java 仍是唯一外部入口；当前 Python Supervisor 内仅保留路由执行与 Reviewer/Critic 复核，不再包含对话 Planner。
 
 ## 当前接入点
 
 | 模块 | 文件 | 说明 |
 |---|---|---|
-| Planner 模型 | `python-agent/src/ai_modules/models/conversation_plan.py` | 独立对话计划数据结构 |
-| Planner 运行时 | `python-agent/src/ai_modules/runtime/conversation_planner.py` | LLM 生成计划并校验 step 白名单 |
 | Reviewer / Critic | `python-agent/src/ai_modules/agents/common_agents.py` | 质量复核、事实支撑和安全检查 |
-| Supervisor | `python-agent/src/ai_modules/supervisor.py` | 判断是否启用 Planner、执行计划 step、关键任务后接 Critic |
-| 前端展示 | `frontend/src/pages/LearningStudioDemoPage.*` | 展示协作计划和质量复核 |
+| Supervisor | `python-agent/src/ai_modules/supervisor.py` | 执行当前服务路由，并在关键任务后接 Critic |
+| 前端展示 | `frontend/src/pages/LearningStudioDemoPage.*` | 展示质量复核与任务结果 |
 
 ## 已实现范围
 
@@ -45,17 +45,16 @@
 - `CriticAgent` / `SafetyAgent` 的 LLM review 失败直接抛错，不返回启发式结果。
 - 源码检索无 `_fallback_review` 残留。
 
-### P1 后端 Planner
+### P1 后端 Planner（历史归档）
 
-- 新增独立对话计划模型 `ConversationPlan` / `ConversationPlanStep`。
-- Step 白名单固定为：`PERSONALIZED_LEARNING`、`TUTORING`、`RESOURCE_GENERATION`、`RESOURCE_PUSH`、`PRACTICE_JUDGE`、`PATH_PLANNING`、`EVALUATION`、`PROFILE_BUILD`，以及已注册内部 Agent。
-- Planner 输出必须包含 provider/model，非法 Step 或缺元数据时失败。
+- 历史实现曾新增独立对话计划模型 `ConversationPlan` / `ConversationPlanStep` 和对话 Planner 运行时。
+- 2026-06-05 已确认该对话 Planner 运行时不可达，并删除 `conversation_plan.py`、`conversation_planner.py`、`planning_llm.py` 与孤立测试。
+- 当前运行链路不再生成或执行对话 Plan，也不再使用 `plannerNested` 防递归标记。
 
-### P2 Supervisor 自动执行
+### P2 Supervisor 自动执行（历史归档）
 
-- `PythonAgentSupervisor` 注册 Planner 工厂和 `critic` Agent。
-- 对符合条件的对话任务先发送 `planning` progress，再按 Plan 顺序执行 Step。
-- 服务型 Step 复用现有服务能力；嵌套执行设置 `plannerNested=true`，嵌套任务禁止再次启动 Planner。
+- 历史实现曾在 `PythonAgentSupervisor` 中注册 Planner 工厂，并按 Plan 顺序执行 Step。
+- 当前 Supervisor 已删除 Planner 工厂、Plan Step 自动执行和 `plannerNested` 相关分支。
 - 所有状态继续通过现有 `progress` payload 表达，没有新增 SSE event 类型。
 
 ### P3 Reviewer 接入
@@ -68,16 +67,16 @@
 
 ### P4 前端展示
 
-- LearningStudio 类型、任务快照和历史结果支持 `learningPlan`、`criticReview`。
+- LearningStudio 类型、任务快照和历史结果保留 `criticReview` 展示能力；历史任务如含 `learningPlan` 可按已有数据展示。
 - 前端只解析后端 payload 和 `task.responseSummary`，不本地生成默认 Plan 或默认 Critic 文案。
-- 结果面板展示“协作计划 / 质量复核”：Step 标题、Agent/服务名、状态、verdict、issues、suggestions、summaryText。
-- 选中历史结果时只展示该历史记录自己的 Plan/Critic；缺字段显示空态，不回退当前任务。
+- 结果面板展示质量复核：verdict、issues、suggestions、summaryText。
+- 选中历史结果时只展示该历史记录自己的 Critic/历史 Plan 数据；缺字段显示空态，不回退当前任务。
 
 ## 运行边界
 
-- Planner/Reviewer 不是新的微服务，也不需要新端口。
-- Planner/Reviewer 不直接写数据库；通过现有 Supervisor params 和 SSE payload 流动。
-- SmartEngine 长任务仍由 Redis Streams Worker 执行；Planner/Reviewer 只是 Worker 调用 Supervisor 时的内部编排逻辑。
+- Reviewer/Critic 不是新的微服务，也不需要新端口。
+- Reviewer/Critic 不直接写数据库；通过现有 Supervisor params 和 SSE payload 流动。
+- SmartEngine 长任务仍由 Redis Streams Worker 执行；Reviewer/Critic 只是 Worker 调用 Supervisor 时的内部质量复核逻辑。
 - 对话直连流式仍走 Java `ConversationService -> Python /internal/smart-engine/stream`。
 
 ## P5 热更新与验收记录
@@ -94,7 +93,7 @@
 
 历史验证：
 
-- 后端语法检查通过：`server.py`、Planner/Reviewer/Supervisor/ResourceBundle 相关文件全部 `py_compile` 通过。
+- 历史后端语法检查通过：`server.py`、Planner/Reviewer/Supervisor/ResourceBundle 相关文件全部 `py_compile` 通过。
 - 后端测试通过：`75 passed, 266 warnings`。
 - 前端类型检查通过：`npx.cmd tsc --noEmit`。
 - 前端生产构建通过：`npx.cmd vite build`，仅保留既有大 chunk 警告。
@@ -103,7 +102,7 @@
 
 ```bash
 cd python-agent
-pytest tests/test_conversation_planner.py tests/test_review_agents.py tests/test_supervisor.py -q
+pytest tests/test_review_agents.py tests/test_supervisor.py -q
 
 cd frontend
 npx tsc --noEmit
@@ -113,6 +112,6 @@ npx vite build
 ## Assumptions
 
 - 本轮范围是核心闭环，不做 Critic 后自动重试。
-- 高成本 Step 自动执行仅限白名单，并通过 `plannerNested=true` 防止递归 Planner。
+- 高成本 Step 自动执行和 `plannerNested=true` 防递归逻辑属于历史 Planner 实现，当前运行时代码已删除。
 - 存储容灾类 fallback 可保留，但不得生成或伪造对外内容。
 - 现有未提交改动视为用户或其他任务改动，不回滚无关变更。

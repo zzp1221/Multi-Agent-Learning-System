@@ -176,6 +176,7 @@ class JudgeAgent(PlaceholderAgent):
                 subjective_questions.append(question.model_dump(by_alias=True))
                 continue
             is_correct = self._is_objective_answer_correct(question=question, learner_answer=answer)
+            score_unit = self._question_score_unit(params)
             objective_results.append(
                 JudgeItemResult(
                     questionId=question.question_id,
@@ -183,7 +184,7 @@ class JudgeAgent(PlaceholderAgent):
                     learnerAnswer=answer,
                     correctAnswer=question.answer,
                     isCorrect=is_correct,
-                    score=20.0 if is_correct else 0.0,
+                    score=score_unit if is_correct else 0.0,
                     knowledgeTags=question.knowledge_tags,
                     reason="答案匹配标准答案" if is_correct else "答案与标准答案不一致",
                     feedback="这道客观题判断正确。" if is_correct else "先回到题目条件，确认再作答。",
@@ -206,6 +207,7 @@ class JudgeAgent(PlaceholderAgent):
                 question=question,
                 learner_answer=learner_answer,
             )
+            score_unit = self._question_score_unit(params)
             judged_items.append(
                 JudgeItemResult(
                     questionId=question.question_id,
@@ -213,7 +215,7 @@ class JudgeAgent(PlaceholderAgent):
                     learnerAnswer=learner_answer,
                     correctAnswer=question.answer,
                     isCorrect=evaluation.is_correct,
-                    score=evaluation.score,
+                    score=self._normalize_subjective_score(evaluation.score, score_unit),
                     knowledgeTags=question.knowledge_tags,
                     reason=evaluation.reason,
                     feedback=evaluation.feedback,
@@ -225,6 +227,20 @@ class JudgeAgent(PlaceholderAgent):
                 ).model_dump(by_alias=True)
             )
         return {"items": judged_items}
+
+    def _question_score_unit(self, params: dict[str, Any]) -> float:
+        questions = self._questions(params)
+        if self._is_stage_test(params):
+            return round(100.0 / max(len(questions), 1), 2)
+        return 20.0
+
+    def _normalize_subjective_score(self, score: float, score_unit: float) -> float:
+        if score_unit == 20.0:
+            return score
+        return round(max(0.0, min(float(score), 20.0)) / 20.0 * score_unit, 2)
+
+    def _is_stage_test(self, params: dict[str, Any]) -> bool:
+        return str(params.get("purpose") or "").strip().upper() == "STAGE_TEST"
 
     async def _tool_generate_feedback(
         self,

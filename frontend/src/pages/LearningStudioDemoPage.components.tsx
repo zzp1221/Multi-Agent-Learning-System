@@ -1,5 +1,5 @@
-import { lazy, Suspense, useState } from 'react';
-import { BookOpen, CheckCircle2, ExternalLink, FileText, Sparkles, XCircle } from 'lucide-react';
+import { lazy, Suspense } from 'react';
+import { BookOpen, ExternalLink, FileText, Sparkles } from 'lucide-react';
 import CodeBlock from '../components/CodeBlock';
 import {
   resourceTypeButtons,
@@ -9,7 +9,6 @@ import {
   type InlineResourceView,
   type LearningPlanView,
   type PathForm,
-  type PracticeJudgeResult,
   type PracticeQuestionBatch,
   type PushForm,
   type ResourceCoverageGapView,
@@ -307,12 +306,7 @@ function isInternalLearningEvaluationText(value: string): boolean {
 
 function PracticeQuestionPanel(props: {
   batch: PracticeQuestionBatch;
-  judgeResult: PracticeJudgeResult | null;
-  canSubmit: boolean;
-  onSubmitAnswers: (batch: PracticeQuestionBatch, answers: Record<string, string>) => void;
 }) {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-
   return (
     <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
       <div className="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -327,97 +321,14 @@ function PracticeQuestionPanel(props: {
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          disabled={!props.canSubmit}
-          onClick={() => props.onSubmitAnswers(props.batch, answers)}
-          className="w-full shrink-0 rounded-lg bg-primary-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
-        >
-          {props.batch.submitLabel || '提交答案并判题'}
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        {props.batch.questions.map((question, index) => (
-          <div key={question.questionId} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
-            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              {index + 1}. {question.stem}
-            </div>
-            {question.options && question.options.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {question.options.map((option, optionIndex) => {
-                  const optionLabel = String.fromCharCode(65 + optionIndex);
-                  const checked = answers[question.questionId] === optionLabel;
-                  return (
-                    <label
-                      key={`${question.questionId}-${optionLabel}`}
-                      className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 transition-colors hover:border-primary-300 dark:border-slate-700 dark:text-slate-400 dark:hover:border-primary-700"
-                    >
-                      <input
-                        type="radio"
-                        name={question.questionId}
-                        checked={checked}
-                        onChange={() => setAnswers((prev) => ({ ...prev, [question.questionId]: optionLabel }))}
-                        className="mt-1"
-                      />
-                      <span>{optionLabel}. {option}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            ) : (
-              <textarea
-                value={answers[question.questionId] || ''}
-                onChange={(event) => setAnswers((prev) => ({ ...prev, [question.questionId]: event.target.value }))}
-                rows={4}
-                className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                placeholder="请输入你的答案"
-              />
-            )}
-          </div>
-        ))}
-      </div>
-
-      {props.judgeResult ? (
-        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-500/10">
-          <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{props.judgeResult.title}</div>
-          <div className="mt-1 text-sm text-emerald-700/90 dark:text-emerald-200">{props.judgeResult.summary}</div>
-          {props.judgeResult.specializedAnalysis ? (
-            <div className="mt-4 rounded-xl border border-white/70 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950">
-              <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                {props.judgeResult.specializedAnalysis.title}
-              </div>
-              <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                {props.judgeResult.specializedAnalysis.summary}
-              </div>
-              {props.judgeResult.specializedAnalysis.markdown ? (
-                <div className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-300">
-                  <DeferredMarkdownRenderer content={props.judgeResult.specializedAnalysis.markdown} />
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="mt-3 text-xs text-emerald-700/80 dark:text-emerald-300">
-            总分：{props.judgeResult.totalScore} · 正确率：{Math.round((props.judgeResult.accuracy || 0) * 100)}%
-          </div>
-          <div className="mt-4 space-y-3">
-            {props.judgeResult.items.map((item) => (
-              <div key={item.questionId} className="rounded-lg border border-emerald-200 bg-white px-3 py-3 dark:border-emerald-900 dark:bg-slate-950">
-                <div className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
-                  {item.isCorrect ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <XCircle className="h-4 w-4 text-rose-500" />}
-                  {item.questionId} · 得分 {item.score}
-                </div>
-                <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">你的答案：{item.learnerAnswer || '未作答'}</div>
-                {item.correctAnswer ? (
-                  <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">参考答案：{item.correctAnswer}</div>
-                ) : null}
-                {item.reason ? <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">判定依据：{item.reason}</div> : null}
-                {item.feedback ? <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">反馈建议：{item.feedback}</div> : null}
-              </div>
-            ))}
-          </div>
+        <div className="w-full shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 sm:w-auto">
+          已进入浮动练习助手
         </div>
-      ) : null}
+      </div>
+
+      <div className="rounded-xl border border-amber-100 bg-white px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-500/20 dark:bg-slate-950 dark:text-amber-100">
+        共 {props.batch.questions.length} 道题。题干、选项和逐题判题只在对话页浮动练习助手中展示，资源结果页不展开题目正文。
+      </div>
     </div>
   );
 }
@@ -437,10 +348,7 @@ export function TaskResultPanel(props: {
   resultHistory: EngineTaskResultRecord[];
   selectedResultTaskId: string;
   practiceBatch: PracticeQuestionBatch | null;
-  judgeResult: PracticeJudgeResult | null;
-  canSubmitPractice: boolean;
   onSelectResultTask: (taskId: string) => void;
-  onSubmitPracticeAnswers: (batch: PracticeQuestionBatch, answers: Record<string, string>) => void;
 }) {
   const selectedRecord = props.resultHistory.find((item) => item.taskId === props.selectedResultTaskId) ?? null;
   const selectedRecordUsesCurrentSnapshot = !selectedRecord || selectedRecord.taskId === props.taskId;
@@ -495,9 +403,6 @@ export function TaskResultPanel(props: {
               : []),
           ]
     : selectedRecord.completedResources;
-  const visibleJudgeResult = selectedRecordUsesCurrentSnapshot
-    ? selectedRecord?.judgeResult ?? props.judgeResult
-    : selectedRecord.judgeResult;
   const cleanedTaskSummary = props.service === 'resource'
     ? sanitizeResourceDisplayText(visibleTaskSummary)
     : visibleTaskSummary;
@@ -579,7 +484,6 @@ export function TaskResultPanel(props: {
     || Boolean(visibleVideoResult)
     || cleanedCompletedResources.length > 0
     || Boolean(visiblePracticeBatch)
-    || Boolean(visibleJudgeResult)
     || Boolean(visibleLearningPlan)
     || Boolean(visibleResourcePushPlan)
     || props.resultHistory.length > 0;
@@ -756,9 +660,6 @@ export function TaskResultPanel(props: {
               <PracticeQuestionPanel
                 key={`${item.key}-${index}`}
                 batch={item.batch}
-                judgeResult={visibleJudgeResult}
-                canSubmit={props.canSubmitPractice}
-                onSubmitAnswers={props.onSubmitPracticeAnswers}
               />
             )
           ))}

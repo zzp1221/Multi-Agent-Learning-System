@@ -28,7 +28,6 @@ from src.ai_modules.llms.agent_models import (
     PracticeLLMClientFactory,
     PracticeQuestionGenerator,
     ProfileAnalyzer,
-    ProfileLLMClientFactory,
     ConversationSummaryRefiner,
     ConversationSummaryRefinerFactory,
     QueryRewriteGenerator,
@@ -51,9 +50,7 @@ from src.ai_modules.llms.spark_compatible import (
     SparkCompatibleClient,
     SparkCompatibleToolCallingLLM,
 )
-from src.ai_modules.llms.planning_llm import PlanningLLMClientFactory
 from src.ai_modules.llms.practice_llm import RuleBasedJudgeLLM, RuleBasedPracticeLLM
-from src.ai_modules.llms.profile_llm import RuleBasedProfileLLM
 from src.ai_modules.llms.review_llm import (
     BailianCriticReviewer,
     BailianSafetyReviewer,
@@ -120,8 +117,6 @@ __all__ = [
     "ConversationSummaryRefinerFactory",
     "PracticeQuestionGenerator",
     "ProfileAnalyzer",
-    "ProfileLLMClientFactory",
-    "PlanningLLMClientFactory",
     "QueryRewriteGenerator",
     "QueryRewriteToolLLMClientFactory",
     "ResourcePushReranker",
@@ -130,7 +125,6 @@ __all__ = [
     "RuleBasedGenerationLLM",
     "RuleBasedJudgeLLM",
     "RuleBasedPracticeLLM",
-    "RuleBasedProfileLLM",
     "RuleBasedQueryRewriteLLM",
     "RuleBasedTutorLLM",
     "SafetyReviewer",

@@ -1,7 +1,6 @@
 import pytest
 
 from src.ai_modules.agents.profile_agent import ProfileAgent
-from src.ai_modules.llms import RuleBasedProfileLLM
 from src.ai_modules.memory import (
     ConversationSummaryDocument,
     InMemoryConversationSummaryStore,
@@ -92,7 +91,6 @@ async def test_profile_agent_updates_profile_and_caches_dimensions() -> None:
     store = InMemoryProfileStore()
     agent = ProfileAgent(
         profile_store=store,
-        llm_client=RuleBasedProfileLLM(),
         profile_analyzer=FakeProfileAnalyzer(),
     )
     params = {
@@ -177,7 +175,6 @@ async def test_profile_agent_reads_persisted_summary_as_analysis_input() -> None
     agent = ProfileAgent(
         profile_store=InMemoryProfileStore(),
         summary_store=summary_store,
-        llm_client=RuleBasedProfileLLM(),
         profile_analyzer=CapturingProfileAnalyzer(),
     )
     params = {
@@ -213,7 +210,6 @@ async def test_profile_agent_falls_back_when_llm_returns_invalid_json() -> None:
     store = InMemoryProfileStore()
     agent = ProfileAgent(
         profile_store=store,
-        llm_client=RuleBasedProfileLLM(),
         profile_analyzer=BrokenProfileAnalyzer(),
     )
     params = {
@@ -282,7 +278,6 @@ async def test_profile_agent_golden_eval_preserves_profile_contract() -> None:
     store = InMemoryProfileStore()
     agent = ProfileAgent(
         profile_store=store,
-        llm_client=RuleBasedProfileLLM(),
         profile_analyzer=GoldenProfileAnalyzer(),
     )
     params = {
@@ -395,7 +390,6 @@ async def test_profile_agent_raises_when_primary_store_update_fails() -> None:
 
     agent = ProfileAgent(
         profile_store=BrokenProfileStore(),
-        llm_client=RuleBasedProfileLLM(),
         profile_analyzer=FakeProfileAnalyzer(),
     )
     params = {
@@ -442,7 +436,6 @@ async def test_profile_agent_forces_practice_judge_signal_into_profile() -> None
     store = InMemoryProfileStore()
     agent = ProfileAgent(
         profile_store=store,
-        llm_client=RuleBasedProfileLLM(),
         profile_analyzer=FakeProfileAnalyzer(),
     )
     params = {

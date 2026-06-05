@@ -9,7 +9,6 @@ import {
 } from './LearningStudioDemoPage.types';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
-  hasLockedTask,
 } from './LearningStudioDemoPage.model';
 import {
   AssistantActionBar,
@@ -56,7 +55,7 @@ const serviceDescriptions: Record<EngineService, { summary: string; detail: stri
 };
 
 export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine' }) {
-  const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
+  const { isAuthenticated, currentUser, openAuthModal } = useOutletContext<LayoutOutletContext>();
   const navigate = useNavigate();
   const pendingActionRef = useRef<null | (() => void)>(null);
   const conversationIdRef = useRef('');
@@ -67,6 +66,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   const { resetQnaConversation, viewProps: qnaViewProps } = useLearningStudioQna({
     mode,
     isAuthenticated,
+    currentUser,
     openAuthModal,
     conversationId,
     setConversationId,
@@ -96,7 +96,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
     markFormEditing,
     handleSelectService,
     handleSubmitService,
-    handleSubmitPracticeAnswers,
     handleStopService,
     handleSelectResultTask,
     resetEngineView,
@@ -354,10 +353,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           resultHistory={activeEngineSnapshot.resultHistory}
           selectedResultTaskId={activeEngineSnapshot.selectedResultTaskId}
           practiceBatch={activeEngineSnapshot.practiceBatch}
-          judgeResult={activeEngineSnapshot.judgeResult}
-          canSubmitPractice={!hasLockedTask(activeEngineSnapshot)}
           onSelectResultTask={handleSelectResultTask}
-          onSubmitPracticeAnswers={handleSubmitPracticeAnswers}
         />
       </div>
     </Suspense>

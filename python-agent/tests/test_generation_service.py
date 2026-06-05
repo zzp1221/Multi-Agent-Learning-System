@@ -1,3 +1,4 @@
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -137,6 +138,9 @@ class FakePrimaryGenerator:
             }
         )
 
+    async def generate_video_script_async(self, **kwargs) -> VideoScriptPayload:
+        return await self.generate_video_script(**kwargs)
+
 
 class FailingPrimaryGenerator:
     async def generate_document_sections(self, **kwargs) -> GeneratedSectionBundle:
@@ -162,6 +166,9 @@ class FailingPrimaryGenerator:
     async def generate_video_script(self, **kwargs) -> VideoScriptPayload:
         del kwargs
         raise RuntimeError("simulated bailian failure")
+
+    async def generate_video_script_async(self, **kwargs) -> VideoScriptPayload:
+        return await self.generate_video_script(**kwargs)
 
 
 @pytest.mark.asyncio
@@ -266,7 +273,10 @@ async def test_generation_service_raises_when_primary_generator_fails(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_generation_service_writes_non_document_assets_from_llm_output(tmp_path: Path) -> None:
+async def test_generation_service_writes_non_document_assets_from_llm_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     service = ResourceGenerationService(
         sandbox_root=tmp_path,
         content_chain=ContentGenerationChain(primary_generator=FakePrimaryGenerator()),
@@ -294,13 +304,59 @@ async def test_generation_service_writes_non_document_assets_from_llm_output(tmp
         "retrievalResult": {"documents": [{"title": "数据库索引导学", "channel": "hybrid"}]},
     }
 
+    class FakeMiMoClient:
+        def omni_chat_sync(self, **kwargs):
+            del kwargs
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"slides":['
+                                '{"slideTitle":"联合索引概念","bullets":["定义","场景","限制"],"speakerNotes":"先讲联合索引的定义、典型使用场景和边界限制，帮助学生建立整体认识。"},'
+                                '{"slideTitle":"最左前缀","bullets":["顺序","过滤","排序"],"speakerNotes":"再讲最左前缀的判断方式，说明过滤条件和排序条件如何影响索引利用。"},'
+                                '{"slideTitle":"范围条件","bullets":["截断","回表","覆盖"],"speakerNotes":"说明范围条件后的列为何可能无法继续用于精确匹配，并结合回表和覆盖索引判断。"},'
+                                '{"slideTitle":"执行计划","bullets":["key","rows","extra"],"speakerNotes":"引导学生阅读执行计划中的 key、rows 和 extra 字段，验证联合索引是否被正确使用。"},'
+                                '{"slideTitle":"设计策略","bullets":["选择性","频率","排序"],"speakerNotes":"从选择性、查询频率和排序需求三个角度解释联合索引列顺序的设计策略。"},'
+                                '{"slideTitle":"练习复盘","bullets":["条件","顺序","结论"],"speakerNotes":"最后通过练习复盘，让学生先列条件、再看列顺序，最后给出是否命中的结论。"}'
+                                ']}'
+                            )
+                        }
+                    }
+                ]
+            }
+
+        def extract_json(self, response):
+            import json
+
+            return json.loads(response["choices"][0]["message"]["content"])
+
+    monkeypatch.setenv("MIMO_API_KEY", "unit-test-mimo-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMiMoClient)
+
     reading_asset = await service.build_asset(asset_type="READING", params=params, snapshot=snapshot)
-    slides_asset = await service.build_asset(asset_type="SLIDES", params=params, snapshot=snapshot)
+    pending_slides_asset = await service.build_asset(asset_type="SLIDES", params=params, snapshot=snapshot)
+    confirmed_params = {
+        **params,
+        "confirmedSlideOutline": True,
+        "confirmedSlideOutlineText": pending_slides_asset.inline_content,
+    }
     mindmap_asset = await service.build_asset(asset_type="MINDMAP", params=params, snapshot=snapshot)
     code_asset = await service.build_asset(asset_type="CODE", params=params, snapshot=snapshot)
 
     assert "这里是百炼生成的阅读正文。" in Path(reading_asset.local_path).read_text(encoding="utf-8")
-    assert "讲解备注: 先讲概念。" in Path(slides_asset.local_path).read_text(encoding="utf-8")
+    assert pending_slides_asset.display_mode == "SLIDE_OUTLINE_CONFIRMATION"
+    assert pending_slides_asset.local_path is None
+    assert "联合索引PPT大纲" in pending_slides_asset.inline_content
+    if importlib.util.find_spec("pptx") is None:
+        with pytest.raises(RuntimeError, match="python-pptx produced no file"):
+            await service.build_asset(asset_type="SLIDES", params=confirmed_params, snapshot=snapshot)
+    else:
+        slides_asset = await service.build_asset(asset_type="SLIDES", params=confirmed_params, snapshot=snapshot)
+        assert slides_asset.display_mode == "DOWNLOAD_CARD"
+        assert slides_asset.file_name == "slides_task-multi.pptx"
+        assert service._count_pptx_slides(Path(slides_asset.local_path).read_bytes()) >= 4
     assert mindmap_asset.display_mode == "INLINE_MERMAID"
     assert mindmap_asset.file_name == "mindmap_task-multi.mmd"
     assert Path(mindmap_asset.local_path).exists()
@@ -313,6 +369,259 @@ async def test_generation_service_writes_non_document_assets_from_llm_output(tmp
     assert Path(code_asset.local_path).exists()
     assert Path(code_asset.local_path).read_text(encoding="utf-8") == code_asset.inline_content
     assert "百炼代码案例" in code_asset.inline_content
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_generation_service_requires_confirmed_slide_outline_text(tmp_path: Path) -> None:
+    service = ResourceGenerationService(
+        sandbox_root=tmp_path,
+        content_chain=ContentGenerationChain(primary_generator=FakePrimaryGenerator()),
+    )
+    snapshot = SystemSnapshot(
+        current_course="数据库原理",
+        current_chapter="索引",
+        course_progress=0.3,
+        student_name="张三",
+        student_level="BASIC",
+        knowledge_gaps=["B+树"],
+        preferred_style="step_by_step",
+        recent_mistakes=[],
+        session_id="task-1",
+        conversation_length=1,
+        total_tokens_used=0,
+        wiki_pages_count=10,
+        last_index_update="2026-05-02",
+        recent_activities=[],
+    )
+
+    asset = await service.build_asset(
+        asset_type="SLIDES",
+        params={
+            "taskId": "task-confirm-only",
+            "query": "联合索引",
+            "confirmedSlideOutline": True,
+        },
+        snapshot=snapshot,
+    )
+
+    assert asset.display_mode == "SLIDE_OUTLINE_CONFIRMATION"
+    assert asset.local_path is None
+
+
+@pytest.mark.asyncio
+async def test_generation_service_accepts_nested_confirmed_slide_outline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ResourceGenerationService(
+        sandbox_root=tmp_path,
+        content_chain=ContentGenerationChain(primary_generator=FakePrimaryGenerator()),
+    )
+    snapshot = SystemSnapshot(
+        current_course="Java 程序设计",
+        current_chapter="并发编程",
+        course_progress=0.3,
+        student_name="张三",
+        student_level="BASIC",
+        knowledge_gaps=["线程创建"],
+        preferred_style="step_by_step",
+        recent_mistakes=[],
+        session_id="task-nested-confirm",
+        conversation_length=1,
+        total_tokens_used=0,
+        wiki_pages_count=10,
+        last_index_update="2026-05-02",
+        recent_activities=[],
+    )
+
+    class FakeMiMoClient:
+        def omni_chat_sync(self, **kwargs):
+            prompt = kwargs["messages"][-1]["content"]
+            assert "用户已确认以下 PPT 大纲" in prompt
+            assert "# Java线程创建基础概念学习PPT大纲" in prompt
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"slides":['
+                                '{"slideTitle":"线程创建概览","bullets":["Thread","Runnable","适用场景"],"speakerNotes":"先说明 Java 中线程创建的整体方式，帮助学生建立 Thread 与 Runnable 的基本边界。"},'
+                                '{"slideTitle":"Thread 类方式","bullets":["继承","重写 run","启动"],"speakerNotes":"讲解继承 Thread 的写法，强调 run 方法承载任务逻辑，start 方法才会创建新线程。"},'
+                                '{"slideTitle":"Runnable 接口方式","bullets":["实现接口","传入任务","复用性"],"speakerNotes":"说明 Runnable 把任务与线程对象分离，适合更灵活地复用任务逻辑和组合执行器。"},'
+                                '{"slideTitle":"两种方式对比","bullets":["耦合度","继承限制","推荐场景"],"speakerNotes":"对比两种创建方式的设计差异，让学生理解为什么实际开发更常选择 Runnable 或更高层封装。"},'
+                                '{"slideTitle":"常见误区","bullets":["直接调用 run","重复 start","忽略异常"],"speakerNotes":"列出初学者常犯问题，特别强调直接调用 run 不会启动新线程，重复 start 会抛出异常。"},'
+                                '{"slideTitle":"课堂练习","bullets":["补全代码","判断输出","解释原因"],"speakerNotes":"最后用小练习复盘线程创建流程，让学生通过代码判断和解释巩固核心概念。"}'
+                                ']}'
+                            )
+                        }
+                    }
+                ]
+            }
+
+        def extract_json(self, response):
+            import json
+
+            return json.loads(response["choices"][0]["message"]["content"])
+
+    monkeypatch.setenv("MIMO_API_KEY", "unit-test-mimo-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMiMoClient)
+    monkeypatch.setattr(service, "_build_pptx_bytes", lambda **kwargs: b"nested-confirm-pptx")
+
+    asset = await service.build_asset(
+        asset_type="SLIDES",
+        params={
+            "taskId": "task-nested-confirm",
+            "query": "确认此大纲并生成 PPT 文件",
+            "learningContext": {
+                "activeLearningStepTitle": "Java线程创建基础概念学习",
+                "confirmedSlideOutline": "true",
+                "confirmedSlideOutlineText": "# Java线程创建基础概念学习PPT大纲\n## 线程创建概览",
+            },
+        },
+        snapshot=snapshot,
+    )
+
+    assert asset.display_mode == "DOWNLOAD_CARD"
+    assert asset.file_name == "slides_task-nested-confirm.pptx"
+    assert Path(asset.local_path).exists()
+    assert Path(asset.local_path).read_bytes() == b"nested-confirm-pptx"
+    get_settings.cache_clear()
+
+
+def test_generation_service_rejects_incomplete_slide_deck() -> None:
+    with pytest.raises(RuntimeError, match="empty slide list"):
+        ResourceGenerationService._validate_slide_deck([])
+
+    with pytest.raises(RuntimeError, match="6-10 content slides"):
+        ResourceGenerationService._validate_slide_deck(
+            [
+                {
+                    "slideTitle": "联合索引概念",
+                    "bullets": ["定义", "场景", "限制"],
+                    "speakerNotes": "先讲概念。",
+                }
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_generation_service_normalizes_short_slide_bullets_to_download_card(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = ResourceGenerationService(
+        sandbox_root=tmp_path,
+        content_chain=ContentGenerationChain(primary_generator=FakePrimaryGenerator()),
+    )
+    snapshot = SystemSnapshot(
+        current_course="Java",
+        current_chapter="Thread",
+        course_progress=0.3,
+        student_name="student",
+        student_level="BASIC",
+        knowledge_gaps=["thread"],
+        preferred_style="step_by_step",
+        recent_mistakes=[],
+        session_id="task-short-bullets",
+        conversation_length=1,
+        total_tokens_used=0,
+        wiki_pages_count=10,
+        last_index_update="2026-05-02",
+        recent_activities=[],
+    )
+
+    class FakeMiMoClient:
+        def omni_chat_sync(self, **kwargs):
+            del kwargs
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"slides":['
+                                '{"slideTitle":"Thread 概览","bullets":["定义","启动"],"speakerNotes":"说明线程的基本定义。再解释 start 与 run 的区别，帮助学生建立第一印象。"},'
+                                '{"slideTitle":"创建方式","bullets":["继承","接口","任务"],"speakerNotes":"说明常见线程创建方式，并提示实际项目更推荐任务与执行器分离。"},'
+                                '{"slideTitle":"生命周期","bullets":["新建","就绪","运行"],"speakerNotes":"讲解线程从创建到运行再到结束的状态变化，帮助学生理解调度过程。"},'
+                                '{"slideTitle":"常见误区","bullets":["run","start","异常"],"speakerNotes":"强调直接调用 run 不会创建新线程，重复 start 会触发运行时异常。"},'
+                                '{"slideTitle":"实践案例","bullets":["代码","输出","分析"],"speakerNotes":"通过简短代码观察输出顺序，让学生把概念和真实执行联系起来。"},'
+                                '{"slideTitle":"总结复盘","bullets":["概念","方式","边界"],"speakerNotes":"回顾线程创建的核心概念、常用方式和容易混淆的边界条件。"}'
+                                ']}'
+                            )
+                        }
+                    }
+                ]
+            }
+
+        def extract_json(self, response):
+            import json
+
+            return json.loads(response["choices"][0]["message"]["content"])
+
+    captured: dict[str, list[dict[str, object]]] = {}
+
+    def fake_build_pptx_bytes(**kwargs):
+        captured["slides"] = kwargs["slides"]
+        return b"pptx"
+
+    monkeypatch.setenv("MIMO_API_KEY", "unit-test-mimo-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMiMoClient)
+    monkeypatch.setattr(service, "_build_pptx_bytes", fake_build_pptx_bytes)
+
+    asset = await service.build_asset(
+        asset_type="SLIDES",
+        params={
+            "taskId": "task-short-bullets",
+            "query": "确认并生成 PPT",
+            "confirmedSlideOutline": True,
+            "confirmedSlideOutlineText": "# Thread PPT 大纲",
+        },
+        snapshot=snapshot,
+    )
+
+    assert asset.display_mode == "DOWNLOAD_CARD"
+    assert asset.file_name == "slides_task-short-bullets.pptx"
+    assert len(captured["slides"][0]["bullets"]) == 3
+    get_settings.cache_clear()
+
+
+def test_generation_service_truncates_long_slide_bullets() -> None:
+    slides = ResourceGenerationService._validate_slide_deck(
+        [
+            {
+                "slideTitle": f"slide {index}",
+                "bullets": ["one", "two", "three", "four", "five", "six"],
+                "speakerNotes": "speaker notes",
+            }
+            for index in range(1, 7)
+        ]
+    )
+
+    assert [len(slide["bullets"]) for slide in slides] == [5, 5, 5, 5, 5, 5]
+
+
+@pytest.mark.parametrize(
+    ("slide_patch", "message"),
+    [
+        ({"slideTitle": ""}, "missing a title"),
+        ({"speakerNotes": ""}, "missing speaker notes"),
+    ],
+)
+def test_generation_service_rejects_core_invalid_slide_fields(slide_patch: dict[str, object], message: str) -> None:
+    slides = [
+        {
+            "slideTitle": f"slide {index}",
+            "bullets": ["one", "two", "three"],
+            "speakerNotes": "speaker notes",
+        }
+        for index in range(1, 7)
+    ]
+    slides[0].update(slide_patch)
+
+    with pytest.raises(RuntimeError, match=message):
+        ResourceGenerationService._validate_slide_deck(slides)
 
 
 @pytest.mark.asyncio
@@ -379,7 +688,10 @@ async def test_generation_service_rebuilds_safe_mermaid_mindmap(tmp_path: Path) 
 @pytest.mark.asyncio
 async def test_generation_service_requires_tts_audio_for_video_asset(tmp_path: Path) -> None:
     class FailingMimoClient:
-        def synthesize_speech_sync(self, **kwargs) -> bytes:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        async def synthesize_speech(self, **kwargs) -> bytes:
             raise RuntimeError("tts unavailable")
 
     monkeypatch = pytest.MonkeyPatch()
@@ -474,7 +786,7 @@ async def test_generation_service_synthesizes_video_audio_from_final_script(
         def __init__(self, **kwargs) -> None:
             captured["timeout_seconds"] = kwargs["timeout_seconds"]
 
-        def synthesize_speech_sync(self, **kwargs) -> bytes:
+        async def synthesize_speech(self, **kwargs) -> bytes:
             captured["text"] = kwargs["text"]
             return b"y" * 512
 

@@ -73,7 +73,40 @@ public record VoiceContextRequest(
     String downloadResourceSummary,
 
     @Size(max = 240, message = "推荐操作不能超过 240 字")
-    String recommendedAction
+    String recommendedAction,
+
+    @Size(max = 80, message = "学习阶段 ID 不能超过 80 字")
+    String activeLearningStepId,
+
+    @Size(max = 160, message = "学习阶段标题不能超过 160 字")
+    String activeLearningStepTitle,
+
+    @Size(max = 20, message = "学习阶段进度不能超过 20 字")
+    String activeLearningStepProgress,
+
+    @Size(max = 800, message = "学习阶段摘要不能超过 800 字")
+    String activeLearningStepSummary,
+
+    @Size(max = 160, message = "用户指定主题不能超过 160 字")
+    String explicitUserTopic,
+
+    @Size(max = 20, message = "题量不能超过 20 字")
+    String questionCount,
+
+    @Size(max = 60, message = "题型偏好不能超过 60 字")
+    String questionTypePreference,
+
+    @Size(max = 60, message = "难度偏好不能超过 60 字")
+    String difficultyPreference,
+
+    @Size(max = 20, message = "PPT 大纲确认标记不能超过 20 字")
+    String requiresSlideOutlineConfirmation,
+
+    @Size(max = 20, message = "PPT 确认标记不能超过 20 字")
+    String confirmedSlideOutline,
+
+    @Size(max = 4000, message = "PPT 大纲文本不能超过 4000 字")
+    String confirmedSlideOutlineText
 ) {
     public Map<String, String> normalizedMap() {
         Map<String, String> context = new LinkedHashMap<>();
@@ -100,6 +133,17 @@ public record VoiceContextRequest(
         putIfPresent(context, "resourceResultSummary", resourceResultSummary);
         putIfPresent(context, "downloadResourceSummary", downloadResourceSummary);
         putIfPresent(context, "recommendedAction", recommendedAction);
+        putIfPresent(context, "activeLearningStepId", activeLearningStepId);
+        putIfPresent(context, "activeLearningStepTitle", activeLearningStepTitle);
+        putIfPresent(context, "activeLearningStepProgress", activeLearningStepProgress);
+        putIfPresent(context, "activeLearningStepSummary", activeLearningStepSummary);
+        putIfPresent(context, "explicitUserTopic", explicitUserTopic);
+        putIfPresent(context, "questionCount", questionCount);
+        putIfPresent(context, "questionTypePreference", questionTypePreference);
+        putIfPresent(context, "difficultyPreference", difficultyPreference);
+        putIfPresent(context, "requiresSlideOutlineConfirmation", requiresSlideOutlineConfirmation);
+        putIfPresent(context, "confirmedSlideOutline", confirmedSlideOutline);
+        putIfPresent(context, "confirmedSlideOutlineText", confirmedSlideOutlineText);
         return context;
     }
 

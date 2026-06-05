@@ -242,6 +242,13 @@ class ResourcePushAgent(PlaceholderAgent):
             query=query,
             profile_context=profile_context,
         )
+        previous_urls, previous_titles = self._extract_previous_resource_exclusions(params)
+        if previous_urls or previous_titles:
+            candidates = [
+                candidate
+                for candidate in candidates
+                if self._first_unused_candidate([candidate], previous_urls, previous_titles) is not None
+            ]
 
         if not candidates:
             params["pushedResources"] = []
@@ -355,7 +362,9 @@ class ResourcePushAgent(PlaceholderAgent):
     ) -> dict[str, Any]:
         step_resources: list[dict[str, Any]] = []
         coverage_gaps: list[dict[str, Any]] = []
-        seen_urls: set[str] = set()
+        previous_urls, previous_titles = self._extract_previous_resource_exclusions(params)
+        seen_urls: set[str] = set(previous_urls)
+        seen_titles: set[str] = set(previous_titles)
 
         for index, step in enumerate(learning_path.get("steps", []), start=1):
             if not isinstance(step, dict):
@@ -373,11 +382,12 @@ class ResourcePushAgent(PlaceholderAgent):
                     query=query,
                     profile_context=step_context,
                 )
-                candidate = self._first_unused_candidate(candidates, seen_urls)
+                candidate = self._first_unused_candidate(candidates, seen_urls, seen_titles)
                 if candidate is None:
                     continue
                 if candidate.download_url:
-                    seen_urls.add(candidate.download_url)
+                    seen_urls.add(self._normalize_resource_url(candidate.download_url))
+                seen_titles.add(self._normalize_resource_title(candidate.title))
                 resources.append(self._candidate_to_path_resource(candidate))
                 if len(resources) >= MAX_STEP_EXTERNAL_RESOURCE_TYPES:
                     break
@@ -479,12 +489,57 @@ class ResourcePushAgent(PlaceholderAgent):
         self,
         candidates: list[PushResourceCandidate],
         seen_urls: set[str],
+        seen_titles: set[str] | None = None,
     ) -> PushResourceCandidate | None:
+        seen_titles = seen_titles or set()
         for candidate in candidates:
-            if candidate.download_url and candidate.download_url in seen_urls:
+            if candidate.download_url and self._normalize_resource_url(candidate.download_url) in seen_urls:
+                continue
+            if self._normalize_resource_title(candidate.title) in seen_titles:
                 continue
             return candidate
         return None
+
+    def _extract_previous_resource_exclusions(self, params: dict[str, Any]) -> tuple[set[str], set[str]]:
+        urls: set[str] = set()
+        titles: set[str] = set()
+
+        previous_resource_urls = params.get("previousResourceUrls")
+        if not isinstance(previous_resource_urls, list):
+            previous_resource_urls = []
+        for value in previous_resource_urls:
+            url = self._normalize_resource_url(value)
+            if url:
+                urls.add(url)
+        previous_resource_titles = params.get("previousResourceTitles")
+        if not isinstance(previous_resource_titles, list):
+            previous_resource_titles = []
+        for value in previous_resource_titles:
+            title = self._normalize_resource_title(value)
+            if title:
+                titles.add(title)
+
+        existing_resources = params.get("existingResources")
+        if not isinstance(existing_resources, list):
+            existing_resources = []
+        for resource in existing_resources:
+            if not isinstance(resource, dict):
+                continue
+            url = self._normalize_resource_url(resource.get("downloadUrl"))
+            title = self._normalize_resource_title(resource.get("title"))
+            if url:
+                urls.add(url)
+            if title:
+                titles.add(title)
+
+        return urls, titles
+
+    def _normalize_resource_url(self, value: Any) -> str:
+        url = self._normalize_text(value).lower()
+        return url.rstrip("/")
+
+    def _normalize_resource_title(self, value: Any) -> str:
+        return self._clean_display_text(self._normalize_text(value)).lower()
 
     def _candidate_to_path_resource(self, candidate: PushResourceCandidate) -> dict[str, Any]:
         return {
@@ -826,7 +881,7 @@ class ResourcePushAgent(PlaceholderAgent):
                         "query": search_query,
                         "topic": "general",
                         "search_depth": "advanced",
-                        "max_results": 8,
+                        "max_results": 15,
                         "include_images": True,
                         "include_answer": False,
                         "include_raw_content": False,

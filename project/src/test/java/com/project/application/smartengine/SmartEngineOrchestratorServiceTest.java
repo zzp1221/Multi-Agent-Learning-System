@@ -3,6 +3,8 @@ package com.project.application.smartengine;
 import com.project.api.smartengine.dto.SubmitTaskRequest;
 import com.project.application.audit.AuditService;
 import com.project.application.idempotency.IdempotencyService;
+import com.project.application.learningpath.LearningPathProgressService;
+import com.project.application.learningpath.PersonalizedLearningRefreshService;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.domain.task.ServiceType;
 import com.project.domain.task.SmartEngineTask;
@@ -20,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +43,8 @@ class SmartEngineOrchestratorServiceTest {
         AuditService auditService = mock(AuditService.class);
         UserProfileCurrentRepository profileRepository = mock(UserProfileCurrentRepository.class);
         PersonalizedLearningContextService contextService = mock(PersonalizedLearningContextService.class);
+        PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
+        LearningPathProgressService progressService = mock(LearningPathProgressService.class);
 
         SmartEngineTask task = pendingTask(userId);
         when(taskStateMachineService.createTask(any(), eq(userId), any(), eq(ServiceType.PERSONALIZED_LEARNING), any()))
@@ -63,7 +68,9 @@ class SmartEngineOrchestratorServiceTest {
             idempotencyService,
             auditService,
             profileRepository,
-            contextService
+            contextService,
+            refreshService,
+            progressService
         );
 
         service.submit(user, new SubmitTaskRequest(
@@ -83,6 +90,96 @@ class SmartEngineOrchestratorServiceTest {
         }));
     }
 
+    @Test
+    void completedStageTestTriggersLearningPathProgressWithoutPracticeRefresh() {
+        UUID userId = UUID.fromString("30000000-0000-0000-0000-000000000011");
+        UUID taskId = UUID.fromString("30000000-0000-0000-0000-000000000012");
+        TaskStateMachineService taskStateMachineService = mock(TaskStateMachineService.class);
+        SseEmitterService sseEmitterService = mock(SseEmitterService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
+        LearningPathProgressService progressService = mock(LearningPathProgressService.class);
+
+        SmartEngineTask task = completedPracticeTask(userId, taskId);
+        when(taskStateMachineService.recordPythonEvent(eq(taskId), any(), eq(9)))
+            .thenReturn(new TaskEventRecordResult(
+                new TaskStreamEventPayload(
+                    "done",
+                    taskId,
+                    "trace-stage-test",
+                    9,
+                    java.time.OffsetDateTime.now(),
+                    Map.of("status", "SUCCESS", "summary", "判题完成")
+                ),
+                true
+            ));
+        when(taskStateMachineService.getTask(taskId)).thenReturn(task);
+        when(progressService.handleStageTestResult(userId, taskId)).thenReturn(true);
+
+        SmartEngineOrchestratorService service = new SmartEngineOrchestratorService(
+            taskStateMachineService,
+            sseEmitterService,
+            queueProvider,
+            mock(IdempotencyService.class),
+            mock(AuditService.class),
+            mock(UserProfileCurrentRepository.class),
+            mock(PersonalizedLearningContextService.class),
+            refreshService,
+            progressService
+        );
+
+        service.recordWorkerEvent(taskId, new PythonStreamEvent("done", "judge", Map.of("status", "SUCCESS")), 9);
+
+        verify(progressService).handleStageTestResult(userId, taskId);
+        verify(refreshService, never()).triggerPracticeRefresh(any(), any());
+    }
+
+    @Test
+    void completedOrdinaryPracticeStillTriggersPracticeRefresh() {
+        UUID userId = UUID.fromString("30000000-0000-0000-0000-000000000021");
+        UUID taskId = UUID.fromString("30000000-0000-0000-0000-000000000022");
+        TaskStateMachineService taskStateMachineService = mock(TaskStateMachineService.class);
+        SseEmitterService sseEmitterService = mock(SseEmitterService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
+        LearningPathProgressService progressService = mock(LearningPathProgressService.class);
+
+        SmartEngineTask task = completedPracticeTask(userId, taskId);
+        when(taskStateMachineService.recordPythonEvent(eq(taskId), any(), eq(11)))
+            .thenReturn(new TaskEventRecordResult(
+                new TaskStreamEventPayload(
+                    "done",
+                    taskId,
+                    "trace-practice",
+                    11,
+                    java.time.OffsetDateTime.now(),
+                    Map.of("status", "SUCCESS", "summary", "判题完成")
+                ),
+                true
+            ));
+        when(taskStateMachineService.getTask(taskId)).thenReturn(task);
+        when(progressService.handleStageTestResult(userId, taskId)).thenReturn(false);
+
+        SmartEngineOrchestratorService service = new SmartEngineOrchestratorService(
+            taskStateMachineService,
+            sseEmitterService,
+            queueProvider,
+            mock(IdempotencyService.class),
+            mock(AuditService.class),
+            mock(UserProfileCurrentRepository.class),
+            mock(PersonalizedLearningContextService.class),
+            refreshService,
+            progressService
+        );
+
+        service.recordWorkerEvent(taskId, new PythonStreamEvent("done", "judge", Map.of("status", "SUCCESS")), 11);
+
+        verify(progressService).handleStageTestResult(userId, taskId);
+        verify(refreshService).triggerPracticeRefresh(userId, "practice_judge_completed");
+    }
+
     private SmartEngineTask pendingTask(UUID userId) {
         SmartEngineTask task = new SmartEngineTask();
         task.setId(UUID.fromString("30000000-0000-0000-0000-000000000003"));
@@ -90,6 +187,16 @@ class SmartEngineOrchestratorServiceTest {
         task.setUserId(userId);
         task.setServiceType(ServiceType.PERSONALIZED_LEARNING);
         task.setTaskStatus(TaskStatus.PENDING);
+        return task;
+    }
+
+    private SmartEngineTask completedPracticeTask(UUID userId, UUID taskId) {
+        SmartEngineTask task = new SmartEngineTask();
+        task.setId(taskId);
+        task.setTraceId("trace-stage-test");
+        task.setUserId(userId);
+        task.setServiceType(ServiceType.PRACTICE_JUDGE);
+        task.setTaskStatus(TaskStatus.COMPLETED);
         return task;
     }
 }

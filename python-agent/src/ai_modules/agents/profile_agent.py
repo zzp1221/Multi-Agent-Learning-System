@@ -9,7 +9,7 @@ from typing import Any
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.async_utils import cancel_and_await
-from src.ai_modules.llms import ProfileAnalyzer, ProfileLLMClientFactory
+from src.ai_modules.llms import ProfileAnalyzer
 from src.ai_modules.memory import (
     InMemoryProfileStore,
     LearnerKnowledgeGraphStore,
@@ -50,7 +50,6 @@ class ProfileAgent(PlaceholderAgent):
         self,
         profile_store: ProfileStore | None = None,
         summary_store: Any | None = None,
-        llm_client: Any | None = None,
         profile_analyzer: Any | None = None,
         heartbeat_interval_seconds: float = 15.0,
         knowledge_graph_store: LearnerKnowledgeGraphStore | None = None,
@@ -59,7 +58,6 @@ class ProfileAgent(PlaceholderAgent):
         self.profile_store = profile_store or PostgresProfileStore()
         self.summary_store = summary_store or MongoConversationSummaryStore()
         self.fallback_profile_store = InMemoryProfileStore()
-        self.llm_client = llm_client or ProfileLLMClientFactory.create()
         self.profile_analyzer = profile_analyzer or ProfileAnalyzer()
         self.recovery_engine = RecoveryEngine()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
@@ -310,7 +308,7 @@ class ProfileAgent(PlaceholderAgent):
         snapshot = await self._safe_update_profile(
             user_id=user_id,
             dimensions=dimensions,
-            source_session_id=params.get("conversationId"),
+            source_session_id=self._normalize_source_session_id(params.get("conversationId")),
         )
         return {
             "userId": snapshot.user_id,
@@ -531,6 +529,13 @@ class ProfileAgent(PlaceholderAgent):
             failure_type=RecoveryFailureType.PROFILE_UPDATE_FAILED,
             operation=operation,
         )
+
+    @staticmethod
+    def _normalize_source_session_id(value: Any) -> str | None:
+        source_session_id = str(value or "").strip()
+        if not source_session_id or source_session_id == "00000000-0000-0000-0000-000000000000":
+            return None
+        return source_session_id
 
     def _infer_knowledge_foundation(self, text: str, profile_context: dict[str, Any]) -> str:
         for key in ("knowledgeFoundation", "knowledgeBase", "foundationLevel", "studentLevel"):

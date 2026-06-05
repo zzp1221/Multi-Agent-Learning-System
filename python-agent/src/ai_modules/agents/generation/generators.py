@@ -211,7 +211,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
     ) -> dict[str, Any]:
         del tool_input
-        topic = str(params.get("rewrittenQuery") or params.get("query") or "主题")
+        topic = self._resolve_topic(params)
         sources = (params.get("retrievalResult") or {}).get("documents", [])
         if self.asset_type == "DOCUMENT":
             outline = {
@@ -250,6 +250,13 @@ class _BaseGenerationAgent(PlaceholderAgent):
         del tool_input
         build_params = dict(params)
         build_params.setdefault("taskId", task_id)
+        if self._is_deep_quality_mode(build_params):
+            build_params["generationQualityMode"] = "deep"
+            build_params["generationQualityInstruction"] = (
+                "Deep quality mode: create a more complete, evidence-grounded resource. "
+                "Include clear structure, important edge cases, learner misconceptions, "
+                "and a brief self-check before finalizing."
+            )
 
         async def operation() -> dict[str, Any]:
             asset = await self._call_asset_builder(build_params=build_params, snapshot=snapshot)
@@ -277,12 +284,8 @@ class _BaseGenerationAgent(PlaceholderAgent):
         return draft
 
     async def _call_asset_builder(self, *, build_params: dict[str, Any], snapshot: SystemSnapshot) -> Any:
-        if self.asset_type == "VIDEO":
-            builder = self.generation_service.build_video_asset
-            kwargs = {"params": build_params, "snapshot": snapshot}
-        else:
-            builder = self.generation_service.build_asset
-            kwargs = {"asset_type": self.asset_type, "params": build_params, "snapshot": snapshot}
+        builder = self.generation_service.build_asset
+        kwargs = {"asset_type": self.asset_type, "params": build_params, "snapshot": snapshot}
         if inspect.iscoroutinefunction(builder):
             return await builder(**kwargs)
         return await asyncio.to_thread(builder, **kwargs)
@@ -297,6 +300,40 @@ class _BaseGenerationAgent(PlaceholderAgent):
 
     def _wire_agent_name(self) -> str:
         return self.stage_name
+
+    def _resolve_topic(self, params: dict[str, Any]) -> str:
+        resolver = getattr(self.generation_service, "_display_topic", None)
+        if callable(resolver):
+            return str(resolver(params))
+        learning_context = params.get("learningContext", {})
+        candidates = [
+            params.get("explicitUserTopic"),
+            learning_context.get("explicitUserTopic") if isinstance(learning_context, dict) else None,
+            params.get("topic"),
+            params.get("keyPoints"),
+            params.get("knowledgePoint"),
+            learning_context.get("activeLearningStepTitle") if isinstance(learning_context, dict) else None,
+            learning_context.get("chapter") if isinstance(learning_context, dict) else None,
+            learning_context.get("course") if isinstance(learning_context, dict) else None,
+            params.get("rewrittenQuery"),
+            params.get("query"),
+        ]
+        for candidate in candidates:
+            value = ResourceGenerationService._normalize_topic_candidate(candidate)
+            if ResourceGenerationService._is_real_topic(value) and not ResourceGenerationService._looks_like_resource_command(value):
+                return value
+        raise RuntimeError("缺少资源生成真实主题：请提供当前学习阶段或明确的资源主题")
+
+    @staticmethod
+    def _is_deep_quality_mode(params: dict[str, Any]) -> bool:
+        reasoning_mode = params.get("reasoningMode")
+        if isinstance(reasoning_mode, str) and reasoning_mode.strip().upper() == "DEEP":
+            return True
+        return (
+            params.get("deepReasoning") is True
+            or params.get("deepQualityMode") is True
+            or str(params.get("generationQualityMode") or "").strip().lower() == "deep"
+        )
 
     @staticmethod
     def _should_read_local_asset_text(asset: Any) -> bool:
@@ -496,7 +533,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> AsyncIterator[SSEEvent]:
-        topic = str(params.get("topic") or params.get("query") or "教学主题")
+        topic = self._resolve_topic(params)
         current_seq = seq
         yield VideoProgressSSEEvent(
             event="video_gen:start",

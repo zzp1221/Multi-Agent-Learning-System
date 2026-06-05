@@ -143,6 +143,71 @@ def test_resource_push_agent_builds_external_plan_for_learning_path_steps(monkey
     assert plan["coverageGaps"] == []
 
 
+def test_resource_push_agent_skips_previous_resources_when_refreshing_path(monkeypatch) -> None:
+    agent = ResourcePushAgent()
+
+    async def fake_search_external_candidates(*, preferred_type, query, profile_context):
+        return [
+            PushResourceCandidate(
+                title="旧资源标题",
+                resource_type=preferred_type,
+                summary_text="已推送过的外部资源",
+                file_name="",
+                mime_type="text/html",
+                score=20,
+                matched_terms=["索引"],
+                download_url="https://example.com/old-resource/",
+            ),
+            PushResourceCandidate(
+                title="旧标题但新链接",
+                resource_type=preferred_type,
+                summary_text="标题重复的外部资源",
+                file_name="",
+                mime_type="text/html",
+                score=19,
+                matched_terms=["索引"],
+                download_url="https://example.com/title-duplicate",
+            ),
+            PushResourceCandidate(
+                title="新的索引资源",
+                resource_type=preferred_type,
+                summary_text="同主题的新外部资源",
+                file_name="",
+                mime_type="text/html",
+                score=18,
+                matched_terms=["索引"],
+                download_url="https://example.com/new-resource",
+            ),
+        ]
+
+    monkeypatch.setattr(agent, "_search_external_candidates", fake_search_external_candidates)
+
+    plan = asyncio.run(
+        agent._build_path_external_resource_plan(
+            learning_path={
+                "steps": [
+                    {
+                        "stepId": "step-1",
+                        "title": "索引优化",
+                        "objective": "掌握索引优化方法",
+                        "targetKnowledgePoints": ["索引"],
+                        "preferredResourceTypes": ["DOCUMENT"],
+                    }
+                ]
+            },
+            params={
+                "previousResourceUrls": ["https://example.com/old-resource"],
+                "previousResourceTitles": ["旧标题但新链接"],
+            },
+            profile_context={"primaryWeakPoint": "索引"},
+        )
+    )
+
+    resources = plan["stepResources"][0]["resources"]
+    assert resources[0]["title"] == "新的索引资源"
+    assert resources[0]["downloadUrl"] == "https://example.com/new-resource"
+
+
 def test_resource_push_agent_normalizes_resource_type_aliases_for_path_external_search() -> None:
     agent = ResourcePushAgent()
 

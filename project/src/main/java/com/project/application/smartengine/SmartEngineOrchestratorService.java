@@ -6,9 +6,12 @@ import com.project.api.smartengine.dto.TaskStatusResponse;
 import com.project.application.audit.AuditService;
 import com.project.application.common.ApplicationException;
 import com.project.application.idempotency.IdempotencyService;
+import com.project.application.learningpath.LearningPathProgressService;
+import com.project.application.learningpath.PersonalizedLearningRefreshService;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.domain.task.SmartEngineTask;
 import com.project.domain.task.ServiceType;
+import com.project.domain.task.TaskStatus;
 import com.project.security.JwtAuthenticatedUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,6 +39,8 @@ public class SmartEngineOrchestratorService {
     private final AuditService auditService;
     private final UserProfileCurrentRepository userProfileCurrentRepository;
     private final PersonalizedLearningContextService personalizedLearningContextService;
+    private final PersonalizedLearningRefreshService personalizedLearningRefreshService;
+    private final LearningPathProgressService learningPathProgressService;
 
     public SmartEngineOrchestratorService(
         TaskStateMachineService taskStateMachineService,
@@ -44,7 +49,9 @@ public class SmartEngineOrchestratorService {
         IdempotencyService idempotencyService,
         AuditService auditService,
         UserProfileCurrentRepository userProfileCurrentRepository,
-        PersonalizedLearningContextService personalizedLearningContextService
+        PersonalizedLearningContextService personalizedLearningContextService,
+        PersonalizedLearningRefreshService personalizedLearningRefreshService,
+        LearningPathProgressService learningPathProgressService
     ) {
         this.taskStateMachineService = taskStateMachineService;
         this.sseEmitterService = sseEmitterService;
@@ -53,6 +60,8 @@ public class SmartEngineOrchestratorService {
         this.auditService = auditService;
         this.userProfileCurrentRepository = userProfileCurrentRepository;
         this.personalizedLearningContextService = personalizedLearningContextService;
+        this.personalizedLearningRefreshService = personalizedLearningRefreshService;
+        this.learningPathProgressService = learningPathProgressService;
     }
 
     public SubmitTaskAcceptance submit(JwtAuthenticatedUser currentUser, SubmitTaskRequest request) {
@@ -216,8 +225,27 @@ public class SmartEngineOrchestratorService {
         TaskEventRecordResult result = taskStateMachineService.recordPythonEvent(taskId, event, seq);
         if (result.created() && result.payload() != null) {
             sseEmitterService.publish(result.payload(), event.resolvedEventType().isTerminal());
+            triggerLearningPathRefreshAfterPracticeDone(taskId, event, result.payload());
         }
         return result;
+    }
+
+    private void triggerLearningPathRefreshAfterPracticeDone(
+        UUID taskId,
+        PythonStreamEvent event,
+        TaskStreamEventPayload payload
+    ) {
+        if (!event.resolvedEventType().isTerminal() || !"done".equalsIgnoreCase(payload.event())) {
+            return;
+        }
+        SmartEngineTask task = taskStateMachineService.getTask(taskId);
+        if (task.getServiceType() != ServiceType.PRACTICE_JUDGE || task.getTaskStatus() != TaskStatus.COMPLETED) {
+            return;
+        }
+        if (learningPathProgressService.handleStageTestResult(task.getUserId(), task.getId())) {
+            return;
+        }
+        personalizedLearningRefreshService.triggerPracticeRefresh(task.getUserId(), "practice_judge_completed");
     }
 
     public void markWorkerFailed(UUID taskId, String errorCode, String message) {

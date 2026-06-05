@@ -12,12 +12,15 @@ import com.project.api.mistake.dto.MistakeStatsResponse;
 import com.project.api.mistake.dto.MistakeUpdateRequest;
 import com.project.api.mistake.dto.SubmitReviewSessionRequest;
 import com.project.application.common.ApplicationException;
+import com.project.application.learningpath.PersonalizedLearningRefreshService;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -88,10 +91,16 @@ public class MistakeBookService {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final PersonalizedLearningRefreshService personalizedLearningRefreshService;
 
-    public MistakeBookService(NamedParameterJdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public MistakeBookService(
+        NamedParameterJdbcTemplate jdbcTemplate,
+        ObjectMapper objectMapper,
+        PersonalizedLearningRefreshService personalizedLearningRefreshService
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.personalizedLearningRefreshService = personalizedLearningRefreshService;
     }
 
     @Transactional(readOnly = true)
@@ -183,6 +192,20 @@ public class MistakeBookService {
             throw new ApplicationException("REVIEW_SESSION_FAILED", "复习会话创建失败", HttpStatus.INTERNAL_SERVER_ERROR);
         }
         return getReviewSession(userId, sessionId);
+    }
+
+    private void triggerLearningPathRefreshAfterCommit(UUID userId, String reason) {
+        Runnable trigger = () -> personalizedLearningRefreshService.triggerPracticeRefresh(userId, reason);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            trigger.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                trigger.run();
+            }
+        });
     }
 
     @Transactional(readOnly = true)
@@ -278,6 +301,7 @@ public class MistakeBookService {
                 .addValue("score", score)
                 .addValue("completedAt", now)
         );
+        triggerLearningPathRefreshAfterCommit(userId, "mistake_review_submitted");
         return getReviewSession(userId, sessionId);
     }
 

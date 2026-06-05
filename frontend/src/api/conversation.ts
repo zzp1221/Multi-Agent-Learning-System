@@ -37,6 +37,17 @@ export interface ConversationMessageStreamRequest {
     resourceResultSummary?: string;
     downloadResourceSummary?: string;
     recommendedAction?: string;
+    activeLearningStepId?: string;
+    activeLearningStepTitle?: string;
+    activeLearningStepProgress?: string;
+    activeLearningStepSummary?: string;
+    explicitUserTopic?: string;
+    questionCount?: string;
+    questionTypePreference?: string;
+    difficultyPreference?: string;
+    requiresSlideOutlineConfirmation?: string;
+    confirmedSlideOutline?: string;
+    confirmedSlideOutlineText?: string;
   };
 }
 
