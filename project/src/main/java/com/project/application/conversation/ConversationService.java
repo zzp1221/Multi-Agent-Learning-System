@@ -771,6 +771,9 @@ public class ConversationService {
         putLearningContext(learningContext, "activeLearningStepProgress", voiceContext.get("activeLearningStepProgress"));
         putLearningContext(learningContext, "activeLearningStepSummary", voiceContext.get("activeLearningStepSummary"));
         putLearningContext(learningContext, "explicitUserTopic", voiceContext.get("explicitUserTopic"));
+        putLearningContext(learningContext, "noteId", voiceContext.get("noteId"));
+        putLearningContext(learningContext, "noteTitle", voiceContext.get("noteTitle"));
+        putLearningContext(learningContext, "noteExcerpt", voiceContext.get("noteExcerpt"));
         putLearningContext(learningContext, "questionCount", voiceContext.get("questionCount"));
         putLearningContext(learningContext, "questionTypePreference", voiceContext.get("questionTypePreference"));
         putLearningContext(learningContext, "difficultyPreference", voiceContext.get("difficultyPreference"));

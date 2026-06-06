@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class LearningPathQueryServiceTest {
@@ -215,6 +216,154 @@ class LearningPathQueryServiceTest {
         );
 
         assertThat(service.getCurrent(userId).activeStep()).isNull();
+    }
+
+    @Test
+    void alignsResourcePlanToLearningPathAndFiltersOldFrontendQuizResources() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000010");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+        when(jdbcTemplate.queryForList(anyString(), any(MapSqlParameterSource.class)))
+            .thenReturn(List.of(Map.of(
+                "title", "Redirecting…",
+                "summary_text", "torch.nn.Linear deep learning neural network layer",
+                "resource_type", "READING",
+                "display_type", "DOCUMENT",
+                "source_url", "https://docs.pytorch.org/docs/stable/generated/torch.nn.Linear.html",
+                "source_name", "PyTorch Documentation",
+                "cs_category", "AI_ML",
+                "tags_text", "[\"pytorch\",\"deep-learning\"]",
+                "quality_score", 0.9
+            )));
+
+        SmartEngineTask personalizedTask = task(userId, ServiceType.PERSONALIZED_LEARNING);
+        personalizedTask.setResponseSummary(Map.of(
+            "learningPath", Map.of(
+                "goal", "深度学习核心理论基础",
+                "steps", List.of(Map.of(
+                    "stepId", "step-1",
+                    "title", "深度学习核心概念学习",
+                    "status", "IN_PROGRESS",
+                    "targetKnowledgePoints", List.of("神经网络", "损失函数", "优化器")
+                ))
+            ),
+            "resourcePushPlan", Map.of(
+                "stepResources", List.of(Map.of(
+                    "stepId", "step-1",
+                    "resources", List.of(
+                        Map.of(
+                            "title", "JavaScript 前端课程",
+                            "resourceType", "DOCUMENT",
+                            "downloadUrl", "https://developer.mozilla.org/zh-CN/docs/Web/JavaScript"
+                        ),
+                        Map.of(
+                            "title", "深度学习练习题",
+                            "resourceType", "QUIZ",
+                            "downloadUrl", "https://example.com/quiz"
+                        )
+                    )
+                ))
+            )
+        ));
+
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(List.of(personalizedTask));
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(List.of());
+
+        LearningPathQueryService service = new LearningPathQueryService(
+            jdbcTemplate,
+            taskRepository,
+            mock(TaskStateMachineService.class),
+            new ObjectMapper()
+        );
+
+        LearningPathCurrentResponse response = service.getCurrent(userId);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> stepResources = (List<Map<String, Object>>) response.resourcePushPlan().get("stepResources");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> resources = (List<Map<String, Object>>) stepResources.getFirst().get("resources");
+
+        assertThat(resources).hasSize(1);
+        assertThat(resources.getFirst()).containsEntry("sourceName", "PyTorch Documentation");
+        assertThat(resources.getFirst()).containsEntry("resourceType", "DOCUMENT");
+        assertThat(resources.getFirst().get("title")).asString().contains("PyTorch");
+        assertThat(response.pushedResources()).hasSize(1);
+        verify(jdbcTemplate).queryForList(
+            org.mockito.ArgumentMatchers.argThat((String sql) ->
+                sql.contains("metadata_json ->> 'csCategory'")
+                    && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
+                    && sql.contains("accessibilityStatus")
+            ),
+            org.mockito.ArgumentMatchers.<MapSqlParameterSource>argThat(params ->
+                "AI_ML".equals(params.getValue("category"))
+            )
+        );
+    }
+
+    @Test
+    void alignsResourcePlanWhenLearningPathUsesStagesInsteadOfSteps() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000011");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+        when(jdbcTemplate.queryForList(anyString(), any(MapSqlParameterSource.class)))
+            .thenReturn(List.of(Map.of(
+                "title", "PyTorch autograd",
+                "summary_text", "deep learning automatic differentiation",
+                "resource_type", "READING",
+                "display_type", "DOCUMENT",
+                "source_url", "https://docs.pytorch.org/docs/stable/autograd.html",
+                "source_name", "PyTorch Documentation",
+                "cs_category", "AI_ML",
+                "tags_text", "[\"pytorch\",\"deep-learning\"]",
+                "quality_score", 0.9
+            )));
+
+        SmartEngineTask personalizedTask = task(userId, ServiceType.PERSONALIZED_LEARNING);
+        personalizedTask.setResponseSummary(Map.of(
+            "learningPath", Map.of(
+                "goal", "deep learning neural network PyTorch",
+                "stages", List.of(Map.of(
+                    "title", "Deep learning foundations",
+                    "description", "neural networks and backpropagation",
+                    "steps", List.of(Map.of(
+                        "title", "PyTorch tensors and autograd",
+                        "description", "automatic differentiation"
+                    ))
+                ))
+            )
+        ));
+
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(List.of(personalizedTask));
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(List.of());
+
+        LearningPathQueryService service = new LearningPathQueryService(
+            jdbcTemplate,
+            taskRepository,
+            mock(TaskStateMachineService.class),
+            new ObjectMapper()
+        );
+
+        LearningPathCurrentResponse response = service.getCurrent(userId);
+
+        assertThat(response.learningPath()).containsKey("steps");
+        assertThat(response.activeStep()).containsEntry("stepId", "step-1");
+        assertThat(response.pushedResources()).hasSize(1);
+        assertThat(response.pushedResources().getFirst()).containsEntry("csCategory", "AI_ML");
     }
 
     private SmartEngineTask task(UUID userId, ServiceType serviceType) {

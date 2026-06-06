@@ -82,7 +82,7 @@ public class ResourceLibraryService {
 
         List<String> conditions = resourceConditions(keyword, type, domain, category, subcategory, difficulty, source, favoriteOnly, params);
         String whereClause = " WHERE " + String.join(" AND ", conditions);
-        String dataSql = resourceSelectSql() + whereClause + "\n" + orderByClause(sort) + "\nLIMIT :limit OFFSET :offset";
+        String dataSql = listResourceSelectSql(sort, whereClause);
         String countSql = """
             SELECT COUNT(*)
             FROM app.learning_resource lr
@@ -211,6 +211,8 @@ public class ResourceLibraryService {
               WHERE lr.status = 'ACTIVE'
                 AND COALESCE(urs.completed, false) = false
                 AND
+              """ + visibleResourceCondition() + """
+                AND
               """ + readableResourceCondition() + """
             )
             SELECT *
@@ -247,7 +249,9 @@ public class ResourceLibraryService {
             FROM app.learning_resource lr
             LEFT JOIN app.user_resource_state urs ON urs.resource_id = lr.id AND urs.user_id = :userId
             WHERE lr.status = 'ACTIVE'
-              AND 
+              AND
+              """ + visibleResourceCondition() + """
+              AND
             """ + readableResourceCondition(),
             params
         );
@@ -275,7 +279,9 @@ public class ResourceLibraryService {
               CASE WHEN jsonb_typeof(lr.tags) = 'array' THEN lr.tags ELSE '[]'::jsonb END
             ) AS tag
             WHERE lr.status = 'ACTIVE'
-              AND 
+              AND
+              """ + visibleResourceCondition() + """
+              AND
             """ + readableResourceCondition() + """
             GROUP BY tag
             ORDER BY count DESC, tag ASC
@@ -325,7 +331,9 @@ public class ResourceLibraryService {
             resourceSelectSql() + """
             WHERE lr.id = :resourceId
               AND lr.status = 'ACTIVE'
-              AND 
+              AND
+            """ + visibleResourceCondition() + """
+              AND
             """ + readableResourceCondition(),
             baseParams(userId).addValue("resourceId", resourceId),
             resourceRowMapper()
@@ -341,7 +349,9 @@ public class ResourceLibraryService {
               FROM app.learning_resource lr
               WHERE lr.id = :resourceId
                 AND lr.status = 'ACTIVE'
-                AND 
+                AND
+            """ + visibleResourceCondition() + """
+                AND
             """ + readableResourceCondition() + """
             )
             """,
@@ -367,6 +377,7 @@ public class ResourceLibraryService {
         List<String> conditions = new ArrayList<>();
         conditions.add("lr.status = 'ACTIVE'");
         conditions.add(readableResourceCondition());
+        conditions.add(visibleResourceCondition());
         if (keyword != null && !keyword.isBlank()) {
             conditions.add("(lr.title ILIKE :keyword OR COALESCE(lr.summary_text, '') ILIKE :keyword OR lr.tags::text ILIKE :keyword)");
             params.addValue("keyword", "%" + keyword.trim() + "%");
@@ -444,6 +455,46 @@ public class ResourceLibraryService {
             """;
     }
 
+    private String listResourceSelectSql(String sort, String whereClause) {
+        String normalized = sort == null ? "" : sort.trim().toLowerCase(Locale.ROOT);
+        if (!normalized.isBlank()
+            && !normalized.equals("comprehensive")
+            && !normalized.equals("recommended")
+            && !normalized.equals("recommendation")) {
+            return resourceSelectSql() + whereClause + "\n" + orderByClause(sort) + "\nLIMIT :limit OFFSET :offset";
+        }
+        String scoreSql = recommendationScoreSql();
+        return recommendationContextCtesSql() + """
+            , scored_resources AS (
+            """ + resourceSelectSql("""
+              , """ + scoreSql + """
+               AS recommendation_score
+              , ROW_NUMBER() OVER (
+                  PARTITION BY upper(COALESCE(NULLIF(lr.metadata_json ->> 'csCategory', ''), 'GENERAL_CS'))
+                  ORDER BY
+                    """ + scoreSql + """
+                     DESC,
+                    lr.updated_at DESC
+                ) AS category_rank
+            """) + whereClause + """
+            )
+            SELECT *
+            FROM scored_resources
+            ORDER BY
+              CASE
+                WHEN EXISTS (
+                  SELECT 1
+                  FROM context_signals cs
+                  WHERE cs.preferred_category IS NULL
+                ) THEN category_rank
+                ELSE 1
+              END ASC,
+              recommendation_score DESC,
+              updated_at DESC
+            LIMIT :limit OFFSET :offset
+            """;
+    }
+
     private String orderByClause(String sort) {
         String normalized = sort == null ? "" : sort.trim().toLowerCase(Locale.ROOT);
         return switch (normalized) {
@@ -457,6 +508,27 @@ public class ResourceLibraryService {
 
     private String numericMetadataSql(String key, String fallback) {
         return "COALESCE(CASE WHEN lr.metadata_json ->> '" + key + "' ~ '^-?[0-9]+([.][0-9]+)?$' THEN (lr.metadata_json ->> '" + key + "')::numeric END, " + fallback + ")";
+    }
+
+    private String visibleResourceCondition() {
+        return """
+            (
+              (
+                COALESCE(NULLIF(upper(lr.metadata_json ->> 'displayType'), ''), lr.resource_type::text) = 'NOTE'
+                AND lr.access_scope::text = 'USER'
+                AND lr.owner_user_id = :userId
+                AND COALESCE(lr.metadata_json ->> 'noteId', '') <> ''
+              )
+              OR (
+                lr.access_scope::text = 'GLOBAL'
+                AND COALESCE(NULLIF(upper(lr.metadata_json ->> 'displayType'), ''), lr.resource_type::text) <> 'NOTE'
+                AND lr.resource_type::text NOT IN ('QUIZ', 'PRACTICE')
+                AND COALESCE(NULLIF(upper(lr.metadata_json ->> 'displayType'), ''), lr.resource_type::text) NOT IN ('QUIZ', 'PRACTICE')
+                AND COALESCE(lr.metadata_json ->> 'sourceUrl', '') ~* '^https?://'
+                AND COALESCE(lr.metadata_json ->> 'accessibilityStatus', '') = 'ACCESSIBLE'
+              )
+            )
+            """;
     }
 
     private String recommendationScoreSql() {
@@ -815,8 +887,8 @@ public class ResourceLibraryService {
         return switch (normalized) {
             case "COURSE" -> new ResourceTypeFilter(List.of("READING", "SLIDES", "PPT", "DOCUMENT"), List.of("COURSE"));
             case "CASE", "PRACTICAL_CASE", "CODE_CASE" -> new ResourceTypeFilter(List.of("CODE", "PRACTICE"), List.of("CASE"));
-            case "NOTE", "NOTES" -> new ResourceTypeFilter(List.of("MINDMAP"), List.of("NOTE"));
-            case "EXERCISE", "QUESTION", "QUESTIONS" -> new ResourceTypeFilter(List.of("QUIZ", "PRACTICE"), List.of("QUIZ"));
+            case "NOTE", "NOTES" -> new ResourceTypeFilter(List.of("__NO_RESOURCE_TYPE__"), List.of("NOTE"));
+            case "EXERCISE", "QUESTION", "QUESTIONS", "QUIZ", "PRACTICE" -> new ResourceTypeFilter(List.of("__NO_RESOURCE_TYPE__"), List.of("__NO_DISPLAY_TYPE__"));
             default -> new ResourceTypeFilter(List.of(normalized), List.of(normalized));
         };
     }

@@ -138,7 +138,6 @@ def test_resource_push_agent_builds_external_plan_for_learning_path_steps(monkey
     assert [item["resourceType"] for item in step_plan["resources"]] == [
         "DOCUMENT",
         "VIDEO",
-        "QUIZ",
         "PRACTICAL_CASE",
     ]
     assert {item["source"] for item in step_plan["resources"]} == {"tavily"}
@@ -276,8 +275,9 @@ def test_resource_push_agent_normalizes_resource_type_aliases_for_path_external_
         "DOCUMENT",
         "PRACTICAL_CASE",
         "VIDEO",
-        "QUIZ",
     ]
+
+    assert "QUIZ" not in agent._path_recommendation_types(["DOCUMENT", "QUIZ", "QUESTION_BANK"])
 
 
 def test_resource_push_agent_prefers_profile_analysis_context() -> None:

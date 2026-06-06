@@ -8,6 +8,7 @@ const PersonalizedLearningPathPage = lazy(() => import('./pages/PersonalizedLear
 const ResourceLibraryPage = lazy(() => import('./pages/ResourceLibraryPage'));
 const MultiAgentResourceGenerationPage = lazy(() => import('./pages/MultiAgentResourceGenerationPage'));
 const MistakeBookPage = lazy(() => import('./pages/MistakeBookPage'));
+const NotebookPage = lazy(() => import('./pages/NotebookPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 
 function PageLoader() {
@@ -30,6 +31,7 @@ function App() {
               <Route path="resources" element={<ResourceLibraryPage />} />
               <Route path="resources/generation" element={<MultiAgentResourceGenerationPage />} />
               <Route path="mistakes" element={<MistakeBookPage />} />
+              <Route path="notes" element={<NotebookPage />} />
               <Route path="profile" element={<ProfilePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

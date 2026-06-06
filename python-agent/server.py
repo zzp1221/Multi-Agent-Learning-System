@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
+import re
 import secrets
 import tempfile
 from contextlib import asynccontextmanager, suppress
@@ -104,6 +106,79 @@ class ResourceSemanticSearchResponse(BaseModel):
     available: bool
     message: str
     results: list[ResourceSemanticResult] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NoteTodo(BaseModel):
+    title: str
+    priority: str = "MEDIUM"
+    completed: bool = False
+
+
+class NoteAnalysisRequest(BaseModel):
+    title: str = ""
+    markdown_content: str = Field(default="", alias="markdownContent")
+    plain_text: str = Field(default="", alias="plainText")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NoteAnalysisResponse(BaseModel):
+    summary: str
+    keywords: list[str] = Field(default_factory=list)
+    todos: list[NoteTodo] = Field(default_factory=list)
+    provider: str = "heuristic"
+    model: str = "local-note-analyzer"
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NoteIndexRequest(BaseModel):
+    user_id: str = Field(alias="userId")
+    note_id: str = Field(alias="noteId")
+    resource_id: str = Field(alias="resourceId")
+    title: str
+    markdown_content: str = Field(default="", alias="markdownContent")
+    plain_text: str = Field(default="", alias="plainText")
+    content_hash: str = Field(alias="contentHash")
+    tags: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NoteIndexResponse(BaseModel):
+    indexed: bool
+    chunk_count: int = Field(alias="chunkCount")
+    message: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NoteSemanticHit(BaseModel):
+    chunk_id: int = Field(alias="chunkId")
+    chunk_no: int = Field(alias="chunkNo")
+    similarity: float
+    content: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NoteSemanticResult(BaseModel):
+    note_id: str = Field(alias="noteId")
+    resource_id: str = Field(alias="resourceId")
+    score: float
+    reason: str
+    hits: list[NoteSemanticHit] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class NoteSemanticSearchResponse(BaseModel):
+    query: str
+    available: bool
+    message: str
+    results: list[NoteSemanticResult] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -227,6 +302,281 @@ def _build_resource_semantic_response(query: str, rows: list[dict]) -> ResourceS
         query=query,
         available=True,
         message="ok" if results else "没有匹配到可用资源",
+        results=results,
+    )
+
+
+def _note_plain_text(request: NoteAnalysisRequest | NoteIndexRequest) -> str:
+    text = (request.plain_text or "").strip()
+    if text:
+        return text
+    markdown = (request.markdown_content or "").strip()
+    no_code = re.sub(r"```[\s\S]*?```", " ", markdown)
+    no_links = re.sub(r"!\[[^\]]*]\([^)]+\)", " ", no_code)
+    no_links = re.sub(r"\[([^\]]+)]\([^)]+\)", r"\1", no_links)
+    return re.sub(r"\s+", " ", re.sub(r"[#*_>`~\-\[\]()]", " ", no_links)).strip()
+
+
+def _split_note_chunks(title: str, plain_text: str, max_chars: int = 900) -> list[str]:
+    normalized = re.sub(r"\s+", " ", plain_text).strip()
+    if not normalized:
+        normalized = title.strip()
+    sentences = re.split(r"(?<=[。！？!?；;])\s*", normalized)
+    chunks: list[str] = []
+    current = ""
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if len(current) + len(sentence) + 1 > max_chars and current:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip()
+    if current:
+        chunks.append(current)
+    if not chunks and normalized:
+        chunks.append(normalized[:max_chars])
+    return chunks[:80]
+
+
+def _heuristic_note_analysis(request: NoteAnalysisRequest) -> NoteAnalysisResponse:
+    title = request.title.strip() or "未命名笔记"
+    plain_text = _note_plain_text(request)
+    sentences = [item.strip() for item in re.split(r"[。！？!?\n\r]+", plain_text) if item.strip()]
+    summary_source = "。".join(sentences[:3]) if sentences else plain_text[:180]
+    summary = summary_source[:360] if summary_source else f"{title} 的笔记内容较少，建议继续补充核心概念、例子和疑问。"
+    keywords = _extract_note_keywords(title, plain_text)
+    todos = _extract_note_todos(plain_text)
+    if not todos:
+        todos = [
+            NoteTodo(title=f"复习《{title}》的核心概念", priority="MEDIUM", completed=False),
+            NoteTodo(title="补充一个例题或反例，检查理解是否稳固", priority="LOW", completed=False),
+        ]
+    return NoteAnalysisResponse(summary=summary, keywords=keywords, todos=todos)
+
+
+def _extract_note_keywords(title: str, plain_text: str) -> list[str]:
+    candidates: list[str] = []
+    for source in (title, plain_text):
+        for token in re.findall(r"[\u4e00-\u9fa5A-Za-z0-9_+\-#]{2,24}", source):
+            cleaned = token.strip("，。！？；：、,.!?;:")
+            if len(cleaned) >= 2:
+                candidates.append(cleaned)
+    stop_words = {"这是", "一个", "可以", "需要", "如果", "以及", "或者", "因为", "所以", "进行", "通过", "理解"}
+    seen: set[str] = set()
+    ranked: list[str] = []
+    for item in candidates:
+        if item in stop_words or item.lower() in seen:
+            continue
+        seen.add(item.lower())
+        ranked.append(item)
+        if len(ranked) >= 8:
+            break
+    return ranked
+
+
+def _extract_note_todos(plain_text: str) -> list[NoteTodo]:
+    todos: list[NoteTodo] = []
+    for line in plain_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if any(marker in stripped for marker in ("TODO", "待办", "复习", "练习", "实现", "完成")):
+            todos.append(NoteTodo(title=stripped[:120], priority="MEDIUM", completed=False))
+        if len(todos) >= 6:
+            break
+    return todos
+
+
+async def _llm_note_analysis(request: NoteAnalysisRequest) -> NoteAnalysisResponse:
+    generator = OpenAICompatibleStructuredGenerator()
+    content = _note_plain_text(request)
+    prompt = (
+        "请分析下面的学习笔记，输出严格 JSON："
+        '{"summary":"120字以内摘要","keywords":["知识点"],'
+        '"todos":[{"title":"待办","priority":"HIGH|MEDIUM|LOW","completed":false}]}。\n'
+        f"标题：{request.title}\n"
+        f"正文：{content[:8000]}"
+    )
+    payload = await generator._call_and_parse_json_async(
+        span_name="note.analyze",
+        system_prompt="你是学习笔记分析助手，只输出 JSON，不编造正文中没有的结论。",
+        user_prompt=prompt,
+        max_tokens=1200,
+        schema_hint='{"summary":"...","keywords":["..."],"todos":[{"title":"...","priority":"MEDIUM","completed":false}]}',
+    )
+    todos: list[NoteTodo] = []
+    for item in payload.get("todos", []):
+        if isinstance(item, dict):
+            todos.append(
+                NoteTodo(
+                    title=str(item.get("title") or "").strip()[:120],
+                    priority=str(item.get("priority") or "MEDIUM").strip().upper() or "MEDIUM",
+                    completed=bool(item.get("completed") is True),
+                )
+            )
+    keywords = [
+        str(item).strip()[:32]
+        for item in payload.get("keywords", [])
+        if str(item).strip()
+    ][:8]
+    return NoteAnalysisResponse(
+        summary=str(payload.get("summary") or "").strip()[:500],
+        keywords=keywords,
+        todos=[todo for todo in todos if todo.title][:8],
+        provider=generator.provider_name,
+        model=generator.model_name,
+    )
+
+
+def _index_note_chunks(request: NoteIndexRequest) -> NoteIndexResponse:
+    plain_text = _note_plain_text(request)
+    chunks = _split_note_chunks(request.title, plain_text)
+    if not chunks:
+        return NoteIndexResponse(indexed=False, chunkCount=0, message="笔记内容为空，未生成索引")
+    db_config = SETTINGS.postgres_connect_kwargs()
+    with psycopg2.connect(**db_config) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO rag.resource_document (
+                  resource_id, title, domain, resource_type, difficulty_level, source_kind,
+                  source_ref, summary_text, transcript_text, access_scope, owner_user_id,
+                  metadata_json
+                )
+                VALUES (
+                  %s::uuid, %s, %s, 'READING'::app.resource_type, 'MIXED'::app.difficulty_level,
+                  'MANUAL'::app.source_kind, %s, %s, %s, 'USER'::app.access_scope,
+                  %s::uuid, %s::jsonb
+                )
+                ON CONFLICT (resource_id) DO UPDATE SET
+                  title = EXCLUDED.title,
+                  summary_text = EXCLUDED.summary_text,
+                  transcript_text = EXCLUDED.transcript_text,
+                  metadata_json = EXCLUDED.metadata_json,
+                  updated_at = now()
+                RETURNING id
+                """,
+                (
+                    request.resource_id,
+                    request.title,
+                    SETTINGS.retrieval_domain,
+                    f"note:{request.note_id}",
+                    plain_text[:500],
+                    plain_text,
+                    request.user_id,
+                    json.dumps(
+                        {
+                            "noteId": request.note_id,
+                            "contentHash": request.content_hash,
+                            "tags": request.tags,
+                            "displayType": "NOTE",
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            document_id = cur.fetchone()[0]
+            cur.execute("DELETE FROM rag.resource_chunk WHERE resource_id = %s::uuid", (request.resource_id,))
+            for index, content in enumerate(chunks, 1):
+                embedding = _embed_resource_query(content)
+                cur.execute(
+                    """
+                    INSERT INTO rag.resource_chunk (
+                      document_id, resource_id, chunk_no, content, embedding, token_count,
+                      domain, resource_type, difficulty_level, access_scope, owner_user_id,
+                      quality_score, metadata_json
+                    )
+                    VALUES (
+                      %s::uuid, %s::uuid, %s, %s, %s::vector, %s,
+                      %s, 'READING'::app.resource_type, 'MIXED'::app.difficulty_level,
+                      'USER'::app.access_scope, %s::uuid, 0.72, %s::jsonb
+                    )
+                    """,
+                    (
+                        document_id,
+                        request.resource_id,
+                        index,
+                        content,
+                        _embedding_vec_str(embedding),
+                        max(1, len(content) // 2),
+                        SETTINGS.retrieval_domain,
+                        request.user_id,
+                        json.dumps(
+                            {
+                                "noteId": request.note_id,
+                                "contentHash": request.content_hash,
+                                "chunkKind": "note",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ),
+                )
+        conn.commit()
+    return NoteIndexResponse(indexed=True, chunkCount=len(chunks), message="ok")
+
+
+def _search_note_chunks(query: str, top_k: int, user_id: str) -> list[dict]:
+    embedding = _embed_resource_query(query)
+    vec_str = _embedding_vec_str(embedding)
+    db_config = SETTINGS.postgres_connect_kwargs()
+    with psycopg2.connect(**db_config) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT
+                  rc.id AS chunk_id,
+                  rc.resource_id::text AS resource_id,
+                  rc.chunk_no,
+                  rc.content,
+                  ROUND((1 - (rc.embedding <=> %s::vector))::numeric, 4) AS similarity,
+                  rc.metadata_json ->> 'noteId' AS note_id
+                FROM rag.resource_chunk rc
+                JOIN app.note n ON n.rag_resource_id = rc.resource_id
+                WHERE n.user_id = %s::uuid
+                  AND n.status = 'ACTIVE'
+                  AND rc.access_scope::text = 'USER'
+                  AND rc.owner_user_id = %s::uuid
+                ORDER BY rc.embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (vec_str, user_id, user_id, vec_str, top_k),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def _build_note_semantic_response(query: str, rows: list[dict]) -> NoteSemanticSearchResponse:
+    grouped: dict[str, NoteSemanticResult] = {}
+    for row in rows:
+        note_id = str(row.get("note_id") or "")
+        resource_id = str(row.get("resource_id") or "")
+        if not note_id or not resource_id:
+            continue
+        similarity = float(row.get("similarity") or 0)
+        hit = NoteSemanticHit(
+            chunkId=int(row.get("chunk_id") or 0),
+            chunkNo=int(row.get("chunk_no") or 0),
+            similarity=similarity,
+            content=str(row.get("content") or "")[:800],
+        )
+        result = grouped.get(note_id)
+        if result is None:
+            grouped[note_id] = NoteSemanticResult(
+                noteId=note_id,
+                resourceId=resource_id,
+                score=similarity,
+                reason="笔记向量语义匹配",
+                hits=[hit],
+            )
+        else:
+            result.hits.append(hit)
+            result.score = max(result.score, similarity)
+    results = sorted(grouped.values(), key=lambda item: item.score, reverse=True)
+    return NoteSemanticSearchResponse(
+        query=query,
+        available=True,
+        message="ok" if results else "没有匹配到可用笔记",
         results=results,
     )
 
@@ -544,6 +894,68 @@ async def search_resources_semantic(
             query=normalized_query,
             available=False,
             message=f"semantic search unavailable: {exc}",
+            results=[],
+        )
+    return JSONResponse(response.model_dump(by_alias=True, mode="json"))
+
+
+@app.post("/internal/notes/analyze")
+async def analyze_note(
+    request: NoteAnalysisRequest,
+    _: None = Depends(verify_internal_token),
+) -> JSONResponse:
+    """Analyze a user note and return summary, keywords and review todos."""
+
+    try:
+        response = await _llm_note_analysis(request)
+        if not response.summary.strip():
+            response = _heuristic_note_analysis(request)
+    except Exception as exc:
+        LOGGER.warning("Note LLM analysis unavailable, using heuristic fallback: %s", exc)
+        response = _heuristic_note_analysis(request)
+    return JSONResponse(response.model_dump(by_alias=True, mode="json"))
+
+
+@app.post("/internal/notes/index")
+async def index_note(
+    request: NoteIndexRequest,
+    _: None = Depends(verify_internal_token),
+) -> JSONResponse:
+    """Index a user note into the pgvector-backed resource RAG tables."""
+
+    try:
+        response = _index_note_chunks(request)
+    except Exception as exc:
+        LOGGER.warning("Note RAG indexing unavailable note_id=%s: %s", request.note_id, exc)
+        response = NoteIndexResponse(
+            indexed=False,
+            chunkCount=0,
+            message=f"note indexing unavailable: {exc}",
+        )
+    return JSONResponse(response.model_dump(by_alias=True, mode="json"))
+
+
+@app.get("/internal/notes/search/semantic")
+async def search_notes_semantic(
+    _: None = Depends(verify_internal_token),
+    query: str = Query(min_length=1),
+    top_k: int = Query(default=8, alias="topK", ge=1, le=20),
+    user_id: str = Query(alias="userId"),
+) -> JSONResponse:
+    """Semantic search over the current user's indexed notes."""
+
+    normalized_query = query.strip()
+    if not normalized_query:
+        raise HTTPException(status_code=400, detail="query must not be blank")
+    try:
+        rows = _search_note_chunks(normalized_query, top_k=top_k, user_id=user_id)
+        response = _build_note_semantic_response(normalized_query, rows)
+    except Exception as exc:
+        LOGGER.warning("Note semantic search unavailable for query=%r: %s", normalized_query, exc)
+        response = NoteSemanticSearchResponse(
+            query=normalized_query,
+            available=False,
+            message=f"note semantic search unavailable: {exc}",
             results=[],
         )
     return JSONResponse(response.model_dump(by_alias=True, mode="json"))

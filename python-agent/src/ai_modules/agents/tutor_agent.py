@@ -848,6 +848,16 @@ class TutorAgent(PlaceholderAgent):
             parts.append(f"对话主题：{', '.join(topic_focus) if isinstance(topic_focus, list) else topic_focus}")
         if learner_goal:
             parts.append(f"学习目标：{learner_goal}")
+        learning_context = params.get("learningContext")
+        if isinstance(learning_context, dict):
+            note_title = str(learning_context.get("noteTitle") or "").strip()
+            note_excerpt = str(learning_context.get("noteExcerpt") or "").strip()
+            if note_title or note_excerpt:
+                parts.append("当前问题来自 AI 笔记本，请优先基于当前笔记上下文回答。")
+            if note_title:
+                parts.append(f"当前笔记标题：{note_title}")
+            if note_excerpt:
+                parts.append(f"当前笔记摘录：{note_excerpt[:4000]}")
         if known_gaps:
             parts.append(f"已知薄弱点：{', '.join(known_gaps)}")
         if unresolved:

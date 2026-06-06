@@ -90,6 +90,15 @@ public record VoiceContextRequest(
     @Size(max = 160, message = "用户指定主题不能超过 160 字")
     String explicitUserTopic,
 
+    @Size(max = 80, message = "笔记 ID 不能超过 80 字")
+    String noteId,
+
+    @Size(max = 160, message = "笔记标题不能超过 160 字")
+    String noteTitle,
+
+    @Size(max = 4000, message = "笔记上下文不能超过 4000 字")
+    String noteExcerpt,
+
     @Size(max = 20, message = "题量不能超过 20 字")
     String questionCount,
 
@@ -138,6 +147,9 @@ public record VoiceContextRequest(
         putIfPresent(context, "activeLearningStepProgress", activeLearningStepProgress);
         putIfPresent(context, "activeLearningStepSummary", activeLearningStepSummary);
         putIfPresent(context, "explicitUserTopic", explicitUserTopic);
+        putIfPresent(context, "noteId", noteId);
+        putIfPresent(context, "noteTitle", noteTitle);
+        putIfPresent(context, "noteExcerpt", noteExcerpt);
         putIfPresent(context, "questionCount", questionCount);
         putIfPresent(context, "questionTypePreference", questionTypePreference);
         putIfPresent(context, "difficultyPreference", difficultyPreference);

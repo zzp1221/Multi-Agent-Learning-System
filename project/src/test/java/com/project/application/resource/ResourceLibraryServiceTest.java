@@ -62,6 +62,9 @@ class ResourceLibraryServiceTest {
                     && sql.contains(":displayTypes")
                     && sql.contains("metadata_json ->> 'csCategory'")
                     && sql.contains("metadata_json ->> 'csSubcategory'")
+                    && sql.contains("sourceUrl")
+                    && sql.contains("accessibilityStatus")
+                    && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
@@ -75,6 +78,96 @@ class ResourceLibraryServiceTest {
                     && "WEB".equals(source.getValue("source"))
                     && Integer.valueOf(15).equals(source.getValue("limit"))
                     && Integer.valueOf(30).equals(source.getValue("offset"))
+            ),
+            any(RowMapper.class)
+        );
+    }
+
+    @Test
+    void listResourcesUsesLearningContextForDefaultComprehensiveSort() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000011");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
+            .thenReturn(0L);
+
+        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        service.listResources(userId, null, null, null, null, null, null, null, false, "comprehensive", 0, 12);
+
+        verify(jdbcTemplate).query(
+            org.mockito.ArgumentMatchers.argThat((String sql) ->
+                sql.contains("WITH latest_plan AS")
+                    && sql.contains("context_signals AS")
+                    && sql.contains("recommendation_score")
+                    && sql.contains("category_rank")
+                    && sql.contains("sourceUrl")
+                    && sql.contains("accessibilityStatus")
+                    && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
+            ),
+            org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
+                params instanceof MapSqlParameterSource source
+                    && Integer.valueOf(12).equals(source.getValue("limit"))
+                    && Integer.valueOf(0).equals(source.getValue("offset"))
+            ),
+            any(RowMapper.class)
+        );
+    }
+
+    @Test
+    void listResourcesRejectsQuizTypeForResourceLibrary() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000010");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
+            .thenReturn(0L);
+
+        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        service.listResources(userId, null, "QUIZ", null, null, null, null, null, false, "quality", 0, 12);
+
+        verify(jdbcTemplate).query(
+            org.mockito.ArgumentMatchers.argThat((String sql) ->
+                sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
+                    && sql.contains("IN (:displayTypes)")
+                    && sql.contains("IN (:resourceTypes)")
+            ),
+            org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
+                params instanceof MapSqlParameterSource source
+                    && source.getValue("resourceTypes").equals(List.of("__NO_RESOURCE_TYPE__"))
+                    && source.getValue("displayTypes").equals(List.of("__NO_DISPLAY_TYPE__"))
+            ),
+            any(RowMapper.class)
+        );
+    }
+
+    @Test
+    void listResourcesNoteTypeOnlyReturnsUserNotes() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000012");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
+            .thenReturn(0L);
+
+        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        service.listResources(userId, null, "NOTE", null, null, null, null, null, false, "latest", 0, 12);
+
+        verify(jdbcTemplate).query(
+            org.mockito.ArgumentMatchers.argThat((String sql) ->
+                sql.contains("COALESCE(NULLIF(upper(lr.metadata_json ->> 'displayType'), ''), lr.resource_type::text) IN (:displayTypes)")
+                    && sql.contains("lr.resource_type::text IN (:resourceTypes)")
+                    && sql.contains("lr.access_scope::text = 'USER'")
+                    && sql.contains("lr.owner_user_id = :userId")
+                    && sql.contains("metadata_json ->> 'noteId'")
+            ),
+            org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
+                params instanceof MapSqlParameterSource source
+                    && source.getValue("resourceTypes").equals(List.of("__NO_RESOURCE_TYPE__"))
+                    && source.getValue("displayTypes").equals(List.of("NOTE"))
             ),
             any(RowMapper.class)
         );

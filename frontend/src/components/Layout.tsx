@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpenCheck, Clock3, Compass, History, Layers3, LayoutGrid, LoaderCircle, Menu, MessageCirclePlus, Search, Sparkles, UserRoundSearch } from 'lucide-react';
+import { BookOpenCheck, Clock3, Compass, History, Layers3, LayoutGrid, LoaderCircle, Menu, MessageCirclePlus, NotebookPen, Search, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import FloatingVoiceAssistant from './FloatingVoiceAssistant';
 import FloatingPracticeAssistant from './FloatingPracticeAssistant';
@@ -88,6 +88,7 @@ export default function Layout() {
   const inEngine = location.pathname.startsWith('/engine');
   const inResources = location.pathname.startsWith('/resources');
   const inMistakes = location.pathname.startsWith('/mistakes');
+  const inNotes = location.pathname.startsWith('/notes');
   const inProfile = location.pathname.startsWith('/profile');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -300,6 +301,16 @@ export default function Layout() {
     navigate('/mistakes');
   }, [isAuthenticated, navigate]);
 
+  const handleOpenNotebook = useCallback(() => {
+    setMoreMenuOpen(false);
+    closeSidebar();
+    if (!isAuthenticated) {
+      openAuthModal('login', '登录后使用 AI 笔记本');
+      return;
+    }
+    navigate('/notes');
+  }, [isAuthenticated, navigate]);
+
   function openAuthModal(tab: AuthTab = 'login', hint = '请先登录') {
     setDefaultTab(tab);
     setAuthHint(hint);
@@ -435,7 +446,7 @@ export default function Layout() {
           <button
             type="button"
             onClick={() => setMoreMenuOpen((prev) => !prev)}
-            className={`app-sidebar-nav-item ${moreMenuOpen || inEngine || inResources || inMistakes || inProfile ? 'is-active' : ''}`}
+            className={`app-sidebar-nav-item ${moreMenuOpen || inEngine || inResources || inMistakes || inNotes || inProfile ? 'is-active' : ''}`}
           >
             <LayoutGrid className="h-4 w-4" />
             更多功能
@@ -488,6 +499,14 @@ export default function Layout() {
                 >
                   <BookOpenCheck className="h-4 w-4" />
                   错题本
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenNotebook}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
+                >
+                  <NotebookPen className="h-4 w-4" />
+                  AI 笔记本
                 </button>
               </motion.div>
             ) : null}
@@ -636,10 +655,10 @@ export default function Layout() {
             </button>
             <div className="app-breadcrumb min-w-0">
               <Compass className="h-4 w-4 text-primary-500" />
-              <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源库' : inEngine ? '个性化学习路径' : '新对话'}</span>
+              <span className="hidden sm:inline">{inProfile ? '个人画像' : inNotes ? 'AI 笔记本' : inMistakes ? '错题本' : inResources ? '资源库' : inEngine ? '个性化学习路径' : '新对话'}</span>
               <span className="hidden text-slate-300 sm:inline">/</span>
-              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏、进度与 RAG 检索' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
-              <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : '智能对话'}</span>
+              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inNotes ? '知识笔记、版本历史与 RAG 问答' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏、进度与 RAG 检索' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
+              <span className="sm:hidden">{inProfile ? '个人画像' : inNotes ? 'AI 笔记' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : '智能对话'}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
@@ -658,9 +677,9 @@ export default function Layout() {
         </header>
 
         {/* Page Content */}
-        <div className={inEngine || inResources || inMistakes || inProfile ? 'px-3 py-4 sm:px-4 md:px-8 md:py-6' : ''}>
+        <div className={inEngine || inResources || inMistakes || inNotes || inProfile ? 'px-3 py-4 sm:px-4 md:px-8 md:py-6' : ''}>
           <motion.div
-            key={inProfile ? 'profile-shell' : inMistakes ? 'mistake-shell' : inResources ? 'resource-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
+            key={inProfile ? 'profile-shell' : inNotes ? 'notes-shell' : inMistakes ? 'mistake-shell' : inResources ? 'resource-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}

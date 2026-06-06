@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   BarChart3,
   BookOpen,
@@ -7,7 +7,6 @@ import {
   BookmarkCheck,
   Boxes,
   CheckCircle2,
-  ClipboardList,
   ExternalLink,
   FileText,
   Filter,
@@ -43,7 +42,6 @@ const TYPE_TABS: Array<{ value: 'ALL' | ResourceDisplayType; label: string; icon
   { value: 'VIDEO', label: '视频', icon: PlayCircle },
   { value: 'CASE', label: '案例', icon: Boxes },
   { value: 'NOTE', label: '笔记', icon: BookOpen },
-  { value: 'QUIZ', label: '习题', icon: ClipboardList },
 ];
 
 const DIFFICULTIES = [
@@ -89,11 +87,11 @@ const TYPE_STYLE: Record<string, { label: string; className: string; icon: Compo
   VIDEO: { label: '视频', icon: PlayCircle, className: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20' },
   CASE: { label: '案例', icon: Boxes, className: 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20' },
   NOTE: { label: '笔记', icon: BookOpen, className: 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20' },
-  QUIZ: { label: '习题', icon: ClipboardList, className: 'bg-violet-50 text-violet-700 ring-violet-100 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20' },
 };
 
 export default function ResourceLibraryPage() {
   const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
+  const navigate = useNavigate();
   const [keyword, setKeyword] = useState('');
   const [submittedKeyword, setSubmittedKeyword] = useState('');
   const [semanticQuery, setSemanticQuery] = useState('');
@@ -196,6 +194,11 @@ export default function ResourceLibraryPage() {
   };
 
   const handleOpenDetail = async (resource: ResourceItem) => {
+    const noteId = readMetadataString(resource.metadata, 'noteId');
+    if (resource.displayType === 'NOTE' && noteId) {
+      navigate(`/notes?noteId=${encodeURIComponent(noteId)}`);
+      return;
+    }
     setDetailLoading(true);
     setDetail({ resource, ragReady: false, chunkCount: 0, previewChunks: [] });
     try {
@@ -274,7 +277,11 @@ export default function ResourceLibraryPage() {
       });
       void loadSidebars();
       if (resource.sourceUrl) {
-        window.open(resource.sourceUrl, '_blank', 'noopener,noreferrer');
+        if (resource.sourceUrl.startsWith('/')) {
+          navigate(resource.sourceUrl);
+        } else {
+          window.open(resource.sourceUrl, '_blank', 'noopener,noreferrer');
+        }
       } else {
         await handleOpenDetail(resource);
       }
@@ -347,7 +354,7 @@ export default function ResourceLibraryPage() {
                       handleSearchSubmit();
                     }
                   }}
-                  placeholder="搜索课程、文档、视频、案例、笔记、习题..."
+                  placeholder="搜索课程、文档、视频、案例或自己的笔记..."
                   className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200"
                 />
               </label>
@@ -934,4 +941,9 @@ function difficultyLabel(value?: string) {
     default:
       return value || '综合';
   }
+}
+
+function readMetadataString(metadata: Record<string, unknown> | undefined, key: string) {
+  const value = metadata?.[key];
+  return typeof value === 'string' ? value.trim() : '';
 }

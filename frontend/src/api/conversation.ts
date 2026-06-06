@@ -42,6 +42,9 @@ export interface ConversationMessageStreamRequest {
     activeLearningStepProgress?: string;
     activeLearningStepSummary?: string;
     explicitUserTopic?: string;
+    noteId?: string;
+    noteTitle?: string;
+    noteExcerpt?: string;
     questionCount?: string;
     questionTypePreference?: string;
     difficultyPreference?: string;

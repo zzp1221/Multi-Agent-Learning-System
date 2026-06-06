@@ -337,7 +337,7 @@ class PathPlanningAgent(PlaceholderAgent):
     def _resolve_preferred_resource_types(self, planning_context: dict[str, Any]) -> list[str]:
         raw_types = planning_context.get("preferredResourceTypes")
         normalized = [str(item).strip().upper() for item in raw_types if str(item).strip()] if isinstance(raw_types, list) else []
-        for required in ("DOCUMENT", "VIDEO", "QUIZ", "CODE"):
+        for required in ("DOCUMENT", "VIDEO", "CODE"):
             if required not in normalized:
                 normalized.append(required)
         return normalized[:4]

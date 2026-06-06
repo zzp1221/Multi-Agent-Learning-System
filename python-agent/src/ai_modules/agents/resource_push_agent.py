@@ -30,7 +30,7 @@ from src.ai_modules.runtime.provenance import build_llm_provenance, validate_llm
 LOGGER = logging.getLogger(__name__)
 
 MIN_TOPIC_RELEVANCE_SCORE = 4
-PATH_RECOMMENDATION_TYPES = ("DOCUMENT", "VIDEO", "QUIZ", "PRACTICAL_CASE")
+PATH_RECOMMENDATION_TYPES = ("DOCUMENT", "VIDEO", "PRACTICAL_CASE")
 MAX_STEP_EXTERNAL_RESOURCE_TYPES = 4
 GENERIC_RESOURCE_TERMS = {
     "资源",
@@ -462,7 +462,7 @@ class ResourcePushAgent(PlaceholderAgent):
         normalized = self._normalize_resource_types(raw_value)
         selected = [
             item for item in normalized
-            if item in {"DOCUMENT", "VIDEO", "QUIZ", "PRACTICAL_CASE", "CODE", "READING"}
+            if item in {"DOCUMENT", "VIDEO", "PRACTICAL_CASE", "CODE", "READING"}
         ]
         if "CODE" in selected and "PRACTICAL_CASE" not in selected:
             selected.append("PRACTICAL_CASE")
