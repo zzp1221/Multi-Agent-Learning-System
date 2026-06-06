@@ -337,6 +337,9 @@ class ResourceLibraryServiceTest {
                 sql.contains("metadata_json ->> 'displayType'")
                     && sql.contains("AS display_type")
                     && sql.contains("GROUP BY display_type")
+                    && sql.contains("sourceUrl")
+                    && sql.contains("accessibilityStatus")
+                    && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
@@ -348,6 +351,9 @@ class ResourceLibraryServiceTest {
                 sql.contains("metadata_json ->> 'csCategory'")
                     && sql.contains("AS metadata_value")
                     && sql.contains("GROUP BY metadata_value")
+                    && sql.contains("sourceUrl")
+                    && sql.contains("accessibilityStatus")
+                    && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source

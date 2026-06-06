@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "description": "Focused math-foundations fill using numbered public course pages that are stable and HTML-readable.",
+  "categoryQuotas": {
+    "MATH_FOUNDATIONS": 520
+  },
+  "defaults": {
+    "domain": "COMPUTER_SCIENCE",
+    "accessScope": "GLOBAL",
+    "sourceKind": "WEB",
+    "resourceType": "READING",
+    "displayType": "COURSE",
+    "difficulty": "MIXED",
+    "qualityScore": 0.85,
+    "popularityScore": 0.72,
+    "copyrightStatus": "PUBLIC_EDUCATIONAL_CONTENT",
+    "csCategory": "MATH_FOUNDATIONS",
+    "csSubcategory": "Math Foundations",
+    "tags": ["math", "computer-science", "external-resource", "math-fill"]
+  },
+  "sources": [
+    {
+      "id": "psu-stat414-sections",
+      "sourceName": "Penn State STAT 414",
+      "sourceType": "urls",
+      "license": "Penn State public course materials",
+      "resourceType": "READING",
+      "displayType": "COURSE",
+      "difficulty": "INTERMEDIATE",
+      "qualityScore": 0.86,
+      "popularityScore": 0.74,
+      "csSubcategory": "Probability Theory",
+      "quota": 80,
+      "maxItems": 80,
+      "tags": ["math", "probability", "statistics", "course"],
+      "urlTemplates": [
+        {
+          "urlTemplate": "https://online.stat.psu.edu/stat414/Section{n:02d}",
+          "titleTemplate": "STAT 414 Section {n:02d}",
+          "start": 1,
+          "end": 80
+        }
+      ]
+    },
+    {
+      "id": "psu-stat500-lessons",
+      "sourceName": "Penn State STAT 500",
+      "sourceType": "urls",
+      "license": "Penn State public course materials",
+      "resourceType": "READING",
+      "displayType": "COURSE",
+      "difficulty": "INTERMEDIATE",
+      "qualityScore": 0.86,
+      "popularityScore": 0.74,
+      "csSubcategory": "Applied Statistics",
+      "quota": 80,
+      "maxItems": 80,
+      "tags": ["math", "statistics", "course"],
+      "urlTemplates": [
+        {
+          "urlTemplate": "https://online.stat.psu.edu/stat500/Lesson{n:02d}",
+          "titleTemplate": "STAT 500 Lesson {n:02d}",
+          "start": 1,
+          "end": 80
+        }
+      ]
+    },
+    {
+      "id": "probability-course-chapters",
+      "sourceName": "Introduction to Probability",
+      "sourceType": "urls",
+      "license": "Public educational content",
+      "resourceType": "READING",
+      "displayType": "DOCUMENT",
+      "difficulty": "INTERMEDIATE",
+      "qualityScore": 0.84,
+      "popularityScore": 0.72,
+      "csSubcategory": "Probability",
+      "quota": 120,
+      "maxItems": 120,
+      "tags": ["math", "probability", "statistics"],
+      "resources": [
+        {"title": "What is Probability?", "url": "https://www.probabilitycourse.com/chapter1/1_1_0_what_is_probability.php"},
+        {"title": "Sample Space", "url": "https://www.probabilitycourse.com/chapter1/1_2_0_sample_space.php"},
+        {"title": "Axioms of Probability", "url": "https://www.probabilitycourse.com/chapter1/1_3_0_axioms_of_probability.php"},
+        {"title": "Conditional Probability", "url": "https://www.probabilitycourse.com/chapter1/1_4_0_conditional_probability.php"},
+        {"title": "Independence", "url": "https://www.probabilitycourse.com/chapter1/1_5_0_independence.php"},
+        {"title": "Total Probability", "url": "https://www.probabilitycourse.com/chapter1/1_6_0_total_probability.php"},
+        {"title": "Bayes' Rule", "url": "https://www.probabilitycourse.com/chapter1/1_7_0_bayes_rule.php"},
+        {"title": "Combinatorics", "url": "https://www.probabilitycourse.com/chapter2/2_1_0_combinatorics.php"},
+        {"title": "Random Variables", "url": "https://www.probabilitycourse.com/chapter3/3_1_0_random_variables.php"},
+        {"title": "CDFs", "url": "https://www.probabilitycourse.com/chapter3/3_2_0_cdfs.php"},
+        {"title": "Discrete Random Variables", "url": "https://www.probabilitycourse.com/chapter3/3_3_0_discrete_random_var.php"},
+        {"title": "Continuous Random Variables", "url": "https://www.probabilitycourse.com/chapter4/4_1_0_continuous_random_var.php"},
+        {"title": "Expected Value", "url": "https://www.probabilitycourse.com/chapter4/4_2_0_expected_value.php"},
+        {"title": "Variance", "url": "https://www.probabilitycourse.com/chapter4/4_3_0_variance.php"},
+        {"title": "Multiple Random Variables", "url": "https://www.probabilitycourse.com/chapter5/5_1_0_joint_distributions.php"},
+        {"title": "Covariance and Correlation", "url": "https://www.probabilitycourse.com/chapter5/5_3_1_covariance_correlation.php"}
+      ]
+    },
+    {
+      "id": "openstax-math-books",
+      "sourceName": "OpenStax Math",
+      "sourceType": "urls",
+      "license": "CC-BY-4.0",
+      "resourceType": "READING",
+      "displayType": "COURSE",
+      "difficulty": "MIXED",
+      "qualityScore": 0.86,
+      "popularityScore": 0.78,
+      "csSubcategory": "Open Textbooks",
+      "quota": 80,
+      "maxItems": 80,
+      "tags": ["math", "statistics", "calculus", "linear-algebra"],
+      "resources": [
+        {"title": "Introductory Statistics", "url": "https://openstax.org/details/books/introductory-statistics"},
+        {"title": "Introductory Statistics 2e", "url": "https://openstax.org/details/books/introductory-statistics-2e"},
+        {"title": "Statistics", "url": "https://openstax.org/details/books/statistics"},
+        {"title": "Calculus Volume 1", "url": "https://openstax.org/details/books/calculus-volume-1"},
+        {"title": "Calculus Volume 2", "url": "https://openstax.org/details/books/calculus-volume-2"},
+        {"title": "Calculus Volume 3", "url": "https://openstax.org/details/books/calculus-volume-3"},
+        {"title": "College Algebra 2e", "url": "https://openstax.org/details/books/college-algebra-2e"},
+        {"title": "Precalculus 2e", "url": "https://openstax.org/details/books/precalculus-2e"},
+        {"title": "Algebra and Trigonometry 2e", "url": "https://openstax.org/details/books/algebra-and-trigonometry-2e"},
+        {"title": "Contemporary Mathematics", "url": "https://openstax.org/details/books/contemporary-mathematics"}
+      ]
+    },
+    {
+      "id": "libretexts-linear-algebra-books",
+      "sourceName": "LibreTexts Math",
+      "sourceType": "urls",
+      "license": "CC-BY public educational content",
+      "resourceType": "READING",
+      "displayType": "DOCUMENT",
+      "difficulty": "MIXED",
+      "qualityScore": 0.84,
+      "popularityScore": 0.76,
+      "csSubcategory": "Linear Algebra",
+      "quota": 80,
+      "maxItems": 80,
+      "tags": ["math", "linear-algebra", "document"],
+      "resources": [
+        {"title": "Linear Algebra", "url": "https://math.libretexts.org/Bookshelves/Linear_Algebra"},
+        {"title": "A First Course in Linear Algebra", "url": "https://math.libretexts.org/Bookshelves/Linear_Algebra/A_First_Course_in_Linear_Algebra_(Kuttler)"},
+        {"title": "Interactive Linear Algebra", "url": "https://math.libretexts.org/Bookshelves/Linear_Algebra/Interactive_Linear_Algebra_(Margalit_and_Rabinoff)"},
+        {"title": "Matrix Analysis", "url": "https://math.libretexts.org/Bookshelves/Linear_Algebra/Matrix_Analysis_(Cox)"},
+        {"title": "Fundamentals of Matrix Algebra", "url": "https://math.libretexts.org/Bookshelves/Linear_Algebra/Fundamentals_of_Matrix_Algebra_(Hartman)"},
+        {"title": "Understanding Linear Algebra", "url": "https://math.libretexts.org/Bookshelves/Linear_Algebra/Understanding_Linear_Algebra_(Austin)"},
+        {"title": "Linear Algebra with Applications", "url": "https://math.libretexts.org/Bookshelves/Linear_Algebra/Linear_Algebra_with_Applications_(Nicholson)"}
+      ]
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import sys
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -108,6 +109,14 @@ class ImportStats:
     errors: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class CandidateContent:
+    candidate: ResourceCandidate
+    access: AccessResult
+    parsed: ParsedDocument | None = None
+    error: str = ""
+
+
 class _HTMLTextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -191,6 +200,18 @@ def _normalize_text(text: str) -> str:
         if normalized:
             compact_lines.append(normalized)
     return "\n".join(compact_lines)
+
+
+def _unsupported_content_error(content_type: str, body: bytes) -> str:
+    if b"\x00" in body:
+        return "BINARY_CONTENT"
+    if not content_type:
+        return ""
+    if content_type.startswith("text/"):
+        return ""
+    if content_type in {"application/xhtml+xml", "application/xml", "application/json", "application/ld+json"}:
+        return ""
+    return f"UNSUPPORTED_CONTENT_TYPE {content_type}"
 
 
 def parse_html_document(html: bytes | str, fallback_title: str | None = None) -> ParsedDocument:
@@ -366,6 +387,25 @@ def fetch_index_links(client: httpx.Client, source: dict[str, Any]) -> list[dict
     return links
 
 
+def expand_url_template_resources(source: dict[str, Any]) -> list[dict[str, str]]:
+    resources: list[dict[str, str]] = []
+    for template in source.get("urlTemplates", []):
+        item = dict(template)
+        start = int(item.get("start", 1))
+        end = int(item.get("end", start))
+        step = int(item.get("step", 1))
+        if step <= 0 or end < start:
+            continue
+        url_template = str(item["urlTemplate"])
+        title_template = str(item.get("titleTemplate") or url_template)
+        for number in range(start, end + 1, step):
+            resources.append({
+                "url": url_template.format(n=number),
+                "title": title_template.format(n=number),
+            })
+    return resources
+
+
 def _round_robin(source_candidates: list[list[ResourceCandidate]]) -> list[ResourceCandidate]:
     candidates: list[ResourceCandidate] = []
     seen_urls: set[str] = set()
@@ -427,6 +467,8 @@ def _select_with_category_quotas(
     }
     if not category_quotas:
         return ordered_candidates[:limit] if limit is not None else ordered_candidates
+    if str(config.get("selectionMode", "")).strip().lower() in {"categoryroundrobin", "category_round_robin", "balanced"}:
+        return _select_category_round_robin(config, ordered_candidates, category_quotas, limit=limit)
 
     selected: list[ResourceCandidate] = []
     seen_urls: set[str] = set()
@@ -475,6 +517,56 @@ def _select_with_category_quotas(
     return selected
 
 
+def _select_category_round_robin(
+    config: dict[str, Any],
+    ordered_candidates: list[ResourceCandidate],
+    category_quotas: dict[str, int],
+    *,
+    limit: int | None,
+) -> list[ResourceCandidate]:
+    selected: list[ResourceCandidate] = []
+    seen_urls: set[str] = set()
+    source_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
+    source_quotas = _source_selection_quotas(config)
+    candidates_by_category: dict[str, list[ResourceCandidate]] = {}
+    category_order: list[str] = []
+    for category in category_quotas:
+        category_order.append(category)
+    for candidate in ordered_candidates:
+        candidates_by_category.setdefault(candidate.cs_category, []).append(candidate)
+        if candidate.cs_category not in category_order:
+            category_order.append(candidate.cs_category)
+
+    indices = {category: 0 for category in category_order}
+    while limit is None or len(selected) < limit:
+        added = False
+        for category in category_order:
+            quota = category_quotas.get(category)
+            if quota is not None and category_counts.get(category, 0) >= quota:
+                continue
+            items = candidates_by_category.get(category, [])
+            while indices.get(category, 0) < len(items):
+                index = indices[category]
+                indices[category] = index + 1
+                if _append_candidate(
+                    selected,
+                    items[index],
+                    limit=limit,
+                    seen_urls=seen_urls,
+                    source_counts=source_counts,
+                    category_counts=category_counts,
+                    source_quotas=source_quotas,
+                ):
+                    added = True
+                    break
+            if limit is not None and len(selected) >= limit:
+                return selected
+        if not added:
+            return selected
+    return selected
+
+
 def iter_candidates(config: dict[str, Any], client: httpx.Client, *, limit: int | None = None) -> list[ResourceCandidate]:
     defaults = config.get("defaults", {})
     candidates_by_source: list[list[ResourceCandidate]] = []
@@ -505,12 +597,12 @@ def iter_candidates(config: dict[str, Any], client: httpx.Client, *, limit: int 
                     if len(source_candidates) >= source_limit:
                         break
             else:
-                for item in source.get("resources", []):
+                for item in [*source.get("resources", []), *expand_url_template_resources(source)]:
                     resource = {"url": item} if isinstance(item, str) else dict(item)
                     source_candidates.append(_candidate_from_source(source, defaults, str(resource["url"]), resource))
                     if len(source_candidates) >= source_limit:
                         break
-        except httpx.HTTPError:
+        except (httpx.HTTPError, ET.ParseError):
             source_candidates = []
         if source_candidates:
             candidates_by_source.append(source_candidates)
@@ -528,6 +620,7 @@ def check_accessibility(client: httpx.Client, url: str, *, max_bytes: int = 5_00
         response = client.get(url, headers=headers)
         content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
         body = response.content[:max_bytes]
+        content_error = _unsupported_content_error(content_type, body) if 200 <= response.status_code < 400 else ""
         return AccessResult(
             original_url=url,
             final_url=str(response.url),
@@ -535,7 +628,7 @@ def check_accessibility(client: httpx.Client, url: str, *, max_bytes: int = 5_00
             content_type=content_type,
             checked_at=checked_at,
             body=body,
-            error="" if 200 <= response.status_code < 400 else f"HTTP {response.status_code}",
+            error=content_error or ("" if 200 <= response.status_code < 400 else f"HTTP {response.status_code}"),
         )
     except httpx.HTTPError as exc:
         return AccessResult(
@@ -794,6 +887,53 @@ def load_config(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def fetch_candidate_content(candidate: ResourceCandidate, *, timeout_seconds: float, max_bytes: int) -> CandidateContent:
+    try:
+        with httpx.Client(follow_redirects=True, timeout=timeout_seconds) as client:
+            access = check_accessibility(client, candidate.url, max_bytes=max_bytes)
+        if not access.accessible:
+            return CandidateContent(candidate=candidate, access=access)
+        parsed = parse_html_document(access.body, fallback_title=candidate.title)
+        return CandidateContent(candidate=candidate, access=access, parsed=parsed)
+    except Exception as exc:
+        return CandidateContent(
+            candidate=candidate,
+            access=AccessResult(
+                original_url=candidate.url,
+                final_url=candidate.url,
+                status_code=0,
+                content_type="",
+                checked_at=_now_iso(),
+                error=f"{type(exc).__name__}: {exc}",
+            ),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def iter_candidate_contents(
+    candidates: list[ResourceCandidate],
+    *,
+    client: httpx.Client,
+    timeout_seconds: float,
+    max_bytes: int,
+    access_workers: int,
+) -> Iterable[CandidateContent]:
+    if access_workers <= 1:
+        for candidate in candidates:
+            access = check_accessibility(client, candidate.url, max_bytes=max_bytes)
+            parsed = parse_html_document(access.body, fallback_title=candidate.title) if access.accessible else None
+            yield CandidateContent(candidate=candidate, access=access, parsed=parsed)
+        return
+
+    with ThreadPoolExecutor(max_workers=access_workers) as executor:
+        futures = [
+            executor.submit(fetch_candidate_content, candidate, timeout_seconds=timeout_seconds, max_bytes=max_bytes)
+            for candidate in candidates
+        ]
+        for future in as_completed(futures):
+            yield future.result()
+
+
 def import_resources(
     *,
     config_path: Path,
@@ -807,6 +947,7 @@ def import_resources(
     skip_existing: bool = False,
     rag_missing_only: bool = False,
     embedding_batch_size: int = 2,
+    access_workers: int = 1,
     embedder: Callable[..., list[list[float]]] = generate_embeddings,
     db_factory: Callable[[], Any] = _connect_postgres,
 ) -> ImportStats:
@@ -830,14 +971,24 @@ def import_resources(
                 candidates = filter_existing_candidates(conn, candidates)
             if rag_missing_only and conn is not None:
                 candidates = filter_rag_missing_candidates(conn, candidates)
-            for candidate in candidates:
+            safe_access_workers = max(1, access_workers if metadata_only or not can_embed else 1)
+            for content in iter_candidate_contents(
+                candidates,
+                client=client,
+                timeout_seconds=timeout_seconds,
+                max_bytes=max_bytes,
+                access_workers=safe_access_workers,
+            ):
+                candidate = content.candidate
                 try:
-                    access = check_accessibility(client, candidate.url, max_bytes=max_bytes)
+                    if content.error:
+                        raise RuntimeError(content.error)
+                    access = content.access
                     if not access.accessible:
                         stats.skipped_inaccessible += 1
                         continue
                     stats.accessible += 1
-                    parsed = parse_html_document(access.body, fallback_title=candidate.title)
+                    parsed = content.parsed or parse_html_document(access.body, fallback_title=candidate.title)
                     chunks: list[str] = []
                     embeddings: list[list[float]] = []
                     rag_ready = False
@@ -939,6 +1090,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--rag-missing-only", action="store_true")
     parser.add_argument("--embedding-batch-size", type=int, default=2)
+    parser.add_argument("--access-workers", type=int, default=1)
     return parser.parse_args(argv)
 
 
@@ -956,6 +1108,7 @@ def main(argv: list[str] | None = None) -> int:
         skip_existing=args.skip_existing,
         rag_missing_only=args.rag_missing_only,
         embedding_batch_size=args.embedding_batch_size,
+        access_workers=args.access_workers,
     )
     print(json.dumps(stats.__dict__, ensure_ascii=False, indent=2))
     return 1 if stats.failed else 0

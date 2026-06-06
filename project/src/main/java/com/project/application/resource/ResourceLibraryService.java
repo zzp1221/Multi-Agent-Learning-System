@@ -763,6 +763,8 @@ public class ResourceLibraryService {
             FROM app.learning_resource lr
             WHERE lr.status = 'ACTIVE'
               AND 
+            """ + visibleResourceCondition() + """
+              AND
             """ + readableResourceCondition() + """
             GROUP BY display_type
             ORDER BY count DESC
@@ -795,7 +797,9 @@ public class ResourceLibraryService {
             FROM app.learning_resource lr
             WHERE lr.status = 'ACTIVE'
               AND 
-            """.formatted(valueSql) + readableResourceCondition() + """
+            """.formatted(valueSql) + visibleResourceCondition() + """
+              AND
+            """ + readableResourceCondition() + """
             GROUP BY metadata_value
             ORDER BY count DESC, metadata_value ASC
             """,

@@ -94,6 +94,35 @@ def test_candidates_are_sampled_across_sources_before_global_limit() -> None:
     assert "https://docs.python.org/3/tutorial/index.html" in [candidate.url for candidate in candidates]
 
 
+def test_bad_sitemap_source_does_not_block_other_sources() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<html>not xml</broken>", request=request)
+
+    config = {
+        "defaults": {"domain": "COMPUTER_SCIENCE", "resourceType": "READING", "difficulty": "MIXED"},
+        "sources": [
+            {
+                "id": "bad-sitemap",
+                "sourceName": "Bad Sitemap",
+                "sourceType": "sitemap",
+                "sitemapUrl": "https://example.test/sitemap.xml",
+                "includeRegex": ["/docs/"],
+            },
+            {
+                "id": "manual",
+                "sourceName": "Manual",
+                "sourceType": "urls",
+                "resources": [{"title": "Manual Resource", "url": "https://example.test/manual"}],
+            },
+        ],
+    }
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    candidates = import_external_resources.iter_candidates(config, client, limit=10)
+
+    assert [candidate.source_id for candidate in candidates] == ["manual"]
+
+
 def test_index_source_extracts_links_and_category_metadata() -> None:
     index_html = """
     <html><body>
@@ -135,6 +164,38 @@ def test_index_source_extracts_links_and_category_metadata() -> None:
     assert candidates[0].cs_subcategory == "Language References"
 
 
+def test_url_template_source_expands_numbered_resources() -> None:
+    config = {
+        "defaults": {"domain": "COMPUTER_SCIENCE", "resourceType": "READING", "difficulty": "MIXED"},
+        "sources": [
+            {
+                "id": "numbered-course",
+                "sourceName": "Numbered Course",
+                "sourceType": "urls",
+                "csCategory": "MATH_FOUNDATIONS",
+                "urlTemplates": [
+                    {
+                        "urlTemplate": "https://example.test/lesson/{n:02d}",
+                        "titleTemplate": "Lesson {n:02d}",
+                        "start": 1,
+                        "end": 3,
+                    }
+                ],
+            }
+        ],
+    }
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, request=request)), follow_redirects=True)
+
+    candidates = import_external_resources.iter_candidates(config, client, limit=10)
+
+    assert [candidate.url for candidate in candidates] == [
+        "https://example.test/lesson/01",
+        "https://example.test/lesson/02",
+        "https://example.test/lesson/03",
+    ]
+    assert candidates[0].title == "Lesson 01"
+
+
 def test_category_quotas_are_filled_before_global_round_robin() -> None:
     config = {
         "defaults": {"domain": "COMPUTER_SCIENCE", "resourceType": "READING", "difficulty": "MIXED"},
@@ -171,6 +232,43 @@ def test_category_quotas_are_filled_before_global_round_robin() -> None:
     assert [candidate.cs_category for candidate in candidates].count("DATABASES") == 2
 
 
+def test_category_round_robin_selection_balances_early_results() -> None:
+    config = {
+        "defaults": {"domain": "COMPUTER_SCIENCE", "resourceType": "READING", "difficulty": "MIXED"},
+        "selectionMode": "categoryRoundRobin",
+        "categoryQuotas": {"AI_ML": 3, "DATABASES": 3},
+        "sources": [
+            {
+                "id": "ai",
+                "sourceName": "AI Docs",
+                "sourceType": "urls",
+                "csCategory": "AI_ML",
+                "resources": [
+                    {"title": "AI 1", "url": "https://example.test/ai/1"},
+                    {"title": "AI 2", "url": "https://example.test/ai/2"},
+                    {"title": "AI 3", "url": "https://example.test/ai/3"},
+                ],
+            },
+            {
+                "id": "db",
+                "sourceName": "DB Docs",
+                "sourceType": "urls",
+                "csCategory": "DATABASES",
+                "resources": [
+                    {"title": "DB 1", "url": "https://example.test/db/1"},
+                    {"title": "DB 2", "url": "https://example.test/db/2"},
+                    {"title": "DB 3", "url": "https://example.test/db/3"},
+                ],
+            },
+        ],
+    }
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, request=request)), follow_redirects=True)
+
+    candidates = import_external_resources.iter_candidates(config, client, limit=4)
+
+    assert [candidate.cs_category for candidate in candidates] == ["AI_ML", "DATABASES", "AI_ML", "DATABASES"]
+
+
 def test_accessibility_requires_success_status() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url).endswith("/ok"):
@@ -186,6 +284,23 @@ def test_accessibility_requires_success_status() -> None:
     assert ok.content_type == "text/html"
     assert missing.accessible is False
     assert missing.error == "HTTP 404"
+
+
+def test_accessibility_rejects_binary_content() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/zip"},
+            content=b"PK\x03\x04\x00binary",
+            request=request,
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    result = import_external_resources.check_accessibility(client, "https://example.test/archive.zip")
+
+    assert result.accessible is False
+    assert result.error == "BINARY_CONTENT"
 
 
 def test_html_parser_ignores_scripts_and_builds_summary() -> None:
@@ -325,6 +440,7 @@ def test_dry_run_never_calls_embedder_or_database(tmp_path, monkeypatch) -> None
         dry_run=True,
         timeout_seconds=1,
         max_bytes=100000,
+        access_workers=2,
         embedder=fail_embedder,
         db_factory=fail_db_factory,
     )
