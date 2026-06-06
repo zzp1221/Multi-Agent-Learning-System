@@ -21,9 +21,11 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URLDecoder;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -191,16 +193,39 @@ public class ResourceLibraryService {
     public List<ResourceItemResponse> recommendations(UUID userId, Integer limit) {
         int safeLimit = Math.max(1, Math.min(20, limit == null ? 6 : limit));
         MapSqlParameterSource params = baseParams(userId).addValue("limit", safeLimit);
+        String recommendationScore = recommendationScoreSql();
         return jdbcTemplate.query(
-            resourceSelectSql() + """
-            WHERE lr.status = 'ACTIVE'
-              AND COALESCE(urs.completed, false) = false
-              AND 
-            """ + readableResourceCondition() + """
+            recommendationContextCtesSql() + """
+            , scored_resources AS (
+            """ + resourceSelectSql("""
+              , """ + recommendationScore + """
+               AS recommendation_score
+              , ROW_NUMBER() OVER (
+                  PARTITION BY upper(COALESCE(NULLIF(lr.metadata_json ->> 'csCategory', ''), 'GENERAL_CS'))
+                  ORDER BY
+                    """ + recommendationScore + """
+                     DESC,
+                    lr.updated_at DESC
+                ) AS category_rank
+            """) + """
+              WHERE lr.status = 'ACTIVE'
+                AND COALESCE(urs.completed, false) = false
+                AND
+              """ + readableResourceCondition() + """
+            )
+            SELECT *
+            FROM scored_resources
             ORDER BY
-              """ + recommendationScoreSql() + """
-               DESC,
-              lr.updated_at DESC
+              CASE
+                WHEN EXISTS (
+                  SELECT 1
+                  FROM context_signals cs
+                  WHERE cs.preferred_category IS NULL
+                ) THEN category_rank
+                ELSE 1
+              END ASC,
+              recommendation_score DESC,
+              updated_at DESC
             LIMIT :limit
             """,
             params,
@@ -385,6 +410,10 @@ public class ResourceLibraryService {
     }
 
     private String resourceSelectSql() {
+        return resourceSelectSql("");
+    }
+
+    private String resourceSelectSql(String extraColumns) {
         return """
             SELECT
               lr.id,
@@ -403,6 +432,7 @@ public class ResourceLibraryService {
               COALESCE(urs.completed, false) AS completed,
               urs.last_study_at,
               COALESCE(fav.favorite_count, 0) AS favorite_count
+            """ + extraColumns + """
             FROM app.learning_resource lr
             LEFT JOIN app.user_resource_state urs ON urs.resource_id = lr.id AND urs.user_id = :userId
             LEFT JOIN (
@@ -435,6 +465,8 @@ public class ResourceLibraryService {
         String popularityScore = numericMetadataSql("popularityScore", "0");
         String profileResourcePreference = normalizedResourcePreferenceSql("up.profile_json ->> 'resourcePreference'");
         String preferredResourceType = normalizedResourcePreferenceSql("preferred_type.value");
+        String category = "upper(COALESCE(NULLIF(lr.metadata_json ->> 'csCategory', ''), 'GENERAL_CS'))";
+        String haystack = "concat_ws(' ', lr.title, COALESCE(lr.summary_text, ''), lr.tags::text, COALESCE(lr.metadata_json ->> 'csSubcategory', ''), COALESCE(lr.metadata_json ->> 'sourceName', ''))";
         return """
             (
               %s * 0.45
@@ -469,6 +501,27 @@ public class ResourceLibraryService {
                     AND jsonb_exists(lr.tags, history_tag.tag)
                 ) THEN 0.12 ELSE 0 END
               + CASE WHEN COALESCE(urs.progress_percent, 0) > 0 THEN 0.03 ELSE 0 END
+              + CASE WHEN EXISTS (
+                  SELECT 1
+                  FROM context_signals cs
+                  WHERE cs.preferred_category IS NOT NULL
+                    AND %s = cs.preferred_category
+                ) THEN 0.95 ELSE 0 END
+              + CASE WHEN EXISTS (
+                  SELECT 1
+                  FROM context_signals cs
+                  WHERE cs.preferred_category IS NOT NULL
+                    AND %s <> cs.preferred_category
+                ) THEN -0.25 ELSE 0 END
+              + CASE WHEN EXISTS (
+                  SELECT 1
+                  FROM context_signals cs
+                  WHERE cs.ai_ml_context
+                    AND %s ~* '(深度学习|机器学习|神经网络|反向传播|损失函数|优化器|正则化|梯度下降|deep[- ]?learning|machine[- ]?learning|neural|backprop|optimizer|loss|pytorch|tensorflow)'
+                ) THEN 0.35 ELSE 0 END
+              + CASE WHEN lower(lr.title) LIKE 'redirecting%%'
+                  OR lower(COALESCE(lr.summary_text, '')) LIKE 'redirecting%%'
+                THEN -0.30 ELSE 0 END
             )
             """.formatted(
             qualityScore,
@@ -476,8 +529,144 @@ public class ResourceLibraryService {
             profileResourcePreference,
             displayType,
             preferredResourceType,
-            displayType
+            displayType,
+            category,
+            category,
+            haystack
         );
+    }
+
+    private String recommendationContextCtesSql() {
+        return """
+            WITH latest_plan AS (
+              SELECT p.plan_json
+              FROM app.learning_plan p
+              WHERE p.user_id = :userId
+                AND p.status = 'ACTIVE'
+              ORDER BY p.updated_at DESC
+              LIMIT 1
+            ),
+            latest_task_path AS (
+              SELECT t.response_summary -> 'learningPath' AS learning_path
+              FROM app.smart_engine_task t
+              WHERE t.user_id = :userId
+                AND t.service_type = 'PERSONALIZED_LEARNING'
+                AND t.task_status::text = 'COMPLETED'
+                AND jsonb_exists(t.response_summary, 'learningPath')
+              ORDER BY t.created_at DESC
+              LIMIT 1
+            ),
+            current_learning_path AS (
+              SELECT COALESCE(
+                (SELECT plan_json FROM latest_plan WHERE jsonb_typeof(plan_json) = 'object'),
+                (SELECT learning_path FROM latest_task_path WHERE jsonb_typeof(learning_path) = 'object'),
+                '{}'::jsonb
+              ) AS learning_path
+            ),
+            path_steps AS (
+              SELECT step_item.step,
+                     step_item.ordinality,
+                     upper(regexp_replace(COALESCE(step_item.step ->> 'status', ''), '[^A-Za-z0-9]+', '_', 'g')) AS normalized_status
+              FROM current_learning_path clp
+              CROSS JOIN LATERAL jsonb_array_elements(
+                CASE WHEN jsonb_typeof(clp.learning_path -> 'steps') = 'array'
+                  THEN clp.learning_path -> 'steps'
+                  ELSE '[]'::jsonb
+                END
+              ) WITH ORDINALITY AS step_item(step, ordinality)
+            ),
+            active_step AS (
+              SELECT step
+              FROM path_steps
+              ORDER BY
+                CASE
+                  WHEN normalized_status = 'IN_PROGRESS'
+                    OR normalized_status = 'ACTIVE'
+                    OR normalized_status LIKE '%%RUNNING%%'
+                    OR normalized_status LIKE '%%PROGRESS%%'
+                  THEN 0
+                  WHEN normalized_status = '' THEN 1
+                  WHEN normalized_status IN ('COMPLETED', 'DONE', 'PENDING', 'INACTIVE', 'NOT_STARTED')
+                    OR normalized_status LIKE 'NOT_%%'
+                    OR normalized_status LIKE '%%INACTIVE%%'
+                  THEN 3
+                  ELSE 2
+                END,
+                ordinality
+              LIMIT 1
+            ),
+            profile_context AS (
+              SELECT up.profile_json
+              FROM app.user_profile_current up
+              WHERE up.user_id = :userId
+              LIMIT 1
+            ),
+            learning_context AS (
+              SELECT lower(concat_ws(' ',
+                clp.learning_path ->> 'goal',
+                clp.learning_path ->> 'summary',
+                clp.learning_path ->> 'summaryText',
+                astep.step ->> 'title',
+                astep.step ->> 'objective',
+                astep.step ->> 'checkpoint',
+                astep.step ->> 'successCriteria',
+                (
+                  SELECT string_agg(kp.value, ' ')
+                  FROM jsonb_array_elements_text(
+                    CASE WHEN jsonb_typeof(astep.step -> 'targetKnowledgePoints') = 'array'
+                      THEN astep.step -> 'targetKnowledgePoints'
+                      ELSE '[]'::jsonb
+                    END
+                  ) AS kp(value)
+                ),
+                pc.profile_json ->> 'learningGoal',
+                (
+                  SELECT string_agg(wp.value, ' ')
+                  FROM jsonb_array_elements_text(
+                    CASE WHEN jsonb_typeof(pc.profile_json -> 'weakPoints') = 'array'
+                      THEN pc.profile_json -> 'weakPoints'
+                      ELSE '[]'::jsonb
+                    END
+                  ) AS wp(value)
+                ),
+                (
+                  SELECT string_agg(focus.value ->> 'topic', ' ')
+                  FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(pc.profile_json -> 'weakPointDetails') = 'array'
+                      THEN pc.profile_json -> 'weakPointDetails'
+                      ELSE '[]'::jsonb
+                    END
+                  ) AS focus(value)
+                )
+              )) AS context_text
+              FROM current_learning_path clp
+              LEFT JOIN active_step astep ON TRUE
+              LEFT JOIN profile_context pc ON TRUE
+            ),
+            context_signals AS (
+              SELECT context_text,
+                     CASE
+                       WHEN context_text ~* '(深度学习|机器学习|神经网络|反向传播|损失函数|优化器|正则化|梯度下降|人工智能|deep[- ]?learning|machine[- ]?learning|neural|backprop|optimizer|pytorch|tensorflow|ai|ml)' THEN 'AI_ML'
+                       WHEN context_text ~* '(前端|网页|浏览器|html|css|javascript|typescript|react|vue|dom|web)' THEN 'FRONTEND_WEB'
+                       WHEN context_text ~* '(数据库|索引|事务|sql|mysql|postgres|redis|查询优化)' THEN 'DATABASES'
+                       WHEN context_text ~* '(操作系统|进程|线程|内存|linux|kernel|os|调度)' THEN 'OPERATING_SYSTEMS'
+                       WHEN context_text ~* '(网络|tcp|udp|http|dns|路由|拥塞|computer network)' THEN 'COMPUTER_NETWORKS'
+                       WHEN context_text ~* '(数据结构|算法|动态规划|排序|图论|树|堆|hash|algorithm|graph|tree)' THEN 'DATA_STRUCTURES_ALGORITHMS'
+                       WHEN context_text ~* '(编译|词法|语法分析|parser|lexer|compiler)' THEN 'COMPILERS'
+                       WHEN context_text ~* '(分布式|云原生|kubernetes|docker|微服务|一致性|consensus)' THEN 'DISTRIBUTED_CLOUD'
+                       WHEN context_text ~* '(安全|密码|漏洞|攻防|xss|csrf|sql injection|security)' THEN 'SECURITY'
+                       WHEN context_text ~* '(后端|spring|接口|api|rest|并发|线程池|backend)' THEN 'BACKEND_SYSTEMS'
+                       WHEN context_text ~* '(数学|线性代数|概率|统计|微积分|math)' THEN 'MATH_FOUNDATIONS'
+                       WHEN context_text ~* '(体系结构|计算机组成|cpu|cache|指令|流水线|architecture)' THEN 'COMPUTER_ARCHITECTURE'
+                       WHEN context_text ~* '(软件工程|需求|测试|设计模式|重构|software engineering)' THEN 'SOFTWARE_ENGINEERING'
+                       WHEN context_text ~* '(开发工具|git|ci|debug|调试|devops)' THEN 'DEV_TOOLS'
+                       WHEN context_text ~* '(编程语言|python|java|c\\+\\+|rust|golang|go language)' THEN 'PROGRAMMING_LANGUAGES'
+                       ELSE NULL
+                     END AS preferred_category,
+                     context_text ~* '(深度学习|机器学习|神经网络|反向传播|损失函数|优化器|正则化|梯度下降|deep[- ]?learning|machine[- ]?learning|neural|backprop|optimizer|pytorch|tensorflow)' AS ai_ml_context
+              FROM learning_context
+            )
+            """;
     }
 
     private String normalizedResourcePreferenceSql(String valueSql) {
@@ -571,7 +760,7 @@ public class ResourceLibraryService {
             String resourceType = rs.getString("resource_type");
             return new ResourceItemResponse(
                 (UUID) rs.getObject("id"),
-                rs.getString("title"),
+                displayTitle(rs.getString("title"), metadata),
                 rs.getString("domain"),
                 resourceType,
                 displayType(resourceType, metadata),
@@ -648,6 +837,61 @@ public class ResourceLibraryService {
             case "SLIDES", "PPT" -> "COURSE";
             default -> "DOCUMENT";
         };
+    }
+
+    private String displayTitle(String rawTitle, Map<String, Object> metadata) {
+        String title = rawTitle == null ? "" : rawTitle.trim();
+        if (!isPlaceholderTitle(title)) {
+            return title;
+        }
+        String metadataTitle = readString(metadata, "title", "sourceTitle", "pageTitle");
+        if (metadataTitle != null && !isPlaceholderTitle(metadataTitle)) {
+            return metadataTitle;
+        }
+        String derivedTitle = deriveTitleFromUrl(readString(metadata, "sourceUrl", "originalUrl", "url"));
+        if (derivedTitle == null || derivedTitle.isBlank()) {
+            return title.isBlank() ? "Learning resource" : title;
+        }
+        String sourceName = readString(metadata, "sourceName");
+        if (sourceName != null && sourceName.toLowerCase(Locale.ROOT).contains("pytorch")
+            && !derivedTitle.toLowerCase(Locale.ROOT).contains("pytorch")) {
+            return "PyTorch: " + derivedTitle;
+        }
+        return derivedTitle;
+    }
+
+    private boolean isPlaceholderTitle(String title) {
+        if (title == null || title.isBlank()) {
+            return true;
+        }
+        String normalized = title.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("redirecting...")
+            || normalized.equals("redirecting…")
+            || normalized.equals("untitled resource");
+    }
+
+    private String deriveTitleFromUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        try {
+            String path = java.net.URI.create(url.trim()).getPath();
+            if (path == null || path.isBlank()) {
+                return null;
+            }
+            String segment = path.substring(path.lastIndexOf('/') + 1);
+            if (segment.isBlank()) {
+                return null;
+            }
+            int dotIndex = segment.lastIndexOf('.');
+            if (dotIndex > 0) {
+                segment = segment.substring(0, dotIndex);
+            }
+            String decoded = URLDecoder.decode(segment, StandardCharsets.UTF_8);
+            return decoded.replace('-', ' ').replace('_', ' ').trim();
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private List<String> parseStringList(String rawJson) {

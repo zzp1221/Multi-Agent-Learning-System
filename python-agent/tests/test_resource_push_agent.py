@@ -1,4 +1,5 @@
 import asyncio
+from decimal import Decimal
 
 from src.ai_modules.agents.resource_push_agent import PushResourceCandidate, ResourcePushAgent
 
@@ -92,6 +93,7 @@ def test_resource_push_agent_rejects_generic_unrelated_resources() -> None:
 
 def test_resource_push_agent_builds_external_plan_for_learning_path_steps(monkeypatch) -> None:
     agent = ResourcePushAgent()
+    monkeypatch.setattr(agent, "_search_library_candidates", lambda **kwargs: asyncio.sleep(0, result=[]))
 
     async def fake_search_external_candidates(*, preferred_type, query, profile_context):
         assert "理解最左匹配" in query
@@ -145,6 +147,7 @@ def test_resource_push_agent_builds_external_plan_for_learning_path_steps(monkey
 
 def test_resource_push_agent_skips_previous_resources_when_refreshing_path(monkeypatch) -> None:
     agent = ResourcePushAgent()
+    monkeypatch.setattr(agent, "_search_library_candidates", lambda **kwargs: asyncio.sleep(0, result=[]))
 
     async def fake_search_external_candidates(*, preferred_type, query, profile_context):
         return [
@@ -206,6 +209,64 @@ def test_resource_push_agent_skips_previous_resources_when_refreshing_path(monke
     resources = plan["stepResources"][0]["resources"]
     assert resources[0]["title"] == "新的索引资源"
     assert resources[0]["downloadUrl"] == "https://example.com/new-resource"
+
+
+def test_resource_push_agent_prefers_learning_resource_library(monkeypatch) -> None:
+    agent = ResourcePushAgent()
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def execute(self, sql, params):
+            self.sql = sql
+            self.params = params
+
+        def fetchall(self):
+            return [
+                {
+                    "title": "Redirecting…",
+                    "summary_text": "Continue to torch.nn.Linear. deep learning neural network layer",
+                    "resource_type": "READING",
+                    "display_type": "DOCUMENT",
+                    "source_url": "https://docs.pytorch.org/docs/stable/generated/torch.nn.Linear.html",
+                    "source_name": "PyTorch Documentation",
+                    "cover_url": "",
+                    "cs_category": "AI_ML",
+                    "quality_score": Decimal("0.9"),
+                    "tags_text": '["deep-learning","pytorch","neural-network"]',
+                }
+            ]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def cursor(self, cursor_factory=None):
+            return FakeCursor()
+
+    monkeypatch.setattr("src.ai_modules.agents.resource_push_agent.psycopg2.connect", lambda **kwargs: FakeConnection())
+
+    candidates = agent._search_library_candidates_sync(
+        preferred_type="DOCUMENT",
+        query="深度学习 神经网络 损失函数",
+        profile_context={
+            "primaryWeakPoint": "神经网络",
+            "currentChapter": "深度学习核心概念",
+            "weakPoints": ["损失函数", "优化器"],
+        },
+    )
+
+    assert candidates
+    assert candidates[0].source == "learning_resource"
+    assert candidates[0].title == "PyTorch: torch.nn.Linear"
+    assert candidates[0].download_url == "https://docs.pytorch.org/docs/stable/generated/torch.nn.Linear.html"
 
 
 def test_resource_push_agent_normalizes_resource_type_aliases_for_path_external_search() -> None:

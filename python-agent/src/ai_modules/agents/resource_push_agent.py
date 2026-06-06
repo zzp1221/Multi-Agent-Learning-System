@@ -10,6 +10,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+import psycopg2
+import psycopg2.extras
 
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.config import get_settings
@@ -69,6 +71,7 @@ class PushResourceCandidate:
     duration_seconds: int | None = None
     knowledge_point: str | None = None
     source_name: str | None = None
+    source: str = "tavily"
 
 
 class ResourcePushAgent(PlaceholderAgent):
@@ -377,11 +380,17 @@ class ResourcePushAgent(PlaceholderAgent):
 
             resources: list[dict[str, Any]] = []
             for resource_type in preferred_types:
-                candidates = await self._search_external_candidates(
+                candidates = await self._search_library_candidates(
                     preferred_type=resource_type,
                     query=query,
                     profile_context=step_context,
                 )
+                if not candidates:
+                    candidates = await self._search_external_candidates(
+                        preferred_type=resource_type,
+                        query=query,
+                        profile_context=step_context,
+                    )
                 candidate = self._first_unused_candidate(candidates, seen_urls, seen_titles)
                 if candidate is None:
                     continue
@@ -545,7 +554,7 @@ class ResourcePushAgent(PlaceholderAgent):
         return {
             "title": candidate.title,
             "resourceType": candidate.resource_type,
-            "source": "tavily",
+            "source": candidate.source,
             "sourceName": candidate.source_name,
             "downloadUrl": candidate.download_url,
             "summaryText": candidate.summary_text,
@@ -860,6 +869,204 @@ class ResourcePushAgent(PlaceholderAgent):
             f"优先资源：{titles}。首位推荐原因：{lead_reason}。"
         )
 
+    async def _search_library_candidates(
+        self,
+        *,
+        preferred_type: str,
+        query: str,
+        profile_context: dict[str, Any],
+    ) -> list[PushResourceCandidate]:
+        return await asyncio.to_thread(
+            self._search_library_candidates_sync,
+            preferred_type=preferred_type,
+            query=query,
+            profile_context=profile_context,
+        )
+
+    def _search_library_candidates_sync(
+        self,
+        *,
+        preferred_type: str,
+        query: str,
+        profile_context: dict[str, Any],
+    ) -> list[PushResourceCandidate]:
+        category = self._infer_cs_category(query=query, profile_context=profile_context)
+        matched_terms = self._build_terms(preferred_type, profile_context)[:4]
+        knowledge_point = self._normalize_text(profile_context.get("primaryWeakPoint") or profile_context.get("currentChapter"))
+        try:
+            with psycopg2.connect(**self.settings.postgres_connect_kwargs()) as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(
+                        """
+                        SELECT
+                          title,
+                          summary_text,
+                          resource_type::text AS resource_type,
+                          COALESCE(NULLIF(upper(metadata_json ->> 'displayType'), ''), resource_type::text) AS display_type,
+                          metadata_json ->> 'sourceUrl' AS source_url,
+                          metadata_json ->> 'sourceName' AS source_name,
+                          metadata_json ->> 'coverUrl' AS cover_url,
+                          upper(COALESCE(NULLIF(metadata_json ->> 'csCategory', ''), 'GENERAL_CS')) AS cs_category,
+                          COALESCE(
+                            CASE WHEN metadata_json ->> 'qualityScore' ~ '^-?[0-9]+([.][0-9]+)?$'
+                              THEN (metadata_json ->> 'qualityScore')::numeric
+                            END,
+                            0.5
+                          ) AS quality_score,
+                          tags::text AS tags_text
+                        FROM app.learning_resource
+                        WHERE status = 'ACTIVE'
+                          AND access_scope::text = 'GLOBAL'
+                          AND COALESCE(metadata_json ->> 'accessibilityStatus', '') = 'ACCESSIBLE'
+                          AND COALESCE(metadata_json ->> 'sourceUrl', '') ~* '^https?://'
+                          AND (%s IS NULL OR upper(COALESCE(NULLIF(metadata_json ->> 'csCategory', ''), 'GENERAL_CS')) = %s)
+                        ORDER BY quality_score DESC, updated_at DESC
+                        LIMIT 120
+                        """,
+                        (category, category),
+                    )
+                    rows = [dict(row) for row in cur.fetchall()]
+        except Exception:
+            LOGGER.warning("Learning resource library lookup failed", exc_info=True)
+            return []
+
+        candidates: list[PushResourceCandidate] = []
+        for row in rows:
+            url = self._normalize_text(row.get("source_url"))
+            raw_title = self._display_library_title(row)
+            raw_summary = self._normalize_text(row.get("summary_text"))
+            if not raw_title or not self._is_http_url(url):
+                continue
+            if not self._library_type_matches(preferred_type, row):
+                continue
+            relevance = self._score_library_relevance(
+                title=raw_title,
+                summary=raw_summary,
+                url=url,
+                tags=str(row.get("tags_text") or ""),
+                query=query,
+                profile_context=profile_context,
+            )
+            if relevance < MIN_TOPIC_RELEVANCE_SCORE:
+                continue
+            quality_score = float(row.get("quality_score") or 0.5)
+            candidates.append(
+                PushResourceCandidate(
+                    title=self._truncate_display_text(self._clean_display_text(raw_title), 32),
+                    resource_type=preferred_type,
+                    summary_text=self._truncate_display_text(
+                        self._clean_display_text(raw_summary)
+                        or f"Learning-resource match for {self._resource_type_label(preferred_type)}.",
+                        64,
+                    ),
+                    file_name="",
+                    mime_type="text/html",
+                    score=int(relevance * 10 + quality_score * 100),
+                    matched_terms=matched_terms,
+                    download_url=url,
+                    rerank_reason=f"Matched local resource library with topic relevance {relevance}",
+                    rerank_score=round(min(1.0, max(0.1, relevance / 12)), 4),
+                    thumbnail_url=self._normalize_text(row.get("cover_url")) or None,
+                    knowledge_point=knowledge_point or None,
+                    source_name=self._normalize_text(row.get("source_name")) or self._extract_source_name(url),
+                    source="learning_resource",
+                )
+            )
+        candidates.sort(key=lambda candidate: (-candidate.score, candidate.title))
+        return candidates[:6]
+
+    def _infer_cs_category(self, *, query: str, profile_context: dict[str, Any]) -> str | None:
+        text = " ".join(
+            item
+            for item in (
+                query,
+                self._normalize_text(profile_context.get("primaryWeakPoint")),
+                self._normalize_text(profile_context.get("currentCourse")),
+                self._normalize_text(profile_context.get("currentChapter")),
+                self._normalize_text(profile_context.get("learningGoal")),
+                " ".join(profile_context.get("weakPoints", [])),
+            )
+            if item
+        ).lower()
+        category_patterns = (
+            ("AI_ML", r"深度学习|机器学习|神经网络|反向传播|损失函数|优化器|正则化|梯度下降|人工智能|deep[- ]?learning|machine[- ]?learning|neural|backprop|optimizer|pytorch|tensorflow|\bai\b|\bml\b"),
+            ("FRONTEND_WEB", r"前端|网页|浏览器|html|css|javascript|typescript|react|vue|dom|web"),
+            ("DATABASES", r"数据库|索引|事务|sql|mysql|postgres|redis|查询优化"),
+            ("OPERATING_SYSTEMS", r"操作系统|进程|线程|内存|linux|kernel|\bos\b|调度"),
+            ("COMPUTER_NETWORKS", r"网络|tcp|udp|http|dns|路由|拥塞|computer network"),
+            ("DATA_STRUCTURES_ALGORITHMS", r"数据结构|算法|动态规划|排序|图论|树|堆|hash|algorithm|graph|tree"),
+            ("COMPILERS", r"编译|词法|语法分析|parser|lexer|compiler"),
+            ("DISTRIBUTED_CLOUD", r"分布式|云原生|kubernetes|docker|微服务|一致性|consensus"),
+            ("SECURITY", r"安全|密码|漏洞|攻防|xss|csrf|sql injection|security"),
+            ("BACKEND_SYSTEMS", r"后端|spring|接口|api|rest|并发|线程池|backend"),
+            ("MATH_FOUNDATIONS", r"数学|线性代数|概率|统计|微积分|math"),
+            ("COMPUTER_ARCHITECTURE", r"体系结构|计算机组成|cpu|cache|指令|流水线|architecture"),
+            ("SOFTWARE_ENGINEERING", r"软件工程|需求|测试|设计模式|重构|software engineering"),
+            ("DEV_TOOLS", r"开发工具|git|ci|debug|调试|devops"),
+            ("PROGRAMMING_LANGUAGES", r"编程语言|python|java|c\+\+|rust|golang|go language"),
+        )
+        for category, pattern in category_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return category
+        return None
+
+    def _library_type_matches(self, preferred_type: str, row: dict[str, Any]) -> bool:
+        display_type = self._normalize_resource_type(row.get("display_type"))
+        resource_type = self._normalize_resource_type(row.get("resource_type"))
+        preferred = self._normalize_resource_type(preferred_type)
+        if preferred in {"DOCUMENT", "READING"}:
+            return display_type in {"DOCUMENT", "COURSE", "NOTE", "READING"} or resource_type in {"READING", "DOCUMENT", "MINDMAP"}
+        if preferred == "PRACTICAL_CASE":
+            return display_type in {"CASE", "PRACTICAL_CASE"} or resource_type in {"CODE", "PRACTICE"}
+        if preferred == "QUIZ":
+            return display_type == "QUIZ" or resource_type in {"QUIZ", "PRACTICE"}
+        if preferred == "VIDEO":
+            return display_type == "VIDEO" or resource_type == "VIDEO"
+        return display_type == preferred or resource_type == preferred
+
+    def _score_library_relevance(
+        self,
+        *,
+        title: str,
+        summary: str,
+        url: str,
+        tags: str,
+        query: str,
+        profile_context: dict[str, Any],
+    ) -> int:
+        weighted_text = f"{title} {summary} {tags} {self._extract_source_name(url) or ''}".lower()
+        score = 0
+        for term, weight in self._topic_relevance_terms(profile_context):
+            if self._contains_topic_term(weighted_text, term):
+                score += weight
+        for term in self._split_topic_terms(query):
+            if self._contains_topic_term(weighted_text, term):
+                score += 1
+        return score
+
+    def _display_library_title(self, row: dict[str, Any]) -> str:
+        title = self._normalize_text(row.get("title"))
+        if not self._is_placeholder_title(title):
+            return title
+        url_title = self._derive_title_from_url(self._normalize_text(row.get("source_url")))
+        source_name = self._normalize_text(row.get("source_name"))
+        if source_name.lower().find("pytorch") >= 0 and url_title and "pytorch" not in url_title.lower():
+            return f"PyTorch: {url_title}"
+        return url_title or title
+
+    def _is_placeholder_title(self, title: str) -> bool:
+        normalized = title.strip().lower()
+        return not normalized or normalized.startswith("redirecting") or normalized == "untitled resource"
+
+    def _derive_title_from_url(self, url: str) -> str:
+        if not self._is_http_url(url):
+            return ""
+        path = urlparse(url).path
+        segment = path.rsplit("/", 1)[-1]
+        if "." in segment:
+            segment = segment.rsplit(".", 1)[0]
+        return segment.replace("-", " ").replace("_", " ").strip()
+
     async def _search_external_candidates(
         self,
         *,
@@ -1154,6 +1361,13 @@ class ResourcePushAgent(PlaceholderAgent):
         aliases = {
             "红黑树": ["red-black tree", "red black tree", "rbtree"],
             "线程池": ["thread pool", "executorservice"],
+            "深度学习": ["deep learning", "deep-learning"],
+            "机器学习": ["machine learning", "machine-learning"],
+            "神经网络": ["neural network", "neural-network"],
+            "反向传播": ["backprop", "backpropagation"],
+            "损失函数": ["loss", "loss function"],
+            "优化器": ["optimizer", "optimization"],
+            "正则化": ["regularization"],
         }
         return aliases.get(term, [])
 

@@ -171,6 +171,20 @@ class ResourceLibraryServiceTest {
                     && sql.contains("'MINDMAP'")
                     && sql.contains("app.user_resource_state history_state")
                     && sql.contains("jsonb_exists(lr.tags, history_tag.tag)")
+                    && sql.contains("WITH latest_plan AS")
+                    && sql.contains("app.learning_plan p")
+                    && sql.contains("latest_task_path AS")
+                    && sql.contains("t.service_type = 'PERSONALIZED_LEARNING'")
+                    && sql.contains("jsonb_exists(t.response_summary, 'learningPath')")
+                    && sql.contains("active_step AS")
+                    && sql.contains("context_signals AS")
+                    && sql.contains("preferred_category")
+                    && sql.contains("'AI_ML'")
+                    && sql.contains("deep[- ]?learning")
+                    && sql.contains("pytorch")
+                    && sql.contains("ROW_NUMBER() OVER")
+                    && sql.contains("category_rank")
+                    && sql.contains("lower(lr.title) LIKE 'redirecting%'")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
