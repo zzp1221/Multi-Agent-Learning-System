@@ -69,6 +69,7 @@ export default function PersonalizedLearningPathPage() {
   const [adjusting, setAdjusting] = useState(false);
   const [adjustmentIntent, setAdjustmentIntent] = useState('');
   const [adjustSubmiting, setAdjustSubmiting] = useState(false);
+  const [pathRetrying, setPathRetrying] = useState(false);
   const [resourceRefreshing, setResourceRefreshing] = useState(false);
   const [resourceRefreshTask, setResourceRefreshTask] = useState<SmartEngineTaskResponse | null>(null);
   const [stageTest, setStageTest] = useState<StageTestState>(emptyStageTestState);
@@ -124,9 +125,7 @@ export default function PersonalizedLearningPathPage() {
       smartEngineApi.getTask(taskId, { dedupe: false, retry: 0 })
         .then((task) => {
           setData((current) => current ? { ...current, refreshTask: task } : current);
-          if (!isLiveTask(task.status)) {
-            void loadCurrent();
-          }
+          void loadCurrent();
         })
         .catch((err) => console.error('Failed to poll learning path task:', err));
     }, 3500);
@@ -204,6 +203,33 @@ export default function PersonalizedLearningPathPage() {
       setError('路径调整提交失败，请稍后重试');
     } finally {
       setAdjustSubmiting(false);
+    }
+  };
+
+  const retryLearningPathGeneration = async () => {
+    if (pathRetrying || isLiveTask(refreshTask?.status)) {
+      return;
+    }
+    setPathRetrying(true);
+    setError('');
+    try {
+      const response = await learningPathApi.adjust({ adjustmentIntent: '重新生成首版个性化学习路径' });
+      const task = { taskId: response.taskId, status: response.status, serviceType: 'PERSONALIZED_LEARNING' };
+      setGenerationWatchAttempts(0);
+      setData((current) => current
+        ? { ...current, refreshTask: task }
+        : {
+            userId: data?.userId ?? '',
+            status: 'EMPTY',
+            learningPath: {},
+            refreshTask: task,
+          });
+      await loadCurrent();
+    } catch (err) {
+      console.error('Failed to retry learning path generation:', err);
+      setError(getLocalErrorMessage(err, '学习路径重新生成失败，请稍后重试'));
+    } finally {
+      setPathRetrying(false);
     }
   };
 
@@ -304,7 +330,7 @@ export default function PersonalizedLearningPathPage() {
   if (!isAuthenticated) {
     return (
       <div className="mx-auto flex min-h-[calc(100dvh-78px)] max-w-[980px] items-center justify-center px-5">
-        <div className="w-full max-w-[520px] rounded-[24px] border border-blue-100 bg-white/90 p-8 text-center shadow-xl shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900">
+        <div className="w-full max-w-[520px] rounded-[28px] bg-white/72 p-8 text-center shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/15 dark:text-primary-300">
             <Route className="h-6 w-6" />
           </div>
@@ -324,8 +350,8 @@ export default function PersonalizedLearningPathPage() {
 
   return (
     <div className="mx-auto max-w-[1180px] px-4 py-6 sm:px-6 sm:py-8">
-      <section className="mb-5 overflow-hidden rounded-[24px] border border-blue-100/80 bg-white/92 shadow-xl shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/88 dark:shadow-slate-950/30">
-        <div className="flex flex-col gap-4 border-b border-blue-100/80 px-5 py-5 dark:border-slate-800 md:flex-row md:items-center md:justify-between md:px-7">
+      <section className="mb-5 overflow-hidden rounded-[28px] bg-white/72 shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70 dark:shadow-slate-950/20">
+        <div className="flex flex-col gap-4 px-5 py-5 md:flex-row md:items-center md:justify-between md:px-7">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-600 text-sm font-bold text-white">3</div>
@@ -340,7 +366,7 @@ export default function PersonalizedLearningPathPage() {
               type="button"
               onClick={() => void loadCurrent()}
               disabled={loading}
-              className="inline-flex h-10 items-center gap-2 rounded-2xl border border-blue-100 bg-white px-4 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-primary-200 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-blue-100 transition hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               刷新
@@ -348,7 +374,7 @@ export default function PersonalizedLearningPathPage() {
             <button
               type="button"
               onClick={() => setAdjusting((value) => !value)}
-              className="inline-flex h-10 items-center gap-2 rounded-2xl border border-primary-100 bg-primary-50 px-4 text-sm font-semibold text-primary-700 shadow-sm transition hover:bg-primary-100 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-300"
+              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-primary-50 px-4 text-sm font-semibold text-primary-700 shadow-sm ring-1 ring-primary-100 transition hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20"
             >
               <SlidersHorizontal className="h-4 w-4" />
               调整路径
@@ -357,13 +383,13 @@ export default function PersonalizedLearningPathPage() {
         </div>
 
         {adjusting ? (
-          <div className="border-b border-blue-100/80 bg-blue-50/50 px-5 py-4 dark:border-slate-800 dark:bg-primary-500/5 md:px-7">
+          <div className="bg-blue-50/50 px-5 py-4 shadow-[inset_0_1px_0_rgba(219,234,254,0.72)] dark:bg-primary-500/5 dark:shadow-[inset_0_1px_0_rgba(51,65,85,0.72)] md:px-7">
             <div className="flex flex-col gap-3 md:flex-row">
               <input
                 value={adjustmentIntent}
                 onChange={(event) => setAdjustmentIntent(event.target.value)}
                 placeholder="例如：我想先补数据库索引，再做更多项目实战"
-                className="min-h-11 flex-1 rounded-2xl border border-blue-100 bg-white px-4 text-sm text-slate-700 outline-none transition focus:border-primary-300 focus:ring-2 focus:ring-primary-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                className="min-h-11 flex-1 rounded-2xl bg-white px-4 text-sm text-slate-700 outline-none ring-1 ring-blue-100 transition focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700"
               />
               <button
                 type="button"
@@ -381,13 +407,13 @@ export default function PersonalizedLearningPathPage() {
         <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_320px] md:p-7 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0">
             <StatusLegend />
-            {error ? <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">{error}</div> : null}
+            {error ? <div className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-100/80 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/20">{error}</div> : null}
             <StageTestPanel
               state={stageTest}
               onClose={() => setStageTest(emptyStageTestState)}
             />
             {loading && !data ? (
-              <div className="flex min-h-[360px] items-center justify-center rounded-[20px] border border-blue-100/80 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/30">
+              <div className="flex min-h-[360px] items-center justify-center rounded-[20px] bg-slate-50/70 ring-1 ring-blue-100/80 dark:bg-slate-950/30 dark:ring-slate-800">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary-500" />
                 <span className="text-sm text-slate-500 dark:text-slate-400">正在读取学习路径</span>
               </div>
@@ -405,11 +431,16 @@ export default function PersonalizedLearningPathPage() {
                 ))}
               </div>
             ) : (
-              <EmptyPath refreshTask={refreshTask} pendingGeneration={waitingForLearningPathGeneration} />
+              <EmptyPath
+                refreshTask={refreshTask}
+                pendingGeneration={waitingForLearningPathGeneration}
+                retrying={pathRetrying}
+                onRetry={() => void retryLearningPathGeneration()}
+              />
             )}
           </div>
 
-          <aside className="min-w-0 rounded-[22px] border border-blue-100/80 bg-white p-4 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-950/30">
+          <aside className="min-w-0 rounded-[22px] bg-white/62 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 dark:bg-slate-950/30 dark:ring-slate-800/70">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">推荐资源</h2>
               <div className="flex shrink-0 items-center gap-2">
@@ -419,7 +450,7 @@ export default function PersonalizedLearningPathPage() {
                   onClick={() => void refreshRecommendedResources()}
                   disabled={resourceRefreshing || resourceTaskRefreshing}
                   title="刷新推荐资源"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-blue-100 bg-white px-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-primary-200 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white px-2.5 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-blue-100 transition hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${resourceRefreshing || resourceTaskRefreshing ? 'animate-spin' : ''}`} />
                   刷新
@@ -441,7 +472,7 @@ export default function PersonalizedLearningPathPage() {
                 <ResourceCard key={`${resource.title}-${index}`} resource={resource} />
               ))}
               {!visibleResources.length ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400 dark:border-slate-700">
+                <div className="rounded-2xl bg-slate-50/60 px-4 py-8 text-center text-sm text-slate-400 ring-1 ring-slate-200/70 dark:bg-slate-900/45 dark:ring-slate-700/70">
                   当前阶段暂无命中的现成资源，后台刷新完成后会自动补齐。
                 </div>
               ) : null}
@@ -484,11 +515,11 @@ function PhaseCard({
   const completed = phase.status === 'completed';
   return (
     <div className="relative grid grid-cols-[34px_minmax(0,1fr)] gap-3 pb-5">
-      {!isLast ? <div className="absolute left-[16px] top-9 h-[calc(100%-14px)] w-px border-l border-dashed border-slate-200 dark:border-slate-700" /> : null}
+      {!isLast ? <div className="absolute left-[16px] top-9 h-[calc(100%-14px)] w-px bg-[repeating-linear-gradient(to_bottom,rgba(203,213,225,0.9)_0_6px,transparent_6px_12px)] dark:bg-[repeating-linear-gradient(to_bottom,rgba(51,65,85,0.9)_0_6px,transparent_6px_12px)]" /> : null}
       <div className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${completed ? 'bg-emerald-500 text-white' : active ? 'bg-primary-600 text-white' : 'bg-slate-200 text-slate-400 dark:bg-slate-800'}`}>
         {completed ? <Check className="h-4 w-4" /> : phase.order}
       </div>
-      <div className={`rounded-[20px] border p-4 transition ${active ? 'border-primary-200 bg-blue-50/70 shadow-lg shadow-primary-100/50 dark:border-primary-500/25 dark:bg-primary-500/10' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/70'}`}>
+      <div className={`rounded-[20px] p-4 ring-1 transition ${active ? 'bg-blue-50/70 ring-primary-200/80 shadow-lg shadow-primary-100/50 dark:bg-primary-500/10 dark:ring-primary-500/25' : 'bg-white/86 ring-slate-200/70 dark:bg-slate-900/70 dark:ring-slate-800/70'}`}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className={`text-sm font-bold ${active ? 'text-primary-700 dark:text-primary-300' : 'text-slate-800 dark:text-slate-100'}`}>阶段{phase.order}：{phase.title}</div>
@@ -501,7 +532,7 @@ function PhaseCard({
           </span>
         </div>
         {active ? (
-          <div className="mt-4 rounded-2xl border border-primary-100 bg-white/85 p-4 dark:border-primary-500/20 dark:bg-slate-950/40">
+          <div className="mt-4 rounded-2xl bg-white/85 p-4 ring-1 ring-primary-100/70 dark:bg-slate-950/40 dark:ring-primary-500/20">
             <div className="text-sm font-bold text-slate-700 dark:text-slate-200">当前任务：{phase.checkpoint || phase.targetKnowledgePoints[0] || phase.title}</div>
             <div className="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-800">
               <div className="h-full rounded-full bg-primary-600" style={{ width: `${Math.max(8, phase.progress)}%` }} />
@@ -541,7 +572,7 @@ function StageTestPanel({
   }
 
   return (
-    <div className="mb-5 rounded-[20px] border border-primary-100 bg-white p-4 shadow-lg shadow-blue-100/50 dark:border-primary-500/25 dark:bg-slate-950/50">
+    <div className="mb-5 rounded-[20px] bg-white/86 p-4 shadow-lg shadow-blue-100/50 ring-1 ring-primary-100/70 dark:bg-slate-950/50 dark:ring-primary-500/25">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
@@ -570,7 +601,7 @@ function StageTestPanel({
       ) : null}
 
       {state.status === 'error' ? (
-        <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+        <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-600 ring-1 ring-red-100/80 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/20">
           {state.error || '阶段测试失败，请稍后重试'}
         </div>
       ) : null}
@@ -594,12 +625,12 @@ function ResourceCard({ resource }: { resource: StepResource }) {
   );
   if (resource.downloadUrl) {
     return (
-      <a href={resource.downloadUrl} target="_blank" rel="noreferrer" className="flex min-h-[72px] items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 transition hover:border-primary-200 hover:shadow-md hover:shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-primary-500/30">
+      <a href={resource.downloadUrl} target="_blank" rel="noreferrer" className="flex min-h-[72px] items-center gap-3 rounded-2xl bg-white/88 px-3 py-2 ring-1 ring-slate-100/80 transition hover:ring-primary-200 hover:shadow-md hover:shadow-blue-100/50 dark:bg-slate-900/80 dark:ring-slate-800/70 dark:hover:ring-primary-500/30">
         {content}
       </a>
     );
   }
-  return <div className="flex min-h-[72px] items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">{content}</div>;
+  return <div className="flex min-h-[72px] items-center gap-3 rounded-2xl bg-white/88 px-3 py-2 ring-1 ring-slate-100/80 dark:bg-slate-900/80 dark:ring-slate-800/70">{content}</div>;
 }
 
 function RefreshBadge({ task }: { task: SmartEngineTaskResponse | null }) {
@@ -618,12 +649,17 @@ function RefreshBadge({ task }: { task: SmartEngineTaskResponse | null }) {
 function EmptyPath({
   refreshTask,
   pendingGeneration,
+  retrying,
+  onRetry,
 }: {
   refreshTask: SmartEngineTaskResponse | null;
   pendingGeneration: boolean;
+  retrying: boolean;
+  onRetry: () => void;
 }) {
+  const failed = isFailedTask(refreshTask?.status);
   return (
-    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[20px] border border-dashed border-blue-100 bg-slate-50/70 px-6 text-center dark:border-slate-800 dark:bg-slate-950/30">
+    <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[20px] bg-slate-50/70 px-6 text-center ring-1 ring-blue-100/70 dark:bg-slate-950/30 dark:ring-slate-800/70">
       {pendingGeneration ? (
         <Loader2 className="mb-3 h-10 w-10 animate-spin text-primary-500" />
       ) : (
@@ -635,9 +671,24 @@ function EmptyPath({
       <p className="mt-2 max-w-[420px] text-sm leading-6 text-slate-500 dark:text-slate-400">
         {pendingGeneration
           ? '画像保存后首版路径会异步入库，页面会自动刷新生成状态。'
-          : '注册画像完成后系统会在后台生成首版路径；如果任务仍在运行，请等待刷新完成。'}
+          : failed
+            ? '上一次生成任务失败，可以重新发起生成；修复后的任务会继续自动刷新状态。'
+            : '注册画像完成后系统会在后台生成首版路径；如果任务仍在运行，请等待刷新完成。'}
       </p>
-      <RefreshBadge task={refreshTask} />
+      <div className="mt-4 flex flex-col items-center gap-3">
+        <RefreshBadge task={refreshTask} />
+        {failed ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {retrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+            重新生成
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

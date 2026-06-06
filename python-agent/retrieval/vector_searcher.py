@@ -78,8 +78,12 @@ class VectorSearcher:
                        'resource' AS source
                 FROM rag.resource_chunk rc
                 JOIN rag.resource_document rd ON rd.id = rc.document_id
+                JOIN app.learning_resource lr ON lr.id = rc.resource_id
+                WHERE rc.domain = %s
+                  AND lr.status = 'ACTIVE'
+                  AND rc.access_scope::text = 'GLOBAL'
             ) combined
             ORDER BY similarity DESC
             LIMIT %s
-        """, (vec_str, domain, vec_str, top_k))
+        """, (vec_str, domain, vec_str, domain, top_k))
         return [(row[0], row[1], float(row[2]), row[3]) for row in cur.fetchall()]

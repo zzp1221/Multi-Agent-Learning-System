@@ -15,6 +15,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +30,7 @@ import java.util.UUID;
 public class PersonalizedLearningRefreshService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PersonalizedLearningRefreshService.class);
+    private static final Duration ACTIVE_TASK_REUSE_WINDOW = Duration.ofMinutes(30);
 
     private final TaskStateMachineService taskStateMachineService;
     private final SmartEngineTaskRepository taskRepository;
@@ -164,7 +167,7 @@ public class PersonalizedLearningRefreshService {
                 serviceType,
                 java.util.List.of(TaskStatus.PENDING, TaskStatus.RUNNING)
             );
-            if (activeTask.isPresent()) {
+            if (activeTask.filter(this::isReusableActiveTask).isPresent()) {
                 return activeTask.get();
             }
         }
@@ -208,5 +211,10 @@ public class PersonalizedLearningRefreshService {
             "streamRecordId", recordId
         ));
         return task;
+    }
+
+    private boolean isReusableActiveTask(SmartEngineTask task) {
+        OffsetDateTime createdAt = task.getCreatedAt();
+        return createdAt == null || createdAt.isAfter(OffsetDateTime.now().minus(ACTIVE_TASK_REUSE_WINDOW));
     }
 }

@@ -464,7 +464,7 @@ class OpenAICompatibleEvaluationGenerator:
             ),
             max_tokens=max_tokens,
         )
-        return EvaluationPayload.model_validate(_normalize_evaluation_payload(payload))
+        return EvaluationPayload.model_validate(_normalize_evaluation_payload(payload, context_payload=context_payload))
 
     def _resolve_max_tokens(self, context_payload: dict[str, Any]) -> int:
         dimensions = context_payload.get("assessmentDimensions")
@@ -979,18 +979,116 @@ class OpenAICompatibleResourcePushReranker:
         return ResourcePushRerankPayload.model_validate(payload)
 
 
-def _normalize_evaluation_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _normalize_evaluation_payload(payload: dict[str, Any], *, context_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     normalized = dict(payload)
-    for field in ("strengths", "weaknesses", "nextFocus"):
-        value = normalized.get(field)
-        if isinstance(value, str):
-            normalized[field] = _split_text_list(value)
     dimensions = normalized.get("dimensions")
     if isinstance(dimensions, dict):
         normalized["dimensions"] = [dimensions]
-    elif not isinstance(dimensions, list):
+    elif isinstance(dimensions, list):
+        normalized["dimensions"] = [item for item in dimensions if isinstance(item, dict)]
+    else:
         normalized["dimensions"] = []
+    dimension_like = _top_level_evaluation_dimension(normalized)
+    if dimension_like and not normalized["dimensions"]:
+        normalized["dimensions"] = [dimension_like]
+    if normalized["dimensions"]:
+        primary_dimension = normalized["dimensions"][0]
+        aggregated_behavior = _safe_dict(context_payload, "aggregatedBehavior")
+        normalized["overallLevel"] = (
+            _text_or_none(normalized.get("overallLevel"))
+            or _text_or_none(normalized.get("overall_level"))
+            or _text_or_none(primary_dimension.get("level"))
+            or "BASIC"
+        )
+        normalized["strengths"] = (
+            _normalize_text_list(normalized.get("strengths"))
+            or _normalize_text_list(aggregated_behavior.get("candidateStrengths"))
+            or ["已收集到学习行为信号"]
+        )
+        normalized["weaknesses"] = (
+            _normalize_text_list(normalized.get("weaknesses"))
+            or _normalize_text_list(aggregated_behavior.get("candidateWeaknesses"))
+            or ["薄弱点待补充"]
+        )
+        normalized["nextFocus"] = (
+            _normalize_text_list(normalized.get("nextFocus"))
+            or _normalize_text_list(aggregated_behavior.get("recommendedFocus"))
+            or normalized["weaknesses"][:3]
+            or ["核心概念巩固"]
+        )
+        normalized["summaryText"] = (
+            _text_or_none(normalized.get("summaryText"))
+            or _text_or_none(normalized.get("summary"))
+            or _text_or_none(normalized.get("summary_text"))
+            or _text_or_none(primary_dimension.get("evidence"))
+            or _text_or_none(primary_dimension.get("recommendation"))
+            or "已根据画像、学习上下文和现有行为信号完成保守学习效果评估。"
+        )
+    for field in ("strengths", "weaknesses", "nextFocus"):
+        normalized[field] = _normalize_text_list(normalized.get(field))
+    normalized["dimensions"] = [_normalize_evaluation_dimension(item) for item in normalized["dimensions"]]
     return normalized
+
+
+def _safe_dict(value: dict[str, Any] | None, key: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    item = value.get(key)
+    return item if isinstance(item, dict) else {}
+
+
+def _top_level_evaluation_dimension(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if not _text_or_none(payload.get("name")):
+        return None
+    if not any(key in payload for key in ("level", "evidence", "recommendation", "summaryText", "summary", "dimensions")):
+        return None
+    return {
+        "name": payload.get("name"),
+        "level": payload.get("level") or payload.get("overallLevel") or payload.get("overall_level"),
+        "evidence": payload.get("evidence") or payload.get("summaryText") or payload.get("summary"),
+        "recommendation": payload.get("recommendation") or payload.get("nextFocus") or payload.get("suggestion"),
+    }
+
+
+def _normalize_evaluation_dimension(value: dict[str, Any]) -> dict[str, Any]:
+    name = _text_or_none(value.get("name")) or "学习效果评估"
+    level = _text_or_none(value.get("level")) or "BASIC"
+    evidence = (
+        _text_or_none(value.get("evidence"))
+        or _text_or_none(value.get("summaryText"))
+        or _text_or_none(value.get("summary"))
+        or "当前评估输出缺少详细证据，已保守沿用学习上下文。"
+    )
+    recommendation = (
+        _text_or_none(value.get("recommendation"))
+        or _text_or_none(value.get("nextFocus"))
+        or _text_or_none(value.get("suggestion"))
+        or "继续围绕薄弱点完成路径学习和练习反馈。"
+    )
+    return {
+        "name": name,
+        "level": level,
+        "evidence": evidence,
+        "recommendation": recommendation,
+    }
+
+
+def _normalize_text_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return _split_text_list(value)
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        text = _text_or_none(item)
+        if text:
+            normalized.append(text)
+    return normalized
+
+
+def _text_or_none(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
 
 
 def _split_text_list(value: str) -> list[str]:

@@ -16,6 +16,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, Field
+import psycopg2
+import psycopg2.extras
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.generation.content_chain import OpenAICompatibleStructuredGenerator
@@ -78,6 +80,34 @@ class InternalConversationMessageRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ResourceSemanticHit(BaseModel):
+    chunk_id: int = Field(alias="chunkId")
+    chunk_no: int = Field(alias="chunkNo")
+    similarity: float
+    content: str
+    source_url: str = Field(default="", alias="sourceUrl")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ResourceSemanticResult(BaseModel):
+    resource_id: str = Field(alias="resourceId")
+    score: float
+    reason: str
+    hits: list[ResourceSemanticHit] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ResourceSemanticSearchResponse(BaseModel):
+    query: str
+    available: bool
+    message: str
+    results: list[ResourceSemanticResult] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 def verify_internal_token(
     x_zhixue_internal_token: str | None = Header(default=None, alias=INTERNAL_TOKEN_HEADER),
 ) -> None:
@@ -105,6 +135,100 @@ def internal_token() -> str:
     except OSError as exc:
         LOGGER.warning("Failed to read internal token file %s: %s", INTERNAL_TOKEN_FILE, exc)
         return ""
+
+
+def _embedding_vec_str(vec: list[float]) -> str:
+    return "[" + ",".join(str(v) for v in vec) + "]"
+
+
+def _embed_resource_query(query: str) -> list[float]:
+    from retrieval.vector_searcher import VectorSearcher
+
+    return VectorSearcher(
+        dimension=SETTINGS.knowledge_embedding_dimension,
+        model=SETTINGS.knowledge_embedding_model_name,
+    )._embed(query)
+
+
+def _search_resource_chunks(query: str, top_k: int, domain: str | None = None, user_id: str | None = None) -> list[dict]:
+    embedding = _embed_resource_query(query)
+    vec_str = _embedding_vec_str(embedding)
+    db_config = SETTINGS.postgres_connect_kwargs()
+    params: list[object] = [vec_str, domain, domain, user_id, user_id, user_id, user_id, vec_str, top_k]
+
+    with psycopg2.connect(**db_config) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT
+                  rc.id AS chunk_id,
+                  rc.resource_id::text AS resource_id,
+                  rc.chunk_no,
+                  rc.content,
+                  ROUND((1 - (rc.embedding <=> %s::vector))::numeric, 4) AS similarity,
+                  COALESCE(rd.source_ref, lr.metadata_json ->> 'sourceUrl', '') AS source_url
+                FROM rag.resource_chunk rc
+                JOIN rag.resource_document rd ON rd.id = rc.document_id
+                JOIN app.learning_resource lr ON lr.id = rc.resource_id
+                WHERE lr.status = 'ACTIVE'
+                  AND (%s IS NULL OR rc.domain = %s)
+                  AND (
+                    rc.access_scope::text = 'GLOBAL'
+                    OR (
+                      %s IS NOT NULL
+                      AND rc.access_scope::text = 'USER'
+                      AND rc.owner_user_id = %s::uuid
+                    )
+                    OR (
+                      %s IS NOT NULL
+                      AND rc.access_scope::text = 'COURSE'
+                      AND EXISTS (
+                        SELECT 1
+                        FROM app.user_course_enrollments e
+                        WHERE e.user_id = %s::uuid AND e.course_id = rc.course_id
+                      )
+                    )
+                  )
+                ORDER BY rc.embedding <=> %s::vector
+                LIMIT %s
+                """,
+                params,
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def _build_resource_semantic_response(query: str, rows: list[dict]) -> ResourceSemanticSearchResponse:
+    grouped: dict[str, ResourceSemanticResult] = {}
+    for row in rows:
+        resource_id = str(row.get("resource_id") or "")
+        if not resource_id:
+            continue
+        similarity = float(row.get("similarity") or 0)
+        hit = ResourceSemanticHit(
+            chunkId=int(row.get("chunk_id") or 0),
+            chunkNo=int(row.get("chunk_no") or 0),
+            similarity=similarity,
+            content=str(row.get("content") or "")[:800],
+            sourceUrl=str(row.get("source_url") or ""),
+        )
+        result = grouped.get(resource_id)
+        if result is None:
+            grouped[resource_id] = ResourceSemanticResult(
+                resourceId=resource_id,
+                score=similarity,
+                reason="向量语义匹配",
+                hits=[hit],
+            )
+        else:
+            result.hits.append(hit)
+            result.score = max(result.score, similarity)
+    results = sorted(grouped.values(), key=lambda item: item.score, reverse=True)
+    return ResourceSemanticSearchResponse(
+        query=query,
+        available=True,
+        message="ok" if results else "没有匹配到可用资源",
+        results=results,
+    )
 
 
 @asynccontextmanager
@@ -391,3 +515,35 @@ async def list_conversation_messages(
             for document in documents
         ]
     )
+
+
+@app.get("/internal/resources/search/semantic")
+async def search_resources_semantic(
+    _: None = Depends(verify_internal_token),
+    query: str = Query(min_length=1),
+    top_k: int = Query(default=8, alias="topK", ge=1, le=20),
+    user_id: str | None = Query(default=None, alias="userId"),
+    domain: str | None = Query(default=None),
+) -> JSONResponse:
+    """Search RAG resource chunks and return resource-level semantic hits."""
+
+    normalized_query = query.strip()
+    if not normalized_query:
+        raise HTTPException(status_code=400, detail="query must not be blank")
+    try:
+        rows = _search_resource_chunks(
+            normalized_query,
+            top_k=top_k,
+            domain=domain or SETTINGS.retrieval_domain,
+            user_id=user_id,
+        )
+        response = _build_resource_semantic_response(normalized_query, rows)
+    except Exception as exc:
+        LOGGER.warning("Resource semantic search unavailable for query=%r: %s", normalized_query, exc)
+        response = ResourceSemanticSearchResponse(
+            query=normalized_query,
+            available=False,
+            message=f"semantic search unavailable: {exc}",
+            results=[],
+        )
+    return JSONResponse(response.model_dump(by_alias=True, mode="json"))

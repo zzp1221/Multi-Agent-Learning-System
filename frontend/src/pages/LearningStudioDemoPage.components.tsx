@@ -36,7 +36,7 @@ function DeferredMarkdownRenderer(props: { content: string; isStreaming?: boolea
 
 function DeferredMermaidDiagram(props: { chart: string }) {
   return (
-    <Suspense fallback={<div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500">图表加载中...</div>}>
+    <Suspense fallback={<div className="rounded-xl px-4 py-6 text-sm text-slate-400 ring-1 ring-slate-200/70 dark:text-slate-500 dark:ring-slate-700/70">图表加载中...</div>}>
       <LazyMermaidDiagram {...props} />
     </Suspense>
   );
@@ -54,7 +54,7 @@ export function ServiceDynamicForm(props: {
 }) {
   if (!props.service) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 px-4 py-8 text-center dark:border-slate-700 dark:bg-slate-900/50">
+      <div className="flex flex-col items-center justify-center rounded-2xl bg-slate-50/70 px-4 py-8 text-center ring-1 ring-slate-200/70 dark:bg-slate-900/55 dark:ring-slate-700/60">
         <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800">
           <Sparkles className="h-5 w-5 text-slate-400" />
         </div>
@@ -63,12 +63,12 @@ export function ServiceDynamicForm(props: {
     );
   }
 
-  const baseInputClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-500";
-  const baseSelectClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-500";
-  const chipButton = (active: boolean) => `rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
+  const baseInputClass = "w-full rounded-xl bg-white/88 px-3.5 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all duration-200 focus:bg-white focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900/82 dark:text-slate-200 dark:ring-slate-700/70";
+  const baseSelectClass = "w-full rounded-xl bg-white/88 px-3.5 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all duration-200 focus:bg-white focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900/82 dark:text-slate-200 dark:ring-slate-700/70";
+  const chipButton = (active: boolean) => `rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-all duration-200 ${
     active
-      ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-400'
-      : 'border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-primary-600'
+      ? 'bg-primary-50 text-primary-700 ring-primary-300/70 dark:bg-primary-500/10 dark:text-primary-400 dark:ring-primary-700/70'
+      : 'bg-white/88 text-slate-600 ring-slate-200/80 hover:bg-primary-50/60 hover:text-primary-600 hover:ring-primary-200 dark:bg-slate-900/82 dark:text-slate-400 dark:ring-slate-700/70 dark:hover:ring-primary-600'
   }`;
 
   if (props.service === 'resource') {
@@ -90,7 +90,7 @@ export function ServiceDynamicForm(props: {
     };
 
     return (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
+      <div className="rounded-2xl bg-slate-50/70 p-4 ring-1 ring-white/80 dark:bg-slate-900/55 dark:ring-slate-800/70 md:p-5">
         <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">资源生成参数</div>
         <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {resourceTypeButtons.map((item) => {
@@ -118,7 +118,7 @@ export function ServiceDynamicForm(props: {
               onChange={(e) => props.onResourceChange({ ...props.resourceForm, course: e.target.value })}
               placeholder="请输入课程名称"
               aria-invalid={Boolean(courseError)}
-              className={`${baseInputClass} ${courseError ? 'border-rose-300 bg-rose-50/40 focus:border-rose-400 focus:ring-rose-500/15 dark:border-rose-500/70 dark:bg-rose-950/20' : ''}`}
+              className={`${baseInputClass} ${courseError ? 'bg-rose-50/60 ring-rose-300/80 focus:ring-rose-500/15 dark:bg-rose-950/20 dark:ring-rose-500/70' : ''}`}
             />
             {courseError ? <p className="mt-1.5 text-xs text-rose-500">{courseError}</p> : null}
           </label>
@@ -147,12 +147,12 @@ export function ServiceDynamicForm(props: {
             rows={2}
             placeholder="请输入重点知识点，例如：Spring Bean 生命周期、依赖注入"
             aria-invalid={Boolean(keyPointsError)}
-            className={`${baseInputClass} ${keyPointsError ? 'border-rose-300 bg-rose-50/40 focus:border-rose-400 focus:ring-rose-500/15 dark:border-rose-500/70 dark:bg-rose-950/20' : ''}`}
+            className={`${baseInputClass} ${keyPointsError ? 'bg-rose-50/60 ring-rose-300/80 focus:ring-rose-500/15 dark:bg-rose-950/20 dark:ring-rose-500/70' : ''}`}
           />
           {keyPointsError ? <p className="mt-1.5 text-xs text-rose-500">{keyPointsError}</p> : null}
         </label>
         {includesVideo ? (
-          <div className="mt-4 rounded-2xl border border-primary-200 bg-primary-50/70 px-4 py-3 text-sm text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-200">
+          <div className="mt-4 rounded-2xl bg-primary-50/70 px-4 py-3 text-sm text-primary-700 ring-1 ring-primary-200/70 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-700/70">
             已固定为数字人视频生成，系统将按默认时长自动完成脚本、TTS，并在当前浏览器本地渲染视频。
           </div>
         ) : null}
@@ -162,13 +162,13 @@ export function ServiceDynamicForm(props: {
 
   if (props.service === 'personalized' || props.service === 'path' || props.service === 'push') {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
+      <div className="rounded-2xl bg-slate-50/70 p-4 ring-1 ring-white/80 dark:bg-slate-900/55 dark:ring-slate-800/70 md:p-5">
         <div className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">自动分析范围</div>
         <div className="grid gap-3 text-sm leading-6 text-slate-600 dark:text-slate-400">
-          <div className="rounded-xl border border-blue-100 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="rounded-xl bg-white/78 p-3 ring-1 ring-blue-100/70 dark:bg-slate-950/40 dark:ring-slate-800/70">
             系统将读取学习画像、学习进度、知识掌握图谱、练习测试记录、错题复习和资源使用反馈。
           </div>
-          <div className="rounded-xl border border-blue-100 bg-white/80 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="rounded-xl bg-white/78 p-3 ring-1 ring-blue-100/70 dark:bg-slate-950/40 dark:ring-slate-800/70">
             提交后自动完成学习状态分析、路径规划和资源推送策略调整，不需要手动填写课程、周期、进度或资源偏好。
           </div>
         </div>
@@ -177,7 +177,7 @@ export function ServiceDynamicForm(props: {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 md:p-5">
+    <div className="rounded-2xl bg-slate-50/70 p-4 ring-1 ring-white/80 dark:bg-slate-900/55 dark:ring-slate-800/70 md:p-5">
       <div className="text-sm leading-6 text-slate-600 dark:text-slate-400">请选择服务后继续。</div>
     </div>
   );
@@ -190,7 +190,7 @@ function resolveSelectedResourceTypes(resourceForm: ResourceForm): ResourceType[
 function InlineResourcePanel(props: { resource: InlineResourceView }) {
   if (props.resource.kind === 'code') {
     return (
-      <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="mb-4 rounded-xl bg-slate-50/70 p-4 ring-1 ring-white/80 dark:bg-slate-900/55 dark:ring-slate-800/70">
         <div className="mb-3">
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.resource.title}</div>
           {props.resource.summary ? (
@@ -199,7 +199,7 @@ function InlineResourcePanel(props: { resource: InlineResourceView }) {
         </div>
         <CodeBlock language={props.resource.language || 'text'}>{props.resource.content}</CodeBlock>
         {props.resource.explanation ? (
-          <div className="mt-4 rounded-xl border border-primary-100 bg-white p-4 dark:border-primary-900 dark:bg-slate-950">
+          <div className="mt-4 rounded-xl bg-white/88 p-4 ring-1 ring-primary-100/70 dark:bg-slate-950/70 dark:ring-primary-900/70">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-400">讲解</div>
             <DeferredMarkdownRenderer content={props.resource.explanation} />
           </div>
@@ -210,7 +210,7 @@ function InlineResourcePanel(props: { resource: InlineResourceView }) {
 
   if (props.resource.kind === 'mermaid') {
     return (
-      <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="mb-4 rounded-xl bg-slate-50/70 p-4 ring-1 ring-white/80 dark:bg-slate-900/55 dark:ring-slate-800/70">
         <div className="mb-3">
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.resource.title}</div>
           {props.resource.summary ? (
@@ -223,7 +223,7 @@ function InlineResourcePanel(props: { resource: InlineResourceView }) {
   }
 
   return (
-    <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
+    <div className="mb-4 rounded-xl bg-slate-50/70 p-4 text-sm leading-7 text-slate-700 ring-1 ring-white/80 dark:bg-slate-900/55 dark:text-slate-300 dark:ring-slate-800/70">
       <DeferredMarkdownRenderer content={props.resource.content} />
     </div>
   );
@@ -308,7 +308,7 @@ function PracticeQuestionPanel(props: {
   batch: PracticeQuestionBatch;
 }) {
   return (
-    <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+    <div className="mb-4 rounded-xl bg-slate-50/70 p-4 ring-1 ring-white/80 dark:bg-slate-900/55 dark:ring-slate-800/70">
       <div className="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.batch.title}</div>
@@ -316,17 +316,17 @@ function PracticeQuestionPanel(props: {
             主题：{props.batch.topic || '未指定'} · 难度：{props.batch.difficulty || '未指定'}
           </div>
           {props.batch.description ? (
-            <div className="mt-3 rounded-xl border border-primary-100 bg-primary-50/70 px-3 py-2 text-sm leading-6 text-primary-700 dark:border-primary-900 dark:bg-primary-500/10 dark:text-primary-200">
+            <div className="mt-3 rounded-xl bg-primary-50/70 px-3 py-2 text-sm leading-6 text-primary-700 ring-1 ring-primary-100/70 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-900/70">
               {props.batch.description}
             </div>
           ) : null}
         </div>
-        <div className="w-full shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200 sm:w-auto">
+        <div className="w-full shrink-0 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 ring-1 ring-amber-200/70 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/30 sm:w-auto">
           已进入浮动练习助手
         </div>
       </div>
 
-      <div className="rounded-xl border border-amber-100 bg-white px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-500/20 dark:bg-slate-950 dark:text-amber-100">
+      <div className="rounded-xl bg-white/88 px-4 py-3 text-sm leading-6 text-amber-800 ring-1 ring-amber-100/70 dark:bg-slate-950/70 dark:text-amber-100 dark:ring-amber-500/20">
         共 {props.batch.questions.length} 道题。题干、选项和逐题判题只在对话页浮动练习助手中展示，资源结果页不展开题目正文。
       </div>
     </div>
@@ -495,7 +495,7 @@ export function TaskResultPanel(props: {
     <div className="space-y-4">
       {props.resultHistory.length > 1 ? (
         <div className="modern-card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="flex items-center gap-2 px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)]">
             <Sparkles className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">结果选择</span>
           </div>
@@ -512,10 +512,10 @@ export function TaskResultPanel(props: {
                   key={record.taskId}
                   type="button"
                   onClick={() => props.onSelectResultTask(record.taskId)}
-                  className={`min-w-[180px] rounded-xl border px-3 py-2 text-left transition-all ${
+                  className={`min-w-[180px] rounded-xl px-3 py-2 text-left ring-1 transition-all ${
                     active
-                      ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-200'
-                      : 'border-slate-200 bg-slate-50/70 text-slate-600 hover:border-primary-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:border-primary-700'
+                      ? 'bg-primary-50 text-primary-700 ring-primary-300/70 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-700/70'
+                      : 'bg-slate-50/70 text-slate-600 ring-slate-200/70 hover:bg-white hover:ring-primary-200 dark:bg-slate-900/50 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:ring-primary-700'
                   }`}
                 >
                   <div className="truncate text-sm font-semibold">{record.title}</div>
@@ -529,12 +529,12 @@ export function TaskResultPanel(props: {
 
       {visibleVideoResult ? (
         <div className="modern-card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="flex items-center gap-2 px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)]">
             <Sparkles className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">视频结果</span>
           </div>
           <div className="p-3 sm:p-4">
-            <Suspense fallback={<div className="aspect-video rounded-xl border border-dashed border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900" />}>
+            <Suspense fallback={<div className="aspect-video rounded-xl bg-slate-50 ring-1 ring-slate-200/70 dark:bg-slate-900 dark:ring-slate-700/70" />}>
               <LazyVideoCard
                 title={visibleVideoResult.title}
                 videoUrl={visibleVideoResult.videoUrl}
@@ -554,7 +554,7 @@ export function TaskResultPanel(props: {
 
       {externalRecommendations.length > 0 ? (
         <div className="modern-card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="flex items-center gap-2 px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)]">
             <Sparkles className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">推荐资源</span>
           </div>
@@ -568,7 +568,7 @@ export function TaskResultPanel(props: {
 
       {visibleLearningPlan ? (
         <div className="modern-card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="flex items-center gap-2 px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)]">
             <BookOpen className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">学习路径</span>
           </div>
@@ -581,7 +581,7 @@ export function TaskResultPanel(props: {
                 const resourceStep = resourcesByStepId.get(step.stepId);
                 const stepGaps = gapsByStepId.get(step.stepId) ?? [];
                 return (
-                  <div key={`${step.stepId}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+                  <div key={`${step.stepId}-${index}`} className="rounded-xl bg-slate-50/70 px-4 py-3 ring-1 ring-white/80 dark:bg-slate-900/55 dark:ring-slate-800/70">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0 text-sm font-semibold text-slate-800 dark:text-slate-200">
                         {step.order ?? index + 1}. {step.title || step.stepId}
@@ -604,7 +604,7 @@ export function TaskResultPanel(props: {
                       {step.status ? <span className="rounded-full bg-white px-2 py-1 ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-700">{step.status}</span> : null}
                     </div>
                     {step.checkpoint ? (
-                      <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-600 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300">
+                      <div className="mt-3 rounded-lg bg-white/88 px-3 py-2 text-xs leading-5 text-slate-600 ring-1 ring-slate-200/70 dark:bg-slate-950/70 dark:text-slate-300 dark:ring-slate-700/70">
                         检查点：{step.checkpoint}
                       </div>
                     ) : null}
@@ -627,7 +627,7 @@ export function TaskResultPanel(props: {
 
       {standaloneStepResources.length > 0 || standaloneCoverageGaps.length > 0 ? (
         <div className="modern-card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="flex items-center gap-2 px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)]">
             <Sparkles className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">资源推送计划</span>
           </div>
@@ -648,7 +648,7 @@ export function TaskResultPanel(props: {
       ) : null}
 
       <div className="modern-card overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+        <div className="flex items-center gap-2 px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)]">
           <BookOpen className="h-4 w-4 text-primary-500" />
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">任务结果</span>
         </div>
@@ -664,7 +664,7 @@ export function TaskResultPanel(props: {
             )
           ))}
           {cleanedTaskSummary ? (
-            <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-sm leading-7 text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
+            <div className="mb-4 rounded-xl bg-slate-50/70 p-4 text-sm leading-7 text-slate-700 ring-1 ring-white/80 dark:bg-slate-900/55 dark:text-slate-300 dark:ring-slate-800/70">
               <DeferredMarkdownRenderer content={cleanedTaskSummary} />
             </div>
           ) : null}
@@ -683,7 +683,7 @@ export function TaskResultPanel(props: {
 
       {fileDownloads.length > 0 ? (
         <div className="modern-card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="flex items-center gap-2 px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)]">
             <FileText className="h-4 w-4 text-primary-500" />
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">产物下载</span>
           </div>
@@ -692,7 +692,7 @@ export function TaskResultPanel(props: {
               {fileDownloads.map((item) => (
                 <div
                   key={`${item.title}-${item.url}`}
-                  className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 transition-all hover:border-primary-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:hover:border-primary-700 sm:flex-row sm:items-center"
+                  className="flex flex-col items-stretch justify-between gap-3 rounded-xl bg-slate-50/70 px-4 py-3 ring-1 ring-slate-200/70 transition-all hover:bg-white hover:ring-primary-200 dark:bg-slate-900/50 dark:ring-slate-700/70 dark:hover:ring-primary-700 sm:flex-row sm:items-center"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-slate-700 dark:text-slate-300">{item.title}</div>
@@ -727,7 +727,7 @@ function ResourcePushPlanStepResources(props: {
     return null;
   }
   return (
-    <div className={props.standalone ? 'rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50' : 'mt-3 border-t border-slate-200 pt-3 dark:border-slate-700'}>
+    <div className={props.standalone ? 'rounded-xl bg-slate-50/70 px-4 py-3 ring-1 ring-slate-200/70 dark:bg-slate-900/55 dark:ring-slate-700/70' : 'mt-3 pt-3 shadow-[inset_0_1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_1px_0_rgba(51,65,85,0.72)]'}>
       <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
         <span>{props.standalone ? props.step.stepTitle || props.step.stepId || '推荐资源' : '推荐资源'}</span>
         {props.step.targetKnowledgePoints.map((point) => (
@@ -738,7 +738,7 @@ function ResourcePushPlanStepResources(props: {
       </div>
       <div className="mt-2 grid gap-2 md:grid-cols-2">
         {props.step.resources.map((item, index) => (
-          <div key={`${item.title}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950/70">
+          <div key={`${item.title}-${index}`} className="rounded-lg bg-white/88 px-3 py-2 ring-1 ring-slate-200/70 dark:bg-slate-950/70 dark:ring-slate-700/70">
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
               {item.resourceType ? <span className="rounded-full bg-primary-50 px-2 py-0.5 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">{recommendationTypeLabel(item.resourceType)}</span> : null}
               {item.sourceName || item.source ? <span>{item.sourceName || item.source}</span> : null}
@@ -772,7 +772,7 @@ function ResourceCoverageGapNote(props: { gap: ResourceCoverageGapView }) {
     return null;
   }
   return (
-    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
+    <div className="mt-3 rounded-lg bg-amber-50/70 px-3 py-2 text-xs leading-5 text-amber-800 ring-1 ring-amber-200/70 dark:bg-amber-950/30 dark:text-amber-200 dark:ring-amber-900/70">
       资源缺口：{missingTypes || '待补齐'}{props.gap.reason ? `。${props.gap.reason}` : ''}
     </div>
   );
@@ -809,7 +809,7 @@ function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
   const typeLabel = recommendationTypeLabel(props.item.resourceType);
   const isVideo = props.item.resourceType === 'VIDEO';
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="overflow-hidden rounded-2xl bg-white/88 shadow-sm ring-1 ring-slate-200/70 dark:bg-slate-900/82 dark:ring-slate-700/70">
       <div className={`relative ${isVideo ? 'aspect-video' : 'aspect-[16/10]'} bg-slate-100 dark:bg-slate-800`}>
         {props.item.thumbnailUrl ? (
           <img
@@ -841,7 +841,7 @@ function ExternalResourceRecommendationCard(props: { item: TempDownloadLink }) {
           ) : null}
           <span className="rounded-full bg-primary-50 px-2.5 py-1 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">{typeLabel}</span>
         </div>
-        <div className="flex flex-col items-stretch justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center">
+        <div className="flex flex-col items-stretch justify-between gap-3 pt-3 shadow-[inset_0_1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_1px_0_rgba(30,41,59,0.82)] sm:flex-row sm:items-center">
           <span className="text-xs text-slate-400 dark:text-slate-500">{props.item.expiresHint || '点击后将在新窗口打开资源'}</span>
           <a
             href={props.item.url}

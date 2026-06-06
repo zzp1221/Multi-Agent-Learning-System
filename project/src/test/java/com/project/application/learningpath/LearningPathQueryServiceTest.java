@@ -11,7 +11,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -142,6 +144,40 @@ class LearningPathQueryServiceTest {
         );
 
         assertThat(service.getCurrent(userId).activeStep()).isNull();
+    }
+
+    @Test
+    void returnsTimeoutForStaleLiveRefreshTask() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000009");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+
+        SmartEngineTask staleTask = task(userId, ServiceType.PERSONALIZED_LEARNING);
+        staleTask.setTaskStatus(TaskStatus.RUNNING);
+        ReflectionTestUtils.setField(staleTask, "createdAt", OffsetDateTime.now().minusMinutes(31));
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(Optional.of(staleTask));
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(List.of(staleTask));
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(List.of());
+
+        LearningPathQueryService service = new LearningPathQueryService(
+            jdbcTemplate,
+            taskRepository,
+            mock(TaskStateMachineService.class),
+            new ObjectMapper()
+        );
+
+        LearningPathCurrentResponse response = service.getCurrent(userId);
+
+        assertThat(response.refreshTask()).isNotNull();
+        assertThat(response.refreshTask().status()).isEqualTo(TaskStatus.TIMEOUT);
+        assertThat(response.refreshTask().errorCode()).isEqualTo("TASK_STALE");
     }
 
     @Test

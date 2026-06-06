@@ -256,7 +256,7 @@ SERVICE_SPECS = {
 }
 
 
-async def test_one_service(client: httpx.AsyncClient, st: str, spec: dict) -> list[TestResult]:
+async def run_one_service_check(client: httpx.AsyncClient, st: str, spec: dict) -> list[TestResult]:
     results = []
     body = {
         "serviceType": st,
@@ -373,7 +373,7 @@ async def part2_agent_tests(client: httpx.AsyncClient):
 
     for st, spec in SERVICE_SPECS.items():
         print(f"\n  ── {st} ──")
-        res = await test_one_service(client, st, spec)
+        res = await run_one_service_check(client, st, spec)
         for r in res:
             C.add(f"agent_{st}", r)
 

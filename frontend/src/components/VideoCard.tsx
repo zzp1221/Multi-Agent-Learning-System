@@ -121,7 +121,7 @@ export default function VideoCard(props: VideoCardProps) {
   }, [resolvedVideoUrl, props.videoUrl]);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="overflow-hidden rounded-2xl bg-white/90 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900/86 dark:ring-slate-700/70">
       {/* Video Player Area */}
       <div className="relative aspect-video bg-slate-900">
         {/* Thumbnail / Background */}
@@ -264,7 +264,7 @@ export default function VideoCard(props: VideoCardProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="flex items-center justify-between gap-3 pt-3 shadow-[inset_0_1px_0_rgba(241,245,249,0.86)] dark:shadow-[inset_0_1px_0_rgba(30,41,59,0.86)]">
           <span className="text-xs text-slate-400 dark:text-slate-500">{props.expiresHint || '视频资源已生成'}</span>
           {props.videoUrl ? (
             <a

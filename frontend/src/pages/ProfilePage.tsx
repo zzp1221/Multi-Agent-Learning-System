@@ -110,7 +110,7 @@ export default function ProfilePage() {
   if (loading && !profile) {
     return (
       <ProfileShell>
-        <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-slate-200 bg-white/85 text-sm text-slate-500 shadow-sm shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+        <div className="flex min-h-[420px] items-center justify-center rounded-[24px] bg-white/64 text-sm text-slate-500 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 dark:bg-slate-900/60 dark:text-slate-400 dark:ring-slate-800/70">
           <LoaderCircle className="mr-2 h-4 w-4 animate-spin text-primary-500" />
           正在读取真实画像数据
         </div>
@@ -155,7 +155,7 @@ export default function ProfilePage() {
   return (
     <ProfileShell>
       <div className="space-y-5">
-        <header className="rounded-2xl border border-slate-200 bg-white/90 px-5 py-5 shadow-sm shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-slate-950/20 md:px-6">
+        <header className="rounded-[28px] bg-white/72 px-5 py-5 shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70 dark:shadow-slate-950/20 md:px-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
@@ -230,7 +230,7 @@ function PanelShell({
   return (
     <section
       id={id}
-      className={`rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-slate-950/20 md:p-6 ${className}`}
+      className={`rounded-[24px] bg-white/66 p-5 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/62 dark:ring-slate-800/70 md:p-6 ${className}`}
     >
       {children}
     </section>
@@ -282,7 +282,7 @@ function BehaviorTrendPanel(props: {
         {props.loading ? (
           <AnalyticsStateMessage text="正在读取行为趋势" />
         ) : props.error ? (
-          <div className="rounded-2xl border border-red-100 bg-red-50/80 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+          <div className="rounded-2xl bg-red-50/80 p-4 text-sm text-red-700 shadow-sm shadow-red-100/70 ring-1 ring-red-100 dark:bg-red-950/30 dark:text-red-200 dark:shadow-red-950/20 dark:ring-red-900/40">
             <div>{props.error}</div>
             <button
               type="button"
@@ -306,7 +306,7 @@ function BehaviorTrendPanel(props: {
                         className="w-full rounded-t-lg bg-primary-500 transition-[height,background-color] duration-200 group-hover:bg-primary-600"
                         style={{ height }}
                       />
-                      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden w-40 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-lg shadow-slate-200/80 group-hover:block dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:shadow-slate-950/40">
+                      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden w-40 -translate-x-1/2 rounded-xl bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-lg shadow-slate-200/80 ring-1 ring-slate-200/80 backdrop-blur group-hover:block dark:bg-slate-900/95 dark:text-slate-300 dark:shadow-slate-950/40 dark:ring-slate-700/80">
                         <div className="font-semibold text-slate-900 dark:text-white">{label}</div>
                         <div className="mt-1">行为总数：{activity}</div>
                         <div>对话：{point.conversationCount}，任务：{point.serviceTaskCount}</div>
@@ -406,7 +406,7 @@ function TrendMetric({ label, value }: { label: string; value: string }) {
 
 function BehaviorSignal({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-3.5 py-3 dark:border-slate-800">
+    <div className="flex items-center justify-between rounded-2xl bg-white/72 px-3.5 py-3 ring-1 ring-slate-200/80 dark:bg-slate-950/30 dark:ring-slate-800">
       <div className="flex min-w-0 items-center gap-2.5">
         <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
         <span className="truncate text-sm text-slate-600 dark:text-slate-300">{label}</span>
@@ -419,7 +419,7 @@ function BehaviorSignal({ label, value, color }: { label: string; value: number;
 function ScoreLine({ label, detail, score }: { label: string; detail: string; score: number }) {
   const normalizedScore = Math.max(0, Math.min(100, score));
   return (
-    <div className="rounded-2xl border border-slate-200 p-4 transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:border-slate-800 dark:hover:border-primary-900/60 dark:hover:bg-primary-500/5">
+    <div className="rounded-2xl bg-white/62 p-4 ring-1 ring-slate-200/80 transition-colors hover:bg-primary-50/40 hover:ring-primary-200 dark:bg-slate-950/24 dark:ring-slate-800 dark:hover:bg-primary-500/5 dark:hover:ring-primary-900/60">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</div>
@@ -439,7 +439,7 @@ function WeakPointCard({ item, rank }: { item: WeakPointRank; rank: number }) {
   const level = severity >= 80 ? '高优先级' : severity >= 60 ? '中优先级' : '待观察';
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition-colors hover:border-amber-200 hover:bg-amber-50/60 dark:border-slate-800 dark:bg-slate-950/30 dark:hover:border-amber-900/60 dark:hover:bg-amber-500/5">
+    <article className="rounded-2xl bg-slate-50/70 p-4 ring-1 ring-slate-200/80 transition-colors hover:bg-amber-50/60 hover:ring-amber-200 dark:bg-slate-950/30 dark:ring-slate-800 dark:hover:bg-amber-500/5 dark:hover:ring-amber-900/60">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-xs font-semibold text-amber-600 dark:text-amber-300">Top {rank}</div>
@@ -481,7 +481,7 @@ function ProfileAccessState(props: {
   onAction: () => void;
 }) {
   return (
-    <div className="flex min-h-[420px] items-center justify-center rounded-2xl border border-slate-200 bg-white/90 p-6 text-center shadow-sm shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900/85 dark:shadow-slate-950/20">
+    <div className="flex min-h-[420px] items-center justify-center rounded-[28px] bg-white/72 p-6 text-center shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70">
       <div className="max-w-md">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
           {props.icon}
@@ -511,7 +511,7 @@ function AnalyticsStateMessage({ text }: { text: string }) {
 
 function EmptyInline({ text }: { text: string }) {
   return (
-    <div className="flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-400">
+    <div className="flex min-h-[160px] items-center justify-center rounded-2xl bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 ring-1 ring-slate-200/80 dark:bg-slate-950/30 dark:text-slate-400 dark:ring-slate-800">
       {text}
     </div>
   );

@@ -210,10 +210,10 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   }
 
   return (
-    <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-[28px] border border-blue-100 bg-white/85 px-6 py-10 text-center text-sm text-slate-500 shadow-sm shadow-blue-100/60">正在加载学习服务...</div>}>
+    <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-[28px] bg-white/72 px-6 py-10 text-center text-sm text-slate-500 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 dark:bg-slate-900/68 dark:ring-slate-800/70">正在加载学习服务...</div>}>
       <div className="mx-auto max-w-[1120px] space-y-5 px-0 pb-8 sm:space-y-7 sm:pb-10 md:px-0">
-        <section className="overflow-hidden rounded-[22px] border border-blue-100/80 bg-white/92 shadow-xl shadow-blue-100/55 dark:border-slate-800 dark:bg-slate-900/86 dark:shadow-slate-950/30 sm:rounded-[28px]">
-          <div className="flex items-center justify-between gap-3 border-b border-blue-100/80 px-4 py-4 dark:border-slate-800 sm:px-6 sm:py-5 md:px-8">
+        <section className="overflow-hidden rounded-[28px] bg-white/72 shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70 dark:shadow-slate-950/20">
+          <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-5 md:px-8">
             <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-sky-400 text-white shadow-lg shadow-blue-500/20 sm:h-11 sm:w-11">
                 <GraduationCap className="h-5 w-5" />
@@ -253,10 +253,10 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
                         key={item.id}
                         type="button"
                         onClick={() => withAuth(() => handleSelectService(item.id))}
-                        className={`group relative min-h-[132px] rounded-2xl border bg-white/86 p-4 text-left shadow-sm shadow-blue-100/40 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-lg hover:shadow-blue-100/60 dark:bg-slate-950/42 dark:shadow-none sm:min-h-[148px] sm:p-6 ${
+                        className={`group relative min-h-[132px] rounded-2xl bg-white/82 p-4 text-left shadow-sm shadow-blue-100/35 ring-1 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-blue-100/45 dark:bg-slate-950/42 dark:shadow-none sm:min-h-[148px] sm:p-6 ${
                           active
-                            ? 'border-primary-400 ring-2 ring-primary-500/15 dark:border-primary-500'
-                            : 'border-blue-100/80 dark:border-slate-800'
+                            ? 'ring-2 ring-primary-500/30'
+                            : 'ring-blue-100/80 dark:ring-slate-800'
                         }`}
                       >
                         <div className="flex items-center gap-3 sm:gap-5">
@@ -288,8 +288,8 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           </div>
         </section>
 
-        <div className="grid overflow-hidden rounded-[22px] border border-blue-100/80 bg-white/90 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 sm:rounded-[24px] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <section className="border-b border-blue-100/80 p-4 dark:border-slate-800 sm:p-6 xl:border-b-0 xl:border-r">
+        <div className="grid overflow-hidden rounded-[24px] bg-white/66 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/62 dark:ring-slate-800/70 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section className="p-4 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)] sm:p-6 xl:shadow-[inset_-1px_0_0_rgba(226,232,240,0.72)] xl:dark:shadow-[inset_-1px_0_0_rgba(30,41,59,0.82)]">
             <EngineSectionHeader
               icon={<FileText className="h-4 w-4" />}
               title={selectedService === 'personalized' ? '自动分析范围' : (selectedServiceButton ? `${selectedServiceButton.label}参数` : '服务参数')}

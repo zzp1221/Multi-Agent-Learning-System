@@ -8,6 +8,7 @@ import com.project.application.smartengine.TaskStateMachineService;
 import com.project.domain.task.ServiceType;
 import com.project.domain.task.SmartEngineTask;
 import com.project.domain.task.SmartEngineTaskRepository;
+import com.project.domain.task.TaskStatus;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -30,6 +32,8 @@ import java.util.UUID;
  */
 @Service
 public class LearningPathQueryService {
+
+    private static final Duration LIVE_TASK_STALE_AFTER = Duration.ofMinutes(30);
 
     private static final String CURRENT_PLAN_SQL = """
         SELECT p.id,
@@ -84,10 +88,10 @@ public class LearningPathQueryService {
             ServiceType.RESOURCE_PUSH
         );
         TaskStatusResponse refreshTaskResponse = refreshTask
-            .map(task -> taskStateMachineService.getOwnedTaskStatus(task.getId(), userId))
+            .map(task -> taskStatusResponse(task, userId))
             .orElse(null);
         TaskStatusResponse resourceRefreshTaskResponse = resourceRefreshTask
-            .map(task -> taskStateMachineService.getOwnedTaskStatus(task.getId(), userId))
+            .map(task -> taskStatusResponse(task, userId))
             .orElse(null);
         Map<String, Object> latestCompletedSummary = taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(
                 userId,
@@ -170,6 +174,32 @@ public class LearningPathQueryService {
             (rs, rowNum) -> mapPlanRecord(rs)
         );
         return records.stream().findFirst();
+    }
+
+    private TaskStatusResponse taskStatusResponse(SmartEngineTask task, UUID userId) {
+        if (!isStaleLiveTask(task)) {
+            return taskStateMachineService.getOwnedTaskStatus(task.getId(), userId);
+        }
+        return new TaskStatusResponse(
+            task.getId(),
+            task.getTraceId(),
+            task.getServiceType(),
+            TaskStatus.TIMEOUT,
+            "timeout",
+            task.getProgressPercent(),
+            "TASK_STALE",
+            "后台任务长时间未完成，请重新生成学习路径",
+            task.getResponseSummary()
+        );
+    }
+
+    private boolean isStaleLiveTask(SmartEngineTask task) {
+        TaskStatus status = task.getTaskStatus();
+        if (status != TaskStatus.PENDING && status != TaskStatus.RUNNING) {
+            return false;
+        }
+        OffsetDateTime createdAt = task.getCreatedAt();
+        return createdAt != null && createdAt.isBefore(OffsetDateTime.now().minus(LIVE_TASK_STALE_AFTER));
     }
 
     private PlanRecord mapPlanRecord(ResultSet rs) throws SQLException {

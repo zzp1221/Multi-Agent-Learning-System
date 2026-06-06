@@ -329,6 +329,55 @@ Windows PowerShell：
 .\.venv\Scripts\Activate.ps1
 ```
 
+## 9.1 Resource library external ingestion
+
+The `/resources` library is seeded from real external URLs, not from the local `wiki/` folder. The importer verifies every URL before writing metadata or RAG chunks.
+When `--limit` is smaller than all configured sources combined, candidates are sampled across sources first, so a 1000-item run keeps MDN, Python, PostgreSQL, React, TypeScript and later official sources represented instead of being filled by the first large sitemap.
+
+Source configuration:
+
+```text
+python-agent/scripts/resource_sources/external_resource_sources.json
+```
+
+Cost-free accessibility preview. This command does not write the database and never calls the embedding API:
+
+```powershell
+cd python-agent
+py -m scripts.import_external_resources --dry-run --metadata-only --limit 1000 --timeout 15
+```
+
+Metadata-only import:
+
+```powershell
+cd python-agent
+py -m scripts.import_external_resources --metadata-only --limit 1000 --timeout 15
+```
+
+Metadata plus real RAG chunks:
+
+```powershell
+cd python-agent
+py -m scripts.import_external_resources --limit 1000 --rag-limit 300 --require-embeddings --timeout 15
+```
+
+Required variables:
+
+- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- `EMBEDDING_API_KEY` or `DASHSCOPE_API_KEY`
+- `KNOWLEDGE_EMBEDDING_MODEL_NAME`
+- `KNOWLEDGE_EMBEDDING_DIMENSION=1024`
+
+The importer never writes fake embeddings. Without an embedding key, it can still import metadata, but RAG rows are skipped unless `--require-embeddings` is used.
+
+Runtime verification after import:
+
+```sql
+SELECT count(*) FROM app.learning_resource WHERE metadata_json ->> 'ingestedBy' = 'external_resource_importer';
+SELECT count(DISTINCT resource_id) FROM rag.resource_chunk;
+SELECT count(*) FROM rag.resource_chunk;
+```
+
 ## 10. 故障排查
 
 `POSTGRES_PASSWORD must be configured`：

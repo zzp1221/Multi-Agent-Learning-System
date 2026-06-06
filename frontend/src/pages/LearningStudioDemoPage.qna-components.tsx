@@ -101,7 +101,7 @@ function SlideOutlineConfirmationCard(props: {
   }
   const pending = confirmation.status === 'pending';
   return (
-    <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-3 dark:border-primary-500/20 dark:bg-primary-500/10">
+    <div className="mt-4 rounded-xl bg-blue-50/70 p-3 ring-1 ring-blue-100/70 dark:bg-primary-500/10 dark:ring-primary-500/20">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="text-xs font-semibold text-primary-600 dark:text-primary-300">PPT 大纲待确认</div>
@@ -111,7 +111,7 @@ function SlideOutlineConfirmationCard(props: {
           {confirmation.status === 'confirmed' ? '已确认' : confirmation.status === 'rejected' ? '未生成' : '等待确认'}
         </span>
       </div>
-      <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-blue-100 bg-white px-3 py-2 text-sm leading-6 text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+      <div className="mt-3 max-h-64 overflow-auto rounded-lg bg-white/88 px-3 py-2 text-sm leading-6 text-slate-700 ring-1 ring-blue-100/70 dark:bg-slate-950/80 dark:text-slate-300 dark:ring-slate-700/70">
         <MarkdownRenderer content={confirmation.outline} />
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -128,7 +128,7 @@ function SlideOutlineConfirmationCard(props: {
           type="button"
           disabled={!pending}
           onClick={() => props.onReject?.(props.message)}
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-rose-200 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/88 px-3 text-sm font-semibold text-slate-600 ring-1 ring-slate-200/80 transition hover:text-rose-600 hover:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900/82 dark:text-slate-300 dark:ring-slate-700/70"
         >
           <XCircle className="h-4 w-4" />
           暂不生成
@@ -336,7 +336,7 @@ export function InputPanel(props: {
           {props.pendingImages.length ? (
             <div className="qna-pending-images">
               {props.pendingImages.map((image) => (
-                <div key={image.id} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                <div key={image.id} className="group relative overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-200/70 dark:bg-slate-800 dark:ring-slate-700/70">
                   <img src={image.previewUrl} alt="待上传图片" className="h-24 w-24 object-cover" />
                   <button
                     type="button"

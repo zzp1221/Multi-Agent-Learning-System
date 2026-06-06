@@ -188,8 +188,8 @@ export default function MultiAgentResourceGenerationPage() {
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
-      <section className="overflow-hidden rounded-[24px] border border-blue-100/80 bg-white/95 shadow-xl shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/30">
-        <div className="grid gap-5 border-b border-blue-100/80 px-5 py-5 dark:border-slate-800 md:grid-cols-[minmax(0,1fr)_280px] md:px-7">
+      <section className="overflow-hidden rounded-[28px] bg-white/72 shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70 dark:shadow-slate-950/20">
+        <div className="grid gap-5 px-5 py-5 md:grid-cols-[minmax(0,1fr)_280px] md:px-7">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-600 text-white shadow-lg shadow-primary-500/20">
@@ -219,7 +219,7 @@ export default function MultiAgentResourceGenerationPage() {
               ) : null}
             </div>
           </div>
-          <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+          <div className="rounded-2xl bg-blue-50/70 p-4 ring-1 ring-blue-100/80 dark:bg-slate-950/40 dark:ring-slate-800/80">
             <div className="flex items-center justify-between text-sm">
               <span className="font-semibold text-slate-700 dark:text-slate-200">总进度</span>
               <span className="font-bold text-primary-600 dark:text-primary-300">{session.progress}%</span>
@@ -251,8 +251,8 @@ export default function MultiAgentResourceGenerationPage() {
         </div>
       </section>
 
-      <section className="mt-5 overflow-hidden rounded-[24px] border border-blue-100/80 bg-white/95 shadow-xl shadow-blue-100/40 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/25">
-        <div className="flex flex-col gap-4 border-b border-blue-100/80 px-5 py-4 dark:border-slate-800 md:flex-row md:items-center md:justify-between md:px-7">
+      <section className="mt-6">
+        <div className="flex flex-col gap-4 px-1 pb-4 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">资源列表</h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -271,7 +271,7 @@ export default function MultiAgentResourceGenerationPage() {
           </div>
         </div>
 
-        <div className="p-5 md:p-7">
+        <div>
           {visibleResources.length > 0 ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {visibleResources.map((resource) => (
@@ -283,7 +283,7 @@ export default function MultiAgentResourceGenerationPage() {
           )}
 
           {session.taskStatus === 'completed' || session.taskStatus === 'partial_failed' ? (
-            <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
+            <div className="mt-5 rounded-2xl bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 ring-1 ring-emerald-100/80 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/20">
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
@@ -315,12 +315,12 @@ function AgentStepCard({
 }) {
   const active = activeIndex === index;
   return (
-    <div className={`rounded-2xl border p-4 transition-all ${
+    <div className={`rounded-2xl p-4 ring-1 transition-all ${
       active
-        ? 'border-primary-200 bg-primary-50/80 shadow-sm shadow-primary-100 dark:border-primary-500/30 dark:bg-primary-500/10 dark:shadow-none'
+        ? 'bg-primary-50/80 shadow-sm shadow-primary-100 ring-primary-200 dark:bg-primary-500/10 dark:shadow-none dark:ring-primary-500/30'
         : completed
-          ? 'border-emerald-100 bg-emerald-50/50 dark:border-emerald-500/20 dark:bg-emerald-500/10'
-          : 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/35'
+          ? 'bg-emerald-50/50 ring-emerald-100 dark:bg-emerald-500/10 dark:ring-emerald-500/20'
+          : 'bg-slate-50/70 ring-slate-200/80 dark:bg-slate-950/35 dark:ring-slate-800'
     }`}
     >
       <div className="flex items-center gap-3">
@@ -349,7 +349,7 @@ function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
   const downloadable = Boolean(resource.download);
   const statusMeta = getResourceStatusMeta(resource);
   return (
-    <article className="flex min-h-[260px] flex-col rounded-2xl border border-blue-100/80 bg-white p-4 shadow-sm shadow-blue-100/40 dark:border-slate-800 dark:bg-slate-950/35 dark:shadow-none">
+    <article className="flex min-h-[260px] flex-col rounded-2xl bg-white/88 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-blue-100/80 transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-100/45 dark:bg-slate-950/35 dark:ring-slate-800 dark:shadow-none">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ring-1 ${meta.accent}`}>
@@ -378,7 +378,7 @@ function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
         {renderResourcePreview(resource)}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
+      <div className="mt-4 flex items-center justify-between gap-3 pt-3 text-xs text-slate-400 shadow-[inset_0_1px_0_rgba(226,232,240,0.72)] dark:text-slate-500 dark:shadow-[inset_0_1px_0_rgba(30,41,59,0.82)]">
         <span>{new Date(resource.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 更新</span>
         <span className="truncate">
           {resource.sourceAgent ? `来源：${resource.sourceAgent}` : resource.statusText || downloadUnavailableReason(resource)}
@@ -388,7 +388,7 @@ function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
         {downloadable ? (
           <ResourceDownloadButton resource={resource} />
         ) : (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:ring-slate-800">
             {downloadUnavailableReason(resource)}
           </div>
         )}
@@ -412,8 +412,8 @@ function ResourceDownloadButton({
         rel="noreferrer"
         download={resource.download.fileName}
         className={iconOnly
-          ? 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-blue-100 text-primary-600 transition hover:bg-primary-50 dark:border-slate-700 dark:text-primary-300 dark:hover:bg-primary-500/10'
-          : 'inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-blue-100 bg-primary-50 px-3 text-sm font-semibold text-primary-700 transition hover:bg-primary-100 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-200 dark:hover:bg-primary-500/20'}
+          ? 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-primary-600 ring-1 ring-blue-100 transition hover:bg-primary-50 dark:text-primary-300 dark:ring-slate-700 dark:hover:bg-primary-500/10'
+          : 'inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-primary-50 px-3 text-sm font-semibold text-primary-700 ring-1 ring-blue-100 transition hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-500/20 dark:hover:bg-primary-500/20'}
         aria-label={`下载${resource.title}`}
         title={`下载${resource.title}`}
       >
@@ -439,7 +439,7 @@ function renderResourcePreview(resource: ResourceGenerationResource) {
   }
   if (resource.download) {
     return (
-      <div className="flex h-full min-h-[150px] items-center justify-center rounded-2xl border border-dashed border-blue-100 bg-blue-50/40 px-4 text-center dark:border-slate-700 dark:bg-slate-900/40">
+      <div className="flex h-full min-h-[150px] items-center justify-center rounded-2xl bg-blue-50/40 px-4 text-center ring-1 ring-blue-100/70 dark:bg-slate-900/40 dark:ring-slate-700/70">
         <div>
           <FileText className="mx-auto h-8 w-8 text-primary-500" />
           <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{resource.download.fileName || resource.title}</p>
@@ -462,8 +462,8 @@ function InlinePreview({ inline }: { inline: InlineResourceView }) {
   if (inline.kind === 'code') {
     const language = inline.language || 'text';
     return (
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 dark:border-slate-700">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-xs text-slate-300">
+      <div className="overflow-hidden rounded-2xl bg-slate-950 ring-1 ring-slate-200/70 dark:ring-slate-700/70">
+        <div className="flex items-center justify-between px-4 py-2 text-xs text-slate-300 shadow-[inset_0_-1px_0_rgba(255,255,255,0.10)]">
           <span>{language}</span>
           <Code2 className="h-3.5 w-3.5" />
         </div>
@@ -471,7 +471,7 @@ function InlinePreview({ inline }: { inline: InlineResourceView }) {
           <code>{inline.content}</code>
         </pre>
         {inline.explanation ? (
-          <div className="border-t border-white/10 bg-slate-900 px-4 py-3 text-xs leading-5 text-slate-300">
+          <div className="bg-slate-900 px-4 py-3 text-xs leading-5 text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]">
             {inline.explanation}
           </div>
         ) : null}
@@ -479,7 +479,7 @@ function InlinePreview({ inline }: { inline: InlineResourceView }) {
     );
   }
   return (
-    <div className="max-h-[340px] overflow-auto rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+    <div className="max-h-[340px] overflow-auto rounded-2xl bg-slate-50/70 p-4 ring-1 ring-slate-200/70 dark:bg-slate-900/50 dark:ring-slate-800/70">
       <MarkdownRenderer content={inline.content} />
     </div>
   );
@@ -489,7 +489,7 @@ function QuizPreview({ batch }: { batch: ResourceGenerationQuizSummary }) {
   const [hasPracticeSession, setHasPracticeSession] = useState(() => Boolean(getPracticeSessionState().batch));
   useEffect(() => subscribePracticeSession((state) => setHasPracticeSession(Boolean(state.batch))), []);
   return (
-    <div className="rounded-2xl border border-amber-100 bg-amber-50/50 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
+    <div className="rounded-2xl bg-amber-50/50 p-4 ring-1 ring-amber-100/80 dark:bg-amber-500/10 dark:ring-amber-500/20">
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white">
           <ListChecks className="h-5 w-5" />
@@ -545,7 +545,7 @@ function FilterButton({
 
 function EmptyState({ selectedType, conversationId }: { selectedType: ResourceFilter; conversationId: string }) {
   return (
-    <div className="flex min-h-[260px] items-center justify-center rounded-2xl border border-dashed border-blue-100 bg-blue-50/40 px-5 py-10 text-center dark:border-slate-700 dark:bg-slate-950/35">
+    <div className="flex min-h-[260px] items-center justify-center rounded-2xl bg-blue-50/40 px-5 py-10 text-center ring-1 ring-blue-100/70 dark:bg-slate-950/35 dark:ring-slate-700/70">
       <div className="max-w-[520px]">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary-600 shadow-sm dark:bg-slate-900 dark:text-primary-300">
           <MessageSquareText className="h-6 w-6" />

@@ -38,6 +38,24 @@ class _RecordingJSONGenerator:
         }
 
 
+class _DimensionOnlyJSONGenerator:
+    async def generate(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
+        del system_prompt, user_prompt, max_tokens
+        return {
+            "name": "动态调整",
+            "level": "BASIC",
+            "evidence": "现有画像信号不足，需要先建立首版学习路径。",
+            "recommendation": "从核心概念补齐开始推进。",
+            "dimensions": [],
+        }
+
+
 @pytest.mark.asyncio
 async def test_evaluation_prompt_serializes_datetime_context() -> None:
     recorder = _RecordingJSONGenerator()
@@ -56,3 +74,27 @@ async def test_evaluation_prompt_serializes_datetime_context() -> None:
 
     assert payload.summary_text == "已完成学习效果评估。"
     assert "2026-06-03T08:30:00+00:00" in recorder.user_prompt
+
+
+@pytest.mark.asyncio
+async def test_evaluation_generator_normalizes_dimension_only_payload() -> None:
+    generator = object.__new__(OpenAICompatibleEvaluationGenerator)
+    generator.generator = _DimensionOnlyJSONGenerator()
+
+    payload = await generator.evaluate(
+        system_prompt="评估学生学习效果",
+        context_payload={
+            "aggregatedBehavior": {
+                "candidateStrengths": ["愿意继续学习"],
+                "candidateWeaknesses": ["Python 基础语法"],
+                "recommendedFocus": ["变量与控制流"],
+            }
+        },
+    )
+
+    assert payload.overall_level == "BASIC"
+    assert payload.strengths == ["愿意继续学习"]
+    assert payload.weaknesses == ["Python 基础语法"]
+    assert payload.next_focus == ["变量与控制流"]
+    assert payload.dimensions[0].name == "动态调整"
+    assert payload.summary_text == "现有画像信号不足，需要先建立首版学习路径。"

@@ -23,10 +23,10 @@ export function ServiceHeroVisual() {
   return (
     <div className="relative hidden min-h-[420px] overflow-hidden lg:block">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_52%_43%,rgba(59,130,246,0.24),transparent_32%),radial-gradient(circle_at_35%_22%,rgba(125,211,252,0.24),transparent_17%)]" />
-      <div className="absolute left-1/2 top-[61%] h-20 w-[330px] -translate-x-1/2 rounded-[50%] border border-blue-200/80 bg-blue-100/42 shadow-[0_24px_56px_rgba(61,116,239,0.2)]" />
-      <div className="absolute left-1/2 top-[58%] h-12 w-[260px] -translate-x-1/2 rounded-[50%] border border-cyan-100/80 bg-white/48 shadow-[0_18px_42px_rgba(14,165,233,0.15)]" />
-      <div className="absolute left-1/2 top-[45%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-[34px] border border-blue-200/80 bg-white/35 shadow-[0_36px_90px_rgba(64,111,214,0.18)] backdrop-blur-md" />
-      <div className="absolute left-1/2 top-[42%] flex h-[136px] w-[136px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[30px] border border-blue-200/80 bg-gradient-to-br from-blue-400 via-blue-600 to-cyan-400 text-5xl font-black text-white shadow-[0_28px_70px_rgba(37,99,235,0.36)]">
+      <div className="absolute left-1/2 top-[61%] h-20 w-[330px] -translate-x-1/2 rounded-[50%] bg-blue-100/42 shadow-[0_24px_56px_rgba(61,116,239,0.2)] ring-1 ring-blue-200/60" />
+      <div className="absolute left-1/2 top-[58%] h-12 w-[260px] -translate-x-1/2 rounded-[50%] bg-white/48 shadow-[0_18px_42px_rgba(14,165,233,0.15)] ring-1 ring-cyan-100/70" />
+      <div className="absolute left-1/2 top-[45%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-[34px] bg-white/35 shadow-[0_36px_90px_rgba(64,111,214,0.18)] ring-1 ring-blue-200/60 backdrop-blur-md" />
+      <div className="absolute left-1/2 top-[42%] flex h-[136px] w-[136px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[30px] bg-gradient-to-br from-blue-400 via-blue-600 to-cyan-400 text-5xl font-black text-white shadow-[0_28px_70px_rgba(37,99,235,0.36)] ring-1 ring-white/35">
         AI
       </div>
       <div className="absolute left-[17%] top-[30%] h-3 w-3 rounded-full bg-cyan-300 shadow-[0_0_22px_rgba(34,211,238,0.9)]" />
@@ -35,8 +35,8 @@ export function ServiceHeroVisual() {
       <div className="absolute right-[23%] bottom-[25%] h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.8)]" />
       <div className="absolute left-[19%] top-[31%] h-px w-[62%] rotate-[28deg] bg-gradient-to-r from-transparent via-blue-300/80 to-transparent" />
       <div className="absolute left-[23%] top-[57%] h-px w-[58%] -rotate-[20deg] bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
-      <div className="absolute left-[25%] top-[22%] h-64 w-64 rounded-full border border-blue-200/50" />
-      <div className="absolute left-[22%] top-[28%] h-52 w-72 rotate-12 rounded-[50%] border border-cyan-200/55" />
+      <div className="absolute left-[25%] top-[22%] h-64 w-64 rounded-full ring-1 ring-blue-200/35" />
+      <div className="absolute left-[22%] top-[28%] h-52 w-72 rotate-12 rounded-[50%] ring-1 ring-cyan-200/40" />
       <span className="absolute right-9 top-20 rounded-xl bg-blue-50/90 px-3 py-1.5 text-sm font-semibold text-primary-600 shadow-sm shadow-blue-100/80 ring-1 ring-blue-100">
         智能分析
       </span>
@@ -64,7 +64,7 @@ export function TaskStatusPreview(props: {
   const assetPercent = Math.min(100, props.downloadCount * 25);
 
   return (
-    <section className="h-full rounded-[22px] border border-blue-100/80 bg-white/88 p-4 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 sm:rounded-[24px] sm:p-6">
+    <section className="h-full bg-white/42 p-4 dark:bg-slate-950/18 sm:p-6">
       <div className="flex items-start gap-3 sm:items-center">
         <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
           <TrendingUp className="h-4 w-4" />
@@ -92,21 +92,21 @@ export function TaskStatusPreview(props: {
         </div>
       ) : (
         <div className="mt-6 grid gap-5 md:grid-cols-[160px_minmax(0,1fr)] md:items-center sm:mt-8 sm:gap-6">
-          <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full border border-dashed border-blue-200 bg-blue-50/60 text-center dark:border-slate-700 dark:bg-slate-950/40 sm:h-36 sm:w-36">
+          <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full bg-blue-50/60 text-center ring-1 ring-blue-100/80 dark:bg-slate-950/40 dark:ring-slate-700 sm:h-36 sm:w-36">
             <div>
               <div className="text-xl font-bold text-primary-600 dark:text-primary-300">待提交</div>
               <div className="mt-1 text-xs text-slate-400">暂无真实任务</div>
             </div>
           </div>
-          <div className="rounded-2xl border border-dashed border-blue-100 bg-slate-50/70 px-4 py-5 text-sm leading-7 text-slate-500 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-400 sm:px-5 sm:py-6">
+          <div className="rounded-2xl bg-slate-50/70 px-4 py-5 text-sm leading-7 text-slate-500 ring-1 ring-blue-100 dark:bg-slate-950/40 dark:text-slate-400 dark:ring-slate-700 sm:px-5 sm:py-6">
             提交任务后，这里只显示后端任务返回的进度、结果片段和资源产物数量。
           </div>
         </div>
       )}
 
-      <div className="mt-6 rounded-2xl border border-blue-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40 sm:mt-8">
+      <div className="mt-6 rounded-2xl bg-slate-50/60 p-4 ring-1 ring-blue-100/80 dark:bg-slate-950/40 dark:ring-slate-800 sm:mt-8">
         <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">执行状态</div>
-        <div className="mt-3 flex min-h-24 items-center justify-center rounded-xl border border-dashed border-blue-100 bg-white/70 px-4 py-5 text-center text-sm leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-400 sm:h-28 sm:py-0">
+        <div className="mt-3 flex min-h-24 items-center justify-center rounded-xl bg-white/70 px-4 py-5 text-center text-sm leading-6 text-slate-500 ring-1 ring-blue-100 dark:bg-slate-900/60 dark:text-slate-400 dark:ring-slate-700 sm:h-28 sm:py-0">
           提交任务后，系统会在这里同步后端返回的实时状态。
         </div>
         <div className="mt-3 text-xs text-slate-400">
@@ -146,7 +146,7 @@ export function AssistantActionBar(props: {
   onStop: () => void;
 }) {
   return (
-    <section className="rounded-[24px] border border-blue-100/80 bg-white/90 p-4 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 sm:p-5">
+    <section className="rounded-[24px] bg-white/66 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/62 dark:ring-slate-800/70 sm:p-5">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.75fr)_180px] lg:items-center">
         <div className="flex items-start gap-3 sm:items-center sm:gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-50 ring-1 ring-blue-100 sm:h-14 sm:w-14">
@@ -176,7 +176,7 @@ export function AssistantActionBar(props: {
           type="button"
           onClick={props.onStop}
           disabled={!props.canStop}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm shadow-blue-100/60 transition-all hover:border-primary-200 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 sm:h-14"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm shadow-blue-100/35 ring-1 ring-blue-100 transition-all hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-700 sm:h-14"
         >
           <Square className="h-4 w-4" />
           停止任务

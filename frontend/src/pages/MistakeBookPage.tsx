@@ -350,10 +350,10 @@ export default function MistakeBookPage() {
 
   return (
     <div className="mx-auto max-w-[1180px] space-y-5 px-1 pb-10 md:px-0">
-      <section className="overflow-hidden rounded-2xl border border-blue-100/80 bg-white/90 shadow-sm shadow-blue-100/60 dark:border-slate-800 dark:bg-slate-900/80">
+      <section className="overflow-hidden rounded-[28px] bg-white/74 shadow-[0_18px_50px_rgba(37,99,235,0.10)] ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/66 dark:ring-slate-700/60 dark:shadow-slate-950/20">
         <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_280px] md:items-center md:p-6">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary-100 bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 dark:border-primary-800 dark:bg-primary-500/10 dark:text-primary-300">
+            <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 ring-1 ring-primary-100/80 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-800/70">
               <BookOpenCheck className="h-3.5 w-3.5" />
               今日复习
             </div>
@@ -381,7 +381,7 @@ export default function MistakeBookPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-blue-100/80 bg-white/85 p-4 shadow-sm shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-900/80 md:p-5">
+      <section className="rounded-[24px] bg-white/70 p-4 shadow-[0_14px_42px_rgba(37,99,235,0.08)] ring-1 ring-white/75 backdrop-blur dark:bg-slate-900/62 dark:ring-slate-700/60 dark:shadow-slate-950/20 md:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2">
             {STATUS_OPTIONS.map((item) => (
@@ -392,7 +392,7 @@ export default function MistakeBookPage() {
                 className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                   status === item.value
                     ? 'bg-primary-600 text-white shadow-sm shadow-primary-500/20'
-                    : 'border border-slate-200 bg-white text-slate-600 hover:border-primary-200 hover:text-primary-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-primary-300'
+                    : 'bg-white/82 text-slate-600 ring-1 ring-slate-200/80 hover:bg-primary-50/70 hover:text-primary-700 hover:ring-primary-200 dark:bg-slate-950/70 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:text-primary-300'
                 }`}
               >
                 {item.label}
@@ -402,7 +402,7 @@ export default function MistakeBookPage() {
           <button
             type="button"
             onClick={() => setShowAdvancedFilters((prev) => !prev)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-primary-200 hover:text-primary-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-primary-300"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/82 px-3.5 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-primary-50/70 hover:text-primary-700 hover:ring-primary-200 dark:bg-slate-950/70 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:text-primary-300"
           >
             <Filter className="h-4 w-4" />
             高级筛选
@@ -424,8 +424,8 @@ export default function MistakeBookPage() {
         ) : null}
 
         {showAdvancedFilters ? (
-          <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 dark:border-slate-800 lg:grid-cols-[1fr_180px_auto]">
-            <label className="flex items-center rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 transition-all focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-950">
+          <div className="mt-4 grid gap-3 pt-4 shadow-[inset_0_1px_0_rgba(226,232,240,0.75)] dark:shadow-[inset_0_1px_0_rgba(51,65,85,0.65)] lg:grid-cols-[1fr_180px_auto]">
+            <label className="flex items-center rounded-xl bg-white/88 px-3.5 py-2.5 ring-1 ring-slate-200/80 transition-all focus-within:ring-2 focus-within:ring-primary-500/20 dark:bg-slate-950/70 dark:ring-slate-700/70">
               <Search className="mr-2 h-4 w-4 text-slate-400" />
               <input
                 value={tagInput}
@@ -447,7 +447,7 @@ export default function MistakeBookPage() {
                 setMistakes([]);
                 setData(null);
               }}
-              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              className="rounded-xl bg-white/88 px-3.5 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-950/70 dark:text-slate-200 dark:ring-slate-700/70"
             >
               {DIFFICULTY_OPTIONS.map((item) => (
                 <option key={item.value} value={item.value}>{item.label}</option>
@@ -456,7 +456,7 @@ export default function MistakeBookPage() {
             <button
               type="button"
               onClick={handleApplyFilters}
-              className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-2.5 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-500/10 dark:text-primary-300"
+              className="rounded-xl bg-primary-50 px-4 py-2.5 text-sm font-medium text-primary-700 ring-1 ring-primary-200/80 transition-colors hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-800/70"
             >
               应用
             </button>
@@ -518,7 +518,7 @@ export default function MistakeBookPage() {
             type="button"
             disabled={loading || !hasMore}
             onClick={handleLoadMore}
-            className="inline-flex min-w-36 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+            className="inline-flex min-w-36 items-center justify-center gap-2 rounded-xl bg-white/82 px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900/80 dark:text-slate-300 dark:ring-slate-700/70"
           >
             {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
             {loading ? '加载中' : '再看一些'}
@@ -545,7 +545,7 @@ function MistakeCard(props: {
 
   return (
     <article className="modern-card overflow-hidden">
-      <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800 md:px-5">
+      <div className="px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.68)] dark:shadow-[inset_0_-1px_0_rgba(51,65,85,0.62)] md:px-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -567,7 +567,7 @@ function MistakeCard(props: {
             type="button"
             onClick={props.onToggleMastered}
             disabled={props.saving}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:bg-slate-800"
           >
             {item.mastered ? <RotateCcw className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
             {item.mastered ? '移回复习' : '标记掌握'}
@@ -583,19 +583,19 @@ function MistakeCard(props: {
         </div>
 
         {feedback ? (
-          <div className="rounded-xl border border-primary-100 bg-primary-50/60 px-3.5 py-3 text-sm leading-6 text-primary-800 dark:border-primary-900 dark:bg-primary-500/10 dark:text-primary-200">
+          <div className="rounded-xl bg-primary-50/60 px-3.5 py-3 text-sm leading-6 text-primary-800 ring-1 ring-primary-100/80 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-900/70">
             {feedback}
           </div>
         ) : null}
 
-        <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 pt-3 shadow-[inset_0_1px_0_rgba(226,232,240,0.68)] dark:shadow-[inset_0_1px_0_rgba(51,65,85,0.62)] sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-2">
             {item.knowledgeTags.length > 0 ? item.knowledgeTags.slice(0, 3).map((tag) => (
-              <span key={tag} className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+              <span key={tag} className="rounded-full bg-white/82 px-2.5 py-1 text-xs text-slate-500 ring-1 ring-slate-200/80 dark:bg-slate-900/80 dark:text-slate-400 dark:ring-slate-700/70">
                 {tag}
               </span>
             )) : (
-              <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-400 dark:border-slate-700">未标注知识点</span>
+              <span className="rounded-full px-2.5 py-1 text-xs text-slate-400 ring-1 ring-slate-200/80 dark:ring-slate-700/70">未标注知识点</span>
             )}
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-500 dark:bg-slate-800 dark:text-slate-400">
               下次 {formatDate(item.nextReviewAt)}
@@ -604,18 +604,18 @@ function MistakeCard(props: {
           <button
             type="button"
             onClick={() => setDetailsOpen((prev) => !prev)}
-            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-medium text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-slate-50 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:bg-slate-800"
           >
             {detailsOpen ? '收起整理' : '整理错因'}
           </button>
         </div>
 
         {detailsOpen ? (
-          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/50 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-start">
+          <div className="grid gap-3 rounded-2xl bg-slate-50/70 p-3 ring-1 ring-slate-200/70 dark:bg-slate-900/50 dark:ring-slate-700/70 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-start">
             <select
               value={props.typeDraft}
               onChange={(event) => props.onTypeChange(event.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              className="rounded-xl bg-white/88 px-3 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-950/70 dark:text-slate-200 dark:ring-slate-700/70"
             >
               {MISTAKE_TYPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -626,7 +626,7 @@ function MistakeCard(props: {
               onChange={(event) => props.onNoteChange(event.target.value)}
               rows={3}
               placeholder="这题错在哪？下次先检查什么？"
-              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm leading-6 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              className="w-full rounded-xl bg-white/88 px-3.5 py-3 text-sm leading-6 outline-none ring-1 ring-slate-200/80 transition-all focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-950/70 dark:text-slate-200 dark:ring-slate-700/70"
             />
             <button
               type="button"
@@ -657,8 +657,8 @@ function ReviewPanel(props: {
   const currentItem = props.session.items[currentIndex];
   const answeredCount = props.session.items.filter((item) => props.qualities[item.id] !== undefined).length;
   return (
-    <section className="overflow-hidden rounded-2xl border border-primary-100 bg-white shadow-lg shadow-blue-100/60 dark:border-primary-900/40 dark:bg-slate-900 dark:shadow-slate-950/20">
-      <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800 md:flex-row md:items-center md:justify-between md:px-5">
+    <section className="overflow-hidden rounded-[24px] bg-white/86 shadow-lg shadow-blue-100/50 ring-1 ring-white/80 dark:bg-slate-900/82 dark:ring-primary-900/35 dark:shadow-slate-950/20">
+      <div className="flex flex-col gap-3 px-4 py-3 shadow-[inset_0_-1px_0_rgba(226,232,240,0.68)] dark:shadow-[inset_0_-1px_0_rgba(51,65,85,0.62)] md:flex-row md:items-center md:justify-between md:px-5">
         <div>
           <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{done ? '今日复习完成' : '今日复习中'}</div>
           <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
@@ -668,7 +668,7 @@ function ReviewPanel(props: {
         <button
           type="button"
           onClick={props.onClose}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-slate-50 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:bg-slate-800"
         >
           <XCircle className="h-3.5 w-3.5" />
           关闭
@@ -676,7 +676,7 @@ function ReviewPanel(props: {
       </div>
       <div className="p-4 md:p-5">
         {currentItem ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-950/40">
+          <div className="rounded-2xl bg-slate-50/70 p-4 ring-1 ring-slate-200/70 dark:bg-slate-950/40 dark:ring-slate-700/70">
             <div className="mb-3 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
               <span>第 {currentIndex + 1} 题 / 共 {props.session.items.length} 题</span>
               <span>{props.qualities[currentItem.id] !== undefined ? '已选择' : '还没判断'}</span>
@@ -698,10 +698,10 @@ function ReviewPanel(props: {
                         key={quality.value}
                         type="button"
                         onClick={() => props.onQualityChange(currentItem.id, quality.value)}
-                        className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                        className={`min-h-11 rounded-xl px-3 py-2 text-sm font-medium ring-1 transition-colors ${
                           active
-                            ? 'border-primary-300 bg-primary-50 text-primary-700 ring-2 ring-primary-500/10 dark:border-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
-                            : 'border-slate-200 bg-white text-slate-500 hover:border-primary-200 hover:text-primary-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400'
+                            ? 'bg-primary-50 text-primary-700 ring-primary-300/70 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-700/70'
+                            : 'bg-white/85 text-slate-500 ring-slate-200/80 hover:bg-primary-50/60 hover:text-primary-600 hover:ring-primary-200 dark:bg-slate-900/80 dark:text-slate-400 dark:ring-slate-700/70'
                         }`}
                       >
                         {quality.label}
@@ -721,7 +721,7 @@ function ReviewPanel(props: {
               type="button"
               disabled={currentIndex <= 0}
               onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:bg-slate-800"
             >
               上一题
             </button>
@@ -729,7 +729,7 @@ function ReviewPanel(props: {
               type="button"
               disabled={currentIndex + 1 >= props.session.items.length}
               onClick={() => setCurrentIndex((prev) => Math.min(props.session.items.length - 1, prev + 1))}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:bg-slate-800"
             >
               下一题
             </button>
@@ -758,7 +758,7 @@ function OptionList(props: { itemId: string; options: string[]; className?: stri
   return (
     <div className={`space-y-2 ${props.className ?? ''}`.trim()}>
       {props.options.map((option, index) => (
-        <div key={`${props.itemId}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+        <div key={`${props.itemId}-${index}`} className="rounded-xl bg-slate-50/60 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200/70 dark:bg-slate-900/50 dark:text-slate-300 dark:ring-slate-700/70">
           {optionLabel(index)}. {option}
         </div>
       ))}
@@ -774,7 +774,7 @@ function FocusStat(props: { icon: typeof Clock3; label: string; value: number; t
     emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
   }[props.tone];
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+    <div className="flex items-center gap-3 rounded-2xl bg-slate-50/70 px-4 py-3 ring-1 ring-white/80 dark:bg-slate-950/40 dark:ring-slate-700/60">
       <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${toneClass}`}>
         <Icon className="h-5 w-5" />
       </div>
@@ -800,10 +800,10 @@ function EmptyState(props: { title: string; description: string }) {
 
 function AnswerBlock(props: { label: string; value: string; tone: 'danger' | 'success' }) {
   const toneClass = props.tone === 'danger'
-    ? 'border-rose-100 bg-rose-50/60 text-rose-800 dark:border-rose-900 dark:bg-rose-500/10 dark:text-rose-200'
-    : 'border-emerald-100 bg-emerald-50/60 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-200';
+    ? 'bg-rose-50/60 text-rose-800 ring-rose-100/80 dark:bg-rose-500/10 dark:text-rose-200 dark:ring-rose-900/70'
+    : 'bg-emerald-50/60 text-emerald-800 ring-emerald-100/80 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-900/70';
   return (
-    <div className={`rounded-xl border px-3.5 py-3 ${toneClass}`}>
+    <div className={`rounded-xl px-3.5 py-3 ring-1 ${toneClass}`}>
       <div className="mb-1 text-xs font-semibold opacity-75">{props.label}</div>
       <div className="whitespace-pre-wrap text-sm leading-6">{props.value}</div>
     </div>
@@ -812,12 +812,12 @@ function AnswerBlock(props: { label: string; value: string; tone: 'danger' | 'su
 
 function Notice(props: { tone: 'error' | 'warning' | 'success'; message: string }) {
   const toneClass = props.tone === 'error'
-    ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-500/10 dark:text-rose-200'
+    ? 'bg-rose-50 text-rose-700 ring-rose-200/80 dark:bg-rose-500/10 dark:text-rose-200 dark:ring-rose-900/70'
     : props.tone === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-200'
-      : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-500/10 dark:text-amber-200';
+      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/80 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-900/70'
+      : 'bg-amber-50 text-amber-700 ring-amber-200/80 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-900/70';
   return (
-    <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${toneClass}`}>
+    <div className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm ring-1 ${toneClass}`}>
       <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
       <span>{props.message}</span>
     </div>

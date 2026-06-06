@@ -59,6 +59,145 @@ def test_internal_stream_endpoint_rejects_when_token_not_configured(client, monk
     assert response.status_code == 503
 
 
+def test_resource_semantic_search_requires_internal_token(client) -> None:
+    response = client.get("/internal/resources/search/semantic?query=dp")
+
+    assert response.status_code == 401
+
+
+def test_resource_semantic_search_returns_grouped_results(client, monkeypatch) -> None:
+    monkeypatch.setattr(
+        server,
+        "_search_resource_chunks",
+        lambda query, top_k, domain=None, user_id=None: [
+            {
+                "chunk_id": 1,
+                "resource_id": "70000000-0000-0000-0000-000000000001",
+                "chunk_no": 1,
+                "content": "dynamic programming optimal substructure",
+                "similarity": 0.93,
+                "source_url": "https://example.com/dp",
+            },
+            {
+                "chunk_id": 2,
+                "resource_id": "70000000-0000-0000-0000-000000000001",
+                "chunk_no": 2,
+                "content": "overlapping subproblems",
+                "similarity": 0.91,
+                "source_url": "https://example.com/dp",
+            },
+        ],
+    )
+
+    response = client.get(
+        "/internal/resources/search/semantic",
+        params={"query": "dynamic programming", "topK": 5},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["results"][0]["resourceId"] == "70000000-0000-0000-0000-000000000001"
+    assert len(payload["results"][0]["hits"]) == 2
+
+
+def test_resource_semantic_search_degrades_when_embedding_unavailable(client, monkeypatch) -> None:
+    def fail_search(query, top_k, domain=None, user_id=None):
+        raise RuntimeError("missing embedding key")
+
+    monkeypatch.setattr(server, "_search_resource_chunks", fail_search)
+
+    response = client.get(
+        "/internal/resources/search/semantic",
+        params={"query": "dynamic programming"},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is False
+    assert "missing embedding key" in payload["message"]
+    assert payload["results"] == []
+
+
+def test_resource_chunk_search_uses_domain_parameter(monkeypatch) -> None:
+    executed = {}
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params):
+            executed["sql"] = sql
+            executed["params"] = params
+
+        def fetchall(self):
+            return []
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self, cursor_factory=None):
+            del cursor_factory
+            return FakeCursor()
+
+    monkeypatch.setattr(server, "_embed_resource_query", lambda query: [0.1] * server.SETTINGS.knowledge_embedding_dimension)
+    monkeypatch.setattr(server.psycopg2, "connect", lambda **kwargs: FakeConnection())
+
+    rows = server._search_resource_chunks(
+        "dynamic programming",
+        top_k=3,
+        domain="COMPUTER_SCIENCE",
+        user_id="60000000-0000-0000-0000-000000000007",
+    )
+
+    assert rows == []
+    assert "AND (%s IS NULL OR rc.domain = %s)" in executed["sql"]
+    assert "rc.access_scope::text = 'GLOBAL'" in executed["sql"]
+    assert "rc.owner_user_id = %s::uuid" in executed["sql"]
+    assert "app.user_course_enrollments" in executed["sql"]
+    assert executed["params"][1:3] == ["COMPUTER_SCIENCE", "COMPUTER_SCIENCE"]
+    assert executed["params"][3:7] == [
+        "60000000-0000-0000-0000-000000000007",
+        "60000000-0000-0000-0000-000000000007",
+        "60000000-0000-0000-0000-000000000007",
+        "60000000-0000-0000-0000-000000000007",
+    ]
+    assert executed["params"][-1] == 3
+
+
+def test_resource_semantic_search_passes_user_id_to_chunk_search(client, monkeypatch) -> None:
+    captured = {}
+
+    def fake_search(query, top_k, domain=None, user_id=None):
+        captured.update({"query": query, "top_k": top_k, "domain": domain, "user_id": user_id})
+        return []
+
+    monkeypatch.setattr(server, "_search_resource_chunks", fake_search)
+
+    response = client.get(
+        "/internal/resources/search/semantic",
+        params={
+            "query": "dynamic programming",
+            "topK": 4,
+            "userId": "60000000-0000-0000-0000-000000000008",
+        },
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert captured["top_k"] == 4
+    assert captured["user_id"] == "60000000-0000-0000-0000-000000000008"
+
+
 def test_sse_event_serialization() -> None:
     event = ProgressSSEEvent(
         taskId="task_001",

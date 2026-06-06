@@ -83,7 +83,7 @@ export default function AuthModal(props: AuthModalProps) {
     }
   };
 
-  const inputClass = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-primary-500";
+  const inputClass = "w-full rounded-xl bg-white/86 px-3.5 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all duration-200 focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900/80 dark:text-slate-200 dark:ring-slate-700/70";
 
   return (
     <AnimatePresence>
@@ -102,10 +102,10 @@ export default function AuthModal(props: AuthModalProps) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="relative w-full max-w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            className="relative w-full max-w-[420px] overflow-hidden rounded-[24px] bg-white/94 shadow-2xl ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/94 dark:ring-slate-700/60"
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+            <div className="flex items-center justify-between px-5 py-4 shadow-[inset_0_-1px_0_rgba(226,232,240,0.68)] dark:shadow-[inset_0_-1px_0_rgba(51,65,85,0.62)]">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/25">
                   <Sparkles className="h-4 w-4 text-white" />
@@ -129,7 +129,7 @@ export default function AuthModal(props: AuthModalProps) {
             ) : null}
 
             {/* Tab Switcher */}
-            <div className="mx-5 mt-4 grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+            <div className="mx-5 mt-4 grid grid-cols-2 rounded-xl bg-slate-50/85 p-1 ring-1 ring-slate-200/80 dark:bg-slate-800/70 dark:ring-slate-700/70">
               <button
                 type="button"
                 onClick={() => setTab('login')}

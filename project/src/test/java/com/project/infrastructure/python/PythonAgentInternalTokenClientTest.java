@@ -91,6 +91,39 @@ class PythonAgentInternalTokenClientTest {
         assertThat(tokenHeader.get()).isEqualTo(INTERNAL_TOKEN);
     }
 
+    @Test
+    void resourceSemanticSearchEncodesQueryAndSendsInternalTokenHeader() throws Exception {
+        CountDownLatch received = new CountDownLatch(1);
+        AtomicReference<String> tokenHeader = new AtomicReference<>();
+        AtomicReference<String> rawQuery = new AtomicReference<>();
+        server.createContext("/internal/resources/search/semantic", exchange -> {
+            tokenHeader.set(exchange.getRequestHeaders().getFirst(INTERNAL_TOKEN_HEADER));
+            rawQuery.set(exchange.getRequestURI().getRawQuery());
+            received.countDown();
+            send(exchange, 200, """
+                {
+                  "query": "\\u52a8\\u6001 \\u89c4\\u5212",
+                  "available": true,
+                  "message": "ok",
+                  "results": []
+                }
+                """);
+        });
+
+        HttpResourceSemanticSearchClient client = new HttpResourceSemanticSearchClient(
+            new ObjectMapper(),
+            appProperties
+        );
+
+        client.search(UUID.fromString("60000000-0000-0000-0000-000000000006"), "\u52a8\u6001 \u89c4\u5212", 8);
+
+        assertThat(received.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(tokenHeader.get()).isEqualTo(INTERNAL_TOKEN);
+        assertThat(rawQuery.get())
+            .contains("query=%E5%8A%A8%E6%80%81%20%E8%A7%84%E5%88%92")
+            .contains("topK=8");
+    }
+
     private void send(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(status, bytes.length);

@@ -28,7 +28,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
 
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
-        <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        <div className="max-w-md rounded-2xl bg-white/86 p-6 text-center shadow-lg shadow-slate-200/60 ring-1 ring-white/80 backdrop-blur">
           <h1 className="text-lg font-semibold text-slate-900">页面加载失败</h1>
           <p className="mt-2 text-sm text-slate-600">应用遇到了未处理错误。你可以刷新页面，或返回首页后重试。</p>
           <div className="mt-4 flex items-center justify-center gap-3">
@@ -44,7 +44,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
               onClick={() => {
                 window.location.href = '/';
               }}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              className="rounded-lg px-4 py-2 text-sm text-slate-700 ring-1 ring-slate-200/80 hover:bg-slate-50"
             >
               返回首页
             </button>

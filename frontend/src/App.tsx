@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 
 const LearningStudioDemoPage = lazy(() => import('./pages/LearningStudioDemoPage'));
 const PersonalizedLearningPathPage = lazy(() => import('./pages/PersonalizedLearningPathPage'));
+const ResourceLibraryPage = lazy(() => import('./pages/ResourceLibraryPage'));
 const MultiAgentResourceGenerationPage = lazy(() => import('./pages/MultiAgentResourceGenerationPage'));
 const MistakeBookPage = lazy(() => import('./pages/MistakeBookPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
@@ -26,7 +27,8 @@ function App() {
             <Route path="/" element={<Layout />}>
               <Route index element={<LearningStudioDemoPage mode="qna" />} />
               <Route path="engine" element={<PersonalizedLearningPathPage />} />
-              <Route path="resources" element={<MultiAgentResourceGenerationPage />} />
+              <Route path="resources" element={<ResourceLibraryPage />} />
+              <Route path="resources/generation" element={<MultiAgentResourceGenerationPage />} />
               <Route path="mistakes" element={<MistakeBookPage />} />
               <Route path="profile" element={<ProfilePage />} />
             </Route>

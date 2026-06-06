@@ -10,7 +10,9 @@ import com.project.domain.task.SmartEngineTaskRepository;
 import com.project.domain.task.TaskStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -86,6 +88,44 @@ class PersonalizedLearningRefreshServiceTest {
             "MANUAL_ADJUSTMENT".equals(invocation.params().get("triggerSource"))
                 && "先学索引".equals(invocation.params().get("adjustmentIntent"))
         ));
+    }
+
+    @Test
+    void doesNotReuseStaleActivePersonalizedLearningTask() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000005");
+        SmartEngineTask staleTask = task(userId, TaskStatus.RUNNING);
+        ReflectionTestUtils.setField(staleTask, "createdAt", OffsetDateTime.now().minusMinutes(31));
+        SmartEngineTask createdTask = task(userId, TaskStatus.PENDING);
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeAndTaskStatusInOrderByCreatedAtDesc(
+            eq(userId),
+            eq(ServiceType.PERSONALIZED_LEARNING),
+            any()
+        )).thenReturn(Optional.of(staleTask));
+        TaskStateMachineService stateMachineService = mock(TaskStateMachineService.class);
+        when(stateMachineService.createTask(any(), eq(userId), any(), eq(ServiceType.PERSONALIZED_LEARNING), any()))
+            .thenReturn(createdTask);
+        SmartEngineQueueService queueService = mock(SmartEngineQueueService.class);
+        when(queueService.enqueue(any())).thenReturn("record-stale-retry");
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        when(queueProvider.getIfAvailable()).thenReturn(queueService);
+        PersonalizedLearningContextService contextService = mock(PersonalizedLearningContextService.class);
+        when(contextService.buildContext(userId)).thenReturn(Map.of());
+
+        PersonalizedLearningRefreshService service = new PersonalizedLearningRefreshService(
+            stateMachineService,
+            taskRepository,
+            queueProvider,
+            contextService,
+            mock(AuditService.class)
+        );
+
+        SmartEngineTask result = service.triggerRefresh(userId, "INITIAL_PROFILE", Map.of("topic", "CS"));
+
+        assertThat(result).isSameAs(createdTask);
+        verify(stateMachineService).createTask(any(), eq(userId), any(), eq(ServiceType.PERSONALIZED_LEARNING), any());
+        verify(queueService).enqueue(any());
     }
 
     @Test

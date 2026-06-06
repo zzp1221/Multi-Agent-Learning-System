@@ -284,6 +284,12 @@ export default function Layout() {
     navigate('/resources');
   }, [navigate]);
 
+  const handleOpenResourceGenerationTool = useCallback(() => {
+    setMoreMenuOpen(false);
+    closeSidebar();
+    navigate('/resources/generation');
+  }, [navigate]);
+
   const handleOpenMistakeBook = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
@@ -441,7 +447,7 @@ export default function Layout() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute left-0 top-full z-50 mt-2 w-full min-w-[210px] overflow-hidden rounded-2xl border border-blue-100/80 bg-white/95 py-1.5 shadow-xl shadow-blue-100/70 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-slate-900/50"
+                className="absolute left-0 top-full z-50 mt-2 w-full min-w-[210px] overflow-hidden rounded-2xl bg-white/94 py-1.5 shadow-xl shadow-blue-100/70 ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/94 dark:ring-slate-700/60 dark:shadow-slate-900/50"
               >
                 <button
                   type="button"
@@ -465,7 +471,15 @@ export default function Layout() {
                   className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
                 >
                   <Layers3 className="h-4 w-4" />
-                  多智能体协同资源生成
+                  资源库
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenResourceGenerationTool}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  资源生成
                 </button>
                 <button
                   type="button"
@@ -483,7 +497,7 @@ export default function Layout() {
 
       {/* Search */}
       <div className="px-5 pb-4">
-        <label className="flex items-center rounded-2xl border border-blue-100/80 bg-white/70 px-3 py-2 transition-all focus-within:border-primary-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-500/15 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-primary-600">
+        <label className="flex items-center rounded-2xl bg-white/70 px-3 py-2 ring-1 ring-blue-100/70 transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-500/15 dark:bg-slate-900/80 dark:ring-slate-700/70">
           <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
           <input
             value={historySearch}
@@ -551,7 +565,7 @@ export default function Layout() {
             立即登录
           </button>
         ) : (
-          <div className="rounded-2xl border border-blue-100/80 bg-white/70 px-3 py-2.5 shadow-sm shadow-blue-100/50 dark:border-slate-700 dark:bg-slate-800/50">
+          <div className="rounded-2xl bg-white/70 px-3 py-2.5 shadow-sm shadow-blue-100/50 ring-1 ring-white/80 dark:bg-slate-800/50 dark:ring-slate-700/60">
             <div className="text-[11px] text-slate-400 dark:text-slate-500">当前用户</div>
             <div className="mt-0.5 text-sm font-medium text-slate-800 dark:text-slate-200">{userDisplayName}</div>
             <button type="button" onClick={handleLogout} className="mt-1.5 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
@@ -562,8 +576,8 @@ export default function Layout() {
       </div>
 
       {/* Footer */}
-      <div className="border-t border-blue-100/70 px-5 py-4 dark:border-slate-700/60">
-        <div className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-2 shadow-sm shadow-blue-100/50 dark:bg-slate-800/50">
+      <div className="px-5 py-4 shadow-[inset_0_1px_0_rgba(217,227,245,0.62)] dark:shadow-[inset_0_1px_0_rgba(51,65,85,0.58)]">
+        <div className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-2 shadow-sm shadow-blue-100/50 ring-1 ring-white/70 dark:bg-slate-800/50 dark:ring-slate-700/50">
           <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
             <Clock3 className="h-3.5 w-3.5" />
             同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
@@ -622,9 +636,9 @@ export default function Layout() {
             </button>
             <div className="app-breadcrumb min-w-0">
               <Compass className="h-4 w-4 text-primary-500" />
-              <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源生成' : inEngine ? '个性化学习路径' : '新对话'}</span>
+              <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源库' : inEngine ? '个性化学习路径' : '新对话'}</span>
               <span className="hidden text-slate-300 sm:inline">/</span>
-              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inMistakes ? '自动错题复习' : inResources ? '协同进度与资源总览' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
+              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏、进度与 RAG 检索' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
               <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : '智能对话'}</span>
             </div>
           </div>
@@ -718,8 +732,8 @@ function ProfileOnboardingModal(props: {
     return null;
   }
 
-  const inputClass = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200';
-  const optionsClass = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200';
+  const inputClass = 'w-full rounded-xl bg-white/86 px-3.5 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900/80 dark:text-slate-200 dark:ring-slate-700/70';
+  const optionsClass = 'w-full rounded-xl bg-white/86 px-3.5 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900/80 dark:text-slate-200 dark:ring-slate-700/70';
 
   const submit = async () => {
     const payload: ProfileOnboardingPayload = {
@@ -750,8 +764,8 @@ function ProfileOnboardingModal(props: {
   return (
     <div className="fixed inset-0 z-[130] flex items-center justify-center px-4 py-6">
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" />
-      <div className="relative max-h-[92dvh] w-full max-w-[560px] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+      <div className="relative max-h-[92dvh] w-full max-w-[560px] overflow-y-auto rounded-[24px] bg-white/94 shadow-2xl ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/94 dark:ring-slate-700/60">
+        <div className="px-5 py-4 shadow-[inset_0_-1px_0_rgba(226,232,240,0.68)] dark:shadow-[inset_0_-1px_0_rgba(51,65,85,0.62)]">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white">
               <UserRoundSearch className="h-4 w-4" />
