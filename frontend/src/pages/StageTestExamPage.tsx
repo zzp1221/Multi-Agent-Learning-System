@@ -169,11 +169,11 @@ function StageTestOverlay(props: {
   return (
     <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-950/55 backdrop-blur-sm">
       <section className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-        <header className="sticky top-0 z-10 bg-white/92 px-4 py-3 shadow-[0_10px_30px_rgba(37,99,235,0.06),inset_0_-1px_0_rgba(219,234,254,0.68)] backdrop-blur-xl dark:bg-slate-950/92 dark:shadow-[inset_0_-1px_0_rgba(51,65,85,0.62)] sm:px-6">
+        <header className="sticky top-0 z-10 bg-white/92 px-4 py-3 shadow-[0_10px_30px_rgba(37,99,235,0.06)] backdrop-blur-xl dark:bg-slate-950/92 dark:shadow-slate-950/20 sm:px-6">
           <div className="mx-auto flex max-w-[1180px] items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-700 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
                   <ClipboardCheck className="h-3.5 w-3.5" />
                   阶段测试
                 </span>
@@ -188,7 +188,7 @@ function StageTestOverlay(props: {
                 <button
                   type="button"
                   onClick={props.onClear}
-                  className="inline-flex h-9 items-center gap-2 rounded-xl bg-white/84 px-3 text-sm font-semibold text-slate-600 ring-1 ring-blue-100/70 transition hover:bg-primary-50/70 hover:text-primary-700 hover:ring-primary-200 dark:bg-slate-900/80 dark:text-slate-300 dark:ring-slate-700/70"
+                  className="inline-flex h-9 items-center gap-2 rounded-xl bg-slate-50/80 px-3 text-sm font-semibold text-slate-600 transition hover:bg-primary-50/80 hover:text-primary-700 dark:bg-slate-900/70 dark:text-slate-300"
                 >
                   <RotateCcw className="h-4 w-4" />
                   结束
@@ -222,7 +222,7 @@ function StageTestOverlay(props: {
             ))}
           </div>
 
-          <aside className="h-fit rounded-2xl bg-white/86 p-4 shadow-lg shadow-blue-100/50 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/82 dark:ring-slate-700/60 dark:shadow-none lg:sticky lg:top-20">
+          <aside className="h-fit rounded-2xl bg-white/86 p-4 shadow-[0_16px_40px_rgba(37,99,235,0.09)] backdrop-blur dark:bg-slate-900/82 dark:shadow-slate-950/20 lg:sticky lg:top-20">
             <div className="text-sm font-bold text-slate-900 dark:text-white">答题进度</div>
             <div className="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-800">
               <div className="h-full rounded-full bg-primary-600" style={{ width: `${Math.max(progress, answeredCount ? 8 : 0)}%` }} />
@@ -230,7 +230,7 @@ function StageTestOverlay(props: {
             <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">{progress}% · {answeredCount}/{totalCount} 道</div>
             <QuestionGrid questions={batch.questions} answers={session.answers} result={session.result} />
             {session.error ? (
-              <div className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-rose-100/80 dark:bg-rose-500/10 dark:text-rose-200 dark:ring-rose-500/20">
+              <div className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 shadow-sm shadow-rose-100/70 dark:bg-rose-500/10 dark:text-rose-200 dark:shadow-none">
                 {session.error}
               </div>
             ) : null}
@@ -264,10 +264,10 @@ function QuestionBlock(props: {
   const { question, result } = props;
   const isChoice = question.questionType === 'SINGLE_CHOICE' && question.options?.length;
   return (
-    <article className="rounded-2xl bg-white/86 p-4 shadow-sm shadow-blue-100/40 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/82 dark:ring-slate-700/60 dark:shadow-none">
+    <article className="rounded-2xl bg-white/86 p-4 shadow-[0_12px_34px_rgba(37,99,235,0.07)] backdrop-blur transition-colors hover:bg-white/92 dark:bg-slate-900/82 dark:shadow-slate-950/20 dark:hover:bg-slate-900/90">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 dark:text-slate-500">
-        <span>第 {props.index + 1} 题 · {question.questionType || '题目'}</span>
-        {question.difficultyLevel ? <span>{question.difficultyLevel}</span> : null}
+        <span>第 {props.index + 1} 题 · {questionTypeLabel(question.questionType)}</span>
+        {question.difficultyLevel ? <span>{difficultyLabel(question.difficultyLevel)}</span> : null}
       </div>
       <div className="mt-3 text-sm font-semibold leading-7 text-slate-800 dark:text-slate-100">
         {question.stem}
@@ -283,10 +283,10 @@ function QuestionBlock(props: {
                 type="button"
                 disabled={props.locked}
                 onClick={() => props.onAnswer(label)}
-                className={`min-h-11 rounded-xl px-3 py-2 text-left text-sm leading-6 ring-1 transition disabled:cursor-default ${
+                className={`min-h-11 rounded-xl px-3 py-2 text-left text-sm leading-6 transition disabled:cursor-default ${
                   checked
-                    ? 'bg-primary-50 text-primary-800 ring-primary-300/70 dark:bg-primary-500/10 dark:text-primary-100 dark:ring-primary-500/40'
-                    : 'bg-slate-50/80 text-slate-600 ring-slate-200/70 hover:bg-white hover:ring-primary-200 dark:bg-slate-950/70 dark:text-slate-300 dark:ring-slate-700/70'
+                    ? 'bg-primary-600 text-white shadow-sm shadow-primary-500/20 dark:bg-primary-500 dark:text-white'
+                    : 'bg-slate-50/80 text-slate-600 hover:bg-primary-50/80 hover:text-primary-700 dark:bg-slate-950/70 dark:text-slate-300'
                 }`}
               >
                 <span className="font-semibold">{label}.</span> {option}
@@ -300,7 +300,7 @@ function QuestionBlock(props: {
           disabled={props.locked}
           onChange={(event) => props.onAnswer(event.target.value)}
           rows={5}
-          className="mt-4 w-full rounded-xl bg-slate-50/80 px-3.5 py-2.5 text-sm leading-6 outline-none ring-1 ring-slate-200/70 transition focus:bg-white focus:ring-2 focus:ring-primary-500/20 disabled:bg-slate-100 dark:bg-slate-950/70 dark:text-slate-100 dark:ring-slate-700/70 dark:disabled:bg-slate-900"
+          className="mt-4 w-full rounded-xl bg-slate-50/80 px-3.5 py-2.5 text-sm leading-6 outline-none transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 disabled:bg-slate-100 dark:bg-slate-950/70 dark:text-slate-100 dark:focus:bg-slate-950 dark:focus:shadow-primary-950/24 dark:disabled:bg-slate-900"
           placeholder="请输入你的答案"
         />
       )}
@@ -320,18 +320,18 @@ function QuestionBlock(props: {
 
 function QuestionResult({ result }: { result: JudgeItemResult }) {
   return (
-    <div className={`mt-4 rounded-xl px-3 py-2 text-sm ring-1 ${
+    <div className={`mt-4 rounded-xl px-3 py-2 text-sm ${
       result.isCorrect
-        ? 'bg-emerald-50 text-emerald-800 ring-emerald-100/80 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/20'
-        : 'bg-amber-50 text-amber-800 ring-amber-100/80 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/20'
+        ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200'
+        : 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-100'
     }`}
     >
       <div className="flex items-center gap-2 font-semibold">
         {result.isCorrect ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-        {result.isCorrect ? '得分点已覆盖' : '需要补强'} · {result.score} 分
+        {result.isCorrect ? '掌握情况良好' : '这里还需要补强'}
       </div>
       {result.correctAnswer ? <p className="mt-2">标准答案：{result.correctAnswer}</p> : null}
-      {result.reason ? <p className="mt-1 leading-6">理由：{result.reason}</p> : null}
+      {result.reason ? <p className="mt-1 leading-6">解析：{result.reason}</p> : null}
       {result.feedback ? <p className="mt-1 leading-6">建议：{result.feedback}</p> : null}
     </div>
   );
@@ -350,14 +350,14 @@ function QuestionGrid(props: {
         return (
           <div
             key={question.questionId}
-            className={`flex h-9 items-center justify-center rounded-xl text-xs font-bold ring-1 ${
+            className={`flex h-9 items-center justify-center rounded-xl text-xs font-bold ${
               judged
                 ? judged.isCorrect
-                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/20'
-                  : 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-100 dark:ring-amber-500/20'
+                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+                  : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-100'
                 : answered
-                  ? 'bg-primary-50 text-primary-700 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-500/20'
-                  : 'bg-slate-100 text-slate-400 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700'
+                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-200'
+                  : 'bg-slate-100 text-slate-400 dark:bg-slate-800'
             }`}
           >
             {index + 1}
@@ -372,10 +372,10 @@ function ResultSummary({ result }: { result: PracticeJudgeResult }) {
   const score = normalizeDisplayScore(result);
   const passed = score >= PASS_SCORE;
   return (
-    <div className={`mt-4 rounded-2xl p-4 ring-1 ${
+    <div className={`mt-4 rounded-2xl p-4 ${
       passed
-        ? 'bg-emerald-50/70 ring-emerald-100/80 dark:bg-emerald-500/10 dark:ring-emerald-500/20'
-        : 'bg-amber-50/70 ring-amber-100/80 dark:bg-amber-500/10 dark:ring-amber-500/20'
+        ? 'bg-emerald-50/70 dark:bg-emerald-500/10'
+        : 'bg-amber-50/70 dark:bg-amber-500/10'
     }`}
     >
       <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
@@ -388,7 +388,7 @@ function ResultSummary({ result }: { result: PracticeJudgeResult }) {
       {result.weakKnowledgeTags?.length ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {result.weakKnowledgeTags.map((tag) => (
-            <span key={tag} className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-700">
+            <span key={tag} className="rounded-full bg-white/86 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-950/70 dark:text-slate-300">
               {tag}
             </span>
           ))}
@@ -413,6 +413,30 @@ function normalizeExamResult(result: PracticeJudgeResult, batch: PracticeQuestio
 
 function normalizeDisplayScore(result: PracticeJudgeResult): number {
   return result.totalScore > 1 ? Math.round(result.totalScore) : Math.round(result.totalScore * 100);
+}
+
+function questionTypeLabel(value?: string): string {
+  switch (value) {
+    case 'SINGLE_CHOICE':
+      return '选择题';
+    case 'SHORT_ANSWER':
+      return '简答题';
+    default:
+      return value || '题目';
+  }
+}
+
+function difficultyLabel(value?: string): string {
+  switch (value) {
+    case 'BASIC':
+      return '基础';
+    case 'INTERMEDIATE':
+      return '中等';
+    case 'ADVANCED':
+      return '进阶';
+    default:
+      return value || '';
+  }
 }
 
 function unansweredQuestions(batch: PracticeQuestionBatch, answers: Record<string, string>): PracticeQuestion[] {

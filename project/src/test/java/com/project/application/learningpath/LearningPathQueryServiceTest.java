@@ -2,6 +2,7 @@ package com.project.application.learningpath;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.api.learningpath.dto.LearningPathCurrentResponse;
+import com.project.application.resource.ResourceSemanticWarmupService;
 import com.project.application.smartengine.TaskStateMachineService;
 import com.project.domain.task.ServiceType;
 import com.project.domain.task.SmartEngineTask;
@@ -60,7 +61,8 @@ class LearningPathQueryServiceTest {
             jdbcTemplate,
             taskRepository,
             mock(TaskStateMachineService.class),
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
         );
 
         LearningPathCurrentResponse response = service.getCurrent(userId);
@@ -104,7 +106,8 @@ class LearningPathQueryServiceTest {
             jdbcTemplate,
             taskRepository,
             mock(TaskStateMachineService.class),
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
         );
 
         LearningPathCurrentResponse response = service.getCurrent(userId);
@@ -141,7 +144,8 @@ class LearningPathQueryServiceTest {
             jdbcTemplate,
             taskRepository,
             mock(TaskStateMachineService.class),
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
         );
 
         assertThat(service.getCurrent(userId).activeStep()).isNull();
@@ -171,7 +175,8 @@ class LearningPathQueryServiceTest {
             jdbcTemplate,
             taskRepository,
             mock(TaskStateMachineService.class),
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
         );
 
         LearningPathCurrentResponse response = service.getCurrent(userId);
@@ -212,30 +217,19 @@ class LearningPathQueryServiceTest {
             jdbcTemplate,
             taskRepository,
             mock(TaskStateMachineService.class),
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
         );
 
         assertThat(service.getCurrent(userId).activeStep()).isNull();
     }
 
     @Test
-    void alignsResourcePlanToLearningPathAndFiltersOldFrontendQuizResources() {
+    void alignsResourcePlanToLearningPathAndFiltersInvalidTavilyResources() {
         UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000010");
         NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
         when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
             .thenReturn(List.of());
-        when(jdbcTemplate.queryForList(anyString(), any(MapSqlParameterSource.class)))
-            .thenReturn(List.of(Map.of(
-                "title", "Redirecting…",
-                "summary_text", "torch.nn.Linear deep learning neural network layer",
-                "resource_type", "READING",
-                "display_type", "DOCUMENT",
-                "source_url", "https://docs.pytorch.org/docs/stable/generated/torch.nn.Linear.html",
-                "source_name", "PyTorch Documentation",
-                "cs_category", "AI_ML",
-                "tags_text", "[\"pytorch\",\"deep-learning\"]",
-                "quality_score", 0.9
-            )));
 
         SmartEngineTask personalizedTask = task(userId, ServiceType.PERSONALIZED_LEARNING);
         personalizedTask.setResponseSummary(Map.of(
@@ -253,9 +247,10 @@ class LearningPathQueryServiceTest {
                     "stepId", "step-1",
                     "resources", List.of(
                         Map.of(
-                            "title", "JavaScript 前端课程",
+                            "title", "深度学习核心概念讲解",
                             "resourceType", "DOCUMENT",
-                            "downloadUrl", "https://developer.mozilla.org/zh-CN/docs/Web/JavaScript"
+                            "downloadUrl", "https://example.com/deep-learning-intro",
+                            "source", "tavily"
                         ),
                         Map.of(
                             "title", "深度学习练习题",
@@ -281,7 +276,8 @@ class LearningPathQueryServiceTest {
             jdbcTemplate,
             taskRepository,
             mock(TaskStateMachineService.class),
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
         );
 
         LearningPathCurrentResponse response = service.getCurrent(userId);
@@ -291,51 +287,28 @@ class LearningPathQueryServiceTest {
         List<Map<String, Object>> resources = (List<Map<String, Object>>) stepResources.getFirst().get("resources");
 
         assertThat(resources).hasSize(1);
-        assertThat(resources.getFirst()).containsEntry("sourceName", "PyTorch Documentation");
+        assertThat(resources.getFirst()).containsEntry("title", "深度学习核心概念讲解");
         assertThat(resources.getFirst()).containsEntry("resourceType", "DOCUMENT");
-        assertThat(resources.getFirst().get("title")).asString().contains("PyTorch");
         assertThat(response.pushedResources()).hasSize(1);
-        verify(jdbcTemplate).queryForList(
-            org.mockito.ArgumentMatchers.argThat((String sql) ->
-                sql.contains("metadata_json ->> 'csCategory'")
-                    && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
-                    && sql.contains("accessibilityStatus")
-            ),
-            org.mockito.ArgumentMatchers.<MapSqlParameterSource>argThat(params ->
-                "AI_ML".equals(params.getValue("category"))
-            )
-        );
     }
 
     @Test
-    void alignsResourcePlanWhenLearningPathUsesStagesInsteadOfSteps() {
+    void returnsCoverageGapWhenTavilyPlanHasNoUsableResources() {
         UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000011");
         NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
         when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
             .thenReturn(List.of());
-        when(jdbcTemplate.queryForList(anyString(), any(MapSqlParameterSource.class)))
-            .thenReturn(List.of(Map.of(
-                "title", "PyTorch autograd",
-                "summary_text", "deep learning automatic differentiation",
-                "resource_type", "READING",
-                "display_type", "DOCUMENT",
-                "source_url", "https://docs.pytorch.org/docs/stable/autograd.html",
-                "source_name", "PyTorch Documentation",
-                "cs_category", "AI_ML",
-                "tags_text", "[\"pytorch\",\"deep-learning\"]",
-                "quality_score", 0.9
-            )));
 
         SmartEngineTask personalizedTask = task(userId, ServiceType.PERSONALIZED_LEARNING);
         personalizedTask.setResponseSummary(Map.of(
             "learningPath", Map.of(
-                "goal", "deep learning neural network PyTorch",
+                "goal", "图着色算法学习",
                 "stages", List.of(Map.of(
-                    "title", "Deep learning foundations",
-                    "description", "neural networks and backpropagation",
+                    "title", "图着色基础",
+                    "description", "回溯搜索",
                     "steps", List.of(Map.of(
-                        "title", "PyTorch tensors and autograd",
-                        "description", "automatic differentiation"
+                        "title", "图着色建模",
+                        "description", "理解约束建模"
                     ))
                 ))
             )
@@ -355,15 +328,134 @@ class LearningPathQueryServiceTest {
             jdbcTemplate,
             taskRepository,
             mock(TaskStateMachineService.class),
-            new ObjectMapper()
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
         );
 
         LearningPathCurrentResponse response = service.getCurrent(userId);
 
         assertThat(response.learningPath()).containsKey("steps");
         assertThat(response.activeStep()).containsEntry("stepId", "step-1");
+        assertThat(response.pushedResources()).isEmpty();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> gaps = (List<Map<String, Object>>) response.resourcePushPlan().get("coverageGaps");
+        assertThat(gaps).hasSize(1);
+        assertThat(gaps.getFirst().get("reason")).asString().contains("Tavily");
+    }
+
+    @Test
+    void keepsTavilyResourcesWithoutTopicSpecificLibraryReplacement() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000012");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+
+        SmartEngineTask personalizedTask = task(userId, ServiceType.PERSONALIZED_LEARNING);
+        personalizedTask.setResponseSummary(Map.of(
+            "learningPath", Map.of(
+                "goal", "Java 并发编程基础",
+                "steps", List.of(Map.of(
+                    "stepId", "step-1",
+                    "title", "Java线程创建基础概念学习",
+                    "status", "IN_PROGRESS",
+                    "targetKnowledgePoints", List.of("Thread类", "Runnable接口", "synchronized", "volatile")
+                ))
+            ),
+            "resourcePushPlan", Map.of(
+                "stepResources", List.of(Map.of(
+                    "stepId", "step-1",
+                    "resources", List.of(Map.of(
+                        "title", "Java Thread and Runnable Tutorial",
+                        "resourceType", "DOCUMENT",
+                        "downloadUrl", "https://docs.oracle.com/javase/tutorial/essential/concurrency/runthread.html",
+                        "source", "tavily",
+                        "summaryText", "Thread Runnable synchronized volatile"
+                    ))
+                ))
+            )
+        ));
+
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(List.of(personalizedTask));
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(List.of());
+
+        LearningPathQueryService service = new LearningPathQueryService(
+            jdbcTemplate,
+            taskRepository,
+            mock(TaskStateMachineService.class),
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
+        );
+
+        LearningPathCurrentResponse response = service.getCurrent(userId);
+
         assertThat(response.pushedResources()).hasSize(1);
-        assertThat(response.pushedResources().getFirst()).containsEntry("csCategory", "AI_ML");
+        assertThat(response.pushedResources().getFirst().get("title")).asString().contains("Java");
+    }
+
+    @Test
+    void attachesLatestTopLevelPushedResourcesToActiveStepWhenPlanResourcesAreEmpty() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000013");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+
+        SmartEngineTask personalizedTask = task(userId, ServiceType.PERSONALIZED_LEARNING);
+        personalizedTask.setResponseSummary(Map.of(
+            "learningPath", Map.of(
+                "goal", "Java concurrency",
+                "steps", List.of(
+                    Map.of("stepId", "step-1", "title", "Thread basics", "status", "IN_PROGRESS"),
+                    Map.of("stepId", "step-2", "title", "Synchronization", "status", "NOT_STARTED")
+                )
+            )
+        ));
+        SmartEngineTask resourceTask = task(userId, ServiceType.RESOURCE_PUSH);
+        resourceTask.setResponseSummary(Map.of(
+            "resourcePushPlan", Map.of(
+                "stepResources", List.of(Map.of("stepId", "step-1", "resources", List.of()))
+            ),
+            "pushedResources", List.of(Map.of(
+                "title", "Java Thread Tutorial",
+                "resourceType", "DOCUMENT",
+                "downloadUrl", "https://docs.oracle.com/javase/tutorial/essential/concurrency/runthread.html",
+                "summaryText", "Thread and Runnable"
+            ))
+        ));
+
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(List.of(personalizedTask));
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(List.of(resourceTask));
+
+        LearningPathQueryService service = new LearningPathQueryService(
+            jdbcTemplate,
+            taskRepository,
+            mock(TaskStateMachineService.class),
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
+        );
+
+        LearningPathCurrentResponse response = service.getCurrent(userId);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> stepResources = (List<Map<String, Object>>) response.resourcePushPlan().get("stepResources");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> firstStepResources = (List<Map<String, Object>>) stepResources.getFirst().get("resources");
+
+        assertThat(firstStepResources).hasSize(1);
+        assertThat(firstStepResources.getFirst()).containsEntry("title", "Java Thread Tutorial");
+        assertThat(response.pushedResources()).hasSize(1);
     }
 
     private SmartEngineTask task(UUID userId, ServiceType serviceType) {

@@ -114,6 +114,10 @@ class Settings(BaseSettings):
         alias="MIMO_BASE_URL",
     )
     tts_timeout_seconds: float = Field(default=180.0, alias="TTS_TIMEOUT_SECONDS")
+    generation_llm_timeout_seconds: float = Field(
+        default=180.0,
+        alias="GENERATION_LLM_TIMEOUT_SECONDS",
+    )
     video_tts_max_chars: int = Field(default=260, alias="VIDEO_TTS_MAX_CHARS")
     llm_tool_content_max_string_chars: int = Field(
         default=600,
@@ -253,6 +257,18 @@ class Settings(BaseSettings):
     knowledge_embedding_dimension: int = Field(
         default=1024,
         alias="KNOWLEDGE_EMBEDDING_DIMENSION",
+    )
+    knowledge_embedding_timeout_seconds: float = Field(
+        default=10.0,
+        alias="KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS",
+    )
+    knowledge_embedding_max_retries: int = Field(
+        default=2,
+        alias="KNOWLEDGE_EMBEDDING_MAX_RETRIES",
+    )
+    knowledge_embedding_retry_backoff_seconds: float = Field(
+        default=0.5,
+        alias="KNOWLEDGE_EMBEDDING_RETRY_BACKOFF_SECONDS",
     )
     sandbox_root: str = Field(default="sandbox-temp", alias="SANDBOX_ROOT")
     tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")

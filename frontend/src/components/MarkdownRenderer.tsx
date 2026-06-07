@@ -89,21 +89,21 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
             },
             table({ children }) {
               return (
-                <div className="my-4 overflow-x-auto rounded-xl bg-white/88 ring-1 ring-slate-200/80 dark:bg-slate-900/80 dark:ring-slate-700/70">
+                <div className="my-4 overflow-x-auto rounded-xl bg-white/88 shadow-sm shadow-slate-200/60 dark:bg-slate-900/80 dark:shadow-none">
                   <table className="min-w-full text-sm">{children}</table>
                 </div>
               );
             },
             th({ children }) {
               return (
-                <th className="bg-slate-50 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:bg-slate-800 dark:text-slate-400 dark:shadow-[inset_0_-1px_0_rgba(51,65,85,0.72)]">
+                <th className="bg-slate-50/86 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:bg-slate-800/86 dark:text-slate-400">
                   {children}
                 </th>
               );
             },
             td({ children }) {
               return (
-                <td className="px-4 py-2.5 text-slate-700 shadow-[inset_0_-1px_0_rgba(241,245,249,0.82)] dark:text-slate-300 dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)]">
+                <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">
                   {children}
                 </td>
               );
@@ -121,7 +121,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
                   <img
                     src={src}
                     alt={alt || '图片'}
-                    className="max-h-96 rounded-xl object-cover shadow-sm ring-1 ring-slate-200/80 dark:ring-slate-700/70"
+                    className="max-h-96 rounded-xl object-cover shadow-sm shadow-slate-200/70 dark:shadow-slate-950/30"
                     loading="lazy"
                   />
                 </button>
@@ -129,13 +129,13 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
             },
             blockquote({ children }) {
               return (
-                <blockquote className="my-3 rounded-r-xl bg-slate-50/60 py-2 pl-4 pr-3 text-[15px] text-slate-600 shadow-[inset_2px_0_0_rgba(148,163,184,0.48)] dark:bg-slate-900/40 dark:text-slate-400 dark:shadow-[inset_2px_0_0_rgba(71,85,105,0.68)]">
+                <blockquote className="my-3 rounded-xl bg-slate-50/70 px-4 py-2 text-[15px] text-slate-600 shadow-sm shadow-slate-200/35 dark:bg-slate-900/44 dark:text-slate-400 dark:shadow-none">
                   {children}
                 </blockquote>
               );
             },
             hr() {
-              return <hr className="my-6 border-slate-200 dark:border-slate-700" />;
+              return <hr className="my-6 h-px border-0 bg-slate-200 dark:bg-slate-700" />;
             },
             ul({ children }) {
               return <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>;

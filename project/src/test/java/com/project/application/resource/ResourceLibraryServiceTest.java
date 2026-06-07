@@ -1,8 +1,10 @@
 package com.project.application.resource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.project.api.resource.dto.ResourceItemResponse;
 import com.project.api.resource.dto.ResourceListResponse;
 import com.project.api.resource.dto.ResourceProgressRequest;
+import com.project.api.resource.dto.ResourceSemanticResultResponse;
 import com.project.api.resource.dto.ResourceSemanticSearchResponse;
 import com.project.application.common.ApplicationException;
 import org.junit.jupiter.api.Test;
@@ -36,7 +38,7 @@ class ResourceLibraryServiceTest {
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
             .thenReturn(0L);
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
 
         ResourceListResponse response = service.listResources(
             userId,
@@ -84,35 +86,44 @@ class ResourceLibraryServiceTest {
     }
 
     @Test
-    void listResourcesUsesLearningContextForDefaultComprehensiveSort() {
+    void listResourcesPrioritizesCurrentStageSemanticRankForDefaultComprehensiveSort() {
         UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000011");
+        UUID resourceId = UUID.fromString("70000000-0000-0000-0000-000000000011");
         NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
         ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        ResourceSemanticWarmupService warmupService = mock(ResourceSemanticWarmupService.class);
         when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
             .thenReturn(List.of());
+        when(warmupService.stageRankedIds(userId, 12)).thenReturn(List.of(resourceId));
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
             .thenReturn(0L);
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient, warmupService);
         service.listResources(userId, null, null, null, null, null, null, null, false, "comprehensive", 0, 12);
 
         verify(jdbcTemplate).query(
             org.mockito.ArgumentMatchers.argThat((String sql) ->
-                sql.contains("WITH latest_plan AS")
-                    && sql.contains("context_signals AS")
+                sql.contains("WITH stage_ranked AS")
+                    && sql.contains("FROM (VALUES")
+                    && sql.contains("CAST(:stageRankedId0 AS uuid)")
+                    && sql.contains("stage_rank ASC NULLS LAST")
                     && sql.contains("recommendation_score")
-                    && sql.contains("category_rank")
                     && sql.contains("sourceUrl")
                     && sql.contains("accessibilityStatus")
                     && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
+                    && !sql.contains("unnest(:stageRankedIds::uuid[])")
+                    && !sql.contains("context_signals AS")
+                    && !sql.contains("preferred_category")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
                     && Integer.valueOf(12).equals(source.getValue("limit"))
                     && Integer.valueOf(0).equals(source.getValue("offset"))
+                    && source.getValue("stageRankedId0").equals(resourceId)
             ),
             any(RowMapper.class)
         );
+        verify(semanticClient, never()).search(any(UUID.class), anyString(), any(Integer.class));
     }
 
     @Test
@@ -125,7 +136,7 @@ class ResourceLibraryServiceTest {
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
             .thenReturn(0L);
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
         service.listResources(userId, null, "QUIZ", null, null, null, null, null, false, "quality", 0, 12);
 
         verify(jdbcTemplate).query(
@@ -153,7 +164,7 @@ class ResourceLibraryServiceTest {
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
             .thenReturn(0L);
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
         service.listResources(userId, null, "NOTE", null, null, null, null, null, false, "latest", 0, 12);
 
         verify(jdbcTemplate).query(
@@ -185,7 +196,7 @@ class ResourceLibraryServiceTest {
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
             .thenReturn(null);
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
         service.updateProgress(userId, resourceId, new ResourceProgressRequest(100, false));
 
         verify(jdbcTemplate).queryForObject(
@@ -220,7 +231,7 @@ class ResourceLibraryServiceTest {
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Boolean.class)))
             .thenReturn(false);
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
 
         assertThatThrownBy(() -> service.setFavorite(userId, resourceId, true))
             .isInstanceOf(ApplicationException.class);
@@ -241,14 +252,50 @@ class ResourceLibraryServiceTest {
     }
 
     @Test
-    void recommendationsUseProfileHistoryAndGuardedNumericMetadataScore() {
+    void recommendationsUseWarmSemanticRankResults() {
         UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000004");
+        UUID resourceId = UUID.fromString("70000000-0000-0000-0000-000000000004");
         NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
         ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        ResourceSemanticWarmupService warmupService = mock(ResourceSemanticWarmupService.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of(resourceItem(resourceId, "图着色回溯案例", false)));
+        when(warmupService.recommendationIds(userId, 5)).thenReturn(List.of(resourceId));
+
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient, warmupService);
+        List<ResourceItemResponse> recommendations = service.recommendations(userId, 5);
+
+        assertThat(recommendations).hasSize(1);
+        assertThat(recommendations.get(0).id()).isEqualTo(resourceId);
+        verify(semanticClient, never()).search(any(UUID.class), anyString(), any(Integer.class));
+        verify(jdbcTemplate).query(
+            org.mockito.ArgumentMatchers.argThat((String sql) ->
+                sql.contains("WITH ranked AS")
+                    && sql.contains("FROM (VALUES")
+                    && sql.contains("CAST(:stageRankedId0 AS uuid)")
+                    && sql.contains("ORDER BY semantic_rank ASC")
+                    && !sql.contains("unnest(:rankedIds::uuid[])")
+            ),
+            org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
+                params instanceof MapSqlParameterSource source
+                    && source.getValue("stageRankedId0").equals(resourceId)
+                    && Integer.valueOf(5).equals(source.getValue("limit"))
+            ),
+            any(RowMapper.class)
+        );
+    }
+
+    @Test
+    void recommendationsFallBackToProfileHistoryAndGuardedNumericMetadataScoreWhenRagEmpty() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000014");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        ResourceSemanticWarmupService warmupService = mock(ResourceSemanticWarmupService.class);
         when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
             .thenReturn(List.of());
+        when(warmupService.recommendationIds(userId, 5)).thenReturn(List.of());
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient, warmupService);
         service.recommendations(userId, 5);
 
         verify(jdbcTemplate).query(
@@ -264,26 +311,101 @@ class ResourceLibraryServiceTest {
                     && sql.contains("'MINDMAP'")
                     && sql.contains("app.user_resource_state history_state")
                     && sql.contains("jsonb_exists(lr.tags, history_tag.tag)")
-                    && sql.contains("WITH latest_plan AS")
-                    && sql.contains("app.learning_plan p")
-                    && sql.contains("latest_task_path AS")
-                    && sql.contains("t.service_type = 'PERSONALIZED_LEARNING'")
-                    && sql.contains("jsonb_exists(t.response_summary, 'learningPath')")
-                    && sql.contains("active_step AS")
-                    && sql.contains("context_signals AS")
-                    && sql.contains("preferred_category")
-                    && sql.contains("'AI_ML'")
-                    && sql.contains("deep[- ]?learning")
-                    && sql.contains("pytorch")
-                    && sql.contains("ROW_NUMBER() OVER")
-                    && sql.contains("category_rank")
                     && sql.contains("lower(lr.title) LIKE 'redirecting%'")
+                    && !sql.contains("context_signals AS")
+                    && !sql.contains("preferred_category")
+                    && !sql.contains("'AI_ML'")
+                    && !sql.contains("deep[- ]?learning")
+                    && !sql.contains("ROW_NUMBER() OVER")
+                    && !sql.contains("category_rank")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
                     && Integer.valueOf(5).equals(source.getValue("limit"))
             ),
             any(RowMapper.class)
+        );
+        verify(semanticClient, never()).search(any(UUID.class), anyString(), any(Integer.class));
+    }
+
+    @Test
+    void recommendationsFallBackWithoutBuildingStageQueryInRequestThread() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000015");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        ResourceSemanticWarmupService warmupService = mock(ResourceSemanticWarmupService.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+        when(warmupService.recommendationIds(userId, 5)).thenReturn(List.of());
+
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient, warmupService);
+        service.recommendations(userId, 5);
+
+        verify(jdbcTemplate).query(
+            org.mockito.ArgumentMatchers.argThat((String sql) ->
+                sql.contains("recommendation_score")
+                    && !sql.contains("stage_steps AS")
+                    && !sql.contains("latest_plan AS")
+            ),
+            org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
+                params instanceof MapSqlParameterSource source
+                    && userId.equals(source.getValue("userId"))
+                    && Integer.valueOf(5).equals(source.getValue("limit"))
+            ),
+            any(RowMapper.class)
+        );
+        verify(semanticClient, never()).search(any(UUID.class), anyString(), any(Integer.class));
+    }
+
+    @Test
+    void semanticSearchUpsertsTavilyFallbackResourceBeforeHydration() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000016");
+        UUID resourceId = UUID.fromString("18d9bc57-06be-5217-aeb1-effdda45804a");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of())
+            .thenReturn(List.of(resourceItem(resourceId, "External graph guide", false)));
+        when(jdbcTemplate.update(anyString(), any(MapSqlParameterSource.class))).thenReturn(1);
+        when(semanticClient.search(eq(userId), eq("graph traversal"), eq(8)))
+            .thenReturn(new ResourceSemanticSearchResponse(
+                "graph traversal",
+                true,
+                "ok",
+                List.of(new ResourceSemanticResultResponse(
+                    resourceId,
+                    null,
+                    0.72,
+                    "tavily_current_stage_fallback",
+                    List.of(),
+                    new com.project.api.resource.dto.ResourceExternalCandidateResponse(
+                        "External graph guide",
+                        "https://example.com/graph",
+                        "example.com",
+                        "graph traversal tutorial",
+                        "READING",
+                        "DOCUMENT",
+                        "MIXED",
+                        "",
+                        0.6,
+                        0.0,
+                        List.of("graph", "traversal")
+                    )
+                ))
+            ));
+
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
+        ResourceSemanticSearchResponse response = service.semanticSearch(userId, "graph traversal", 8);
+
+        assertThat(response.results()).hasSize(1);
+        assertThat(response.results().get(0).resource().id()).isEqualTo(resourceId);
+        verify(jdbcTemplate).update(
+            org.mockito.ArgumentMatchers.contains("INSERT INTO app.learning_resource"),
+            org.mockito.ArgumentMatchers.<MapSqlParameterSource>argThat(params ->
+                resourceId.equals(params.getValue("resourceId"))
+                    && "READING".equals(params.getValue("resourceType"))
+                    && String.valueOf(params.getValue("metadata")).contains("resource_library_tavily_fallback")
+            )
         );
     }
 
@@ -295,7 +417,7 @@ class ResourceLibraryServiceTest {
         when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
             .thenReturn(List.of());
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
         service.tags(userId, 12);
 
         verify(jdbcTemplate).query(
@@ -329,7 +451,7 @@ class ResourceLibraryServiceTest {
         when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
             .thenReturn(List.of());
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
         service.stats(userId);
 
         verify(jdbcTemplate).queryForList(
@@ -370,12 +492,70 @@ class ResourceLibraryServiceTest {
         when(semanticClient.search(eq(userId), eq("动态规划"), eq(8)))
             .thenThrow(new IllegalStateException("missing api key"));
 
-        ResourceLibraryService service = new ResourceLibraryService(jdbcTemplate, new ObjectMapper(), semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
 
         ResourceSemanticSearchResponse response = service.semanticSearch(userId, "动态规划", 8);
 
         assertThat(response.available()).isFalse();
         assertThat(response.results()).isEmpty();
         assertThat(response.message()).contains("missing api key");
+    }
+
+    private static ResourceItemResponse resourceItem(UUID id, String title, boolean completed) {
+        return new ResourceItemResponse(
+            id,
+            title,
+            "COMPUTER_SCIENCE",
+            "READING",
+            "DOCUMENT",
+            "BASIC",
+            "WEB",
+            "",
+            List.of(),
+            "https://example.com/resource",
+            "example.com",
+            "",
+            "",
+            "AUTHORIZED",
+            "ACCESSIBLE",
+            200,
+            null,
+            0.9,
+            0.1,
+            0L,
+            0L,
+            0L,
+            null,
+            null,
+            false,
+            0,
+            completed,
+            null,
+            null,
+            null,
+            "GENERAL_CS",
+            "",
+            java.util.Map.of()
+        );
+    }
+
+    private static ResourceLibraryService service(
+        NamedParameterJdbcTemplate jdbcTemplate,
+        ResourceSemanticSearchClient semanticClient
+    ) {
+        return service(jdbcTemplate, semanticClient, mock(ResourceSemanticWarmupService.class));
+    }
+
+    private static ResourceLibraryService service(
+        NamedParameterJdbcTemplate jdbcTemplate,
+        ResourceSemanticSearchClient semanticClient,
+        ResourceSemanticWarmupService warmupService
+    ) {
+        return new ResourceLibraryService(
+            jdbcTemplate,
+            new ObjectMapper(),
+            semanticClient,
+            warmupService
+        );
     }
 }

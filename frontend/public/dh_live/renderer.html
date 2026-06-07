@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DH Live Renderer</title>
+    <title>视频生成器</title>
     <style>
       html, body {
         margin: 0;
@@ -20,7 +20,7 @@
   </head>
   <body>
     <figure id="loadingSpinner">
-      <strong>DH Live loading...</strong>
+      <strong>视频生成准备中...</strong>
     </figure>
     <canvas id="canvasEl"></canvas>
     <canvas id="canvas_video"></canvas>
@@ -104,7 +104,7 @@
             }
             await wait(FRAME_READY_POLL_INTERVAL_MS);
           }
-          throw new Error('DH Live 视频帧加载超时');
+          throw new Error('视频帧加载超时，请重新生成。');
         }
 
         async function startFrameLoop() {
@@ -118,7 +118,7 @@
 
         function assertRecordedVideoBlob(videoBlob) {
           if (!(videoBlob instanceof Blob) || videoBlob.size < MIN_VALID_VIDEO_BLOB_BYTES) {
-            throw new Error('浏览器录制结果为空，未生成有效视频');
+            throw new Error('视频生成结果为空，请重新生成。');
           }
         }
 
@@ -146,7 +146,7 @@
             return;
           }
           if (typeof newVideoTask !== 'function') {
-            throw new Error('DH Live 渲染资源加载失败');
+            throw new Error('视频生成资源加载失败，请稍后重试。');
           }
           for (let i = 0; i < FRAME_READY_POLL_ATTEMPTS; i += 1) {
             if (typeof videoProcessor !== 'undefined' && videoProcessor.combinedData && canvas_video.width > 0) {
@@ -196,7 +196,7 @@
           state.requestId = requestId;
           state.activeRenderToken += 1;
           const renderToken = state.activeRenderToken;
-          notify({ type: 'dh_live_renderer:progress', requestId, percent: 10, message: '浏览器渲染引擎初始化完成' });
+          notify({ type: 'dh_live_renderer:progress', requestId, percent: 10, message: '视频生成已初始化' });
 
           const { audioContext, audioBuffer, encodedBytes } = await decodeAudioBuffer(payload.audioBase64);
           if (renderToken !== state.activeRenderToken) {
@@ -245,7 +245,7 @@
               resolve({ videoBlob, thumbnailBlob, mimeType });
             };
             recorder.onerror = (event) => {
-              reject(event.error || new Error('浏览器录制失败'));
+              reject(event.error || new Error('视频生成失败'));
             };
           });
 
@@ -265,7 +265,7 @@
 
           await audioContext.resume().catch(() => undefined);
           recorder.start(500);
-          notify({ type: 'dh_live_renderer:progress', requestId, percent: 60, message: '浏览器本地渲染中...' });
+          notify({ type: 'dh_live_renderer:progress', requestId, percent: 60, message: '视频生成中...' });
           source.start(0);
           source.stop(audioContext.currentTime + audioBuffer.duration + 0.1);
 
@@ -281,7 +281,7 @@
               type: 'dh_live_renderer:progress',
               requestId,
               percent: 60 + Math.round(ratio * 35),
-              message: '浏览器本地渲染中...',
+              message: '视频生成中...',
             });
           }, 500);
 
@@ -302,7 +302,7 @@
             return;
           }
           isPaused = true;
-          notify({ type: 'dh_live_renderer:progress', requestId, percent: 98, message: '浏览器本地封装完成' });
+          notify({ type: 'dh_live_renderer:progress', requestId, percent: 98, message: '视频生成即将完成' });
           notify({
             type: 'dh_live_renderer:complete',
             requestId,
@@ -326,20 +326,20 @@
           if (type !== 'dh_live_renderer:render') {
             return;
           }
-          renderVideo(requestId, payload).catch((error) => {
+          renderVideo(requestId, payload).catch(() => {
             notify({
               type: 'dh_live_renderer:error',
               requestId,
-              message: error instanceof Error ? error.message : '浏览器本地渲染失败',
+              message: '视频生成失败',
             });
           });
         });
 
-        ensureRendererReady().catch((error) => {
+        ensureRendererReady().catch(() => {
           notify({
             type: 'dh_live_renderer:error',
             requestId: '',
-            message: error instanceof Error ? error.message : 'DH Live 初始化失败',
+            message: '视频生成初始化失败',
           });
         });
       }());

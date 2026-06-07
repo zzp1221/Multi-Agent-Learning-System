@@ -1147,7 +1147,7 @@ export function useLearningStudioQna({
         {
           id: `qna-slide-outline-error-${Date.now()}`,
           role: 'assistant',
-          content: 'PPT 大纲事件缺少正文，请重新生成',
+          content: 'PPT 大纲暂未生成完整，请重新生成',
         },
       ],
       { qnaState: 'QNA_STREAMING' },
@@ -1158,7 +1158,7 @@ export function useLearningStudioQna({
     updateQnaConversationMessages(
       targetConversationId,
       (messages) => {
-        const message = '确认已提交，但后端仍要求 PPT 大纲确认。请重新生成或稍后重试。';
+        const message = '确认已提交，但仍需要重新确认 PPT 大纲。请重新生成或稍后重试。';
         if (assistantMessageId && messages.some((item) => item.id === assistantMessageId)) {
           return messages.map((item) =>
             item.id === assistantMessageId
@@ -1359,16 +1359,18 @@ function readSlideOutlineConfirmation(payload: Record<string, unknown> | undefin
   if (!payload) {
     return null;
   }
-  const outline = readLooseString(payload.inlineContent);
+  const outline = readLoosePayloadString(payload, 'inlineContent', 'inline_content');
   if (!isSlideOutlineConfirmationPayload(payload) || !outline) {
     return null;
   }
-  const title = readLooseString(payload.title) || readLooseString(payload.fileName) || 'PPT 大纲';
+  const title = readLoosePayloadString(payload, 'title')
+    || readLoosePayloadString(payload, 'fileName', 'file_name')
+    || 'PPT 大纲';
   return {
     id: `slides:${title}`,
     title,
     outline,
-    topic: readLooseString(payload.topic) || title,
+    topic: readLoosePayloadString(payload, 'topic') || title,
     status: 'pending',
   };
 }
@@ -1377,8 +1379,8 @@ function isSlideOutlineConfirmationPayload(payload: Record<string, unknown> | un
   if (!payload) {
     return false;
   }
-  const assetType = readLooseString(payload.assetType).toUpperCase();
-  const displayMode = readLooseString(payload.displayMode).toUpperCase();
+  const assetType = readLoosePayloadString(payload, 'assetType', 'asset_type').toUpperCase();
+  const displayMode = readLoosePayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
   return (assetType === 'SLIDES' || assetType === 'PPT') && displayMode === 'SLIDE_OUTLINE_CONFIRMATION';
 }
 
@@ -1390,6 +1392,16 @@ function pruneVoiceContext(context: QnaVoiceContext): QnaVoiceContext {
 
 function readLooseString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function readLoosePayloadString(payload: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = readLooseString(payload[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return '';
 }
 
 function readLooseStringArray(value: unknown): string[] {

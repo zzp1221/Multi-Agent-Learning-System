@@ -33,23 +33,23 @@ const TaskResultPanel = lazy(() =>
 
 const serviceDescriptions: Record<EngineService, { summary: string; detail: string; accent: string }> = {
   resource: {
-    summary: '基于当前任务输入生成学习资源',
-    detail: '提交后展示真实生成结果、下载链接或内联内容。',
+    summary: '基于你的目标生成文档、课件、练习和视频',
+    detail: '填写课程与知识点后，系统会生成可阅读、可下载的学习内容。',
     accent: 'from-blue-500 to-sky-400',
   },
   personalized: {
-    summary: '多智能体协同生成路径并匹配资源',
-    detail: '系统整合画像、学习进度、知识掌握图谱和资源反馈，生成路径与资源推荐。',
+    summary: '自动规划阶段目标，并匹配下一步资源',
+    detail: '系统会读取学习画像、进度和练习记录，生成清晰的学习路径。',
     accent: 'from-indigo-500 to-cyan-400',
   },
   path: {
-    summary: '结合画像、进度和掌握情况规划路径',
-    detail: '系统自动读取学习上下文并返回真实路径建议。',
+    summary: '结合掌握情况，生成可执行学习路径',
+    detail: '系统会根据当前学习状态给出阶段安排、检查点和重点知识。',
     accent: 'from-indigo-500 to-blue-400',
   },
   push: {
-    summary: '依据学习上下文推送资源',
-    detail: '未返回推送结果前不展示预置推荐。',
+    summary: '按当前薄弱点推荐合适资源',
+    detail: '系统会优先推荐与当前阶段匹配的讲解、案例和拓展内容。',
     accent: 'from-cyan-500 to-emerald-400',
   },
 };
@@ -210,18 +210,15 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   }
 
   return (
-    <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-[28px] bg-white/72 px-6 py-10 text-center text-sm text-slate-500 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 dark:bg-slate-900/68 dark:ring-slate-800/70">正在加载学习服务...</div>}>
-      <div className="mx-auto max-w-[1120px] space-y-5 px-0 pb-8 sm:space-y-7 sm:pb-10 md:px-0">
-        <section className="overflow-hidden rounded-[28px] bg-white/72 shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70 dark:shadow-slate-950/20">
+    <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-[28px] bg-white/76 px-6 py-10 text-center text-sm text-slate-500 shadow-[0_14px_42px_rgba(59,97,155,0.08)] dark:bg-slate-900/68">正在加载学习服务...</div>}>
+      <div className="mx-auto max-w-[1120px] space-y-6 px-0 pb-8 sm:space-y-7 sm:pb-10 md:px-0">
+        <section className="overflow-hidden rounded-[28px] bg-white/76 shadow-[0_18px_56px_rgba(59,97,155,0.09)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20">
           <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-5 md:px-8">
             <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-sky-400 text-white shadow-lg shadow-blue-500/20 sm:h-11 sm:w-11">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-600 text-white shadow-lg shadow-blue-500/18 sm:h-11 sm:w-11">
                 <GraduationCap className="h-5 w-5" />
               </div>
-              <div className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">学习服务</div>
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20 sm:text-sm">
-                智学引擎
-              </span>
+              <div className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">智能服务</div>
             </div>
             <button
               type="button"
@@ -241,7 +238,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
                   选择一项<span className="text-primary-600 dark:text-primary-300">智能服务</span>
                 </h1>
                 <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-slate-400 sm:text-base">
-                  智学引擎为你量身定制专属学习体验
+                  按学习目标生成内容、路径和推荐，过程清晰，结果集中展示。
                 </p>
 
                 <div className="mt-6 grid gap-3 sm:mt-8 sm:grid-cols-2 sm:gap-4">
@@ -253,10 +250,10 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
                         key={item.id}
                         type="button"
                         onClick={() => withAuth(() => handleSelectService(item.id))}
-                        className={`group relative min-h-[132px] rounded-2xl bg-white/82 p-4 text-left shadow-sm shadow-blue-100/35 ring-1 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-lg hover:shadow-blue-100/45 dark:bg-slate-950/42 dark:shadow-none sm:min-h-[148px] sm:p-6 ${
+                        className={`group relative min-h-[132px] rounded-2xl bg-white/66 p-4 text-left shadow-sm shadow-blue-100/24 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/92 hover:shadow-lg hover:shadow-blue-100/36 dark:bg-slate-950/38 dark:shadow-none sm:min-h-[148px] sm:p-6 ${
                           active
-                            ? 'ring-2 ring-primary-500/30'
-                            : 'ring-blue-100/80 dark:ring-slate-800'
+                            ? 'bg-primary-50/78 shadow-primary-100/45 dark:bg-primary-500/10'
+                            : ''
                         }`}
                       >
                         <div className="flex items-center gap-3 sm:gap-5">
@@ -288,12 +285,12 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           </div>
         </section>
 
-        <div className="grid overflow-hidden rounded-[24px] bg-white/66 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/62 dark:ring-slate-800/70 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <section className="p-4 shadow-[inset_0_-1px_0_rgba(226,232,240,0.72)] dark:shadow-[inset_0_-1px_0_rgba(30,41,59,0.82)] sm:p-6 xl:shadow-[inset_-1px_0_0_rgba(226,232,240,0.72)] xl:dark:shadow-[inset_-1px_0_0_rgba(30,41,59,0.82)]">
+        <div className="grid gap-2 overflow-hidden rounded-[24px] bg-white/72 p-2 shadow-[0_14px_42px_rgba(43,83,145,0.08)] backdrop-blur dark:bg-slate-900/62 dark:shadow-slate-950/20 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section className="rounded-[20px] bg-white/44 p-4 dark:bg-slate-950/18 sm:p-6">
             <EngineSectionHeader
               icon={<FileText className="h-4 w-4" />}
               title={selectedService === 'personalized' ? '自动分析范围' : (selectedServiceButton ? `${selectedServiceButton.label}参数` : '服务参数')}
-              subtitle={selectedServiceDescription?.detail ?? '选择服务后提交任务，系统会基于真实数据生成结果。'}
+              subtitle={selectedServiceDescription?.detail ?? '选择服务后开始生成，系统会整理并展示结果。'}
             />
             <div className="mt-5 sm:mt-6">
               <ServiceDynamicForm
@@ -323,8 +320,6 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
             taskId={taskId}
             taskProgress={taskProgress}
             taskStatus={taskStatus}
-            resultLineCount={serviceResultLines.length}
-            downloadCount={downloadLinks.length}
           />
         </div>
 

@@ -163,7 +163,7 @@ function waitForTaskResult(taskId: string, onProgress?: (percent: number, messag
     return Promise.resolve(existing.result);
   }
   if (existing?.status === 'failed') {
-    return Promise.reject(new Error(existing.error || '浏览器本地渲染失败'));
+    return Promise.reject(new Error(existing.error || '视频生成失败'));
   }
   return new Promise<BrowserVideoRenderResult>((resolve, reject) => {
     const unsubscribe = subscribeBrowserVideoRenderTask(taskId, (state) => {
@@ -176,7 +176,7 @@ function waitForTaskResult(taskId: string, onProgress?: (percent: number, messag
         resolve(state.result);
         return;
       }
-      reject(new Error(state.error || '浏览器本地渲染失败'));
+      reject(new Error(state.error || '视频生成失败'));
     });
   });
 }
@@ -207,7 +207,7 @@ function handleRendererMessage(event: MessageEvent<RendererMessage>): void {
     return;
   }
   if (message.type === 'dh_live_renderer:error' && message.requestId === '') {
-    const error = new Error(message.message || 'DH Live 初始化失败');
+    const error = new Error(message.message || '视频生成初始化失败');
     rendererReadyRejecter?.(error);
     rendererReadyResolver = null;
     rendererReadyRejecter = null;
@@ -237,10 +237,10 @@ function handleRendererMessage(event: MessageEvent<RendererMessage>): void {
       requestId: failedJob.requestId,
       status: 'failed',
       percent: 0,
-      error: message.message || '浏览器本地渲染失败',
-      message: message.message || '浏览器本地渲染失败',
+      error: message.message || '视频生成失败',
+      message: message.message || '视频生成失败',
     });
-    failedJob.reject(new Error(message.message || '浏览器本地渲染失败'));
+    failedJob.reject(new Error(message.message || '视频生成失败'));
     return;
   }
   if (message.type === 'dh_live_renderer:complete') {
@@ -261,7 +261,7 @@ function handleRendererMessage(event: MessageEvent<RendererMessage>): void {
       requestId: completedJob.requestId,
       status: 'completed',
       percent: 100,
-      message: '浏览器本地渲染完成',
+      message: '视频生成完成',
       result,
     });
     completedJob.resolve(result);
@@ -270,7 +270,7 @@ function handleRendererMessage(event: MessageEvent<RendererMessage>): void {
 
 async function ensureRendererIframe(): Promise<HTMLIFrameElement> {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
-    throw new Error('当前环境不支持浏览器本地渲染');
+    throw new Error('当前环境不支持视频生成');
   }
   ensureMessageListener();
   if (!rendererIframePromise) {
@@ -281,7 +281,7 @@ async function ensureRendererIframe(): Promise<HTMLIFrameElement> {
         if (!rendererReadyRejecter) {
           return;
         }
-        const error = new Error('DH Live 初始化超时');
+        const error = new Error('视频生成启动超时，请稍后重试');
         rendererReadyRejecter(error);
         rendererReadyResolver = null;
         rendererReadyRejecter = null;
@@ -290,7 +290,7 @@ async function ensureRendererIframe(): Promise<HTMLIFrameElement> {
     rendererIframePromise = Promise.resolve().then(() => {
       const iframe = document.createElement('iframe');
       iframe.src = '/dh_live/renderer.html';
-      iframe.title = 'DH Live Renderer';
+      iframe.title = '视频生成器';
       iframe.setAttribute('aria-hidden', 'true');
       iframe.style.position = 'fixed';
       iframe.style.width = '1px';
@@ -328,7 +328,7 @@ export async function renderTalkingVideoInBrowser(
   },
 ): Promise<BrowserVideoRenderResult> {
   if (!request.audioBase64) {
-    throw new Error('缺少浏览器渲染所需的音频数据');
+    throw new Error('缺少视频生成所需的音频数据');
   }
   const taskId = request.taskId || createRequestId();
   const existing = getBrowserVideoRenderTaskState(taskId);
@@ -338,7 +338,7 @@ export async function renderTalkingVideoInBrowser(
   if (existing?.status === 'rendering') {
     return waitForTaskResult(taskId, options?.onProgress);
   }
-  cancelActiveBrowserVideoRender('已取消上一条本地渲染任务');
+  cancelActiveBrowserVideoRender('已取消上一条视频生成任务');
   const requestId = createRequestId();
   const iframe = await ensureRendererIframe();
   updateTaskState(taskId, {
@@ -346,7 +346,7 @@ export async function renderTalkingVideoInBrowser(
     requestId,
     status: 'rendering',
     percent: 1,
-    message: '等待浏览器本地渲染启动',
+    message: '等待视频生成启动',
   });
   return new Promise<BrowserVideoRenderResult>((resolve, reject) => {
     activeJob = {
@@ -367,7 +367,7 @@ export async function renderTalkingVideoInBrowser(
   });
 }
 
-export function cancelActiveBrowserVideoRender(message = '浏览器本地渲染已取消'): void {
+export function cancelActiveBrowserVideoRender(message = '视频生成已取消'): void {
   if (!activeJob) {
     return;
   }

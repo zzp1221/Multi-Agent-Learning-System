@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { BrainCircuit, Send, Square, TrendingUp } from 'lucide-react';
 
 export function EngineSectionHeader(props: {
@@ -8,7 +8,7 @@ export function EngineSectionHeader(props: {
 }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50/80 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
         {props.icon}
       </div>
       <div className="min-w-0">
@@ -23,10 +23,10 @@ export function ServiceHeroVisual() {
   return (
     <div className="relative hidden min-h-[420px] overflow-hidden lg:block">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_52%_43%,rgba(59,130,246,0.24),transparent_32%),radial-gradient(circle_at_35%_22%,rgba(125,211,252,0.24),transparent_17%)]" />
-      <div className="absolute left-1/2 top-[61%] h-20 w-[330px] -translate-x-1/2 rounded-[50%] bg-blue-100/42 shadow-[0_24px_56px_rgba(61,116,239,0.2)] ring-1 ring-blue-200/60" />
-      <div className="absolute left-1/2 top-[58%] h-12 w-[260px] -translate-x-1/2 rounded-[50%] bg-white/48 shadow-[0_18px_42px_rgba(14,165,233,0.15)] ring-1 ring-cyan-100/70" />
-      <div className="absolute left-1/2 top-[45%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-[34px] bg-white/35 shadow-[0_36px_90px_rgba(64,111,214,0.18)] ring-1 ring-blue-200/60 backdrop-blur-md" />
-      <div className="absolute left-1/2 top-[42%] flex h-[136px] w-[136px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[30px] bg-gradient-to-br from-blue-400 via-blue-600 to-cyan-400 text-5xl font-black text-white shadow-[0_28px_70px_rgba(37,99,235,0.36)] ring-1 ring-white/35">
+      <div className="absolute left-1/2 top-[61%] h-20 w-[330px] -translate-x-1/2 rounded-[50%] bg-blue-100/42 shadow-[0_24px_56px_rgba(61,116,239,0.2)]" />
+      <div className="absolute left-1/2 top-[58%] h-12 w-[260px] -translate-x-1/2 rounded-[50%] bg-white/48 shadow-[0_18px_42px_rgba(14,165,233,0.15)]" />
+      <div className="absolute left-1/2 top-[45%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-[34px] bg-white/35 shadow-[0_36px_90px_rgba(64,111,214,0.18)] backdrop-blur-md" />
+      <div className="absolute left-1/2 top-[42%] flex h-[136px] w-[136px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[30px] bg-gradient-to-br from-blue-400 via-blue-600 to-cyan-400 text-5xl font-black text-white shadow-[0_28px_70px_rgba(37,99,235,0.36)]">
         AI
       </div>
       <div className="absolute left-[17%] top-[30%] h-3 w-3 rounded-full bg-cyan-300 shadow-[0_0_22px_rgba(34,211,238,0.9)]" />
@@ -35,15 +35,15 @@ export function ServiceHeroVisual() {
       <div className="absolute right-[23%] bottom-[25%] h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.8)]" />
       <div className="absolute left-[19%] top-[31%] h-px w-[62%] rotate-[28deg] bg-gradient-to-r from-transparent via-blue-300/80 to-transparent" />
       <div className="absolute left-[23%] top-[57%] h-px w-[58%] -rotate-[20deg] bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
-      <div className="absolute left-[25%] top-[22%] h-64 w-64 rounded-full ring-1 ring-blue-200/35" />
-      <div className="absolute left-[22%] top-[28%] h-52 w-72 rotate-12 rounded-[50%] ring-1 ring-cyan-200/40" />
-      <span className="absolute right-9 top-20 rounded-xl bg-blue-50/90 px-3 py-1.5 text-sm font-semibold text-primary-600 shadow-sm shadow-blue-100/80 ring-1 ring-blue-100">
+      <div className="absolute left-[25%] top-[22%] h-64 w-64 rounded-full bg-blue-100/10" />
+      <div className="absolute left-[22%] top-[28%] h-52 w-72 rotate-12 rounded-[50%] bg-cyan-100/10" />
+      <span className="absolute right-9 top-20 rounded-xl bg-blue-50/90 px-3 py-1.5 text-sm font-semibold text-primary-600 shadow-sm shadow-blue-100/80">
         智能分析
       </span>
-      <span className="absolute left-14 top-36 rounded-xl bg-cyan-50/90 px-3 py-1.5 text-sm font-semibold text-cyan-600 shadow-sm shadow-cyan-100/80 ring-1 ring-cyan-100">
+      <span className="absolute left-14 top-36 rounded-xl bg-cyan-50/90 px-3 py-1.5 text-sm font-semibold text-cyan-600 shadow-sm shadow-cyan-100/80">
         精准推荐
       </span>
-      <span className="absolute bottom-28 right-5 rounded-xl bg-emerald-50/90 px-3 py-1.5 text-sm font-semibold text-emerald-600 shadow-sm shadow-emerald-100/80 ring-1 ring-emerald-100">
+      <span className="absolute bottom-28 right-5 rounded-xl bg-emerald-50/90 px-3 py-1.5 text-sm font-semibold text-emerald-600 shadow-sm shadow-emerald-100/80">
         学习进化
       </span>
     </div>
@@ -55,84 +55,60 @@ export function TaskStatusPreview(props: {
   taskId: string;
   taskProgress: number;
   taskStatus: string;
-  resultLineCount: number;
-  downloadCount: number;
 }) {
   const hasTask = Boolean(props.taskId);
-  const progressLabel = hasTask ? `${Math.round(props.taskProgress)}%` : '待提交';
-  const linePercent = Math.min(100, props.resultLineCount * 12);
-  const assetPercent = Math.min(100, props.downloadCount * 25);
+  const normalizedProgress = hasTask ? Math.max(6, Math.min(100, props.taskProgress)) : 0;
+  const progressLabel = hasTask ? `${Math.round(props.taskProgress)}%` : '未开始';
+  const statusLabel = hasTask ? props.taskStatus || '生成中' : '选择服务后开始';
 
   return (
-    <section className="h-full bg-white/42 p-4 dark:bg-slate-950/18 sm:p-6">
-      <div className="flex items-start gap-3 sm:items-center">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-primary-600 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+    <section className="h-full bg-white/30 p-4 dark:bg-slate-950/12 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3 sm:items-center">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50/80 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
           <TrendingUp className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">生成进度</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {props.selectedServiceLabel || '先选择一项智能服务'}
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">任务状态</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">只展示真实任务进度和产物数量。</p>
+        <span className="shrink-0 rounded-full bg-white/72 px-3 py-1 text-xs font-semibold text-slate-500 shadow-sm shadow-blue-100/35 dark:bg-slate-900/70 dark:text-slate-300">
+          {statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-8">
+        <div className="mb-3 flex items-center justify-between text-sm">
+          <span className="font-medium text-slate-600 dark:text-slate-300">{hasTask ? statusLabel : '等待提交'}</span>
+          <span className="font-semibold text-primary-600 dark:text-primary-300">{progressLabel}</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-800">
+          <div className="h-full rounded-full bg-primary-500 transition-[width] duration-300" style={{ width: `${normalizedProgress}%` }} />
         </div>
       </div>
 
-      {hasTask ? (
-        <div className="mt-6 grid gap-5 md:grid-cols-[160px_minmax(0,1fr)] md:items-center sm:mt-8 sm:gap-6">
-          <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full bg-[conic-gradient(#3b82f6_var(--progress),#e8eef7_0)] p-3 sm:h-36 sm:w-36" style={{ '--progress': `${Math.max(1, Math.min(100, props.taskProgress))}%` } as CSSProperties}>
-            <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center shadow-inner dark:bg-slate-950">
-              <span className="text-2xl font-bold text-primary-600 dark:text-primary-300">{progressLabel}</span>
-              <span className="mt-1 text-xs text-slate-400">任务进度</span>
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            <PreviewBar label="任务进度" value={`${Math.round(props.taskProgress)}%`} percent={props.taskProgress} color="bg-primary-500" />
-            <PreviewBar label="结果片段" value={`${props.resultLineCount}条`} percent={linePercent} color="bg-cyan-500" />
-            <PreviewBar label="资源产物" value={`${props.downloadCount}个`} percent={assetPercent} color="bg-violet-500" />
-          </div>
+      <div className="mt-6 grid grid-cols-3 gap-3 text-xs text-slate-500 dark:text-slate-400">
+        <div className="rounded-2xl bg-white/45 px-3 py-3 dark:bg-slate-900/34">
+          <div className="font-semibold text-slate-700 dark:text-slate-200">选择</div>
+          <div className="mt-1">{props.selectedServiceLabel || '待选择'}</div>
         </div>
-      ) : (
-        <div className="mt-6 grid gap-5 md:grid-cols-[160px_minmax(0,1fr)] md:items-center sm:mt-8 sm:gap-6">
-          <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full bg-blue-50/60 text-center ring-1 ring-blue-100/80 dark:bg-slate-950/40 dark:ring-slate-700 sm:h-36 sm:w-36">
-            <div>
-              <div className="text-xl font-bold text-primary-600 dark:text-primary-300">待提交</div>
-              <div className="mt-1 text-xs text-slate-400">暂无真实任务</div>
-            </div>
-          </div>
-          <div className="rounded-2xl bg-slate-50/70 px-4 py-5 text-sm leading-7 text-slate-500 ring-1 ring-blue-100 dark:bg-slate-950/40 dark:text-slate-400 dark:ring-slate-700 sm:px-5 sm:py-6">
-            提交任务后，这里只显示后端任务返回的进度、结果片段和资源产物数量。
-          </div>
+        <div className="rounded-2xl bg-white/45 px-3 py-3 dark:bg-slate-900/34">
+          <div className="font-semibold text-slate-700 dark:text-slate-200">生成</div>
+          <div className="mt-1">{hasTask ? '进行中' : '待启动'}</div>
         </div>
-      )}
-
-      <div className="mt-6 rounded-2xl bg-slate-50/60 p-4 ring-1 ring-blue-100/80 dark:bg-slate-950/40 dark:ring-slate-800 sm:mt-8">
-        <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">执行状态</div>
-        <div className="mt-3 flex min-h-24 items-center justify-center rounded-xl bg-white/70 px-4 py-5 text-center text-sm leading-6 text-slate-500 ring-1 ring-blue-100 dark:bg-slate-900/60 dark:text-slate-400 dark:ring-slate-700 sm:h-28 sm:py-0">
-          提交任务后，系统会在这里同步后端返回的实时状态。
-        </div>
-        <div className="mt-3 text-xs text-slate-400">
-          当前服务：{props.selectedServiceLabel || '未选择'}{hasTask ? ` · ${props.taskStatus}` : ''}
+        <div className="rounded-2xl bg-white/45 px-3 py-3 dark:bg-slate-900/34">
+          <div className="font-semibold text-slate-700 dark:text-slate-200">查看</div>
+          <div className="mt-1">{props.taskProgress >= 100 ? '已就绪' : '自动刷新'}</div>
         </div>
       </div>
+
+      <p className="mt-6 text-sm leading-7 text-slate-500 dark:text-slate-400">
+        提交后保持在当前页面即可实时查看进度，完成后结果会自动出现在下方。
+      </p>
     </section>
-  );
-}
-
-function PreviewBar(props: {
-  label: string;
-  value: string;
-  percent: number;
-  color: string;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between text-sm">
-        <span className="font-medium text-slate-600 dark:text-slate-300">{props.label}</span>
-        <span className="font-semibold text-slate-700 dark:text-slate-200">{props.value}</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-        <div className={`h-full rounded-full ${props.color} transition-[width] duration-300`} style={{ width: `${Math.max(0, Math.min(100, props.percent))}%` }} />
-      </div>
-    </div>
   );
 }
 
@@ -146,18 +122,18 @@ export function AssistantActionBar(props: {
   onStop: () => void;
 }) {
   return (
-    <section className="rounded-[24px] bg-white/66 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/62 dark:ring-slate-800/70 sm:p-5">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.75fr)_180px] lg:items-center">
+    <section className="rounded-[24px] bg-white/78 p-4 shadow-[0_14px_36px_rgba(43,83,145,0.08)] backdrop-blur dark:bg-slate-900/72 dark:shadow-slate-950/20 sm:p-5">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.68fr)_168px] lg:items-center">
         <div className="flex items-start gap-3 sm:items-center sm:gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-50 ring-1 ring-blue-100 sm:h-14 sm:w-14">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-md shadow-blue-300/50 sm:h-10 sm:w-10">
-              <BrainCircuit className="h-5 w-5" />
-            </div>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300 sm:h-12 sm:w-12">
+            <BrainCircuit className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-base font-semibold text-slate-900 dark:text-white">智学助手</div>
+            <div className="text-base font-semibold text-slate-900 dark:text-white">
+              {props.busy ? '正在生成' : props.selectedServiceLabel || '选择服务'}
+            </div>
             <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              {props.busy ? props.status : props.selectedServiceLabel ? `已选择 ${props.selectedServiceLabel}，提交后开始执行真实服务任务。` : '请选择一项服务后提交任务。'}
+              {props.busy ? props.status : props.selectedServiceLabel ? '参数已就绪，可直接提交。' : '选择一项服务后继续。'}
             </p>
           </div>
         </div>
@@ -169,17 +145,17 @@ export function AssistantActionBar(props: {
           className="inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-600 to-primary-500 px-5 text-base font-semibold text-white shadow-lg shadow-blue-500/24 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/28 disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:hover:translate-y-0 sm:h-16 sm:px-6 sm:text-lg"
         >
           <Send className="h-6 w-6" />
-          {props.busy ? '提交中...' : '提交任务'}
+          {props.busy ? '正在启动...' : '开始生成'}
         </button>
 
         <button
           type="button"
           onClick={props.onStop}
           disabled={!props.canStop}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm shadow-blue-100/35 ring-1 ring-blue-100 transition-all hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-700 sm:h-14"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm shadow-blue-100/35 transition-all hover:bg-blue-50/60 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 sm:h-14"
         >
           <Square className="h-4 w-4" />
-          停止任务
+          停止生成
         </button>
       </div>
     </section>

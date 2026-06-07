@@ -339,6 +339,8 @@ class _BaseGenerationAgent(PlaceholderAgent):
     def _should_read_local_asset_text(asset: Any) -> bool:
         if not getattr(asset, "local_path", None):
             return False
+        if str(getattr(asset, "asset_type", "") or "").upper() == "SLIDES":
+            return False
         mime_type = str(getattr(asset, "mime_type", "") or "").lower()
         if mime_type.startswith("text/"):
             return True

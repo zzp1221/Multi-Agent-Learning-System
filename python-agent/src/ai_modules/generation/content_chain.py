@@ -205,26 +205,27 @@ class OpenAICompatibleStructuredGenerator:
             default_logical_model="main_chat_model",
             provider_name=self.provider_name,
         )
+        self.timeout_seconds = max(1.0, float(getattr(settings, "generation_llm_timeout_seconds", 180.0)))
         self.max_retries = max_retries
         self.backoff_seconds = backoff_seconds
 
     def _get_client(self) -> httpx.Client:
-        client_key = f"{self.provider_name}:{self.base_url}"
+        client_key = f"{self.provider_name}:{self.base_url}:{self.timeout_seconds}"
         client = self._shared_clients.get(client_key)
         if client is None or client.is_closed:
             client = httpx.Client(
-                timeout=60.0,
+                timeout=httpx.Timeout(self.timeout_seconds, connect=10.0),
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             )
             self._shared_clients[client_key] = client
         return client
 
     def _get_async_client(self) -> httpx.AsyncClient:
-        client_key = f"{self.provider_name}:{self.base_url}"
+        client_key = f"{self.provider_name}:{self.base_url}:{self.timeout_seconds}"
         client = self._shared_async_clients.get(client_key)
         if client is None or client.is_closed:
             client = httpx.AsyncClient(
-                timeout=60.0,
+                timeout=httpx.Timeout(self.timeout_seconds, connect=10.0),
                 limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
             )
             self._shared_async_clients[client_key] = client
@@ -569,10 +570,12 @@ class OpenAICompatibleStructuredGenerator:
                     self.provider_name,
                     attempt + 1,
                     attempts,
-                    exc,
+                    self._format_exception(exc),
                 )
                 if attempt >= self.max_retries:
-                    raise RuntimeError(f"{self.provider_name} structured generation failed: {exc}") from exc
+                    raise RuntimeError(
+                        f"{self.provider_name} structured generation failed: {self._format_exception(exc)}"
+                    ) from exc
                 await asyncio.sleep(self.backoff_seconds * (2**attempt))
                 continue
 
@@ -644,10 +647,12 @@ class OpenAICompatibleStructuredGenerator:
                     self.provider_name,
                     attempt + 1,
                     attempts,
-                    exc,
+                    self._format_exception(exc),
                 )
                 if attempt >= self.max_retries:
-                    raise RuntimeError(f"{self.provider_name} structured generation failed: {exc}") from exc
+                    raise RuntimeError(
+                        f"{self.provider_name} structured generation failed: {self._format_exception(exc)}"
+                    ) from exc
                 time.sleep(self.backoff_seconds * (2**attempt))
                 continue
 
@@ -757,13 +762,15 @@ class OpenAICompatibleStructuredGenerator:
                     "%s structured generation attempt %s failed: %s",
                     self.provider_name,
                     attempt + 1,
-                    exc,
+                    self._format_exception(exc),
                 )
                 if attempt >= self.max_retries:
                     break
                 await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
-        raise RuntimeError(f"{self.provider_name} structured generation failed: {last_error}")
+        raise RuntimeError(
+            f"{self.provider_name} structured generation failed: {self._format_exception(last_error)}"
+        )
 
     async def _call_and_parse_json_async(
         self,
@@ -794,13 +801,15 @@ class OpenAICompatibleStructuredGenerator:
                     "%s structured generation attempt %s failed: %s",
                     self.provider_name,
                     attempt + 1,
-                    exc,
+                    self._format_exception(exc),
                 )
                 if attempt >= self.max_retries:
                     break
                 await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
-        raise RuntimeError(f"{self.provider_name} structured generation failed: {last_error}")
+        raise RuntimeError(
+            f"{self.provider_name} structured generation failed: {self._format_exception(last_error)}"
+        )
 
     async def _call_and_extract_text(
         self,
@@ -829,13 +838,20 @@ class OpenAICompatibleStructuredGenerator:
                     "%s text generation attempt %s failed: %s",
                     self.provider_name,
                     attempt + 1,
-                    exc,
+                    self._format_exception(exc),
                 )
                 if attempt >= self.max_retries:
                     break
                 await asyncio.sleep(self.backoff_seconds * (2**attempt))
 
-        raise RuntimeError(f"{self.provider_name} text generation failed: {last_error}")
+        raise RuntimeError(f"{self.provider_name} text generation failed: {self._format_exception(last_error)}")
+
+    @staticmethod
+    def _format_exception(exc: BaseException | None) -> str:
+        if exc is None:
+            return "unknown error"
+        message = str(exc).strip()
+        return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
 
     def _extract_message_content(self, response: Any) -> str:
         if not isinstance(response, dict):
@@ -936,6 +952,9 @@ class OpenAICompatibleStructuredGenerator:
         elif "(" in text and text.endswith(")"):
             text = text[text.find("(") + 1 : -1]
         return text.strip().strip('"').strip("'")
+
+
+BailianStructuredGenerator = OpenAICompatibleStructuredGenerator
 
 
 class ContentGenerationChain:

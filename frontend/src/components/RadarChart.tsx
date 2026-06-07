@@ -57,7 +57,7 @@ export default function RadarChart({ data, height = 320, className = '' }: Radar
       fullMark: chartMax,
       originalScore: item.score,
       originalFullMark: item.fullMark,
-      description: item.description || '表示系统根据当前画像推断出的学习支持维度。',
+      description: item.description || '表示当前画像记录中的学习支持维度。',
     }));
   }, [data]);
 
@@ -67,7 +67,6 @@ export default function RadarChart({ data, height = 320, className = '' }: Radar
   const gridColor = isDark ? '#334155' : '#e2e8f0';
   const tickColor = isDark ? '#94a3b8' : '#64748b';
   const tooltipBg = isDark ? '#1e293b' : '#fff';
-  const tooltipBorder = isDark ? '#334155' : '#e2e8f0';
   const tooltipText = isDark ? '#cbd5e1' : '#475569';
   const tooltipTitle = isDark ? '#f8fafc' : '#0f172a';
   const tooltipMuted = isDark ? '#94a3b8' : '#64748b';
@@ -88,7 +87,7 @@ export default function RadarChart({ data, height = 320, className = '' }: Radar
             tickFormatter={(value) => value.toString()}
           />
           <Radar
-            name="得分"
+            name="掌握状态"
             dataKey="score"
             stroke="#6366f1"
             fill="#6366f1"
@@ -109,7 +108,6 @@ export default function RadarChart({ data, height = 320, className = '' }: Radar
                 <div
                   style={{
                     maxWidth: 260,
-                    border: `1px solid ${tooltipBorder}`,
                     borderRadius: 12,
                     backgroundColor: tooltipBg,
                     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
@@ -118,7 +116,7 @@ export default function RadarChart({ data, height = 320, className = '' }: Radar
                 >
                   <div style={{ color: tooltipTitle, fontSize: 13, fontWeight: 700 }}>{item.subject}</div>
                   <div style={{ marginTop: 4, color: tooltipMuted, fontSize: 12 }}>
-                    {item.originalScore}/{item.originalFullMark} ({percentage}%)
+                    掌握状态 {percentage}%
                   </div>
                   <div style={{ marginTop: 6, color: tooltipText, fontSize: 12, lineHeight: 1.6 }}>
                     {item.description}

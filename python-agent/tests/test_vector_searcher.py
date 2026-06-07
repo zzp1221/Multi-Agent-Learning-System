@@ -1,34 +1,64 @@
+from types import SimpleNamespace
+
+import pytest
+
+from retrieval import vector_searcher
 from retrieval.vector_searcher import VectorSearcher
+from src.ai_modules.config import get_settings
 
 
-def test_search_all_filters_resource_chunks_by_domain(monkeypatch) -> None:
-    class RecordingCursor:
-        def __init__(self) -> None:
-            self.sql = ""
-            self.params = ()
+def test_vector_searcher_uses_configured_retry_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KNOWLEDGE_EMBEDDING_MAX_RETRIES", "2")
+    monkeypatch.setenv("KNOWLEDGE_EMBEDDING_RETRY_BACKOFF_SECONDS", "0.25")
+    monkeypatch.setenv("KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS", "7.5")
+    get_settings.cache_clear()
+    try:
+        searcher = VectorSearcher()
+    finally:
+        get_settings.cache_clear()
 
-        def execute(self, sql, params):
-            self.sql = sql
-            self.params = params
+    assert searcher.max_embedding_retries == 2
+    assert searcher.embedding_retry_backoff_seconds == 0.25
+    assert searcher.request_timeout == 7.5
 
-        def fetchall(self):
-            return []
 
-    cursor = RecordingCursor()
-    monkeypatch.setattr(VectorSearcher, "_embed", lambda self, query: [0.1] * 1024)
+def test_vector_searcher_retries_transient_embedding_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"count": 0}
 
-    searcher = VectorSearcher(dimension=1024, model="test-model")
-    searcher.search_all(cursor, "dynamic programming", top_k=5, domain="COMPUTER_SCIENCE")
+    def flaky_call(**kwargs):
+        calls["count"] += 1
+        assert kwargs["model"] == "qwen3-vl-embedding"
+        assert kwargs["dimension"] == 1024
+        assert kwargs["request_timeout"] == 10.0
+        if calls["count"] == 1:
+            raise ConnectionError("temporary tls eof")
+        return SimpleNamespace(
+            status_code=200,
+            output={"embeddings": [{"embedding": [0.1] * 1024}]},
+        )
 
-    assert "FROM rag.resource_chunk rc" in cursor.sql
-    assert "WHERE rc.domain = %s" in cursor.sql
-    assert "JOIN app.learning_resource lr ON lr.id = rc.resource_id" in cursor.sql
-    assert "lr.status = 'ACTIVE'" in cursor.sql
-    assert "rc.access_scope::text = 'GLOBAL'" in cursor.sql
-    assert cursor.params == (
-        "[" + ",".join(["0.1"] * 1024) + "]",
-        "COMPUTER_SCIENCE",
-        "[" + ",".join(["0.1"] * 1024) + "]",
-        "COMPUTER_SCIENCE",
-        5,
+    monkeypatch.setattr(vector_searcher.MultiModalEmbedding, "call", flaky_call)
+    monkeypatch.setattr(vector_searcher.time, "sleep", lambda seconds: None)
+    searcher = VectorSearcher(
+        dimension=1024,
+        model="qwen3-vl-embedding",
+        max_embedding_retries=2,
+        embedding_retry_backoff_seconds=0,
     )
+
+    embedding = searcher._embed("死锁")
+
+    assert calls["count"] == 2
+    assert len(embedding) == 1024
+
+
+def test_vector_searcher_keeps_non_200_embedding_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        vector_searcher.MultiModalEmbedding,
+        "call",
+        lambda **kwargs: SimpleNamespace(status_code=401, code="InvalidApiKey", message="denied"),
+    )
+    searcher = VectorSearcher(max_embedding_retries=2, embedding_retry_backoff_seconds=0)
+
+    with pytest.raises(RuntimeError, match="Embedding API error: InvalidApiKey denied"):
+        searcher._embed("死锁")

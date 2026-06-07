@@ -678,10 +678,10 @@ export default function NotebookPage() {
   if (!isAuthenticated) {
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-3xl items-center justify-center">
-        <div className="rounded-2xl bg-white/90 p-8 text-center shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900/80 dark:ring-slate-700/70">
+        <div className="rounded-2xl bg-white/90 p-8 text-center shadow-sm shadow-slate-200/50 dark:bg-slate-900/80 dark:shadow-slate-950/20">
           <BookOpen className="mx-auto h-12 w-12 text-primary-500" />
           <h1 className="mt-4 text-xl font-semibold text-slate-950 dark:text-white">AI 笔记本</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">登录后创建笔记、自动保存、进入 RAG，并使用当前笔记上下文向 AI 提问。</p>
+          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">登录后创建笔记、自动保存，并围绕当前内容向 AI 提问。</p>
           <button
             type="button"
             onClick={() => openAuthModal('login', '登录后使用 AI 笔记本')}
@@ -697,14 +697,14 @@ export default function NotebookPage() {
 
   return (
     <div className="mx-auto max-w-[1720px] space-y-3">
-      <div className="flex flex-col gap-3 rounded-2xl bg-white/95 px-4 py-3 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900/90 dark:ring-slate-700/70 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl bg-white/95 px-4 py-3 shadow-sm shadow-slate-200/35 dark:bg-slate-900/90 dark:shadow-slate-950/20 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm shadow-primary-500/20">
             <BookOpen className="h-5 w-5" />
           </div>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold text-slate-950 dark:text-white">AI 笔记本</h1>
-            <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">目录、标签、编辑、RAG 和当前笔记问答集中处理</p>
+            <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">目录、标签、编辑和当前笔记问答集中处理</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -724,15 +724,15 @@ export default function NotebookPage() {
       </div>
 
       {error ? (
-        <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20">
+        <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
           <TriangleAlert className="h-4 w-4" />
           {error}
         </div>
       ) : null}
 
-      <div className="grid overflow-hidden rounded-2xl bg-white/95 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900/90 dark:ring-slate-700/70 xl:h-[calc(100vh-156px)] xl:min-h-[760px] xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-        <aside className="flex min-h-0 flex-col border-r border-slate-200/80 bg-slate-50/70 dark:border-slate-700/70 dark:bg-slate-950/30">
-          <div className="border-b border-slate-200/80 px-4 py-3 dark:border-slate-700/70">
+      <div className="grid overflow-hidden rounded-2xl bg-white/95 shadow-sm shadow-slate-200/35 dark:bg-slate-900/90 dark:shadow-slate-950/20 xl:h-[calc(100vh-156px)] xl:min-h-[760px] xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+        <aside className="flex min-h-0 flex-col bg-slate-50/70 dark:bg-slate-950/30">
+          <div className="px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">我的笔记</div>
@@ -748,7 +748,7 @@ export default function NotebookPage() {
                 {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               </button>
             </div>
-            <label className="mt-3 flex h-9 items-center rounded-lg bg-white px-3 ring-1 ring-slate-200/80 focus-within:ring-2 focus-within:ring-primary-500/20 dark:bg-slate-900 dark:ring-slate-700/70">
+            <label className="mt-3 flex h-9 items-center rounded-lg bg-white/82 px-3 shadow-sm shadow-slate-200/25 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/35 dark:bg-slate-900/70 dark:shadow-none dark:focus-within:bg-slate-900">
               <Search className="mr-2 h-4 w-4 shrink-0 text-slate-400" />
               <input
                 value={keyword}
@@ -768,7 +768,7 @@ export default function NotebookPage() {
             {activeFilters.length > 0 ? (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {activeFilters.map((item) => (
-                  <span key={item} className="max-w-full truncate rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200/80 dark:bg-slate-900 dark:text-slate-400 dark:ring-slate-700">{item}</span>
+                  <span key={item} className="max-w-full truncate rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-500 dark:bg-slate-900 dark:text-slate-400">{item}</span>
                 ))}
                 <button
                   type="button"
@@ -787,7 +787,7 @@ export default function NotebookPage() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <section className="border-b border-slate-200/80 px-3 py-3 dark:border-slate-700/70">
+            <section className="px-3 py-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                 <Folder className="h-4 w-4 text-primary-500" />
@@ -829,7 +829,7 @@ export default function NotebookPage() {
                   }
                 }}
                 placeholder="新目录名称"
-                className="min-w-0 flex-1 rounded-lg bg-white px-3 py-2 text-sm outline-none ring-1 ring-slate-200/80 focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700/70"
+                className="min-w-0 flex-1 rounded-lg bg-white/82 px-3 py-2 text-sm outline-none shadow-sm shadow-slate-200/20 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-900/68 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-900"
               />
               <button type="button" onClick={() => void handleCreateFolder()} disabled={!folderName.trim() || folderBusyId === 'new'} className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950">
                 {folderBusyId === 'new' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
@@ -837,7 +837,7 @@ export default function NotebookPage() {
             </div>
           </section>
 
-          <section className="border-b border-slate-200/80 px-3 py-3 dark:border-slate-700/70">
+          <section className="px-3 py-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
               <Tags className="h-4 w-4 text-primary-500" />
               标签
@@ -852,10 +852,10 @@ export default function NotebookPage() {
                   type="button"
                   onClick={() => setActiveTag(item.name)}
                   className={cn(
-                    'inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 transition-colors',
+                    'inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
                     activeTag === item.name
-                      ? 'bg-primary-50 text-primary-700 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20'
-                      : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100 dark:bg-slate-950 dark:text-slate-400 dark:ring-slate-700 dark:hover:bg-slate-800',
+                      ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-950 dark:text-slate-400 dark:hover:bg-slate-800',
                   )}
                 >
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color || '#64748b' }} />
@@ -883,10 +883,10 @@ export default function NotebookPage() {
                 type="button"
                 onClick={() => handleSelectNote(item.id)}
                 className={cn(
-                  'group mb-2 w-full rounded-xl px-3 py-2.5 text-left ring-1 transition-all',
+                  'group mb-2 w-full rounded-xl px-3 py-2.5 text-left transition-all',
                   selectedNoteId === item.id
-                    ? 'bg-white text-primary-800 shadow-sm ring-primary-200 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-500/20'
-                    : 'bg-transparent text-slate-700 ring-transparent hover:bg-white hover:ring-slate-200/80 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:ring-slate-700/70',
+                    ? 'bg-white text-primary-800 shadow-sm shadow-primary-100/60 dark:bg-primary-500/10 dark:text-primary-200 dark:shadow-none'
+                    : 'bg-transparent text-slate-700 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-900',
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -909,7 +909,7 @@ export default function NotebookPage() {
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   {item.tags.slice(0, 2).map((tag) => (
-                    <span key={tag.id} className="max-w-[92px] truncate rounded-full bg-white/80 px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200 dark:bg-slate-900/70 dark:text-slate-400 dark:ring-slate-700">{tag.name}</span>
+                    <span key={tag.id} className="max-w-[92px] truncate rounded-full bg-white/80 px-2 py-0.5 text-[11px] text-slate-500 dark:bg-slate-900/70 dark:text-slate-400">{tag.name}</span>
                   ))}
                   <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-slate-400">
                     {item.ragIndexed ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Clock3 className="h-3 w-3" />}
@@ -918,7 +918,7 @@ export default function NotebookPage() {
                 </div>
               </button>
             )) : (
-              <div className="mx-2 flex h-64 flex-col items-center justify-center rounded-xl bg-white px-6 text-center ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+              <div className="mx-2 flex h-64 flex-col items-center justify-center rounded-xl bg-white px-6 text-center dark:bg-slate-900">
                 <FileText className="h-9 w-9 text-slate-300 dark:text-slate-600" />
                 <div className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">暂无笔记</div>
                 <p className="mt-1 text-xs leading-5 text-slate-400">创建第一条笔记后，可以用标签、目录和语义搜索组织知识。</p>
@@ -939,7 +939,7 @@ export default function NotebookPage() {
             </div>
           ) : detail ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="border-b border-slate-200/80 px-5 py-4 dark:border-slate-700/70">
+              <div className="px-5 py-4">
                 <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
                   <div className="min-w-0 flex-1">
                     <input
@@ -951,7 +951,7 @@ export default function NotebookPage() {
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span>上次保存：{formatDate(detail.lastSavedAt ?? detail.updatedAt)}</span>
                       <span className="h-3 w-px bg-slate-200 dark:bg-slate-700" />
-                      <span>{detail.ragIndexed ? '已进入 RAG' : '等待 RAG 索引'}</span>
+                      <span>{detail.ragIndexed ? '已可智能检索' : '正在同步内容'}</span>
                       <SaveStatusBadge status={saveStatus} error={saveError} />
                     </div>
                   </div>
@@ -967,7 +967,7 @@ export default function NotebookPage() {
                 </div>
 
                 <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_200px]">
-                  <label className="flex min-w-0 items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200/80 focus-within:ring-2 focus-within:ring-primary-500/20 dark:bg-slate-950 dark:ring-slate-700/70">
+                  <label className="flex min-w-0 items-center gap-2 rounded-lg bg-slate-50/80 px-3 py-2 shadow-sm shadow-slate-200/20 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/30 dark:bg-slate-950/60 dark:shadow-none dark:focus-within:bg-slate-950/86">
                     <Tags className="h-4 w-4 shrink-0 text-slate-400" />
                     <input
                       value={tagInput}
@@ -976,7 +976,7 @@ export default function NotebookPage() {
                       className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400 dark:text-slate-200"
                     />
                   </label>
-                  <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200/80 focus-within:ring-2 focus-within:ring-primary-500/20 dark:bg-slate-950 dark:ring-slate-700/70">
+                  <label className="flex items-center gap-2 rounded-lg bg-slate-50/80 px-3 py-2 shadow-sm shadow-slate-200/20 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/30 dark:bg-slate-950/60 dark:shadow-none dark:focus-within:bg-slate-950/86">
                     <Folder className="h-4 w-4 shrink-0 text-slate-400" />
                     <select
                       value={folderDraftId}
@@ -992,7 +992,7 @@ export default function NotebookPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50/70 px-4 py-2.5 dark:border-slate-700/70 dark:bg-slate-950/30">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50/70 px-4 py-2.5 dark:bg-slate-950/30">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <SegmentButton active={inputMode === 'markdown'} onClick={() => setInputMode('markdown')} icon={<FileText className="h-4 w-4" />} label="Markdown" />
                   <SegmentButton active={inputMode === 'rich'} onClick={() => setInputMode('rich')} icon={<Pencil className="h-4 w-4" />} label="富文本" />
@@ -1013,14 +1013,14 @@ export default function NotebookPage() {
 
               <div className={cn('grid min-h-0 flex-1 overflow-hidden', editorMode === 'split' ? 'lg:grid-cols-2' : 'grid-cols-1')}>
                 {editorMode !== 'preview' ? (
-                  <div className={cn('min-h-[520px] min-w-0 border-slate-200/80 dark:border-slate-700/70', editorMode === 'split' ? 'border-r' : '')}>
+                  <div className={cn('min-h-[520px] min-w-0', editorMode === 'split' ? 'lg:bg-slate-50/30 lg:dark:bg-slate-950/20' : '')}>
                     {inputMode === 'markdown' ? (
                       <textarea
                         value={markdownDraft}
                         onChange={(event) => setMarkdownDraft(event.target.value)}
                         spellCheck={false}
                         className="h-full min-h-[520px] w-full resize-none bg-transparent px-6 py-5 font-mono text-sm leading-7 text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200"
-                        placeholder="用 Markdown 记录概念、推导、例题、疑问和复盘。"
+                        placeholder="记录概念、推导、例题、疑问和复盘。"
                       />
                     ) : (
                       <RichTextEditor markdown={markdownDraft} onChange={setMarkdownDraft} />
@@ -1033,18 +1033,17 @@ export default function NotebookPage() {
                       <MarkdownRenderer content={markdownDraft} />
                     ) : (
                       <div className="flex h-full min-h-[420px] items-center justify-center rounded-xl bg-slate-50 text-sm text-slate-400 dark:bg-slate-950/70 dark:text-slate-500">
-                        预览区会实时渲染 Markdown 内容
+                        预览区会实时展示笔记内容
                       </div>
                     )}
                   </div>
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 bg-slate-50/70 px-5 py-2.5 text-xs text-slate-500 dark:border-slate-700/70 dark:bg-slate-950/30 dark:text-slate-400">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50/70 px-5 py-2.5 text-xs text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill icon={<FileText className="h-3.5 w-3.5" />} label={`${draftWordCount} 字`} />
                   <StatusPill icon={<Clock3 className="h-3.5 w-3.5" />} label={`${draftReadingMinutes} 分钟`} />
-                  <StatusPill icon={detail.ragIndexed ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <Clock3 className="h-3.5 w-3.5" />} label={detail.ragIndexed ? 'RAG 已索引' : 'RAG 排队中'} />
                 </div>
                 <span className="truncate">内容会自动保存并写入版本历史</span>
               </div>
@@ -1054,16 +1053,16 @@ export default function NotebookPage() {
               <div>
                 <BookOpen className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
                 <div className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">选择或创建一条笔记</div>
-                <p className="mt-1 text-xs leading-5 text-slate-400">笔记保存后会创建资源壳并进入 RAG 索引流程。</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">保存后即可继续编辑，也可以让 AI 基于当前内容回答。</p>
               </div>
             </div>
           )}
         </main>
 
-        <aside className="flex min-h-0 flex-col border-l border-slate-200/80 bg-slate-50/70 dark:border-slate-700/70 dark:bg-slate-950/30">
-          <div className="border-b border-slate-200/80 px-4 py-3 dark:border-slate-700/70">
+        <aside className="flex min-h-0 flex-col bg-slate-50/70 dark:bg-slate-950/30">
+          <div className="px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-600 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
                 <Brain className="h-4 w-4" />
               </div>
               <div className="min-w-0">
@@ -1074,7 +1073,7 @@ export default function NotebookPage() {
           </div>
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
-            <section className="rounded-xl bg-white p-3 ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
               <PanelHeader
                 icon={<Sparkles className="h-4 w-4" />}
                 title="自动摘要"
@@ -1092,13 +1091,13 @@ export default function NotebookPage() {
               )}
             </section>
 
-            <section className="rounded-xl bg-white p-3 ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
               <PanelHeader icon={<ListChecks className="h-4 w-4" />} title="知识点与待办" />
               <div className="mt-3">
                 <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">知识点</div>
                 <div className="flex flex-wrap gap-1.5">
                   {analysis?.keywords.length ? analysis.keywords.map((item) => (
-                    <span key={item} className="rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">{item}</span>
+                    <span key={item} className="rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">{item}</span>
                   )) : <EmptyInline text="未提取到知识点。" />}
                 </div>
               </div>
@@ -1106,7 +1105,7 @@ export default function NotebookPage() {
                 <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">待办建议</div>
                 <div className="space-y-2">
                   {analysis?.todos.length ? analysis.todos.map((todo) => (
-                    <div key={`${todo.title}-${todo.priority}`} className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200/70 dark:bg-slate-950/70 dark:ring-slate-700/70">
+                    <div key={`${todo.title}-${todo.priority}`} className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-950/70">
                       <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-primary-500" />
                       <div className="min-w-0 flex-1">
                         <div className="line-clamp-2 text-slate-700 dark:text-slate-300">{todo.title}</div>
@@ -1118,7 +1117,7 @@ export default function NotebookPage() {
               </div>
             </section>
 
-            <section className="rounded-xl bg-white p-3 ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
               <PanelHeader
                 icon={<Network className="h-4 w-4" />}
                 title="关联资源"
@@ -1131,10 +1130,10 @@ export default function NotebookPage() {
               />
               <div className="mt-3 space-y-2">
                 {relatedResources?.results.length ? relatedResources.results.slice(0, 5).map((item) => (
-                  <a key={item.resourceId} href={`/resources?resourceId=${item.resourceId}`} className="block rounded-lg bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200/70 hover:bg-white dark:bg-slate-950/70 dark:ring-slate-700/70 dark:hover:bg-slate-900">
+                  <a key={item.resourceId} href={`/resources?resourceId=${item.resourceId}`} className="block rounded-lg bg-slate-50 px-3 py-2 text-sm transition hover:bg-white dark:bg-slate-950/70 dark:hover:bg-slate-900">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="truncate font-medium text-slate-800 dark:text-slate-100">{item.resource?.title ?? item.resourceId}</div>
+                        <div className="truncate font-medium text-slate-800 dark:text-slate-100">{item.resource?.title ?? '相关资源'}</div>
                         <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.reason || item.resource?.summaryText || '语义相关资源'}</p>
                       </div>
                       <ExternalLink className="h-4 w-4 shrink-0 text-slate-400" />
@@ -1146,7 +1145,7 @@ export default function NotebookPage() {
               </div>
             </section>
 
-            <section className="rounded-xl bg-white p-3 ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
               <PanelHeader icon={<Search className="h-4 w-4" />} title="语义搜索" />
               <div className="mt-3 flex gap-2">
                 <input
@@ -1158,7 +1157,7 @@ export default function NotebookPage() {
                     }
                   }}
                   placeholder="用问题检索笔记"
-                  className="min-w-0 flex-1 rounded-lg bg-slate-50 px-3 py-2 text-sm outline-none ring-1 ring-slate-200/80 focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-950 dark:text-slate-200 dark:ring-slate-700/70"
+                  className="min-w-0 flex-1 rounded-lg bg-slate-50/80 px-3 py-2 text-sm outline-none shadow-sm shadow-slate-200/18 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/60 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950/86"
                 />
                 <button type="button" onClick={() => void handleSemanticSearch()} disabled={semanticLoading || !semanticQuery.trim()} className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950">
                   {semanticLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -1166,20 +1165,19 @@ export default function NotebookPage() {
               </div>
               <div className="mt-3 space-y-2">
                 {semanticResults?.results.length ? semanticResults.results.map((item) => (
-                  <button key={item.note.id} type="button" onClick={() => handleSelectNote(item.note.id)} className="w-full rounded-lg bg-slate-50 px-3 py-2 text-left ring-1 ring-slate-200/70 hover:bg-white dark:bg-slate-950/70 dark:ring-slate-700/70 dark:hover:bg-slate-900">
+                  <button key={item.note.id} type="button" onClick={() => handleSelectNote(item.note.id)} className="w-full rounded-lg bg-slate-50 px-3 py-2 text-left transition hover:bg-white dark:bg-slate-950/70 dark:hover:bg-slate-900">
                     <div className="flex items-center justify-between gap-2">
                       <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{item.note.title}</div>
-                      <span className="text-[11px] text-slate-400">{Math.round(item.score * 100)}%</span>
                     </div>
                     <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.reason || item.hits[0]?.content || item.note.preview}</p>
                   </button>
                 )) : (
-                  <EmptyInline text={semanticResults?.message || '笔记保存并索引后可被语义检索。'} />
+                  <EmptyInline text={semanticResults?.message || '保存后可用问题快速找到相关笔记。'} />
                 )}
               </div>
             </section>
 
-            <section className="rounded-xl bg-white p-3 ring-1 ring-slate-200/80 dark:bg-slate-900 dark:ring-slate-700/70">
+            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
               <PanelHeader
                 icon={<History className="h-4 w-4" />}
                 title="版本历史"
@@ -1192,7 +1190,7 @@ export default function NotebookPage() {
               />
               <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
                 {versions.length > 0 ? versions.map((item) => (
-                  <div key={item.id} className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200/70 dark:bg-slate-950/70 dark:ring-slate-700/70">
+                  <div key={item.id} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950/70">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-sm font-medium text-slate-800 dark:text-slate-100">版本 {item.versionNo}</div>
@@ -1212,11 +1210,11 @@ export default function NotebookPage() {
             </section>
           </div>
 
-          <section className="border-t border-slate-200/80 bg-white px-3 py-3 dark:border-slate-700/70 dark:bg-slate-900">
+          <section className="bg-white px-3 py-3 dark:bg-slate-900">
             <PanelHeader icon={<MessageCircle className="h-4 w-4" />} title="当前笔记问答" />
             <div className="mt-3 max-h-52 space-y-2 overflow-y-auto rounded-lg bg-slate-50 p-3 dark:bg-slate-950/70">
               {chatMessages.length > 0 ? chatMessages.map((message) => (
-                <div key={message.id} className={cn('rounded-lg px-3 py-2 text-sm leading-6', message.role === 'user' ? 'ml-8 bg-primary-600 text-white' : 'mr-8 bg-white text-slate-700 ring-1 ring-slate-200/70 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700/70')}>
+                <div key={message.id} className={cn('rounded-lg px-3 py-2 text-sm leading-6', message.role === 'user' ? 'ml-8 bg-primary-600 text-white' : 'mr-8 bg-white text-slate-700 shadow-sm shadow-slate-200/40 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none')}>
                   {message.role === 'assistant' ? <MarkdownRenderer content={message.content} isStreaming={chatStreaming && !message.content.trim()} /> : message.content}
                 </div>
               )) : (
@@ -1240,7 +1238,7 @@ export default function NotebookPage() {
                   }
                 }}
                 placeholder="基于当前笔记提问"
-                className="min-w-0 flex-1 rounded-lg bg-slate-50 px-3 py-2 text-sm outline-none ring-1 ring-slate-200/80 focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-950 dark:text-slate-200 dark:ring-slate-700/70"
+                className="min-w-0 flex-1 rounded-lg bg-slate-50/80 px-3 py-2 text-sm outline-none shadow-sm shadow-slate-200/18 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/60 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950/86"
               />
               {chatStreaming ? (
                 <button type="button" onClick={handleStopChat} className="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700" title="停止">
@@ -1288,7 +1286,7 @@ function RichTextEditor(props: { markdown: string; onChange: (markdown: string) 
 
   return (
     <div className="flex h-full min-h-[560px] flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 px-3 py-2 dark:border-slate-700/70">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <IconTool title="加粗" onClick={() => runCommand('bold')} icon={<Bold className="h-4 w-4" />} />
         <IconTool title="斜体" onClick={() => runCommand('italic')} icon={<Italic className="h-4 w-4" />} />
         <IconTool title="无序列表" onClick={() => runCommand('insertUnorderedList')} icon={<List className="h-4 w-4" />} />
@@ -1314,7 +1312,7 @@ function RichTextEditor(props: { markdown: string; onChange: (markdown: string) 
 
 function StatusPill(props: { icon: React.ReactNode; label: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200/80 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
       {props.icon}
       {props.label}
     </span>
@@ -1323,7 +1321,7 @@ function StatusPill(props: { icon: React.ReactNode; label: string }) {
 
 function WorkbenchStat(props: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <span className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-50 px-2.5 text-xs text-slate-500 ring-1 ring-slate-200/80 dark:bg-slate-950/70 dark:text-slate-400 dark:ring-slate-700/70">
+    <span className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-50 px-2.5 text-xs text-slate-500 dark:bg-slate-950/70 dark:text-slate-400">
       <span className="text-primary-500">{props.icon}</span>
       <span>{props.label}</span>
       <span className="font-semibold text-slate-800 dark:text-slate-100">{props.value}</span>
@@ -1377,18 +1375,18 @@ function IconTool(props: { title: string; onClick: () => void; icon: React.React
 
 function SaveStatusBadge(props: { status: SaveStatus; error: string }) {
   if (props.status === 'saving') {
-    return <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 ring-1 ring-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-500/20"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />保存中</span>;
+    return <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />保存中</span>;
   }
   if (props.status === 'dirty') {
-    return <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20"><Clock3 className="h-3.5 w-3.5" />等待自动保存</span>;
+    return <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"><Clock3 className="h-3.5 w-3.5" />等待自动保存</span>;
   }
   if (props.status === 'error') {
-    return <span className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20" title={props.error}><TriangleAlert className="h-3.5 w-3.5" />保存失败</span>;
+    return <span className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-300" title={props.error}><TriangleAlert className="h-3.5 w-3.5" />保存失败</span>;
   }
   if (props.status === 'saved') {
-    return <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20"><CheckCircle2 className="h-3.5 w-3.5" />已保存</span>;
+    return <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" />已保存</span>;
   }
-  return <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"><Clock3 className="h-3.5 w-3.5" />未修改</span>;
+  return <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400"><Clock3 className="h-3.5 w-3.5" />未修改</span>;
 }
 
 function EmptyInline(props: { text: string }) {

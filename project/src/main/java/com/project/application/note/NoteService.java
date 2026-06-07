@@ -25,6 +25,8 @@ import com.project.application.common.ApplicationException;
 import com.project.application.resource.ResourceLibraryService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -73,17 +75,20 @@ public class NoteService {
     private final ObjectMapper objectMapper;
     private final NotePythonClient notePythonClient;
     private final ResourceLibraryService resourceLibraryService;
+    private final TaskExecutor noteIndexTaskExecutor;
 
     public NoteService(
         NamedParameterJdbcTemplate jdbcTemplate,
         ObjectMapper objectMapper,
         NotePythonClient notePythonClient,
-        ResourceLibraryService resourceLibraryService
+        ResourceLibraryService resourceLibraryService,
+        @Qualifier("noteIndexTaskExecutor") TaskExecutor noteIndexTaskExecutor
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.notePythonClient = notePythonClient;
         this.resourceLibraryService = resourceLibraryService;
+        this.noteIndexTaskExecutor = noteIndexTaskExecutor;
     }
 
     @Transactional(readOnly = true)
@@ -467,15 +472,19 @@ public class NoteService {
 
     private void indexNoteForRagAfterCommit(UUID userId, UUID noteId) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            safeIndexNoteForRag(userId, noteId);
+            submitNoteIndex(userId, noteId);
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                safeIndexNoteForRag(userId, noteId);
+                submitNoteIndex(userId, noteId);
             }
         });
+    }
+
+    private void submitNoteIndex(UUID userId, UUID noteId) {
+        noteIndexTaskExecutor.execute(() -> safeIndexNoteForRag(userId, noteId));
     }
 
     private void safeIndexNoteForRag(UUID userId, UUID noteId) {

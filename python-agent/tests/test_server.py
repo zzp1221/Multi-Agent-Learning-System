@@ -20,6 +20,10 @@ from src.ai_modules.models.events import (
 INTERNAL_HEADERS = {"X-Zhixue-Internal-Token": "test-internal-token"}
 
 
+async def empty_tavily_fallback(*args, **kwargs):
+    return []
+
+
 def test_health_endpoint(client) -> None:
     response = client.get("/health")
 
@@ -66,6 +70,8 @@ def test_resource_semantic_search_requires_internal_token(client) -> None:
 
 
 def test_resource_semantic_search_returns_grouped_results(client, monkeypatch) -> None:
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *args, **kwargs: [])
+    monkeypatch.setattr(server, "_search_resource_tavily_candidates", empty_tavily_fallback)
     monkeypatch.setattr(
         server,
         "_search_resource_chunks",
@@ -102,11 +108,98 @@ def test_resource_semantic_search_returns_grouped_results(client, monkeypatch) -
     assert len(payload["results"][0]["hits"]) == 2
 
 
+def test_resource_semantic_search_prefers_existing_hybrid_rag(client, monkeypatch) -> None:
+    def hybrid_search(query, top_k, domain=None, user_id=None):
+        return [
+            {
+                "chunk_id": 11,
+                "resource_id": "70000000-0000-0000-0000-000000000011",
+                "chunk_no": 1,
+                "content": "Java Thread and Runnable synchronized volatile",
+                "similarity": 0.9,
+                "rank_score": 0.9,
+                "source_url": "https://example.com/java-thread",
+                "retrieval_reason": "existing hybrid RAG",
+            }
+        ]
+
+    def chunk_search(query, top_k, domain=None, user_id=None):
+        raise AssertionError("chunk fallback should not run when hybrid RAG returns resources")
+
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", hybrid_search)
+    monkeypatch.setattr(server, "_search_resource_chunks", chunk_search)
+    monkeypatch.setattr(server, "_search_resource_tavily_candidates", empty_tavily_fallback)
+
+    response = client.get(
+        "/internal/resources/search/semantic",
+        params={
+            "query": "Java Runnable synchronized volatile",
+            "topK": 5,
+            "userId": "60000000-0000-0000-0000-000000000008",
+        },
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["results"][0]["resourceId"] == "70000000-0000-0000-0000-000000000011"
+    assert payload["results"][0]["reason"] == "existing hybrid RAG"
+
+
+def test_hybrid_rag_resource_lookup_maps_existing_rag_refs(monkeypatch) -> None:
+    import src.ai_modules.retrieval as retrieval_module
+
+    captured = {}
+
+    class FakeHybridRetrievalService:
+        def retrieve_raw(self, query, web_search_enabled=False):
+            captured["query"] = query
+            captured["web_search_enabled"] = web_search_enabled
+            return {
+                "top": [
+                    ("knowledge-thread", "Java thread basics", 0.2),
+                    ("https://example.com/java-thread", "Java Thread Guide", 0.1),
+                ],
+                "channels": {
+                    "vector": [
+                        ("https://example.com/java-thread", "Java Thread Guide", 0.88, "resource"),
+                        ("knowledge-thread", "Java thread basics", 0.86, "knowledge"),
+                    ]
+                },
+            }
+
+    def fake_resource_rows(refs, top_k, domain=None, user_id=None):
+        captured["refs"] = refs
+        captured["top_k"] = top_k
+        captured["domain"] = domain
+        captured["user_id"] = user_id
+        return [{"resource_id": "70000000-0000-0000-0000-000000000011"}]
+
+    monkeypatch.setattr(retrieval_module, "HybridRetrievalService", FakeHybridRetrievalService)
+    monkeypatch.setattr(server, "_resource_rows_for_hybrid_refs", fake_resource_rows)
+
+    rows = server._search_resource_chunks_with_hybrid_rag(
+        "Java Runnable synchronized volatile",
+        top_k=5,
+        domain="COMPUTER_SCIENCE",
+        user_id="60000000-0000-0000-0000-000000000008",
+    )
+
+    assert rows == [{"resource_id": "70000000-0000-0000-0000-000000000011"}]
+    assert captured["query"] == "Java Runnable synchronized volatile"
+    assert captured["web_search_enabled"] is False
+    assert captured["refs"] == ["knowledge-thread", "https://example.com/java-thread"]
+    assert captured["domain"] == "COMPUTER_SCIENCE"
+    assert captured["user_id"] == "60000000-0000-0000-0000-000000000008"
+
+
 def test_resource_semantic_search_degrades_when_embedding_unavailable(client, monkeypatch) -> None:
     def fail_search(query, top_k, domain=None, user_id=None):
         raise RuntimeError("missing embedding key")
 
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *args, **kwargs: [])
     monkeypatch.setattr(server, "_search_resource_chunks", fail_search)
+    monkeypatch.setattr(server, "_search_resource_tavily_candidates", empty_tavily_fallback)
 
     response = client.get(
         "/internal/resources/search/semantic",
@@ -119,6 +212,99 @@ def test_resource_semantic_search_degrades_when_embedding_unavailable(client, mo
     assert payload["available"] is False
     assert "missing embedding key" in payload["message"]
     assert payload["results"] == []
+
+
+def test_resource_semantic_search_uses_tavily_when_embedding_unavailable(client, monkeypatch) -> None:
+    def fail_search(query, top_k, domain=None, user_id=None):
+        raise RuntimeError("missing embedding key")
+
+    async def tavily_fallback(query, top_k):
+        assert query == "dynamic programming"
+        assert top_k == 8
+        return [
+            server.ResourceExternalCandidate(
+                title="Dynamic Programming Guide",
+                sourceUrl="https://example.com/dp-guide",
+                sourceName="example.com",
+                summaryText="optimal substructure and overlapping subproblems",
+                resourceType="READING",
+                displayType="DOCUMENT",
+                difficultyLevel="MIXED",
+                tags=["dynamic", "programming"],
+            )
+        ]
+
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *args, **kwargs: [])
+    monkeypatch.setattr(server, "_search_resource_chunks", fail_search)
+    monkeypatch.setattr(server, "_search_resource_tavily_candidates", tavily_fallback)
+
+    response = client.get(
+        "/internal/resources/search/semantic",
+        params={"query": "dynamic programming"},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["results"][0]["reason"] == "tavily_current_stage_fallback"
+    assert payload["results"][0]["externalResource"]["sourceUrl"] == "https://example.com/dp-guide"
+
+
+def test_resource_semantic_search_fills_short_rag_results_with_tavily(client, monkeypatch) -> None:
+    def hybrid_search(query, top_k, domain=None, user_id=None):
+        assert query == "graph traversal current stage"
+        assert top_k == 3
+        return [
+            {
+                "chunk_id": 21,
+                "resource_id": "70000000-0000-0000-0000-000000000021",
+                "chunk_no": 1,
+                "content": "graph traversal bfs dfs",
+                "similarity": 0.88,
+                "rank_score": 0.88,
+                "source_url": "https://example.com/graph-existing",
+                "retrieval_reason": "existing hybrid RAG",
+            }
+        ]
+
+    def chunk_search(query, top_k, domain=None, user_id=None):
+        raise AssertionError("vector fallback should not run when hybrid RAG has resources")
+
+    async def tavily_fallback(query, top_k):
+        assert query == "graph traversal current stage"
+        assert top_k == 2
+        return [
+            server.ResourceExternalCandidate(
+                title="Graph Traversal Practice",
+                sourceUrl="https://example.com/graph-practice",
+                sourceName="example.com",
+                summaryText="bfs dfs practice",
+                resourceType="READING",
+                displayType="DOCUMENT",
+                difficultyLevel="MIXED",
+                tags=["graph", "traversal"],
+            )
+        ]
+
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", hybrid_search)
+    monkeypatch.setattr(server, "_search_resource_chunks", chunk_search)
+    monkeypatch.setattr(server, "_search_resource_tavily_candidates", tavily_fallback)
+
+    response = client.get(
+        "/internal/resources/search/semantic",
+        params={"query": "graph traversal current stage", "topK": 3},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert [item["reason"] for item in payload["results"]] == [
+        "existing hybrid RAG",
+        "tavily_current_stage_fallback",
+    ]
+    assert payload["results"][1]["externalResource"]["sourceUrl"] == "https://example.com/graph-practice"
 
 
 def test_resource_chunk_search_uses_domain_parameter(monkeypatch) -> None:
@@ -181,7 +367,9 @@ def test_resource_semantic_search_passes_user_id_to_chunk_search(client, monkeyp
         captured.update({"query": query, "top_k": top_k, "domain": domain, "user_id": user_id})
         return []
 
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *args, **kwargs: [])
     monkeypatch.setattr(server, "_search_resource_chunks", fake_search)
+    monkeypatch.setattr(server, "_search_resource_tavily_candidates", empty_tavily_fallback)
 
     response = client.get(
         "/internal/resources/search/semantic",

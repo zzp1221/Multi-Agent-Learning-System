@@ -417,7 +417,7 @@ function normalizeTaskResultRecord(record: Partial<EngineTaskResultRecord>): Eng
   const taskSummary = formatUserFacingTaskMessage(record.taskSummary || '');
   return {
     taskId: record.taskId,
-    title: formatUserFacingTaskMessage(record.title || taskSummary) || `任务 ${record.taskId.slice(0, 8)}`,
+    title: formatUserFacingTaskMessage(record.title || taskSummary) || '生成结果',
     taskStatus: record.taskStatus || '任务结果',
     engineState: record.engineState || 'ENGINE_COMPLETED',
     taskSummary,
@@ -447,7 +447,7 @@ function createTaskResultRecord(
   const taskSummary = formatUserFacingTaskMessage(overrides.taskSummary ?? snapshot.taskSummary);
   return {
     taskId,
-    title: formatUserFacingTaskMessage(overrides.title || taskSummary || snapshot.taskStatus) || `任务 ${taskId.slice(0, 8)}`,
+    title: formatUserFacingTaskMessage(overrides.title || taskSummary || snapshot.taskStatus) || '生成结果',
     taskStatus: overrides.taskStatus ?? snapshot.taskStatus,
     engineState: overrides.engineState ?? snapshot.engineState,
     taskSummary,
@@ -486,7 +486,7 @@ function upsertTaskResultRecord(
     ...current,
     ...overrides,
     taskId,
-    title: formatUserFacingTaskMessage(overrides.title || current.title || snapshot.taskSummary || snapshot.taskStatus) || `任务 ${taskId.slice(0, 8)}`,
+    title: formatUserFacingTaskMessage(overrides.title || current.title || snapshot.taskSummary || snapshot.taskStatus) || '生成结果',
     taskStatus: overrides.taskStatus ?? snapshot.taskStatus,
     engineState: overrides.engineState ?? snapshot.engineState,
     taskSummary: formatUserFacingTaskMessage(overrides.taskSummary ?? snapshot.taskSummary),

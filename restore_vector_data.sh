@@ -6,12 +6,14 @@ set -e
 
 DB_USER="${POSTGRES_USER:-postgres}"
 DB_NAME="${POSTGRES_DB:-zhixue}"
-DUMP_FILE="/docker-entrypoint-initdb.d/vector_data.dump"
+DUMP_FILE="${VECTOR_DUMP_FILE:-/docker-entrypoint-initdb.d/vector_data.dump}"
 RESTORE_SQL="/tmp/vector_restore.sql"
+LEARNING_RESOURCE_STAGE_SQL="/tmp/learning_resource_stage.sql"
+VECTOR_DATA_SQL="/tmp/vector_data_without_learning_resource.sql"
 RESOURCE_STAGE_SQL="/tmp/resource_document_stage.sql"
 
 cleanup() {
-  rm -f "$RESTORE_SQL" "$RESOURCE_STAGE_SQL"
+  rm -f "$RESTORE_SQL" "$LEARNING_RESOURCE_STAGE_SQL" "$VECTOR_DATA_SQL" "$RESOURCE_STAGE_SQL"
 }
 
 trap cleanup EXIT
@@ -32,8 +34,30 @@ psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;"
 echo "Dumping vector archive to SQL..."
 pg_restore -a -f "$RESTORE_SQL" "$DUMP_FILE"
 
-echo "Preparing placeholder learning resources for imported resource documents..."
+echo "Preparing preloaded learning resources from dump..."
 awk '
+  /^COPY (app|preload_export)\.learning_resource / {
+    sub(/^COPY preload_export\.learning_resource /, "COPY app.learning_resource ")
+    print
+    flag = 1
+    next
+  }
+  flag {
+    print
+    if ($0 == "\\.") {
+      exit
+    }
+  }
+' "$RESTORE_SQL" > "$LEARNING_RESOURCE_STAGE_SQL"
+
+if grep -q '^COPY app\.learning_resource ' "$LEARNING_RESOURCE_STAGE_SQL"; then
+  echo "Restoring preloaded learning resources..."
+  psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
+\i $LEARNING_RESOURCE_STAGE_SQL
+SQL
+else
+  echo "Preparing placeholder learning resources for imported resource documents..."
+  awk '
   /COPY rag\.resource_document / {
     print "CREATE TEMP TABLE pg_temp.resource_document_stage ("
     print "  id UUID,"
@@ -65,7 +89,7 @@ awk '
   }
 ' "$RESTORE_SQL" > "$RESOURCE_STAGE_SQL"
 
-psql -U "$DB_USER" -d "$DB_NAME" <<SQL
+  psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 \i $RESOURCE_STAGE_SQL
 INSERT INTO app.learning_resource (
   id,
@@ -115,11 +139,43 @@ WHERE NOT EXISTS (
   WHERE lr.id = s.resource_id
 );
 SQL
+fi
+
+awk '
+  /^COPY (app|preload_export)\.learning_resource / {
+    skip = 1
+    next
+  }
+  skip {
+    if ($0 == "\\.") {
+      skip = 0
+    }
+    next
+  }
+  {
+    sub(/^COPY preload_export\.knowledge_document /, "COPY rag.knowledge_document ")
+    sub(/^COPY preload_export\.knowledge_chunk /, "COPY rag.knowledge_chunk ")
+    sub(/^COPY preload_export\.resource_document /, "COPY rag.resource_document ")
+    sub(/^COPY preload_export\.resource_chunk /, "COPY rag.resource_chunk ")
+    sub(/^COPY preload_export\.wiki_page /, "COPY rag.wiki_page ")
+    sub(/^COPY preload_export\.wiki_link /, "COPY rag.wiki_link ")
+    sub(/^COPY preload_export\.term_lexicon /, "COPY rag.term_lexicon ")
+    sub(/^COPY preload_export\.synonym_group /, "COPY rag.synonym_group ")
+    print
+  }
+' "$RESTORE_SQL" > "$VECTOR_DATA_SQL"
 
 echo "Restoring vectorized knowledge base from dump..."
-pg_restore -U "$DB_USER" -d "$DB_NAME" \
-  --no-owner --no-privileges --single-transaction \
-  "$DUMP_FILE"
+psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 --single-transaction <<SQL
+SET session_replication_role = replica;
+\i $VECTOR_DATA_SQL
+SET session_replication_role = DEFAULT;
+SELECT setval('rag.knowledge_chunk_id_seq', COALESCE((SELECT MAX(id) FROM rag.knowledge_chunk), 0) + 1, false);
+SELECT setval('rag.resource_chunk_id_seq', COALESCE((SELECT MAX(id) FROM rag.resource_chunk), 0) + 1, false);
+SELECT setval('rag.wiki_link_id_seq', COALESCE((SELECT MAX(id) FROM rag.wiki_link), 0) + 1, false);
+SELECT setval('rag.term_lexicon_id_seq', COALESCE((SELECT MAX(id) FROM rag.term_lexicon), 0) + 1, false);
+SELECT setval('rag.synonym_group_id_seq', COALESCE((SELECT MAX(id) FROM rag.synonym_group), 0) + 1, false);
+SQL
 
 CHUNKS=$(psql -U "$DB_USER" -d "$DB_NAME" -tAc \
   "SELECT count(*) FROM rag.knowledge_chunk;")

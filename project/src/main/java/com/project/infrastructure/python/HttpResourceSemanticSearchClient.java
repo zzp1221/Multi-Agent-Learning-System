@@ -2,6 +2,7 @@ package com.project.infrastructure.python;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.project.api.resource.dto.ResourceExternalCandidateResponse;
 import com.project.api.resource.dto.ResourceSemanticHitResponse;
 import com.project.api.resource.dto.ResourceSemanticResultResponse;
 import com.project.api.resource.dto.ResourceSemanticSearchResponse;
@@ -84,7 +85,8 @@ public class HttpResourceSemanticSearchClient implements ResourceSemanticSearchC
                                 hit.content(),
                                 hit.sourceUrl()
                             ))
-                            .toList()
+                            .toList(),
+                        item.externalResource()
                     ))
                     .toList()
             );
@@ -127,7 +129,8 @@ public class HttpResourceSemanticSearchClient implements ResourceSemanticSearchC
         UUID resourceId,
         double score,
         String reason,
-        List<PythonSemanticHitPayload> hits
+        List<PythonSemanticHitPayload> hits,
+        ResourceExternalCandidateResponse externalResource
     ) {
     }
 

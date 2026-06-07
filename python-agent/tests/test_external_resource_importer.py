@@ -196,6 +196,135 @@ def test_url_template_source_expands_numbered_resources() -> None:
     assert candidates[0].title == "Lesson 01"
 
 
+def test_bilibili_search_source_builds_video_metadata_candidates() -> None:
+    payload = {
+        "code": 0,
+        "data": {
+            "result": [
+                {
+                    "type": "video",
+                    "bvid": "BV1234567890",
+                    "title": "操作系统 <em class=\"keyword\">进程</em> 调度",
+                    "description": "讲解进程、线程和调度策略。",
+                    "tag": "操作系统,进程,线程,调度",
+                },
+                {
+                    "type": "ketang",
+                    "bvid": "",
+                    "title": "付费课堂",
+                },
+            ]
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["search_type"] == "video"
+        return httpx.Response(200, json=payload, request=request)
+
+    config = {
+        "defaults": {"domain": "COMPUTER_SCIENCE", "tags": ["computer-science"]},
+        "sources": [
+            {
+                "id": "bili-os",
+                "sourceName": "Bilibili CS Videos",
+                "sourceType": "bilibiliSearch",
+                "keywords": ["操作系统"],
+                "csCategory": "OPERATING_SYSTEMS",
+                "csSubcategory": "进程与调度",
+                "tags": ["video"],
+            }
+        ],
+    }
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    candidates = import_external_resources.iter_candidates(config, client, limit=10)
+
+    assert len(candidates) == 1
+    assert candidates[0].url == "https://www.bilibili.com/video/BV1234567890/"
+    assert candidates[0].title == "操作系统 进程 调度"
+    assert candidates[0].resource_type == "VIDEO"
+    assert candidates[0].display_type == "VIDEO"
+    assert candidates[0].cs_category == "OPERATING_SYSTEMS"
+    assert candidates[0].summary == "讲解进程、线程和调度策略。"
+    assert "调度" in candidates[0].tags
+    assert "CS方向：OPERATING_SYSTEMS" in (candidates[0].metadata_text or "")
+
+
+def test_youtube_search_source_builds_video_metadata_candidates() -> None:
+    html = """
+    <html><body>
+      "videoId":"abc123XYZ00","title":{"runs":[{"text":"Operating Systems Lecture 1"}]}
+      "videoId":"def456XYZ00","title":{"runs":[{"text":"Operating Systems Lecture 2"}]}
+    </body></html>
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["search_query"] == "operating systems course"
+        return httpx.Response(200, text=html, request=request)
+
+    config = {
+        "defaults": {"domain": "COMPUTER_SCIENCE", "tags": ["computer-science"]},
+        "sources": [
+            {
+                "id": "youtube-os",
+                "sourceName": "YouTube CS Videos",
+                "sourceType": "youtubeSearch",
+                "keywords": ["operating systems course"],
+                "perKeyword": 1,
+                "csCategory": "OPERATING_SYSTEMS",
+                "csSubcategory": "Operating Systems",
+                "summary": "Operating systems lecture videos.",
+                "tags": ["video"],
+            }
+        ],
+    }
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    candidates = import_external_resources.iter_candidates(config, client, limit=10)
+
+    assert len(candidates) == 1
+    assert candidates[0].url == "https://www.youtube.com/watch?v=abc123XYZ00"
+    assert candidates[0].title == "Operating Systems Lecture 1"
+    assert candidates[0].resource_type == "VIDEO"
+    assert candidates[0].display_type == "VIDEO"
+    assert candidates[0].cs_category == "OPERATING_SYSTEMS"
+    assert candidates[0].summary == "Operating systems lecture videos."
+    assert "operating" in candidates[0].tags
+    assert "标题：Operating Systems Lecture 1" in (candidates[0].metadata_text or "")
+
+
+def test_static_video_resource_builds_metadata_text_from_title_summary_and_tags() -> None:
+    config = {
+        "defaults": {"domain": "COMPUTER_SCIENCE", "resourceType": "VIDEO", "displayType": "VIDEO"},
+        "sources": [
+            {
+                "id": "video-list",
+                "sourceName": "Public CS Videos",
+                "sourceType": "urls",
+                "csCategory": "AI_ML",
+                "csSubcategory": "Deep Learning",
+                "tags": ["video"],
+                "resources": [
+                    {
+                        "title": "深度学习入门",
+                        "url": "https://example.test/deep-learning-video",
+                        "summary": "讲解神经网络、反向传播和 PyTorch。",
+                        "tags": ["deep-learning", "pytorch"],
+                    }
+                ],
+            }
+        ],
+    }
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, request=request)), follow_redirects=True)
+
+    candidates = import_external_resources.iter_candidates(config, client, limit=10)
+
+    assert candidates[0].metadata_text is not None
+    assert "标题：深度学习入门" in candidates[0].metadata_text
+    assert "简介：讲解神经网络、反向传播和 PyTorch。" in candidates[0].metadata_text
+    assert "标签：video、deep-learning、pytorch" in candidates[0].metadata_text
+
+
 def test_category_quotas_are_filled_before_global_round_robin() -> None:
     config = {
         "defaults": {"domain": "COMPUTER_SCIENCE", "resourceType": "READING", "difficulty": "MIXED"},
@@ -312,6 +441,66 @@ def test_html_parser_ignores_scripts_and_builds_summary() -> None:
     assert parsed.title == "Python Tutorial"
     assert "bad()" not in parsed.text
     assert "Learn syntax" in parsed.summary
+
+
+def test_candidate_metadata_text_builds_rag_document_without_page_noise() -> None:
+    candidate = import_external_resources.ResourceCandidate(
+        source_id="bili-os",
+        source_name="Bilibili CS Videos",
+        url="https://www.bilibili.com/video/BV1234567890/",
+        title="操作系统进程调度",
+        domain="COMPUTER_SCIENCE",
+        resource_type="VIDEO",
+        display_type="VIDEO",
+        difficulty="MIXED",
+        license="Public video page",
+        copyright_status="PUBLICLY_ACCESSIBLE_VIDEO_METADATA",
+        tags=("操作系统", "调度"),
+        quality_score=0.82,
+        popularity_score=0.7,
+        summary="讲解进程、线程和调度策略。",
+        metadata_text="标题：操作系统进程调度\n简介：讲解进程、线程和调度策略。\n标签：操作系统、调度",
+        cs_category="OPERATING_SYSTEMS",
+        cs_subcategory="进程与调度",
+    )
+
+    parsed = import_external_resources.parse_candidate_document(
+        candidate,
+        b"<html><body><p>recommended videos and comments should not enter rag</p></body></html>",
+    )
+
+    assert parsed.title == "操作系统进程调度"
+    assert "讲解进程" in parsed.text
+    assert parsed.summary == "讲解进程、线程和调度策略。"
+    assert "recommended videos" not in parsed.text
+
+
+def test_metadata_rag_uses_short_chunk_threshold_for_video_resources() -> None:
+    candidate = import_external_resources.ResourceCandidate(
+        source_id="bili-ai",
+        source_name="Bilibili CS Videos",
+        url="https://www.bilibili.com/video/BV1234567890/",
+        title="深度学习入门",
+        domain="COMPUTER_SCIENCE",
+        resource_type="VIDEO",
+        display_type="VIDEO",
+        difficulty="MIXED",
+        license="Public video page",
+        copyright_status="PUBLICLY_ACCESSIBLE_VIDEO_METADATA",
+        tags=("深度学习",),
+        quality_score=0.82,
+        popularity_score=0.7,
+        summary="讲解神经网络和 PyTorch。",
+        metadata_text="标题：深度学习入门\n简介：讲解神经网络和 PyTorch。\n标签：深度学习、神经网络",
+        cs_category="AI_ML",
+        cs_subcategory="Deep Learning",
+    )
+    parsed = import_external_resources.parse_candidate_document(candidate, b"")
+
+    chunks = import_external_resources.chunk_candidate_text(candidate, parsed)
+
+    assert len(chunks) == 1
+    assert "神经网络" in chunks[0]
 
 
 def test_generate_embeddings_refuses_missing_api_key() -> None:

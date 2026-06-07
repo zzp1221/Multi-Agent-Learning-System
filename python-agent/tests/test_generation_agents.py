@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import threading
 
+import httpx
 import pytest
 
 from src.ai_modules.agents.generation.generators import SlideGeneratorAgent
@@ -102,10 +103,34 @@ def test_document_generation_uses_higher_max_tokens_and_deterministic_temperatur
     assert captured["response_format"] == {"type": "json_object"}
 
 
+def test_structured_generator_uses_generation_timeout_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_settings = SimpleNamespace(
+        normalize_provider_name=lambda provider_name: provider_name,
+        resolve_component_provider=lambda component_name: "mimo",
+        provider_endpoint_config=lambda provider_name: SimpleNamespace(
+            name=provider_name,
+            base_url="https://api.xiaomimimo.com/v1",
+        ),
+        provider_api_key=lambda provider_name: "fake-mimo-key",
+        resolve_component_model=lambda component_name, default_logical_model, provider_name: "mimo-v2.5-pro",
+        generation_llm_timeout_seconds=240.0,
+    )
+    monkeypatch.setattr("src.ai_modules.generation.content_chain.get_settings", lambda: fake_settings)
+
+    generator = OpenAICompatibleStructuredGenerator()
+
+    assert generator.timeout_seconds == 240.0
+    assert "240.0" in f"{generator.provider_name}:{generator.base_url}:{generator.timeout_seconds}"
+
+
+def test_structured_generator_formats_empty_httpx_exception() -> None:
+    assert OpenAICompatibleStructuredGenerator._format_exception(httpx.ReadTimeout("")) == "ReadTimeout"
+
+
 @pytest.mark.asyncio
-async def test_expand_content_uses_preview_text_for_binary_assets(tmp_path: Path) -> None:
-    pptx_path = tmp_path / "slides.pptx"
-    pptx_path.write_bytes(b"PK\x03\x04binary-pptx")
+async def test_expand_content_uses_preview_text_for_downloadable_slides(tmp_path: Path) -> None:
+    html_path = tmp_path / "slides.html"
+    html_path.write_text("<!DOCTYPE html><html><body>deck</body></html>", encoding="utf-8")
 
     class FakeGenerationService:
         def build_asset(self, *, asset_type, params, snapshot):
@@ -115,10 +140,10 @@ async def test_expand_content_uses_preview_text_for_binary_assets(tmp_path: Path
                 title="并发编程PPT大纲",
                 summary="PPT 生成成功",
                 displayMode="DOWNLOAD_CARD",
-                fileName="slides.pptx",
-                localPath=str(pptx_path),
-                previewText="PPT 演示文稿 · 6 页 · 并发编程",
-                mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                fileName="slides.html",
+                localPath=str(html_path),
+                previewText="HTML PPT 课件 · 9 页 · 并发编程",
+                mimeType="text/html; charset=UTF-8",
             )
 
     agent = SlideGeneratorAgent(generation_service=FakeGenerationService())
@@ -130,7 +155,7 @@ async def test_expand_content_uses_preview_text_for_binary_assets(tmp_path: Path
         snapshot=_build_snapshot(),
     )
 
-    assert result["generatedContent"] == "PPT 演示文稿 · 6 页 · 并发编程"
+    assert result["generatedContent"] == "HTML PPT 课件 · 9 页 · 并发编程"
     assert result["asset"]["assetType"] == "SLIDES"
 
 

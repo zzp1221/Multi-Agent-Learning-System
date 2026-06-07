@@ -184,7 +184,7 @@ function reduceResourceEvent(
       return next;
     }
     const progress = clampPercent(readNumber(payload.percent) ?? readNumber(payload.progress) ?? next.progress);
-    const artifactType = normalizeResourceType(readString(payload.artifactType));
+    const artifactType = normalizeResourceType(readPayloadString(payload, 'artifactType', 'artifact_type'));
     const status = readString(payload.status).toUpperCase();
     const failed = status === 'FAILED' || status === 'ERROR';
     const progressText = userFacingProgressText(payload, artifactType);
@@ -194,18 +194,18 @@ function reduceResourceEvent(
       taskStatus: failed ? 'partial_failed' : 'running',
       progress,
       statusText: progressText,
-      topic: next.topic || readString(payload.topic),
+      topic: next.topic || readPayloadString(payload, 'topic'),
       resources: artifactType && failed
         ? upsertResource(next.resources, {
-          id: resourceId(artifactType, readString(payload.title) || resourceLabel(artifactType)),
+          id: resourceId(artifactType, readPayloadString(payload, 'title') || resourceLabel(artifactType)),
           type: artifactType,
-          title: readString(payload.title) || resourceLabel(artifactType),
-          summary: readString(payload.message) || undefined,
+          title: readPayloadString(payload, 'title') || resourceLabel(artifactType),
+          summary: readPayloadString(payload, 'message') || undefined,
           status: failed ? 'failed' : 'generating',
           statusText: progressText,
           progress,
-          failureReason: failed ? readString(payload.message) || '生成失败' : undefined,
-          sourceAgent: readString(payload.agentName) || undefined,
+          failureReason: failed ? readPayloadString(payload, 'message') || '生成失败' : undefined,
+          sourceAgent: readPayloadString(payload, 'agentName', 'agent_name') || undefined,
           updatedAt: now,
         })
         : next.resources,
@@ -221,7 +221,7 @@ function reduceResourceEvent(
       taskStatus: 'running',
       progress,
       statusText: videoProgressText(eventName),
-      topic: next.topic || readString(payload.topic),
+      topic: next.topic || readPayloadString(payload, 'topic'),
     };
     if (eventName === 'video_gen:speech' || eventName === 'video_gen:complete') {
       const video = readVideoResult(payload);
@@ -230,8 +230,10 @@ function reduceResourceEvent(
           id: resourceId('VIDEO', video.title),
           type: 'VIDEO',
           title: video.title,
-          summary: readString(payload.message),
-          sourceAgent: readString(payload.agentName) || readString(payload.generatedBy) || undefined,
+          summary: readPayloadString(payload, 'message'),
+          sourceAgent: readPayloadString(payload, 'agentName', 'agent_name')
+            || readPayloadString(payload, 'generatedBy', 'generated_by')
+            || undefined,
           status: 'ready',
           statusText: '短视频素材已就绪',
           progress,
@@ -247,15 +249,6 @@ function reduceResourceEvent(
     if (!hasAllowedResourceProvenance(payload)) {
       return next;
     }
-    if (isSlideOutlineConfirmationPayload(payload) && readString(payload.inlineContent)) {
-      return {
-        ...next,
-        conversationTriggered: true,
-        taskStatus: 'running',
-        statusText: '等待在对话中确认 PPT 大纲',
-        topic: next.topic || readString(payload.topic) || readString(payload.title),
-      };
-    }
     const resource = readResourceFile(payload, now);
     if (!resource) {
       return next;
@@ -266,7 +259,7 @@ function reduceResourceEvent(
       taskStatus: 'running',
       progress: next.progress,
       statusText: resource.statusText || `${resourceLabel(resource.type)}已生成`,
-      topic: next.topic || readString(payload.topic) || resource.title,
+      topic: next.topic || readPayloadString(payload, 'topic') || resource.title,
       resources: upsertResource(next.resources, resource),
     };
   }
@@ -333,19 +326,19 @@ function reduceResourceEvent(
 }
 
 function readResourceFile(payload: Record<string, unknown>, now: number): ResourceGenerationResource | null {
-  const type = normalizeResourceType(readString(payload.assetType));
+  const type = normalizeResourceType(readPayloadString(payload, 'assetType', 'asset_type'));
   if (!type) {
     return null;
   }
-  const title = readString(payload.title) || readString(payload.fileName) || resourceLabel(type);
-  const summary = readString(payload.summary);
-  const downloadUrl = readString(payload.downloadUrl);
+  const title = readPayloadString(payload, 'title') || readPayloadString(payload, 'fileName', 'file_name') || resourceLabel(type);
+  const summary = readPayloadString(payload, 'summary');
+  const downloadUrl = readPayloadString(payload, 'downloadUrl', 'download_url');
   const inline = readInlineResource(payload);
-  const displayMode = readString(payload.displayMode).toUpperCase();
+  const displayMode = readPayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
   const waitingSlideConfirmation = type === 'SLIDES' && displayMode === 'SLIDE_OUTLINE_CONFIRMATION';
-  const missingSlideOutline = waitingSlideConfirmation && !readString(payload.inlineContent);
+  const missingSlideOutline = waitingSlideConfirmation && !readPayloadString(payload, 'inlineContent', 'inline_content');
   const video = type === 'VIDEO' ? readVideoResult(payload) : null;
-  const fileName = readString(payload.fileName) || defaultFileName(title, type, inline);
+  const fileName = readPayloadString(payload, 'fileName', 'file_name') || defaultFileName(title, type, inline);
   const mimeType = readString(payload.mimeType) || defaultMimeType(type, inline);
   return {
     id: resourceId(type, title),
@@ -353,44 +346,49 @@ function readResourceFile(payload: Record<string, unknown>, now: number): Resour
     title,
     summary,
     status: missingSlideOutline ? 'failed' : waitingSlideConfirmation ? 'waiting_confirmation' : 'ready',
-    statusText: missingSlideOutline ? 'PPT 大纲事件缺少正文，请重新生成' : waitingSlideConfirmation ? '等待确认后生成 PPT 文件' : '已生成',
-    failureReason: missingSlideOutline ? 'PPT 大纲事件缺少正文，请重新生成' : undefined,
-    sourceAgent: readString(payload.agentName) || readString(payload.generatedBy) || readString(payload.sourceAgent) || undefined,
+    statusText: missingSlideOutline ? 'PPT 大纲暂未生成完整，请重新生成' : waitingSlideConfirmation ? '等待确认后生成 PPT 文件' : '已生成',
+    failureReason: missingSlideOutline ? 'PPT 大纲暂未生成完整，请重新生成' : undefined,
+    sourceAgent: readPayloadString(payload, 'agentName', 'agent_name')
+      || readPayloadString(payload, 'generatedBy', 'generated_by')
+      || readPayloadString(payload, 'sourceAgent', 'source_agent')
+      || undefined,
     download: downloadUrl
       ? {
         title,
         url: downloadUrl,
         fileName,
-        expiresHint: readString(payload.expiresAt) || '临时下载链接',
+        expiresHint: readPayloadString(payload, 'expiresAt', 'expires_at') || '临时下载链接',
         resourceType: type,
         mimeType,
         summary: summary || undefined,
-        sourceName: readString(payload.sourceName) || undefined,
-        thumbnailUrl: readString(payload.thumbnailUrl) || readString(payload.thumbnailPath) || undefined,
-        duration: readNumber(payload.durationSeconds),
-        knowledgePoint: readString(payload.knowledgePoint) || undefined,
+        sourceName: readPayloadString(payload, 'sourceName', 'source_name') || undefined,
+        thumbnailUrl: readPayloadString(payload, 'thumbnailUrl', 'thumbnail_url')
+          || readPayloadString(payload, 'thumbnailPath', 'thumbnail_path')
+          || undefined,
+        duration: readPayloadNumber(payload, 'durationSeconds', 'duration_seconds'),
+        knowledgePoint: readPayloadString(payload, 'knowledgePoint', 'knowledge_point') || undefined,
       }
       : undefined,
     downloadFallback: undefined,
     inline: waitingSlideConfirmation ? undefined : inline ?? undefined,
-    slideOutline: waitingSlideConfirmation ? readString(payload.inlineContent) || undefined : undefined,
+    slideOutline: waitingSlideConfirmation ? readPayloadString(payload, 'inlineContent', 'inline_content') || undefined : undefined,
     video: video ?? undefined,
     updatedAt: now,
   };
 }
 
 function readInlineResource(payload: Record<string, unknown>): InlineResourceView | null {
-  const inlineContent = readString(payload.inlineContent);
+  const inlineContent = readPayloadString(payload, 'inlineContent', 'inline_content');
   if (!inlineContent) {
     return null;
   }
-  const displayMode = readString(payload.displayMode).toUpperCase();
-  const assetType = normalizeResourceType(readString(payload.assetType));
-  const mimeType = readString(payload.mimeType).toLowerCase();
-  const title = readString(payload.title) || resourceLabel(assetType || 'DOCUMENT');
+  const displayMode = readPayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
+  const assetType = normalizeResourceType(readPayloadString(payload, 'assetType', 'asset_type'));
+  const mimeType = readPayloadString(payload, 'mimeType', 'mime_type').toLowerCase();
+  const title = readPayloadString(payload, 'title') || resourceLabel(assetType || 'DOCUMENT');
   const base = {
     title,
-    summary: readString(payload.summary) || undefined,
+    summary: readPayloadString(payload, 'summary') || undefined,
     content: inlineContent,
   };
   if (assetType === 'MINDMAP' || displayMode === 'MERMAID' || inlineContent.trim().toLowerCase().startsWith('mindmap')) {
@@ -401,7 +399,7 @@ function readInlineResource(payload: Record<string, unknown>): InlineResourceVie
       ...base,
       kind: 'code',
       language: readString(payload.language) || 'text',
-      explanation: readString(payload.explanation) || undefined,
+      explanation: readPayloadString(payload, 'explanation') || undefined,
     };
   }
   return { ...base, kind: 'markdown' };
@@ -413,12 +411,12 @@ function readQuestionBatchSummary(payload: Record<string, unknown>): ResourceGen
     return null;
   }
   return {
-    title: readString(payload.title) || '练习题',
-    topic: readString(payload.topic),
-    difficulty: readString(payload.difficulty),
-    description: readString(payload.description) || undefined,
-    generatedBy: readString(payload.generatedBy) || undefined,
-    agentName: readString(payload.agentName) || undefined,
+    title: readPayloadString(payload, 'title') || '练习题',
+    topic: readPayloadString(payload, 'topic'),
+    difficulty: readPayloadString(payload, 'difficulty'),
+    description: readPayloadString(payload, 'description') || undefined,
+    generatedBy: readPayloadString(payload, 'generatedBy', 'generated_by') || undefined,
+    agentName: readPayloadString(payload, 'agentName', 'agent_name') || undefined,
     questionCount: questions.length,
   };
 }
@@ -434,14 +432,14 @@ function hasAllowedResourceProvenance(payload: Record<string, unknown>): boolean
 }
 
 function isSlideOutlineConfirmationPayload(payload: Record<string, unknown>): boolean {
-  const assetType = readString(payload.assetType).toUpperCase();
-  const displayMode = readString(payload.displayMode).toUpperCase();
+  const assetType = readPayloadString(payload, 'assetType', 'asset_type').toUpperCase();
+  const displayMode = readPayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
   return (assetType === 'SLIDES' || assetType === 'PPT') && displayMode === 'SLIDE_OUTLINE_CONFIRMATION';
 }
 
 function requiresLlmProvenance(payload: Record<string, unknown>): boolean {
-  const displayMode = readString(payload.displayMode).toLowerCase();
-  const sourceName = readString(payload.sourceName).toLowerCase();
+  const displayMode = readPayloadString(payload, 'displayMode', 'display_mode').toLowerCase();
+  const sourceName = readPayloadString(payload, 'sourceName', 'source_name').toLowerCase();
   if (displayMode === 'external_link') {
     return false;
   }
@@ -450,41 +448,50 @@ function requiresLlmProvenance(payload: Record<string, unknown>): boolean {
 
 function hasRealLlmProvenance(payload: Record<string, unknown>): boolean {
   const evidenceIds = payload.evidenceIds;
-  return readString(payload.generatedBy).toUpperCase() === 'LLM'
-    && readString(payload.contentOrigin).toUpperCase() === 'LLM'
+  return readPayloadString(payload, 'generatedBy', 'generated_by').toUpperCase() === 'LLM'
+    && readPayloadString(payload, 'contentOrigin', 'content_origin').toUpperCase() === 'LLM'
     && Boolean(readString(payload.provider))
     && Boolean(readString(payload.model))
-    && Boolean(readString(payload.agentName))
+    && Boolean(readPayloadString(payload, 'agentName', 'agent_name'))
     && Array.isArray(evidenceIds)
     && payload.fallback === false
     && typeof payload.fromCache === 'boolean';
 }
 
 function readVideoResult(payload: Record<string, unknown>): VideoResult | null {
-  const assetType = normalizeResourceType(readString(payload.assetType));
+  const assetType = normalizeResourceType(readPayloadString(payload, 'assetType', 'asset_type'));
   if (assetType && assetType !== 'VIDEO') {
     return null;
   }
-  const videoUrl = readString(payload.videoUrl) || readString(payload.finalVideoUrl) || readString(payload.downloadUrl);
-  const renderStatus = readString(payload.audioBase64) && !videoUrl ? 'rendering' : undefined;
+  const videoUrl = readPayloadString(payload, 'videoUrl', 'video_url')
+    || readPayloadString(payload, 'finalVideoUrl', 'final_video_url')
+    || readPayloadString(payload, 'downloadUrl', 'download_url');
+  const audioBase64 = readPayloadString(payload, 'audioBase64', 'audio_base64');
+  const renderStatus = audioBase64 && !videoUrl ? 'rendering' : undefined;
   if (!videoUrl && !renderStatus) {
     return null;
   }
   return {
-    title: readString(payload.title) || '教学短视频',
+    title: readPayloadString(payload, 'title') || '教学短视频',
     videoUrl,
-    thumbnailUrl: readString(payload.thumbnailUrl) || readString(payload.thumbnailPath) || undefined,
-    duration: readNumber(payload.durationSeconds),
-    style: readVideoStyle(payload.videoStyle),
-    knowledgePoint: readString(payload.knowledgePoint) || readString(payload.topic) || undefined,
-    expiresHint: readString(payload.expiresAt) || undefined,
-    fileName: readString(payload.fileName) || undefined,
+    thumbnailUrl: readPayloadString(payload, 'thumbnailUrl', 'thumbnail_url')
+      || readPayloadString(payload, 'thumbnailPath', 'thumbnail_path')
+      || undefined,
+    duration: readPayloadNumber(payload, 'durationSeconds', 'duration_seconds'),
+    style: readVideoStyle(readPayloadString(payload, 'videoStyle', 'video_style')),
+    knowledgePoint: readPayloadString(payload, 'knowledgePoint', 'knowledge_point')
+      || readPayloadString(payload, 'topic')
+      || undefined,
+    expiresHint: readPayloadString(payload, 'expiresAt', 'expires_at') || undefined,
+    fileName: readPayloadString(payload, 'fileName', 'file_name') || undefined,
     renderStatus,
-    renderMessage: renderStatus ? '视频素材已生成，正在浏览器本地渲染' : undefined,
-    audioBase64: readString(payload.audioBase64) || undefined,
-    audioFormat: readString(payload.format) || readString(payload.audioFormat) || undefined,
-    avatarDataUrl: readString(payload.avatarDataUrl) || undefined,
-    renderTaskId: readString(payload.renderTaskId) || readString(payload.taskId) || undefined,
+    renderMessage: renderStatus ? '视频素材已生成，正在生成视频' : undefined,
+    audioBase64: audioBase64 || undefined,
+    audioFormat: readPayloadString(payload, 'format') || readPayloadString(payload, 'audioFormat', 'audio_format') || undefined,
+    avatarDataUrl: readPayloadString(payload, 'avatarDataUrl', 'avatar_data_url') || undefined,
+    renderTaskId: readPayloadString(payload, 'renderTaskId', 'render_task_id')
+      || readPayloadString(payload, 'taskId', 'task_id')
+      || undefined,
   };
 }
 
@@ -527,8 +534,7 @@ function loadAllSessions(): Record<string, ResourceGenerationSession> {
           ...session,
           conversationTriggered: Boolean(session.conversationTriggered || session.resources?.length),
           resources: (session.resources ?? [])
-            .map(normalizeStoredResource)
-            .filter((resource) => !isPendingSlideOutlineResource(resource)),
+            .map(normalizeStoredResource),
         },
       ]),
     );
@@ -545,12 +551,6 @@ function normalizeStoredResource(resource: ResourceGenerationResource): Resource
     return { ...resource, status: 'ready' };
   }
   return { ...resource, status: 'generating' };
-}
-
-function isPendingSlideOutlineResource(resource: ResourceGenerationResource): boolean {
-  return resource.type === 'SLIDES'
-    && resource.status === 'waiting_confirmation'
-    && Boolean(resource.slideOutline?.trim());
 }
 
 function saveAllSessions(sessions: Record<string, ResourceGenerationSession>): void {
@@ -613,7 +613,7 @@ function videoProgressText(eventName: string): string {
     'video_gen:start': '短视频任务已启动',
     'video_gen:script': '短视频脚本已生成',
     'video_gen:speech': '短视频语音已生成',
-    'video_gen:avatar': '短视频正在本地渲染',
+    'video_gen:avatar': '短视频正在生成',
     'video_gen:complete': '短视频素材已就绪',
   }[eventName] ?? '短视频生成中';
 }
@@ -655,6 +655,16 @@ function readString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readPayloadString(payload: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = readString(payload[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return '';
+}
+
 function readNumber(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -662,6 +672,16 @@ function readNumber(value: unknown): number | undefined {
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function readPayloadNumber(payload: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = readNumber(payload[key]);
+    if (value !== undefined) {
+      return value;
+    }
   }
   return undefined;
 }

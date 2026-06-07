@@ -21,6 +21,7 @@ import {
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import MermaidDiagram from '../components/MermaidDiagram';
 import VideoCard from '../components/VideoCard';
+import { downloadAuthenticatedFile, isInternalArtifactDownloadUrl } from '../utils/authenticatedDownload';
 import { renderTalkingVideoInBrowser } from '../utils/browserVideoRenderer';
 import { ACTIVE_CONVERSATION_ID_STORAGE_KEY } from './LearningStudioDemoPage.model';
 import type { InlineResourceView } from './LearningStudioDemoPage.types';
@@ -43,19 +44,19 @@ import {
 const RESOURCE_TYPES: GeneratedResourceType[] = ['DOCUMENT', 'SLIDES', 'MINDMAP', 'QUIZ', 'VIDEO', 'CODE'];
 
 const RESOURCE_META: Record<GeneratedResourceType, { icon: ComponentType<{ className?: string }>; accent: string }> = {
-  DOCUMENT: { icon: FileText, accent: 'bg-sky-50 text-sky-700 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20' },
-  SLIDES: { icon: Presentation, accent: 'bg-indigo-50 text-indigo-700 ring-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20' },
-  MINDMAP: { icon: Network, accent: 'bg-teal-50 text-teal-700 ring-teal-100 dark:bg-teal-500/10 dark:text-teal-300 dark:ring-teal-500/20' },
-  QUIZ: { icon: ListChecks, accent: 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20' },
-  READING: { icon: BookOpen, accent: 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20' },
-  VIDEO: { icon: Film, accent: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20' },
-  CODE: { icon: Code2, accent: 'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-700/60 dark:text-slate-200 dark:ring-slate-600' },
+  DOCUMENT: { icon: FileText, accent: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300' },
+  SLIDES: { icon: Presentation, accent: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' },
+  MINDMAP: { icon: Network, accent: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300' },
+  QUIZ: { icon: ListChecks, accent: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' },
+  READING: { icon: BookOpen, accent: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' },
+  VIDEO: { icon: Film, accent: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300' },
+  CODE: { icon: Code2, accent: 'bg-slate-100 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200' },
 };
 
 const AGENT_STEPS = [
   { label: '需求识别', description: '解析对话中的资源目标' },
-  { label: '资源编排', description: '拆分文档、PPT、练习与媒体任务' },
-  { label: '内容生成', description: '多智能体并行产出学习资源' },
+  { label: '资源规划', description: '规划文档、PPT、练习与视频资源' },
+  { label: '内容生成', description: '并行产出学习资源' },
   { label: '结果收束', description: '汇总下载、预览与练习入口' },
 ];
 
@@ -135,7 +136,7 @@ export default function MultiAgentResourceGenerationPage() {
               resource.id,
               {
                 renderStatus: 'rendering',
-                renderMessage: message || '浏览器本地渲染中',
+                renderMessage: message || '视频生成中',
               },
               message,
             );
@@ -151,19 +152,19 @@ export default function MultiAgentResourceGenerationPage() {
             duration: result.duration ?? video.duration,
             fileName: result.fileName || video.fileName || `${video.title || resource.title}.webm`,
             renderStatus: 'ready',
-            renderMessage: '视频已完成本地渲染，可播放或下载',
+            renderMessage: '视频生成完成，可播放或下载',
           },
-          '视频已完成本地渲染',
+          '视频生成完成',
         );
-      }).catch((error: unknown) => {
+      }).catch(() => {
         updateResourceVideoRenderResult(
           session.conversationId,
           resource.id,
           {
             renderStatus: 'failed',
-            renderMessage: error instanceof Error && error.message ? error.message : '浏览器本地渲染失败',
+            renderMessage: '请重新生成视频后再试',
           },
-          '视频本地渲染失败',
+          '视频生成失败',
         );
       }).finally(() => {
         setRenderingVideoIds((current) => {
@@ -188,7 +189,7 @@ export default function MultiAgentResourceGenerationPage() {
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
-      <section className="overflow-hidden rounded-[28px] bg-white/72 shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70 dark:shadow-slate-950/20">
+      <section className="overflow-hidden rounded-[28px] bg-white/76 shadow-[0_18px_56px_rgba(59,97,155,0.09)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20">
         <div className="grid gap-5 px-5 py-5 md:grid-cols-[minmax(0,1fr)_280px] md:px-7">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
@@ -197,20 +198,15 @@ export default function MultiAgentResourceGenerationPage() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
-                  多智能体协同资源生成
+                  学习资源工作台
                 </h1>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  当前会话触发的文档、PPT、思维导图、练习题、短视频和代码案例总览
-                </p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">集中查看对话中生成的学习资源</p>
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-semibold ring-1 ${statusTone.className}`}>
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-semibold ${statusTone.className}`}>
                 {statusTone.icon}
                 {statusTone.label}
-              </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 dark:bg-slate-800">
-                会话 {conversationId ? conversationId.slice(0, 8) : '未开始'}
               </span>
               {session.topic ? (
                 <span className="max-w-full truncate rounded-full bg-primary-50 px-3 py-1.5 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
@@ -219,7 +215,7 @@ export default function MultiAgentResourceGenerationPage() {
               ) : null}
             </div>
           </div>
-          <div className="rounded-2xl bg-blue-50/70 p-4 ring-1 ring-blue-100/80 dark:bg-slate-950/40 dark:ring-slate-800/80">
+          <div className="rounded-2xl bg-blue-50/58 p-4 dark:bg-slate-950/34">
             <div className="flex items-center justify-between text-sm">
               <span className="font-semibold text-slate-700 dark:text-slate-200">总进度</span>
               <span className="font-bold text-primary-600 dark:text-primary-300">{session.progress}%</span>
@@ -256,7 +252,7 @@ export default function MultiAgentResourceGenerationPage() {
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">资源列表</h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              已记录 {completedCount} 个资源状态；生成过程中会自动刷新
+              已生成 {completedCount} 个资源，生成过程中会自动刷新
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -283,7 +279,7 @@ export default function MultiAgentResourceGenerationPage() {
           )}
 
           {session.taskStatus === 'completed' || session.taskStatus === 'partial_failed' ? (
-            <div className="mt-5 rounded-2xl bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 ring-1 ring-emerald-100/80 dark:bg-emerald-500/10 dark:text-emerald-200 dark:ring-emerald-500/20">
+            <div className="mt-5 rounded-2xl bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
               <div className="flex items-start gap-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
@@ -315,12 +311,12 @@ function AgentStepCard({
 }) {
   const active = activeIndex === index;
   return (
-    <div className={`rounded-2xl p-4 ring-1 transition-all ${
+    <div className={`rounded-2xl p-4 transition-all ${
       active
-        ? 'bg-primary-50/80 shadow-sm shadow-primary-100 ring-primary-200 dark:bg-primary-500/10 dark:shadow-none dark:ring-primary-500/30'
+        ? 'bg-primary-50/80 shadow-sm shadow-primary-100 dark:bg-primary-500/10 dark:shadow-none'
         : completed
-          ? 'bg-emerald-50/50 ring-emerald-100 dark:bg-emerald-500/10 dark:ring-emerald-500/20'
-          : 'bg-slate-50/70 ring-slate-200/80 dark:bg-slate-950/35 dark:ring-slate-800'
+          ? 'bg-emerald-50/50 dark:bg-emerald-500/10'
+          : 'bg-slate-50/62 dark:bg-slate-950/35'
     }`}
     >
       <div className="flex items-center gap-3">
@@ -329,7 +325,7 @@ function AgentStepCard({
             ? 'bg-emerald-500 text-white'
             : active
               ? 'bg-primary-600 text-white'
-              : 'bg-white text-slate-400 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700'
+              : 'bg-white text-slate-400 dark:bg-slate-900'
         }`}
         >
           {completed ? <CheckCircle2 className="h-4 w-4" /> : active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
@@ -349,10 +345,10 @@ function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
   const downloadable = Boolean(resource.download);
   const statusMeta = getResourceStatusMeta(resource);
   return (
-    <article className="flex min-h-[260px] flex-col rounded-2xl bg-white/88 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-blue-100/80 transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-100/45 dark:bg-slate-950/35 dark:ring-slate-800 dark:shadow-none">
+    <article className="flex min-h-[260px] flex-col rounded-2xl bg-white/82 p-4 shadow-sm shadow-blue-100/24 transition hover:-translate-y-0.5 hover:bg-white/92 hover:shadow-lg hover:shadow-blue-100/36 dark:bg-slate-950/35 dark:shadow-none">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ring-1 ${meta.accent}`}>
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${meta.accent}`}>
             <Icon className="h-5 w-5" />
           </div>
           <div className="min-w-0">
@@ -361,7 +357,7 @@ function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                 {resourceLabel(resource.type)}
               </span>
-              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusMeta.className}`}>
+              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}>
                 {statusMeta.icon}
                 {statusMeta.label}
               </span>
@@ -378,17 +374,15 @@ function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
         {renderResourcePreview(resource)}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 pt-3 text-xs text-slate-400 shadow-[inset_0_1px_0_rgba(226,232,240,0.72)] dark:text-slate-500 dark:shadow-[inset_0_1px_0_rgba(30,41,59,0.82)]">
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-slate-50/58 px-3 py-2 text-xs text-slate-500 dark:bg-slate-900/42 dark:text-slate-400">
         <span>{new Date(resource.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 更新</span>
-        <span className="truncate">
-          {resource.sourceAgent ? `来源：${resource.sourceAgent}` : resource.statusText || downloadUnavailableReason(resource)}
-        </span>
+        <span className="truncate">{resourceSubtitle(resource)}</span>
       </div>
       <div className="mt-3">
         {downloadable ? (
           <ResourceDownloadButton resource={resource} />
         ) : (
-          <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:ring-slate-800">
+          <div className="rounded-xl bg-slate-50/72 px-3 py-2 text-xs text-slate-500 dark:bg-slate-900/58 dark:text-slate-400">
             {downloadUnavailableReason(resource)}
           </div>
         )}
@@ -404,23 +398,44 @@ function ResourceDownloadButton({
   resource: ResourceGenerationResource;
   iconOnly?: boolean;
 }) {
-  if (resource.download) {
+  const [downloading, setDownloading] = useState(false);
+
+  const download = resource.download;
+  if (download) {
+    const internalDownload = isInternalArtifactDownloadUrl(download.url);
+    const handleDownload = async () => {
+      if (downloading) {
+        return;
+      }
+      setDownloading(true);
+      try {
+        await downloadAuthenticatedFile({
+          url: download.url,
+          fileName: download.fileName,
+          title: resource.title,
+        });
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : '下载失败，请稍后重试');
+      } finally {
+        setDownloading(false);
+      }
+    };
+
     return (
-      <a
-        href={resource.download.url}
-        target="_blank"
-        rel="noreferrer"
-        download={resource.download.fileName}
+      <button
+        type="button"
+        onClick={() => { void handleDownload(); }}
+        disabled={downloading}
         className={iconOnly
-          ? 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-primary-600 ring-1 ring-blue-100 transition hover:bg-primary-50 dark:text-primary-300 dark:ring-slate-700 dark:hover:bg-primary-500/10'
-          : 'inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-primary-50 px-3 text-sm font-semibold text-primary-700 ring-1 ring-blue-100 transition hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-500/20 dark:hover:bg-primary-500/20'}
+          ? 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-primary-600 transition hover:bg-primary-50 disabled:cursor-wait disabled:opacity-60 dark:text-primary-300 dark:hover:bg-primary-500/10'
+          : 'inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-primary-50 px-3 text-sm font-semibold text-primary-700 transition hover:bg-primary-100 disabled:cursor-wait disabled:opacity-60 dark:bg-primary-500/10 dark:text-primary-200 dark:hover:bg-primary-500/20'}
         aria-label={`下载${resource.title}`}
         title={`下载${resource.title}`}
       >
-        <Download className="h-4 w-4" />
+        {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
         {iconOnly ? null : '下载资源'}
-        {iconOnly ? null : <ExternalLink className="h-3.5 w-3.5" />}
-      </a>
+        {iconOnly || internalDownload ? null : <ExternalLink className="h-3.5 w-3.5" />}
+      </button>
     );
   }
 
@@ -439,18 +454,18 @@ function renderResourcePreview(resource: ResourceGenerationResource) {
   }
   if (resource.download) {
     return (
-      <div className="flex h-full min-h-[150px] items-center justify-center rounded-2xl bg-blue-50/40 px-4 text-center ring-1 ring-blue-100/70 dark:bg-slate-900/40 dark:ring-slate-700/70">
+      <div className="flex h-full min-h-[150px] items-center justify-center rounded-2xl bg-blue-50/40 px-4 text-center dark:bg-slate-900/40">
         <div>
           <FileText className="mx-auto h-8 w-8 text-primary-500" />
           <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{resource.download.fileName || resource.title}</p>
-          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{resource.download.expiresHint}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">文件已准备好，可直接下载</p>
         </div>
       </div>
     );
   }
   return (
     <div className="flex h-full min-h-[150px] items-center justify-center rounded-2xl bg-slate-50 px-4 text-sm text-slate-500 dark:bg-slate-900/60 dark:text-slate-400">
-      {resource.statusText || '资源信息已接收，等待内容明细同步'}
+      {resource.statusText || '资源正在整理，完成后会自动更新'}
     </div>
   );
 }
@@ -462,8 +477,8 @@ function InlinePreview({ inline }: { inline: InlineResourceView }) {
   if (inline.kind === 'code') {
     const language = inline.language || 'text';
     return (
-      <div className="overflow-hidden rounded-2xl bg-slate-950 ring-1 ring-slate-200/70 dark:ring-slate-700/70">
-        <div className="flex items-center justify-between px-4 py-2 text-xs text-slate-300 shadow-[inset_0_-1px_0_rgba(255,255,255,0.10)]">
+      <div className="overflow-hidden rounded-2xl bg-slate-950 shadow-sm shadow-slate-900/18 dark:shadow-slate-950/40">
+        <div className="flex items-center justify-between bg-white/5 px-4 py-2 text-xs text-slate-300">
           <span>{language}</span>
           <Code2 className="h-3.5 w-3.5" />
         </div>
@@ -471,7 +486,7 @@ function InlinePreview({ inline }: { inline: InlineResourceView }) {
           <code>{inline.content}</code>
         </pre>
         {inline.explanation ? (
-          <div className="bg-slate-900 px-4 py-3 text-xs leading-5 text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.10)]">
+          <div className="mx-3 mb-3 rounded-xl bg-white/6 px-3 py-2.5 text-xs leading-5 text-slate-300">
             {inline.explanation}
           </div>
         ) : null}
@@ -479,7 +494,7 @@ function InlinePreview({ inline }: { inline: InlineResourceView }) {
     );
   }
   return (
-    <div className="max-h-[340px] overflow-auto rounded-2xl bg-slate-50/70 p-4 ring-1 ring-slate-200/70 dark:bg-slate-900/50 dark:ring-slate-800/70">
+    <div className="max-h-[340px] overflow-auto rounded-2xl bg-slate-50/64 p-4 dark:bg-slate-900/50">
       <MarkdownRenderer content={inline.content} />
     </div>
   );
@@ -489,7 +504,7 @@ function QuizPreview({ batch }: { batch: ResourceGenerationQuizSummary }) {
   const [hasPracticeSession, setHasPracticeSession] = useState(() => Boolean(getPracticeSessionState().batch));
   useEffect(() => subscribePracticeSession((state) => setHasPracticeSession(Boolean(state.batch))), []);
   return (
-    <div className="rounded-2xl bg-amber-50/50 p-4 ring-1 ring-amber-100/80 dark:bg-amber-500/10 dark:ring-amber-500/20">
+    <div className="rounded-2xl bg-amber-50/50 p-4 dark:bg-amber-500/10">
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white">
           <ListChecks className="h-5 w-5" />
@@ -545,18 +560,18 @@ function FilterButton({
 
 function EmptyState({ selectedType, conversationId }: { selectedType: ResourceFilter; conversationId: string }) {
   return (
-    <div className="flex min-h-[260px] items-center justify-center rounded-2xl bg-blue-50/40 px-5 py-10 text-center ring-1 ring-blue-100/70 dark:bg-slate-950/35 dark:ring-slate-700/70">
+    <div className="flex min-h-[260px] items-center justify-center rounded-2xl bg-blue-50/40 px-5 py-10 text-center dark:bg-slate-950/35">
       <div className="max-w-[520px]">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-primary-600 shadow-sm dark:bg-slate-900 dark:text-primary-300">
           <MessageSquareText className="h-6 w-6" />
         </div>
         <h3 className="mt-4 text-base font-bold text-slate-900 dark:text-white">
-          {selectedType === 'ALL' ? '暂无会话资源' : `暂无${resourceLabel(selectedType)}资源`}
+          {selectedType === 'ALL' ? '暂无学习资源' : `暂无${resourceLabel(selectedType)}资源`}
         </h3>
         <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
           {conversationId
-            ? '在当前对话中直接表达“生成一套学习资源”“做一个 PPT”或“出几道练习题”，这里会自动显示协同生成进度和结果。'
-            : '先进入新对话并提出资源生成需求，总览页会同步展示当前会话的生成状态。'}
+            ? '在当前对话中直接表达“生成一套学习资源”“做一个 PPT”或“出几道练习题”，这里会自动展示进度和结果。'
+            : '先进入新对话并提出资源生成需求，这里会自动展示可预览和可下载的学习资源。'}
         </p>
       </div>
     </div>
@@ -574,34 +589,34 @@ function getStatusTone(status: ResourceGenerationSession['taskStatus']) {
   if (status === 'running') {
     return {
       label: '协同生成中',
-      className: 'bg-primary-50 text-primary-700 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20',
+      className: 'bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300',
       icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
     };
   }
   if (status === 'waiting_confirmation') {
     return {
       label: '等待确认',
-      className: 'bg-indigo-50 text-indigo-700 ring-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20',
+      className: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
       icon: <TimerReset className="h-3.5 w-3.5" />,
     };
   }
   if (status === 'completed') {
     return {
       label: '已完成',
-      className: 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20',
+      className: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
       icon: <CheckCircle2 className="h-3.5 w-3.5" />,
     };
   }
   if (status === 'failed' || status === 'partial_failed') {
     return {
       label: status === 'failed' ? '生成失败' : '部分完成',
-      className: 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20',
+      className: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',
       icon: <AlertTriangle className="h-3.5 w-3.5" />,
     };
   }
   return {
     label: '等待对话触发',
-    className: 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
+    className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
     icon: <Sparkles className="h-3.5 w-3.5" />,
   };
 }
@@ -636,36 +651,52 @@ function getResourceStatusMeta(resource: ResourceGenerationResource) {
   if (resource.status === 'ready') {
     return {
       label: '已就绪',
-      className: 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20',
+      className: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
       icon: <CheckCircle2 className="h-3.5 w-3.5" />,
     };
   }
   if (resource.status === 'waiting_confirmation') {
     return {
       label: '等待确认',
-      className: 'bg-indigo-50 text-indigo-700 ring-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20',
+      className: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
       icon: <TimerReset className="h-3.5 w-3.5" />,
     };
   }
   if (resource.status === 'failed') {
     return {
       label: '失败',
-      className: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20',
+      className: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
       icon: <AlertTriangle className="h-3.5 w-3.5" />,
     };
   }
   if (resource.status === 'not_confirmed') {
     return {
       label: '未生成',
-      className: 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700',
+      className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
       icon: <AlertTriangle className="h-3.5 w-3.5" />,
     };
   }
   return {
     label: '生成中',
-    className: 'bg-primary-50 text-primary-700 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20',
+    className: 'bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300',
     icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
   };
+}
+
+function resourceSubtitle(resource: ResourceGenerationResource): string {
+  if (resource.status === 'ready') {
+    return resource.download ? '可下载' : '可在线预览';
+  }
+  if (resource.status === 'waiting_confirmation') {
+    return '等待确认后继续生成';
+  }
+  if (resource.status === 'not_confirmed') {
+    return '已跳过生成';
+  }
+  if (resource.status === 'failed') {
+    return '需要重新生成';
+  }
+  return '正在生成';
 }
 
 function estimateRemainingTime(session: ResourceGenerationSession): string {
@@ -676,35 +707,35 @@ function estimateRemainingTime(session: ResourceGenerationSession): string {
     return '已完成。';
   }
   if (session.taskStatus === 'failed') {
-    return '已停止，查看资源卡状态原因。';
+    return '已停止，可重新发起生成。';
   }
   if (session.taskStatus === 'waiting_confirmation') {
     return '等待你在对话中确认 PPT 大纲。';
   }
-  return session.progress > 0 ? '等待后续生成事件更新。' : '等待后端确认生成进度。';
+  return session.progress > 0 ? '正在整理生成进度。' : '等待开始生成。';
 }
 
 function downloadUnavailableReason(resource: ResourceGenerationResource): string {
   if (resource.status === 'waiting_confirmation') {
-    return 'PPT 大纲已生成，确认前不生成演示文稿文件。';
+    return 'PPT 大纲待确认，确认后再生成文件。';
   }
   if (resource.status === 'not_confirmed') {
-    return '未确认，未生成 PPT 文件。';
+    return '已跳过 PPT 文件生成。';
   }
   if (resource.status === 'failed') {
-    return resource.failureReason || resource.statusText || '资源生成失败，未产生可下载文件。';
+    return '资源生成失败，可在对话中重新生成。';
   }
   if (resource.quiz) {
     return '练习题已进入答题弹窗，当前不提供文件下载。';
   }
   if (resource.video?.renderStatus === 'rendering') {
-    return resource.video.renderMessage || '视频正在本地渲染，完成后可播放或下载。';
+    return resource.video.renderMessage || '视频正在生成，完成后可播放或下载。';
   }
   if (resource.video?.renderStatus === 'failed') {
-    return resource.video.renderMessage || '视频生成失败，未产生可下载文件。';
+    return resource.video.renderMessage || '视频生成失败，请重新生成后再试。';
   }
   if (resource.status === 'generating') {
-    return resource.statusText || '生成中，等待后续事件同步。';
+    return resource.statusText || '正在生成，完成后会自动更新。';
   }
-  return resource.inline ? '后端未签发文件，仅提供在线预览。' : '后端未签发文件，等待后续事件同步。';
+  return resource.inline ? '当前内容可在线预览。' : '资源正在整理，完成后会自动更新。';
 }

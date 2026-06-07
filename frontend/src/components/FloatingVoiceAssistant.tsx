@@ -18,6 +18,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { conversationApi, type ConversationStreamEvent } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
 import { voiceApi, type VoicePageContext, type VoiceRealtimeEvent } from '../api/voice';
+import MarkdownRenderer from './MarkdownRenderer';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
   ENGINE_TASK_STORAGE_KEY,
@@ -106,7 +107,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, voiceUserId, o
   const voiceStateRef = useRef<VoiceState>('idle');
   const panelRef = useRef<HTMLElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const answerRef = useRef<HTMLParagraphElement | null>(null);
+  const answerRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<VoiceAssistantDragState | null>(null);
   const suppressFabClickRef = useRef(false);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -321,7 +322,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, voiceUserId, o
       });
       const audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
       if (!audioContext.audioWorklet) {
-        throw new Error('当前浏览器不支持实时语音采集，请使用新版 Chrome 或 Edge');
+        throw new Error('当前设备暂时无法进行实时语音，请检查麦克风权限或稍后再试。');
       }
       await audioContext.audioWorklet.addModule(VOICE_WORKLET_PATH);
       const source = audioContext.createMediaStreamSource(stream);
@@ -743,7 +744,9 @@ export default function FloatingVoiceAssistant({ isAuthenticated, voiceUserId, o
               {assistantText ? (
                 <div className="voice-assistant-answer">
                   <span>回答</span>
-                  <p ref={answerRef}>{assistantText}</p>
+                  <div ref={answerRef} className="voice-assistant-answer-content">
+                    <MarkdownRenderer content={assistantText} isStreaming={voiceState === 'chatting'} />
+                  </div>
                 </div>
               ) : null}
 

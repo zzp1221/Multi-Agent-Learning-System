@@ -70,11 +70,10 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
           }));
           setError('');
         }
-      } catch (renderError) {
+      } catch {
         if (!cancelled) {
           setSvg('');
-          const message = renderError instanceof Error ? renderError.message : 'Mermaid render failed';
-          setError(`Mermaid render failed: ${message}`);
+          setError('图表暂时无法生成，请检查内容后重试。');
         }
       }
     }
@@ -87,7 +86,7 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
 
   if (error) {
     return (
-      <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700 ring-1 ring-amber-200/80 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-800/70">
+      <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-700 shadow-sm shadow-amber-100/70 dark:bg-amber-500/10 dark:text-amber-300 dark:shadow-none">
         {error}
       </div>
     );
@@ -95,8 +94,8 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
 
   if (!svg) {
     return (
-      <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500 ring-1 ring-slate-200/80 dark:bg-slate-900/50 dark:text-slate-400 dark:ring-slate-700/70">
-        Rendering diagram...
+      <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500 shadow-sm shadow-slate-200/60 dark:bg-slate-900/50 dark:text-slate-400 dark:shadow-none">
+        正在生成图表...
       </div>
     );
   }
@@ -129,7 +128,7 @@ export default function MermaidDiagram({ chart }: MermaidDiagramProps) {
         }
       `}</style>
       <div
-        className="mermaid-diagram overflow-x-auto rounded-xl bg-white/90 p-4 text-slate-800 ring-1 ring-slate-200/80 dark:bg-slate-950/86 dark:text-slate-100 dark:ring-slate-700/70"
+        className="mermaid-diagram overflow-x-auto rounded-xl bg-white/90 p-4 text-slate-800 shadow-sm shadow-slate-200/60 dark:bg-slate-950/86 dark:text-slate-100 dark:shadow-none"
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     </>

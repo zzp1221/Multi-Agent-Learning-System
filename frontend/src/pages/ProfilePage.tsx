@@ -99,7 +99,7 @@ export default function ProfilePage() {
         <ProfileAccessState
           icon={<Lock className="h-6 w-6" />}
           title="登录后查看学习画像"
-          description="学习画像只读取你的真实学习记录和画像快照。"
+          description="登录后查看你的学习节奏、能力维度和重点关注内容。"
           actionLabel="去登录"
           onAction={() => openAuthModal('login', '登录后查看学习画像')}
         />
@@ -110,9 +110,9 @@ export default function ProfilePage() {
   if (loading && !profile) {
     return (
       <ProfileShell>
-        <div className="flex min-h-[420px] items-center justify-center rounded-[24px] bg-white/64 text-sm text-slate-500 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 dark:bg-slate-900/60 dark:text-slate-400 dark:ring-slate-800/70">
+        <div className="flex min-h-[420px] items-center justify-center rounded-[24px] bg-white/64 text-sm text-slate-500 shadow-[0_14px_40px_rgba(59,97,155,0.08)] backdrop-blur dark:bg-slate-900/60 dark:text-slate-400 dark:shadow-slate-950/20">
           <LoaderCircle className="mr-2 h-4 w-4 animate-spin text-primary-500" />
-          正在读取真实画像数据
+          正在整理学习画像
         </div>
       </ProfileShell>
     );
@@ -141,7 +141,7 @@ export default function ProfilePage() {
         <ProfileAccessState
           icon={<UserRoundSearch className="h-6 w-6" />}
           title="暂无学习画像"
-          description="完成对话、练习或学习服务后，系统会基于真实记录生成画像。"
+          description="完成对话、练习或学习服务后，系统会逐步补全画像。"
           actionLabel="刷新画像"
           onAction={() => {
             void loadProfile();
@@ -155,7 +155,7 @@ export default function ProfilePage() {
   return (
     <ProfileShell>
       <div className="space-y-5">
-        <header className="rounded-[28px] bg-white/72 px-5 py-5 shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70 dark:shadow-slate-950/20 md:px-6">
+        <header className="rounded-[28px] bg-white/72 px-5 py-5 shadow-[0_18px_56px_rgba(59,97,155,0.10)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20 md:px-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
@@ -166,7 +166,7 @@ export default function ProfilePage() {
                 {displayName}，这是你的学习信号面板
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                页面已收敛为行为趋势、画像维度和关键薄弱点 Top3，便于快速判断当前学习状态。
+                这里汇总近期学习趋势、能力维度和最需要关注的薄弱点，便于快速判断当前学习状态。
               </p>
             </div>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center md:flex-col md:items-end">
@@ -176,7 +176,7 @@ export default function ProfilePage() {
                   void loadProfile();
                   void loadAnalytics();
                 }}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm shadow-primary-500/20 transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm shadow-primary-500/20 outline-none transition-all hover:bg-primary-700 focus-visible:shadow-[0_10px_24px_rgba(59,130,246,0.24)] disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:shadow-[0_10px_24px_rgba(37,99,235,0.24)]"
                 disabled={loading || analyticsLoading}
               >
                 {loading || analyticsLoading ? (
@@ -230,7 +230,7 @@ function PanelShell({
   return (
     <section
       id={id}
-      className={`rounded-[24px] bg-white/66 p-5 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/62 dark:ring-slate-800/70 md:p-6 ${className}`}
+      className={`rounded-[24px] bg-white/66 p-5 shadow-[0_14px_40px_rgba(59,97,155,0.08)] backdrop-blur dark:bg-slate-900/62 dark:shadow-slate-950/20 md:p-6 ${className}`}
     >
       {children}
     </section>
@@ -269,11 +269,11 @@ function BehaviorTrendPanel(props: {
         <SectionTitle
           icon={<LineChart className="h-5 w-5" />}
           title="学习行为趋势"
-          subtitle="展示近 30 天真实行为聚合，聚焦对话、任务、练习和复盘。"
+          subtitle="展示近 30 天学习节奏，聚焦对话、服务、练习和复盘。"
         />
         <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[420px]">
           <TrendMetric label="活跃天数" value={`${props.summary.activeDays}天`} />
-          <TrendMetric label="学习行为" value={`${props.summary.totalActivity}次`} />
+          <TrendMetric label="学习互动" value={`${props.summary.totalActivity}次`} />
           <TrendMetric label="练习正确率" value={formatAccuracy(props.summary.practiceAccuracy)} />
         </div>
       </div>
@@ -282,7 +282,7 @@ function BehaviorTrendPanel(props: {
         {props.loading ? (
           <AnalyticsStateMessage text="正在读取行为趋势" />
         ) : props.error ? (
-          <div className="rounded-2xl bg-red-50/80 p-4 text-sm text-red-700 shadow-sm shadow-red-100/70 ring-1 ring-red-100 dark:bg-red-950/30 dark:text-red-200 dark:shadow-red-950/20 dark:ring-red-900/40">
+          <div className="rounded-2xl bg-red-50/80 p-4 text-sm text-red-700 shadow-sm shadow-red-100/70 dark:bg-red-950/30 dark:text-red-200 dark:shadow-red-950/20">
             <div>{props.error}</div>
             <button
               type="button"
@@ -306,10 +306,10 @@ function BehaviorTrendPanel(props: {
                         className="w-full rounded-t-lg bg-primary-500 transition-[height,background-color] duration-200 group-hover:bg-primary-600"
                         style={{ height }}
                       />
-                      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden w-40 -translate-x-1/2 rounded-xl bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-lg shadow-slate-200/80 ring-1 ring-slate-200/80 backdrop-blur group-hover:block dark:bg-slate-900/95 dark:text-slate-300 dark:shadow-slate-950/40 dark:ring-slate-700/80">
+                      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden w-40 -translate-x-1/2 rounded-xl bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-lg shadow-slate-200/80 backdrop-blur group-hover:block dark:bg-slate-900/95 dark:text-slate-300 dark:shadow-slate-950/40">
                         <div className="font-semibold text-slate-900 dark:text-white">{label}</div>
-                        <div className="mt-1">行为总数：{activity}</div>
-                        <div>对话：{point.conversationCount}，任务：{point.serviceTaskCount}</div>
+                        <div className="mt-1">当天互动：{activity}</div>
+                        <div>对话：{point.conversationCount}，服务：{point.serviceTaskCount}</div>
                         <div>练习：{point.practiceSubmissionCount}，复盘：{point.reviewCount}</div>
                       </div>
                     </div>
@@ -320,14 +320,14 @@ function BehaviorTrendPanel(props: {
             </div>
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
               <BehaviorSignal label="对话" value={props.summary.conversationCount} color="bg-primary-500" />
-              <BehaviorSignal label="学习任务" value={props.summary.serviceTaskCount} color="bg-cyan-500" />
+              <BehaviorSignal label="学习服务" value={props.summary.serviceTaskCount} color="bg-cyan-500" />
               <BehaviorSignal label="练习提交" value={props.summary.practiceSubmissionCount} color="bg-emerald-500" />
               <BehaviorSignal label="新增错题" value={props.summary.newMistakeCount} color="bg-amber-500" />
               <BehaviorSignal label="复盘" value={props.summary.reviewCount} color="bg-slate-500" />
             </div>
           </div>
         ) : (
-          <EmptyInline text={props.analytics ? `近 ${props.analytics.days} 天暂无真实行为记录。` : '暂无行为趋势数据。'} />
+          <EmptyInline text={props.analytics ? `近 ${props.analytics.days} 天暂无学习记录。` : '暂无行为趋势数据。'} />
         )}
       </div>
     </PanelShell>
@@ -343,7 +343,7 @@ function DimensionPanel({ profile }: { profile: ProfileSnapshot }) {
       <SectionTitle
         icon={<Target className="h-5 w-5" />}
         title="画像维度可视化"
-        subtitle="分数由当前画像字段推断，用于快速观察掌握、目标、习惯与适配状态。"
+        subtitle="综合当前画像记录，快速观察掌握、目标、习惯与适配状态。"
       />
 
       {hasScores ? (
@@ -406,7 +406,7 @@ function TrendMetric({ label, value }: { label: string; value: string }) {
 
 function BehaviorSignal({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="flex items-center justify-between rounded-2xl bg-white/72 px-3.5 py-3 ring-1 ring-slate-200/80 dark:bg-slate-950/30 dark:ring-slate-800">
+    <div className="flex items-center justify-between rounded-2xl bg-white/72 px-3.5 py-3 shadow-sm shadow-slate-200/50 dark:bg-slate-950/30 dark:shadow-none">
       <div className="flex min-w-0 items-center gap-2.5">
         <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
         <span className="truncate text-sm text-slate-600 dark:text-slate-300">{label}</span>
@@ -419,7 +419,7 @@ function BehaviorSignal({ label, value, color }: { label: string; value: number;
 function ScoreLine({ label, detail, score }: { label: string; detail: string; score: number }) {
   const normalizedScore = Math.max(0, Math.min(100, score));
   return (
-    <div className="rounded-2xl bg-white/62 p-4 ring-1 ring-slate-200/80 transition-colors hover:bg-primary-50/40 hover:ring-primary-200 dark:bg-slate-950/24 dark:ring-slate-800 dark:hover:bg-primary-500/5 dark:hover:ring-primary-900/60">
+    <div className="rounded-2xl bg-white/62 p-4 shadow-sm shadow-slate-200/45 transition-colors hover:bg-primary-50/45 dark:bg-slate-950/24 dark:shadow-none dark:hover:bg-primary-500/5">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</div>
@@ -439,20 +439,20 @@ function WeakPointCard({ item, rank }: { item: WeakPointRank; rank: number }) {
   const level = severity >= 80 ? '高优先级' : severity >= 60 ? '中优先级' : '待观察';
 
   return (
-    <article className="rounded-2xl bg-slate-50/70 p-4 ring-1 ring-slate-200/80 transition-colors hover:bg-amber-50/60 hover:ring-amber-200 dark:bg-slate-950/30 dark:ring-slate-800 dark:hover:bg-amber-500/5 dark:hover:ring-amber-900/60">
+    <article className="rounded-2xl bg-slate-50/70 p-4 shadow-sm shadow-slate-200/50 transition-colors hover:bg-amber-50/60 dark:bg-slate-950/30 dark:shadow-none dark:hover:bg-amber-500/5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-xs font-semibold text-amber-600 dark:text-amber-300">Top {rank}</div>
           <h3 className="mt-1 text-base font-semibold text-slate-950 dark:text-white">{item.topic}</h3>
         </div>
-        <div className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700">
+        <div className="shrink-0 rounded-full bg-white/86 px-3 py-1 text-xs font-medium text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
           {level}
         </div>
       </div>
 
       <div className="mt-4">
         <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-          <span>薄弱强度</span>
+          <span>关注强度</span>
           <span>{severity}%</span>
         </div>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-800">
@@ -463,10 +463,10 @@ function WeakPointCard({ item, rank }: { item: WeakPointRank; rank: number }) {
       <div className="mt-4 space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
         <p>{item.lastError || '等待更多练习或评估记录补充错因。'}</p>
         {item.errorPattern ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">错因模式：{item.errorPattern}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">可能原因：{item.errorPattern}</p>
         ) : null}
         {item.severityInferred ? (
-          <p className="text-xs text-slate-400 dark:text-slate-500">强度由薄弱点排序推断</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500">等待更多记录确认关注优先级</p>
         ) : null}
       </div>
     </article>
@@ -481,7 +481,7 @@ function ProfileAccessState(props: {
   onAction: () => void;
 }) {
   return (
-    <div className="flex min-h-[420px] items-center justify-center rounded-[28px] bg-white/72 p-6 text-center shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70">
+    <div className="flex min-h-[420px] items-center justify-center rounded-[28px] bg-white/72 p-6 text-center shadow-[0_18px_56px_rgba(59,97,155,0.10)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20">
       <div className="max-w-md">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
           {props.icon}
@@ -491,7 +491,7 @@ function ProfileAccessState(props: {
         <button
           type="button"
           onClick={props.onAction}
-          className="mt-5 inline-flex h-10 items-center justify-center rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm shadow-primary-500/20 transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+          className="mt-5 inline-flex h-10 items-center justify-center rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm shadow-primary-500/20 outline-none transition-all hover:bg-primary-700 focus-visible:shadow-[0_10px_24px_rgba(59,130,246,0.24)] dark:focus-visible:shadow-[0_10px_24px_rgba(37,99,235,0.24)]"
         >
           {props.actionLabel}
         </button>
@@ -511,7 +511,7 @@ function AnalyticsStateMessage({ text }: { text: string }) {
 
 function EmptyInline({ text }: { text: string }) {
   return (
-    <div className="flex min-h-[160px] items-center justify-center rounded-2xl bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 ring-1 ring-slate-200/80 dark:bg-slate-950/30 dark:text-slate-400 dark:ring-slate-800">
+    <div className="flex min-h-[160px] items-center justify-center rounded-2xl bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
       {text}
     </div>
   );

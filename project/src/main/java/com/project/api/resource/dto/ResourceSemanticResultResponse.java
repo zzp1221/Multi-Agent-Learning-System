@@ -8,6 +8,16 @@ public record ResourceSemanticResultResponse(
     ResourceItemResponse resource,
     double score,
     String reason,
-    List<ResourceSemanticHitResponse> hits
+    List<ResourceSemanticHitResponse> hits,
+    ResourceExternalCandidateResponse externalResource
 ) {
+    public ResourceSemanticResultResponse(
+        UUID resourceId,
+        ResourceItemResponse resource,
+        double score,
+        String reason,
+        List<ResourceSemanticHitResponse> hits
+    ) {
+        this(resourceId, resource, score, reason, hits, null);
+    }
 }

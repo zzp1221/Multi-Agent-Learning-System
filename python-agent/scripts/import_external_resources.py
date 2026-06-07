@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import html as html_lib
 import hashlib
 import json
 import os
@@ -25,7 +26,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable, Iterable
-from urllib.parse import urldefrag, urljoin
+from urllib.parse import quote_plus, urldefrag, urljoin
 
 import httpx
 
@@ -51,6 +52,12 @@ ALLOWED_RESOURCE_TYPES = {
 ALLOWED_DIFFICULTIES = {"BASIC", "INTERMEDIATE", "ADVANCED", "MIXED"}
 DEFAULT_SOURCE_FILE = Path(__file__).resolve().parent / "resource_sources" / "external_resource_sources.json"
 IMPORT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "zhixue-ai-resource-library")
+BILIBILI_SEARCH_URL = "https://api.bilibili.com/x/web-interface/search/type"
+YOUTUBE_SEARCH_URL = "https://www.youtube.com/results"
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/125.0 Safari/537.36 zhixue-resource-importer/1.0"
+)
 
 
 @dataclass(frozen=True)
@@ -68,6 +75,8 @@ class ResourceCandidate:
     tags: tuple[str, ...]
     quality_score: float
     popularity_score: float
+    summary: str | None = None
+    metadata_text: str | None = None
     cs_category: str = "GENERAL_CS"
     cs_subcategory: str = "General"
 
@@ -202,6 +211,51 @@ def _normalize_text(text: str) -> str:
     return "\n".join(compact_lines)
 
 
+def _clean_markup_text(text: Any) -> str:
+    without_tags = re.sub(r"<[^>]+>", "", str(text or ""))
+    return _normalize_text(html_lib.unescape(without_tags))
+
+
+def _split_tags(raw_tags: Any) -> list[str]:
+    if isinstance(raw_tags, list):
+        values = raw_tags
+    else:
+        values = re.split(r"[,，、;/\s]+", str(raw_tags or ""))
+    return [tag for tag in (_clean_markup_text(value) for value in values) if tag]
+
+
+def _bilibili_video_url(item: dict[str, Any]) -> str | None:
+    bvid = str(item.get("bvid") or "").strip()
+    if bvid:
+        return f"https://www.bilibili.com/video/{bvid}/"
+    arcurl = str(item.get("arcurl") or "").strip()
+    if arcurl.startswith("http://www.bilibili.com/video/") or arcurl.startswith("https://www.bilibili.com/video/"):
+        return arcurl.replace("http://", "https://", 1)
+    return None
+
+
+def _build_video_metadata_text(
+    *,
+    title: str,
+    summary: str,
+    tags: list[str],
+    cs_category: str,
+    cs_subcategory: str,
+    source_name: str,
+    url: str,
+) -> str:
+    lines = [
+        f"标题：{title}",
+        f"简介：{summary}" if summary else "",
+        f"标签：{'、'.join(tags)}" if tags else "",
+        f"CS方向：{cs_category}",
+        f"子方向：{cs_subcategory}" if cs_subcategory else "",
+        f"来源：{source_name}",
+        f"链接：{url}",
+    ]
+    return _normalize_text("\n".join(line for line in lines if line))
+
+
 def _unsupported_content_error(content_type: str, body: bytes) -> str:
     if b"\x00" in body:
         return "BINARY_CONTENT"
@@ -223,6 +277,28 @@ def parse_html_document(html: bytes | str, fallback_title: str | None = None) ->
     summary = text[:420]
     content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return ParsedDocument(title=title[:240], text=text, summary=summary, content_hash=content_hash)
+
+
+def parse_candidate_document(candidate: ResourceCandidate, html: bytes | str) -> ParsedDocument:
+    if candidate.metadata_text:
+        text = _normalize_text(candidate.metadata_text)
+        summary = _normalize_text(candidate.summary or text)[:420]
+        content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return ParsedDocument(
+            title=_normalize_text(candidate.title or "Untitled resource")[:240],
+            text=text,
+            summary=summary,
+            content_hash=content_hash,
+        )
+    parsed = parse_html_document(html, fallback_title=candidate.title)
+    if candidate.summary:
+        return ParsedDocument(
+            title=parsed.title,
+            text=parsed.text,
+            summary=_normalize_text(candidate.summary)[:420],
+            content_hash=parsed.content_hash,
+        )
+    return parsed
 
 
 def estimate_tokens(text: str) -> int:
@@ -248,6 +324,12 @@ def chunk_text(text: str, *, target_chars: int = 2600, overlap_chars: int = 320,
     if not chunks and len(text.strip()) >= min_chars:
         chunks.append(text.strip()[:target_chars])
     return chunks
+
+
+def chunk_candidate_text(candidate: ResourceCandidate, parsed: ParsedDocument) -> list[str]:
+    if candidate.metadata_text:
+        return chunk_text(parsed.text, target_chars=1200, overlap_chars=120, min_chars=40)
+    return chunk_text(parsed.text)
 
 
 def _strip_xml_namespace(tag: str) -> str:
@@ -334,18 +416,43 @@ def _candidate_from_source(
     resource = resource or {}
     source_tags = _source_value(source, defaults, "tags", [])
     default_tags = defaults.get("tags", [])
+    source_name = str(source.get("sourceName") or source["id"])
+    title = resource.get("title")
+    display_type = str(resource.get("displayType") or _source_value(source, defaults, "displayType", "DOCUMENT")).strip().upper()
+    summary = _clean_markup_text(
+        resource.get("summary")
+        or resource.get("description")
+        or source.get("summary")
+        or source.get("description")
+        or defaults.get("summary")
+        or ""
+    )
+    tags = _as_tags(default_tags, source_tags, resource.get("tags", []))
+    cs_category = str(resource.get("csCategory") or _source_value(source, defaults, "csCategory", "GENERAL_CS")).strip().upper()
+    cs_subcategory = str(resource.get("csSubcategory") or _source_value(source, defaults, "csSubcategory", "General")).strip()
+    metadata_text = _normalize_text(str(resource.get("metadataText") or "")) or None
+    if not metadata_text and display_type == "VIDEO" and (title or summary or tags):
+        metadata_text = _build_video_metadata_text(
+            title=_clean_markup_text(title or "Untitled resource"),
+            summary=summary,
+            tags=list(tags),
+            cs_category=cs_category,
+            cs_subcategory=cs_subcategory,
+            source_name=source_name,
+            url=url,
+        )
     return ResourceCandidate(
         source_id=str(source["id"]),
-        source_name=str(source.get("sourceName") or source["id"]),
+        source_name=source_name,
         url=url,
-        title=resource.get("title"),
+        title=title,
         domain=str(resource.get("domain") or _source_value(source, defaults, "domain", "COMPUTER_SCIENCE")),
         resource_type=_normalize_enum(
             str(resource.get("resourceType") or _source_value(source, defaults, "resourceType", "READING")),
             ALLOWED_RESOURCE_TYPES,
             "READING",
         ),
-        display_type=str(resource.get("displayType") or _source_value(source, defaults, "displayType", "DOCUMENT")).strip().upper(),
+        display_type=display_type,
         difficulty=_normalize_enum(
             str(resource.get("difficulty") or _source_value(source, defaults, "difficulty", "MIXED")),
             ALLOWED_DIFFICULTIES,
@@ -356,11 +463,13 @@ def _candidate_from_source(
             resource.get("copyrightStatus")
             or _source_value(source, defaults, "copyrightStatus", "OFFICIAL_PUBLIC_DOCUMENTATION")
         ),
-        tags=_as_tags(default_tags, source_tags, resource.get("tags", [])),
+        tags=tags,
         quality_score=float(resource.get("qualityScore") or _source_value(source, defaults, "qualityScore", 0.82)),
         popularity_score=float(resource.get("popularityScore") or _source_value(source, defaults, "popularityScore", 0.5)),
-        cs_category=str(resource.get("csCategory") or _source_value(source, defaults, "csCategory", "GENERAL_CS")).strip().upper(),
-        cs_subcategory=str(resource.get("csSubcategory") or _source_value(source, defaults, "csSubcategory", "General")).strip(),
+        summary=summary,
+        metadata_text=metadata_text,
+        cs_category=cs_category,
+        cs_subcategory=cs_subcategory,
     )
 
 
@@ -402,6 +511,124 @@ def expand_url_template_resources(source: dict[str, Any]) -> list[dict[str, str]
             resources.append({
                 "url": url_template.format(n=number),
                 "title": title_template.format(n=number),
+            })
+    return resources
+
+
+def fetch_bilibili_search_resources(client: httpx.Client, source: dict[str, Any], defaults: dict[str, Any]) -> list[dict[str, Any]]:
+    keywords = [str(keyword).strip() for keyword in source.get("keywords", []) if str(keyword).strip()]
+    if not keywords:
+        keyword = str(source.get("keyword", "")).strip()
+        keywords = [keyword] if keyword else []
+    pages = max(1, int(source.get("pages", 1)))
+    page_size = max(1, min(int(source.get("pageSize", 20)), 50))
+    source_name = str(source.get("sourceName") or source["id"])
+    cs_category = str(_source_value(source, defaults, "csCategory", "GENERAL_CS")).strip().upper()
+    cs_subcategory = str(_source_value(source, defaults, "csSubcategory", "General")).strip()
+    resource_tags = _as_tags(defaults.get("tags", []), source.get("tags", []))
+    resources: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for keyword in keywords:
+        for page in range(1, pages + 1):
+            response = client.get(
+                BILIBILI_SEARCH_URL,
+                params={"search_type": "video", "keyword": keyword, "page": page, "page_size": page_size},
+                headers={"User-Agent": BROWSER_USER_AGENT, "Referer": "https://www.bilibili.com/"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if int(payload.get("code", -1)) != 0:
+                continue
+            for item in payload.get("data", {}).get("result", []):
+                if str(item.get("type") or "").lower() != "video":
+                    continue
+                url = _bilibili_video_url(item)
+                if not url or url in seen_urls:
+                    continue
+                title = _clean_markup_text(item.get("title"))
+                if not title:
+                    continue
+                summary = _clean_markup_text(item.get("description"))
+                tags = _split_tags(item.get("tag"))
+                metadata_text = _build_video_metadata_text(
+                    title=title,
+                    summary=summary,
+                    tags=tags,
+                    cs_category=cs_category,
+                    cs_subcategory=cs_subcategory,
+                    source_name=source_name,
+                    url=url,
+                )
+                seen_urls.add(url)
+                resources.append({
+                    "url": url,
+                    "title": title,
+                    "summary": summary,
+                    "metadataText": metadata_text,
+                    "tags": [*resource_tags, *tags],
+                    "csCategory": cs_category,
+                    "csSubcategory": cs_subcategory,
+                    "resourceType": "VIDEO",
+                    "displayType": "VIDEO",
+                })
+    return resources
+
+
+def fetch_youtube_search_resources(client: httpx.Client, source: dict[str, Any], defaults: dict[str, Any]) -> list[dict[str, Any]]:
+    keywords = [str(keyword).strip() for keyword in source.get("keywords", []) if str(keyword).strip()]
+    if not keywords:
+        keyword = str(source.get("keyword", "")).strip()
+        keywords = [keyword] if keyword else []
+    per_keyword = max(1, int(source.get("perKeyword", 12)))
+    source_name = str(source.get("sourceName") or source["id"])
+    cs_category = str(_source_value(source, defaults, "csCategory", "GENERAL_CS")).strip().upper()
+    cs_subcategory = str(_source_value(source, defaults, "csSubcategory", "General")).strip()
+    source_summary = _clean_markup_text(source.get("summary") or source.get("description") or "")
+    resource_tags = _as_tags(defaults.get("tags", []), source.get("tags", []))
+    resources: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for keyword in keywords:
+        response = client.get(
+            YOUTUBE_SEARCH_URL,
+            params={"search_query": keyword},
+            headers={"User-Agent": BROWSER_USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"},
+        )
+        response.raise_for_status()
+        matches = re.findall(r'"videoId":"([^"]+)".{0,1200}?"title":\{"runs":\[\{"text":"([^"]+)"', response.text)
+        if not matches:
+            matches = [(video_id, keyword) for video_id in re.findall(r'"videoId":"([^"]+)"', response.text)]
+        keyword_tags = _split_tags(keyword)
+        added_for_keyword = 0
+        for video_id, raw_title in matches:
+            if added_for_keyword >= per_keyword:
+                break
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            if url in seen_urls:
+                continue
+            title = _clean_markup_text(raw_title) or keyword
+            summary = source_summary or f"Video search result for {keyword}."
+            tags = [*resource_tags, *keyword_tags]
+            metadata_text = _build_video_metadata_text(
+                title=title,
+                summary=summary,
+                tags=tags,
+                cs_category=cs_category,
+                cs_subcategory=cs_subcategory,
+                source_name=source_name,
+                url=url,
+            )
+            seen_urls.add(url)
+            added_for_keyword += 1
+            resources.append({
+                "url": url,
+                "title": title,
+                "summary": summary,
+                "metadataText": metadata_text,
+                "tags": tags,
+                "csCategory": cs_category,
+                "csSubcategory": cs_subcategory,
+                "resourceType": "VIDEO",
+                "displayType": "VIDEO",
             })
     return resources
 
@@ -596,6 +823,16 @@ def iter_candidates(config: dict[str, Any], client: httpx.Client, *, limit: int 
                     source_candidates.append(_candidate_from_source(source, defaults, item["url"], item))
                     if len(source_candidates) >= source_limit:
                         break
+            elif source_type in {"bilibilisearch", "bilibili_search"}:
+                for item in fetch_bilibili_search_resources(client, source, defaults):
+                    source_candidates.append(_candidate_from_source(source, defaults, str(item["url"]), item))
+                    if len(source_candidates) >= source_limit:
+                        break
+            elif source_type in {"youtubesearch", "youtube_search"}:
+                for item in fetch_youtube_search_resources(client, source, defaults):
+                    source_candidates.append(_candidate_from_source(source, defaults, str(item["url"]), item))
+                    if len(source_candidates) >= source_limit:
+                        break
             else:
                 for item in [*source.get("resources", []), *expand_url_template_resources(source)]:
                     resource = {"url": item} if isinstance(item, str) else dict(item)
@@ -614,7 +851,7 @@ def check_accessibility(client: httpx.Client, url: str, *, max_bytes: int = 5_00
     checked_at = _now_iso()
     headers = {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.8,*/*;q=0.5",
-        "User-Agent": "zhixue-resource-importer/1.0",
+        "User-Agent": BROWSER_USER_AGENT,
     }
     try:
         response = client.get(url, headers=headers)
@@ -684,6 +921,7 @@ def build_metadata(
         "discoveredBy": candidate.source_id,
         "ingestedBy": "external_resource_importer",
         "contentHash": parsed.content_hash,
+        "metadataRag": bool(candidate.metadata_text),
         "ragReady": rag_ready,
         "ragStatus": rag_status,
     }
@@ -836,6 +1074,7 @@ def generate_embeddings(
     batch_size: int = 2,
     delay_seconds: float = 0.25,
     max_retries: int = 4,
+    request_timeout: float = 10.0,
 ) -> list[list[float]]:
     if not api_key:
         raise RuntimeError("embedding API key is not configured")
@@ -853,6 +1092,7 @@ def generate_embeddings(
                     input=[{"text": text} for text in batch],
                     dimension=dimension,
                     output_type="dense",
+                    request_timeout=max(1.0, request_timeout),
                 )
                 break
             except Exception:
@@ -893,7 +1133,7 @@ def fetch_candidate_content(candidate: ResourceCandidate, *, timeout_seconds: fl
             access = check_accessibility(client, candidate.url, max_bytes=max_bytes)
         if not access.accessible:
             return CandidateContent(candidate=candidate, access=access)
-        parsed = parse_html_document(access.body, fallback_title=candidate.title)
+        parsed = parse_candidate_document(candidate, access.body)
         return CandidateContent(candidate=candidate, access=access, parsed=parsed)
     except Exception as exc:
         return CandidateContent(
@@ -921,7 +1161,7 @@ def iter_candidate_contents(
     if access_workers <= 1:
         for candidate in candidates:
             access = check_accessibility(client, candidate.url, max_bytes=max_bytes)
-            parsed = parse_html_document(access.body, fallback_title=candidate.title) if access.accessible else None
+            parsed = parse_candidate_document(candidate, access.body) if access.accessible else None
             yield CandidateContent(candidate=candidate, access=access, parsed=parsed)
         return
 
@@ -988,13 +1228,13 @@ def import_resources(
                         stats.skipped_inaccessible += 1
                         continue
                     stats.accessible += 1
-                    parsed = content.parsed or parse_html_document(access.body, fallback_title=candidate.title)
+                    parsed = content.parsed or parse_candidate_document(candidate, access.body)
                     chunks: list[str] = []
                     embeddings: list[list[float]] = []
                     rag_ready = False
                     rag_status = "METADATA_ONLY" if metadata_only else "SKIPPED"
                     if can_embed and stats.rag_ingested < rag_limit:
-                        chunks = chunk_text(parsed.text)
+                        chunks = chunk_candidate_text(candidate, parsed)
                         if chunks:
                             try:
                                 embeddings = embedder(
@@ -1003,6 +1243,7 @@ def import_resources(
                                     model=settings.knowledge_embedding_model_name,
                                     dimension=settings.knowledge_embedding_dimension,
                                     batch_size=embedding_batch_size,
+                                    request_timeout=settings.knowledge_embedding_timeout_seconds,
                                 )
                                 rag_ready = True
                                 rag_status = "READY"

@@ -18,6 +18,7 @@ from src.ai_modules.generation.content_chain import (
     GeneratedMindMap,
     GeneratedSectionBundle,
 )
+from src.ai_modules.generation.html_ppt_builder import HtmlPptDeckBuilder
 from src.ai_modules.models import (
     VideoGenerationTaskPayload,
     VideoSandboxArtifact,
@@ -496,21 +497,20 @@ class ResourceGenerationService:
                 inlineContent=outline_content,
             )
 
-        pptx_bytes = self._generate_pptx_with_omni(
+        deck_html, slide_count = self._generate_html_ppt_with_omni(
             title=title, topic=topic, snapshot=snapshot, sources=sources, params=params
         )
-        file_name = self._scoped_file_name("slides", "pptx", params)
-        path = self._write_bytes(file_name, pptx_bytes)
-        slide_count = self._count_pptx_slides(pptx_bytes)
+        file_name = self._scoped_file_name("slides", "html", params)
+        path = self._write_text(file_name, deck_html)
         return GeneratedAsset(
             assetType="SLIDES",
             title=title,
-            summary=f"MiMo-V2-Omni 生成的 PPT 演示文稿 ({slide_count} 页)",
+            summary=f"html-ppt 生成的可演示 HTML 课件 ({slide_count} 页)",
             displayMode="DOWNLOAD_CARD",
             fileName=file_name,
             localPath=str(path),
-            previewText=f"PPT 演示文稿 · {slide_count} 页 · {topic}",
-            mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            previewText=f"HTML PPT 课件 · {slide_count} 页 · {topic}",
+            mimeType="text/html; charset=UTF-8",
         )
 
     def _requires_slide_outline_confirmation(self, params: dict[str, Any]) -> bool:
@@ -578,6 +578,30 @@ class ResourceGenerationService:
     def _truthy(value: Any) -> bool:
         return str(value).strip().lower() in {"1", "true", "yes", "y", "confirmed"}
 
+    def _generate_html_ppt_with_omni(
+        self,
+        *,
+        title: str,
+        topic: str,
+        snapshot: SystemSnapshot,
+        sources: list[dict[str, Any]],
+        params: dict[str, Any] | None = None,
+    ) -> tuple[str, int]:
+        slides = self._generate_validated_slides_with_omni(
+            title=title,
+            topic=topic,
+            snapshot=snapshot,
+            sources=sources,
+            params=params,
+        )
+        deck_html = HtmlPptDeckBuilder().render(
+            title=title,
+            topic=topic,
+            course=str(snapshot.current_course),
+            slides=slides,
+        )
+        return deck_html, len(slides) + 3
+
     def _generate_pptx_with_omni(
         self,
         *,
@@ -588,6 +612,33 @@ class ResourceGenerationService:
         params: dict[str, Any] | None = None,
     ) -> bytes:
         """通过 MiMo-V2-Omni 生成 PPTX；失败时显式中止。"""
+        slides = self._generate_validated_slides_with_omni(
+            title=title,
+            topic=topic,
+            snapshot=snapshot,
+            sources=sources,
+            params=params,
+        )
+        pptx_bytes = self._build_pptx_bytes(
+            title=title,
+            topic=topic,
+            slides=slides,
+            course=str(snapshot.current_course),
+        )
+        if not pptx_bytes:
+            raise RuntimeError("PPTX generation failed: python-pptx produced no file")
+        return pptx_bytes
+
+    def _generate_validated_slides_with_omni(
+        self,
+        *,
+        title: str,
+        topic: str,
+        snapshot: SystemSnapshot,
+        sources: list[dict[str, Any]],
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """通过 MiMo-V2-Omni 生成并校验结构化幻灯片内容。"""
         settings = get_settings()
         if not settings.mimo_api_key:
             raise RuntimeError("PPTX generation failed: missing MIMO_API_KEY")
@@ -628,16 +679,7 @@ class ResourceGenerationService:
                 raise RuntimeError("PPTX generation failed: MiMo returned no parseable slide JSON")
 
             slides = self._validate_slide_deck(slide_data.get("slides", []))
-
-            pptx_bytes = self._build_pptx_bytes(
-                title=title,
-                topic=topic,
-                slides=slides,
-                course=str(snapshot.current_course),
-            )
-            if not pptx_bytes:
-                raise RuntimeError("PPTX generation failed: python-pptx produced no file")
-            return pptx_bytes
+            return slides
         except RuntimeError:
             raise
         except Exception as exc:

@@ -77,7 +77,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   return (
     <div className="relative group my-3">
       {/* 语言标签和复制按钮 */}
-      <div className="flex items-center justify-between rounded-t-xl bg-slate-700 px-4 py-2 shadow-[inset_0_-1px_0_rgba(71,85,105,0.85)]">
+      <div className="flex items-center justify-between rounded-t-xl bg-slate-700/92 px-4 py-2 shadow-sm shadow-slate-950/18">
         <span className="text-xs text-slate-400 font-mono">
           {language || '代码'}
         </span>

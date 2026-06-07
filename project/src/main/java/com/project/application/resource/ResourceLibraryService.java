@@ -3,6 +3,7 @@ package com.project.application.resource;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.project.api.resource.dto.ResourceExternalCandidateResponse;
 import com.project.api.resource.dto.ResourceDetailResponse;
 import com.project.api.resource.dto.ResourceItemResponse;
 import com.project.api.resource.dto.ResourceListResponse;
@@ -22,17 +23,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URLDecoder;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -40,6 +46,8 @@ public class ResourceLibraryService {
 
     private static final int DEFAULT_PAGE_SIZE = 12;
     private static final int MAX_PAGE_SIZE = 60;
+    private static final UUID UUID_NAMESPACE_URL = UUID.fromString("6ba7b811-9dad-11d1-80b4-00c04fd430c8");
+    private static final UUID EXTERNAL_RESOURCE_NAMESPACE = uuid5(UUID_NAMESPACE_URL, "zhixue-ai-resource-library");
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
     private static final TypeReference<Map<String, Object>> STRING_OBJECT_MAP = new TypeReference<>() {
@@ -48,15 +56,18 @@ public class ResourceLibraryService {
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ResourceSemanticSearchClient semanticSearchClient;
+    private final ResourceSemanticWarmupService semanticWarmupService;
 
     public ResourceLibraryService(
         NamedParameterJdbcTemplate jdbcTemplate,
         ObjectMapper objectMapper,
-        ResourceSemanticSearchClient semanticSearchClient
+        ResourceSemanticSearchClient semanticSearchClient,
+        ResourceSemanticWarmupService semanticWarmupService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.semanticSearchClient = semanticSearchClient;
+        this.semanticWarmupService = semanticWarmupService;
     }
 
     @Transactional(readOnly = true)
@@ -82,7 +93,12 @@ public class ResourceLibraryService {
 
         List<String> conditions = resourceConditions(keyword, type, domain, category, subcategory, difficulty, source, favoriteOnly, params);
         String whereClause = " WHERE " + String.join(" AND ", conditions);
-        String dataSql = listResourceSelectSql(sort, whereClause);
+        boolean stageRecommendedSort = isStageRecommendedSort(sort);
+        List<UUID> stageRankedIds = stageRecommendedSort
+            ? semanticWarmupService.stageRankedIds(userId, safeSize + safePage * safeSize)
+            : List.of();
+        bindStageRankedIds(params, stageRankedIds);
+        String dataSql = listResourceSelectSql(sort, whereClause, stageRankedIds.size());
         String countSql = """
             SELECT COUNT(*)
             FROM app.learning_resource lr
@@ -159,7 +175,7 @@ public class ResourceLibraryService {
         return getState(userId, resourceId);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ResourceSemanticSearchResponse semanticSearch(UUID userId, String query, Integer topK) {
         String normalizedQuery = query == null ? "" : query.trim();
         if (normalizedQuery.isBlank()) {
@@ -171,10 +187,11 @@ public class ResourceLibraryService {
             List<ResourceSemanticResultResponse> hydrated = raw.results().stream()
                 .map(result -> new ResourceSemanticResultResponse(
                     result.resourceId(),
-                    findResourceOrNull(userId, result.resourceId()),
+                    hydrateSemanticResource(userId, result),
                     result.score(),
                     result.reason(),
-                    result.hits()
+                    result.hits(),
+                    result.externalResource()
                 ))
                 .filter(result -> result.resource() != null)
                 .toList();
@@ -192,23 +209,136 @@ public class ResourceLibraryService {
     @Transactional(readOnly = true)
     public List<ResourceItemResponse> recommendations(UUID userId, Integer limit) {
         int safeLimit = Math.max(1, Math.min(20, limit == null ? 6 : limit));
-        MapSqlParameterSource params = baseParams(userId).addValue("limit", safeLimit);
+        List<UUID> rankedIds = semanticWarmupService.recommendationIds(userId, safeLimit);
+        if (!rankedIds.isEmpty()) {
+            List<ResourceItemResponse> warmRecommendations = resourcesByIds(userId, rankedIds, safeLimit, true);
+            if (warmRecommendations.size() >= safeLimit) {
+                return warmRecommendations;
+            }
+            List<ResourceItemResponse> fallback = fallbackRecommendations(userId, safeLimit, resourceIds(warmRecommendations));
+            return mergeResources(warmRecommendations, fallback, safeLimit);
+        }
+        return fallbackRecommendations(userId, safeLimit, Set.of());
+    }
+
+    private List<ResourceItemResponse> resourcesByIds(UUID userId, List<UUID> resourceIds, int limit, boolean incompleteOnly) {
+        if (resourceIds.isEmpty()) {
+            return List.of();
+        }
+        MapSqlParameterSource params = baseParams(userId)
+            .addValue("limit", limit);
+        bindStageRankedIds(params, resourceIds);
+        String completedCondition = incompleteOnly ? "AND COALESCE(urs.completed, false) = false\n" : "";
+        return jdbcTemplate.query(
+            """
+            WITH ranked AS (
+              SELECT resource_id, stage_rank
+              FROM (VALUES
+            """ + stageRankedValuesSql(resourceIds.size()) + """
+              ) AS ranked(resource_id, stage_rank)
+            )
+            """ + resourceSelectSql(", ranked.stage_rank AS semantic_rank\n") + """
+            JOIN ranked ON ranked.resource_id = lr.id
+            WHERE lr.status = 'ACTIVE'
+              """ + completedCondition + """
+              AND
+            """ + visibleResourceCondition() + """
+              AND
+            """ + readableResourceCondition() + """
+            ORDER BY semantic_rank ASC
+            LIMIT :limit
+            """,
+            params,
+            resourceRowMapper()
+        );
+    }
+
+    private ResourceItemResponse hydrateSemanticResource(UUID userId, ResourceSemanticResultResponse result) {
+        ResourceItemResponse existing = findResourceOrNull(userId, result.resourceId());
+        if (existing != null) {
+            return existing;
+        }
+        ResourceExternalCandidateResponse externalResource = result.externalResource();
+        if (externalResource == null || externalResource.sourceUrl() == null || externalResource.sourceUrl().isBlank()) {
+            return null;
+        }
+        UUID resourceId = upsertExternalResource(externalResource);
+        return findResourceOrNull(userId, resourceId);
+    }
+
+    private UUID upsertExternalResource(ResourceExternalCandidateResponse externalResource) {
+        String sourceUrl = normalizeUrl(externalResource.sourceUrl());
+        UUID resourceId = resourceUuid(sourceUrl);
+        String resourceType = normalizeExternalResourceType(externalResource.resourceType(), externalResource.displayType());
+        String displayType = normalizeDisplayType(externalResource.displayType(), resourceType);
+        String difficultyLevel = normalizeDifficulty(externalResource.difficultyLevel());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("sourceUrl", sourceUrl);
+        metadata.put("originalUrl", sourceUrl);
+        metadata.put("sourceName", safeString(externalResource.sourceName()));
+        metadata.put("displayType", displayType);
+        metadata.put("accessibilityStatus", "ACCESSIBLE");
+        metadata.put("copyrightStatus", "LINK_ONLY");
+        metadata.put("license", "");
+        metadata.put("qualityScore", clampScore(externalResource.qualityScore(), 0.6));
+        metadata.put("popularityScore", clampScore(externalResource.popularityScore(), 0.0));
+        metadata.put("coverUrl", safeString(externalResource.coverUrl()));
+        metadata.put("discoveredBy", "tavily");
+        metadata.put("ingestedBy", "resource_library_tavily_fallback");
+        metadata.put("ragReady", false);
+        metadata.put("ragStatus", "METADATA_ONLY");
+
+        jdbcTemplate.update(
+            """
+            INSERT INTO app.learning_resource (
+              id, title, domain, resource_type, difficulty_level, source_kind,
+              access_scope, summary_text, tags, metadata_json, status
+            )
+            VALUES (
+              :resourceId, :title, 'COMPUTER_SCIENCE', :resourceType::app.resource_type,
+              :difficultyLevel::app.difficulty_level, 'WEB'::app.source_kind,
+              'GLOBAL'::app.access_scope, :summaryText, :tags::jsonb, :metadata::jsonb, 'ACTIVE'
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              title = EXCLUDED.title,
+              domain = EXCLUDED.domain,
+              resource_type = EXCLUDED.resource_type,
+              difficulty_level = EXCLUDED.difficulty_level,
+              source_kind = EXCLUDED.source_kind,
+              access_scope = EXCLUDED.access_scope,
+              summary_text = EXCLUDED.summary_text,
+              tags = EXCLUDED.tags,
+              metadata_json = app.learning_resource.metadata_json || EXCLUDED.metadata_json,
+              status = 'ACTIVE',
+              updated_at = now()
+            """,
+            new MapSqlParameterSource()
+                .addValue("resourceId", resourceId)
+                .addValue("title", safeTitle(externalResource.title(), sourceUrl))
+                .addValue("resourceType", resourceType)
+                .addValue("difficultyLevel", difficultyLevel)
+                .addValue("summaryText", safeString(externalResource.summaryText()))
+                .addValue("tags", toJson(externalResource.tags() == null ? List.of() : externalResource.tags()))
+                .addValue("metadata", toJson(metadata))
+        );
+        return resourceId;
+    }
+
+    private List<ResourceItemResponse> fallbackRecommendations(UUID userId, int limit, Set<UUID> excludedIds) {
+        MapSqlParameterSource params = baseParams(userId)
+            .addValue("limit", limit)
+            .addValue("excludedIds", excludedIds.isEmpty() ? List.of(UUID.randomUUID()) : List.copyOf(excludedIds))
+            .addValue("excludedIdsEmpty", excludedIds.isEmpty());
         String recommendationScore = recommendationScoreSql();
         return jdbcTemplate.query(
-            recommendationContextCtesSql() + """
-            , scored_resources AS (
+            """
+            WITH scored_resources AS (
             """ + resourceSelectSql("""
               , """ + recommendationScore + """
                AS recommendation_score
-              , ROW_NUMBER() OVER (
-                  PARTITION BY upper(COALESCE(NULLIF(lr.metadata_json ->> 'csCategory', ''), 'GENERAL_CS'))
-                  ORDER BY
-                    """ + recommendationScore + """
-                     DESC,
-                    lr.updated_at DESC
-                ) AS category_rank
             """) + """
               WHERE lr.status = 'ACTIVE'
+                AND (:excludedIdsEmpty = true OR lr.id NOT IN (:excludedIds))
                 AND COALESCE(urs.completed, false) = false
                 AND
               """ + visibleResourceCondition() + """
@@ -218,14 +348,6 @@ public class ResourceLibraryService {
             SELECT *
             FROM scored_resources
             ORDER BY
-              CASE
-                WHEN EXISTS (
-                  SELECT 1
-                  FROM context_signals cs
-                  WHERE cs.preferred_category IS NULL
-                ) THEN category_rank
-                ELSE 1
-              END ASC,
               recommendation_score DESC,
               updated_at DESC
             LIMIT :limit
@@ -455,7 +577,7 @@ public class ResourceLibraryService {
             """;
     }
 
-    private String listResourceSelectSql(String sort, String whereClause) {
+    private String listResourceSelectSql(String sort, String whereClause, int stageRankedIdCount) {
         String normalized = sort == null ? "" : sort.trim().toLowerCase(Locale.ROOT);
         if (!normalized.isBlank()
             && !normalized.equals("comprehensive")
@@ -464,35 +586,58 @@ public class ResourceLibraryService {
             return resourceSelectSql() + whereClause + "\n" + orderByClause(sort) + "\nLIMIT :limit OFFSET :offset";
         }
         String scoreSql = recommendationScoreSql();
-        return recommendationContextCtesSql() + """
-            , scored_resources AS (
+        String stageRankCte = stageRankedIdCount > 0 ? """
+            WITH stage_ranked AS (
+              SELECT resource_id, stage_rank
+              FROM (VALUES
+            """ + stageRankedValuesSql(stageRankedIdCount) + """
+              ) AS ranked(resource_id, stage_rank)
+            ),
+            """ : """
+            WITH
+            """;
+        String stageRankColumn = stageRankedIdCount > 0
+            ? ", sr.stage_rank\n"
+            : ", NULL::int AS stage_rank\n";
+        String stageRankJoin = stageRankedIdCount > 0
+            ? "LEFT JOIN stage_ranked sr ON sr.resource_id = lr.id\n"
+            : "";
+        return stageRankCte + """
+            scored_resources AS (
             """ + resourceSelectSql("""
               , """ + scoreSql + """
                AS recommendation_score
-              , ROW_NUMBER() OVER (
-                  PARTITION BY upper(COALESCE(NULLIF(lr.metadata_json ->> 'csCategory', ''), 'GENERAL_CS'))
-                  ORDER BY
-                    """ + scoreSql + """
-                     DESC,
-                    lr.updated_at DESC
-                ) AS category_rank
-            """) + whereClause + """
+            """ + stageRankColumn) + stageRankJoin + whereClause + """
             )
             SELECT *
             FROM scored_resources
             ORDER BY
-              CASE
-                WHEN EXISTS (
-                  SELECT 1
-                  FROM context_signals cs
-                  WHERE cs.preferred_category IS NULL
-                ) THEN category_rank
-                ELSE 1
-              END ASC,
+              stage_rank ASC NULLS LAST,
               recommendation_score DESC,
               updated_at DESC
             LIMIT :limit OFFSET :offset
             """;
+    }
+
+    private void bindStageRankedIds(MapSqlParameterSource params, List<UUID> stageRankedIds) {
+        for (int index = 0; index < stageRankedIds.size(); index += 1) {
+            params.addValue("stageRankedId" + index, stageRankedIds.get(index));
+        }
+    }
+
+    private String stageRankedValuesSql(int stageRankedIdCount) {
+        StringBuilder values = new StringBuilder();
+        for (int index = 0; index < stageRankedIdCount; index += 1) {
+            if (index > 0) {
+                values.append(",\n");
+            }
+            values.append("                (CAST(:stageRankedId")
+                .append(index)
+                .append(" AS uuid), ")
+                .append(index)
+                .append(")");
+        }
+        return values.toString();
     }
 
     private String orderByClause(String sort) {
@@ -537,8 +682,6 @@ public class ResourceLibraryService {
         String popularityScore = numericMetadataSql("popularityScore", "0");
         String profileResourcePreference = normalizedResourcePreferenceSql("up.profile_json ->> 'resourcePreference'");
         String preferredResourceType = normalizedResourcePreferenceSql("preferred_type.value");
-        String category = "upper(COALESCE(NULLIF(lr.metadata_json ->> 'csCategory', ''), 'GENERAL_CS'))";
-        String haystack = "concat_ws(' ', lr.title, COALESCE(lr.summary_text, ''), lr.tags::text, COALESCE(lr.metadata_json ->> 'csSubcategory', ''), COALESCE(lr.metadata_json ->> 'sourceName', ''))";
         return """
             (
               %s * 0.45
@@ -573,24 +716,6 @@ public class ResourceLibraryService {
                     AND jsonb_exists(lr.tags, history_tag.tag)
                 ) THEN 0.12 ELSE 0 END
               + CASE WHEN COALESCE(urs.progress_percent, 0) > 0 THEN 0.03 ELSE 0 END
-              + CASE WHEN EXISTS (
-                  SELECT 1
-                  FROM context_signals cs
-                  WHERE cs.preferred_category IS NOT NULL
-                    AND %s = cs.preferred_category
-                ) THEN 0.95 ELSE 0 END
-              + CASE WHEN EXISTS (
-                  SELECT 1
-                  FROM context_signals cs
-                  WHERE cs.preferred_category IS NOT NULL
-                    AND %s <> cs.preferred_category
-                ) THEN -0.25 ELSE 0 END
-              + CASE WHEN EXISTS (
-                  SELECT 1
-                  FROM context_signals cs
-                  WHERE cs.ai_ml_context
-                    AND %s ~* '(深度学习|机器学习|神经网络|反向传播|损失函数|优化器|正则化|梯度下降|deep[- ]?learning|machine[- ]?learning|neural|backprop|optimizer|loss|pytorch|tensorflow)'
-                ) THEN 0.35 ELSE 0 END
               + CASE WHEN lower(lr.title) LIKE 'redirecting%%'
                   OR lower(COALESCE(lr.summary_text, '')) LIKE 'redirecting%%'
                 THEN -0.30 ELSE 0 END
@@ -601,144 +726,8 @@ public class ResourceLibraryService {
             profileResourcePreference,
             displayType,
             preferredResourceType,
-            displayType,
-            category,
-            category,
-            haystack
+            displayType
         );
-    }
-
-    private String recommendationContextCtesSql() {
-        return """
-            WITH latest_plan AS (
-              SELECT p.plan_json
-              FROM app.learning_plan p
-              WHERE p.user_id = :userId
-                AND p.status = 'ACTIVE'
-              ORDER BY p.updated_at DESC
-              LIMIT 1
-            ),
-            latest_task_path AS (
-              SELECT t.response_summary -> 'learningPath' AS learning_path
-              FROM app.smart_engine_task t
-              WHERE t.user_id = :userId
-                AND t.service_type = 'PERSONALIZED_LEARNING'
-                AND t.task_status::text = 'COMPLETED'
-                AND jsonb_exists(t.response_summary, 'learningPath')
-              ORDER BY t.created_at DESC
-              LIMIT 1
-            ),
-            current_learning_path AS (
-              SELECT COALESCE(
-                (SELECT plan_json FROM latest_plan WHERE jsonb_typeof(plan_json) = 'object'),
-                (SELECT learning_path FROM latest_task_path WHERE jsonb_typeof(learning_path) = 'object'),
-                '{}'::jsonb
-              ) AS learning_path
-            ),
-            path_steps AS (
-              SELECT step_item.step,
-                     step_item.ordinality,
-                     upper(regexp_replace(COALESCE(step_item.step ->> 'status', ''), '[^A-Za-z0-9]+', '_', 'g')) AS normalized_status
-              FROM current_learning_path clp
-              CROSS JOIN LATERAL jsonb_array_elements(
-                CASE WHEN jsonb_typeof(clp.learning_path -> 'steps') = 'array'
-                  THEN clp.learning_path -> 'steps'
-                  ELSE '[]'::jsonb
-                END
-              ) WITH ORDINALITY AS step_item(step, ordinality)
-            ),
-            active_step AS (
-              SELECT step
-              FROM path_steps
-              ORDER BY
-                CASE
-                  WHEN normalized_status = 'IN_PROGRESS'
-                    OR normalized_status = 'ACTIVE'
-                    OR normalized_status LIKE '%%RUNNING%%'
-                    OR normalized_status LIKE '%%PROGRESS%%'
-                  THEN 0
-                  WHEN normalized_status = '' THEN 1
-                  WHEN normalized_status IN ('COMPLETED', 'DONE', 'PENDING', 'INACTIVE', 'NOT_STARTED')
-                    OR normalized_status LIKE 'NOT_%%'
-                    OR normalized_status LIKE '%%INACTIVE%%'
-                  THEN 3
-                  ELSE 2
-                END,
-                ordinality
-              LIMIT 1
-            ),
-            profile_context AS (
-              SELECT up.profile_json
-              FROM app.user_profile_current up
-              WHERE up.user_id = :userId
-              LIMIT 1
-            ),
-            learning_context AS (
-              SELECT lower(concat_ws(' ',
-                clp.learning_path ->> 'goal',
-                clp.learning_path ->> 'summary',
-                clp.learning_path ->> 'summaryText',
-                astep.step ->> 'title',
-                astep.step ->> 'objective',
-                astep.step ->> 'checkpoint',
-                astep.step ->> 'successCriteria',
-                (
-                  SELECT string_agg(kp.value, ' ')
-                  FROM jsonb_array_elements_text(
-                    CASE WHEN jsonb_typeof(astep.step -> 'targetKnowledgePoints') = 'array'
-                      THEN astep.step -> 'targetKnowledgePoints'
-                      ELSE '[]'::jsonb
-                    END
-                  ) AS kp(value)
-                ),
-                pc.profile_json ->> 'learningGoal',
-                (
-                  SELECT string_agg(wp.value, ' ')
-                  FROM jsonb_array_elements_text(
-                    CASE WHEN jsonb_typeof(pc.profile_json -> 'weakPoints') = 'array'
-                      THEN pc.profile_json -> 'weakPoints'
-                      ELSE '[]'::jsonb
-                    END
-                  ) AS wp(value)
-                ),
-                (
-                  SELECT string_agg(focus.value ->> 'topic', ' ')
-                  FROM jsonb_array_elements(
-                    CASE WHEN jsonb_typeof(pc.profile_json -> 'weakPointDetails') = 'array'
-                      THEN pc.profile_json -> 'weakPointDetails'
-                      ELSE '[]'::jsonb
-                    END
-                  ) AS focus(value)
-                )
-              )) AS context_text
-              FROM current_learning_path clp
-              LEFT JOIN active_step astep ON TRUE
-              LEFT JOIN profile_context pc ON TRUE
-            ),
-            context_signals AS (
-              SELECT context_text,
-                     CASE
-                       WHEN context_text ~* '(深度学习|机器学习|神经网络|反向传播|损失函数|优化器|正则化|梯度下降|人工智能|deep[- ]?learning|machine[- ]?learning|neural|backprop|optimizer|pytorch|tensorflow|ai|ml)' THEN 'AI_ML'
-                       WHEN context_text ~* '(前端|网页|浏览器|html|css|javascript|typescript|react|vue|dom|web)' THEN 'FRONTEND_WEB'
-                       WHEN context_text ~* '(数据库|索引|事务|sql|mysql|postgres|redis|查询优化)' THEN 'DATABASES'
-                       WHEN context_text ~* '(操作系统|进程|线程|内存|linux|kernel|os|调度)' THEN 'OPERATING_SYSTEMS'
-                       WHEN context_text ~* '(网络|tcp|udp|http|dns|路由|拥塞|computer network)' THEN 'COMPUTER_NETWORKS'
-                       WHEN context_text ~* '(数据结构|算法|动态规划|排序|图论|树|堆|hash|algorithm|graph|tree)' THEN 'DATA_STRUCTURES_ALGORITHMS'
-                       WHEN context_text ~* '(编译|词法|语法分析|parser|lexer|compiler)' THEN 'COMPILERS'
-                       WHEN context_text ~* '(分布式|云原生|kubernetes|docker|微服务|一致性|consensus)' THEN 'DISTRIBUTED_CLOUD'
-                       WHEN context_text ~* '(安全|密码|漏洞|攻防|xss|csrf|sql injection|security)' THEN 'SECURITY'
-                       WHEN context_text ~* '(后端|spring|接口|api|rest|并发|线程池|backend)' THEN 'BACKEND_SYSTEMS'
-                       WHEN context_text ~* '(数学|线性代数|概率|统计|微积分|math)' THEN 'MATH_FOUNDATIONS'
-                       WHEN context_text ~* '(体系结构|计算机组成|cpu|cache|指令|流水线|architecture)' THEN 'COMPUTER_ARCHITECTURE'
-                       WHEN context_text ~* '(软件工程|需求|测试|设计模式|重构|software engineering)' THEN 'SOFTWARE_ENGINEERING'
-                       WHEN context_text ~* '(开发工具|git|ci|debug|调试|devops)' THEN 'DEV_TOOLS'
-                       WHEN context_text ~* '(编程语言|python|java|c\\+\\+|rust|golang|go language)' THEN 'PROGRAMMING_LANGUAGES'
-                       ELSE NULL
-                     END AS preferred_category,
-                     context_text ~* '(深度学习|机器学习|神经网络|反向传播|损失函数|优化器|正则化|梯度下降|deep[- ]?learning|machine[- ]?learning|neural|backprop|optimizer|pytorch|tensorflow)' AS ai_ml_context
-              FROM learning_context
-            )
-            """;
     }
 
     private String normalizedResourcePreferenceSql(String valueSql) {
@@ -874,6 +863,138 @@ public class ResourceLibraryService {
 
     private MapSqlParameterSource baseParams(UUID userId) {
         return new MapSqlParameterSource("userId", userId);
+    }
+
+    private boolean isStageRecommendedSort(String sort) {
+        String normalized = sort == null ? "" : sort.trim().toLowerCase(Locale.ROOT);
+        return normalized.isBlank()
+            || normalized.equals("comprehensive")
+            || normalized.equals("recommended")
+            || normalized.equals("recommendation");
+    }
+
+    private List<ResourceItemResponse> mergeResources(
+        List<ResourceItemResponse> primary,
+        List<ResourceItemResponse> secondary,
+        int limit
+    ) {
+        List<ResourceItemResponse> merged = new ArrayList<>();
+        Set<UUID> seen = new LinkedHashSet<>();
+        for (ResourceItemResponse resource : primary) {
+            if (resource != null && seen.add(resource.id())) {
+                merged.add(resource);
+            }
+            if (merged.size() >= limit) {
+                return merged;
+            }
+        }
+        for (ResourceItemResponse resource : secondary) {
+            if (resource != null && seen.add(resource.id())) {
+                merged.add(resource);
+            }
+            if (merged.size() >= limit) {
+                break;
+            }
+        }
+        return merged;
+    }
+
+    private Set<UUID> resourceIds(List<ResourceItemResponse> resources) {
+        Set<UUID> ids = new LinkedHashSet<>();
+        for (ResourceItemResponse resource : resources) {
+            if (resource != null) {
+                ids.add(resource.id());
+            }
+        }
+        return ids;
+    }
+
+    private UUID resourceUuid(String sourceUrl) {
+        return uuid5(EXTERNAL_RESOURCE_NAMESPACE, "resource:" + sourceUrl);
+    }
+
+    private static UUID uuid5(UUID namespace, String name) {
+        try {
+            MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
+            ByteBuffer namespaceBytes = ByteBuffer.allocate(16);
+            namespaceBytes.putLong(namespace.getMostSignificantBits());
+            namespaceBytes.putLong(namespace.getLeastSignificantBits());
+            sha1.update(namespaceBytes.array());
+            byte[] hash = sha1.digest(name.getBytes(StandardCharsets.UTF_8));
+            hash[6] &= 0x0f;
+            hash[6] |= 0x50;
+            hash[8] &= 0x3f;
+            hash[8] |= (byte) 0x80;
+            ByteBuffer buffer = ByteBuffer.wrap(hash, 0, 16);
+            return new UUID(buffer.getLong(), buffer.getLong());
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-1 digest is unavailable", ex);
+        }
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException ex) {
+            return "{}";
+        }
+    }
+
+    private String normalizeUrl(String sourceUrl) {
+        String normalized = safeString(sourceUrl);
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private String normalizeExternalResourceType(String resourceType, String displayType) {
+        String normalized = safeString(resourceType).toUpperCase(Locale.ROOT);
+        if (normalized.equals("PRACTICAL_CASE") || normalized.equals("CODE_CASE") || safeString(displayType).equalsIgnoreCase("CASE")) {
+            return "CODE";
+        }
+        if (normalized.equals("COURSE")) {
+            return "READING";
+        }
+        if (List.of("DOCUMENT", "PPT", "QUIZ", "VIDEO", "AUDIO", "IMAGE", "CODE", "MINDMAP", "READING", "PRACTICE", "SLIDES", "VIDEO_SCRIPT")
+            .contains(normalized)) {
+            return normalized;
+        }
+        return "READING";
+    }
+
+    private String normalizeDisplayType(String displayType, String resourceType) {
+        String normalized = safeString(displayType).toUpperCase(Locale.ROOT);
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        return displayType(resourceType, Map.of());
+    }
+
+    private String normalizeDifficulty(String difficultyLevel) {
+        String normalized = safeString(difficultyLevel).toUpperCase(Locale.ROOT);
+        return List.of("BASIC", "INTERMEDIATE", "ADVANCED", "MIXED").contains(normalized) ? normalized : "MIXED";
+    }
+
+    private String safeTitle(String title, String sourceUrl) {
+        String normalized = safeString(title);
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        String derived = deriveTitleFromUrl(sourceUrl);
+        return derived == null || derived.isBlank() ? "Learning resource" : derived;
+    }
+
+    private String safeString(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private double clampScore(Double value, double fallback) {
+        double score = value == null ? fallback : value;
+        if (Double.isNaN(score) || Double.isInfinite(score)) {
+            return fallback;
+        }
+        return Math.max(0.0, Math.min(1.0, score));
     }
 
     private int normalizeProgress(Integer progress) {

@@ -2,6 +2,7 @@
 Vector (semantic) search channel using pgvector cosine similarity.
 """
 import os
+import time
 
 import dashscope
 from dashscope import MultiModalEmbedding
@@ -12,22 +13,48 @@ from src.ai_modules.config import get_settings
 class VectorSearcher:
     """Semantic search via pgvector <=> cosine distance on knowledge_chunk embeddings."""
 
-    def __init__(self, dimension: int | None = None, model: str | None = None):
+    def __init__(
+        self,
+        dimension: int | None = None,
+        model: str | None = None,
+        max_embedding_retries: int | None = None,
+        embedding_retry_backoff_seconds: float | None = None,
+    ):
         settings = get_settings()
         self.dimension = dimension or settings.knowledge_embedding_dimension
         self.model = model or settings.knowledge_embedding_model_name
         self.api_key = settings.effective_embedding_api_key
+        self.request_timeout = max(1.0, settings.knowledge_embedding_timeout_seconds)
+        self.max_embedding_retries = max(1, max_embedding_retries or settings.knowledge_embedding_max_retries)
+        self.embedding_retry_backoff_seconds = max(
+            0.0,
+            embedding_retry_backoff_seconds
+            if embedding_retry_backoff_seconds is not None
+            else settings.knowledge_embedding_retry_backoff_seconds,
+        )
 
     def _embed(self, text: str) -> list[float]:
         if self.api_key:
             os.environ["DASHSCOPE_API_KEY"] = self.api_key
             dashscope.api_key = self.api_key
-        resp = MultiModalEmbedding.call(
-            model=self.model,
-            input=[{"text": text}],
-            dimension=self.dimension,
-            output_type="dense",
-        )
+        last_exc: Exception | None = None
+        for attempt in range(self.max_embedding_retries):
+            try:
+                resp = MultiModalEmbedding.call(
+                    model=self.model,
+                    input=[{"text": text}],
+                    dimension=self.dimension,
+                    output_type="dense",
+                    request_timeout=self.request_timeout,
+                )
+                break
+            except Exception as exc:
+                last_exc = exc
+                if attempt + 1 >= self.max_embedding_retries:
+                    raise
+                time.sleep(self.embedding_retry_backoff_seconds * (2**attempt))
+        else:
+            raise RuntimeError("Embedding API request failed") from last_exc
         if resp.status_code != 200:
             raise RuntimeError(f"Embedding API error: {resp.code} {resp.message}")
         return resp.output["embeddings"][0]["embedding"]

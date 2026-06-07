@@ -254,7 +254,7 @@ export async function runByApiTask({
       if (task.status === 'COMPLETED') {
         const browserRenderSucceeded = await settleBrowserRender(handlers, browserRenderState);
         if (!browserRenderSucceeded) {
-          throw new Error(browserRenderState.errorMessage || '浏览器本地渲染失败');
+          throw new Error(browserRenderState.errorMessage || '视频生成失败');
         }
         flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
         return 'completed';
@@ -337,7 +337,7 @@ async function consumeTaskStreamEvent(
       if (summary) {
         handlers.onSummary(summary);
       }
-      const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '浏览器本地渲染中，请稍候');
+      const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '视频生成中，请稍候');
       if (browserRenderedVideo) {
         handlers.onVideo(browserRenderedVideo);
       }
@@ -351,7 +351,7 @@ async function consumeTaskStreamEvent(
       }
     }
     if (event.event === 'video_gen:speech') {
-      const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '已收到语音素材，正在本地渲染视频');
+      const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '已收到语音素材，正在生成视频');
       if (browserRenderedVideo) {
         handlers.onVideo(browserRenderedVideo);
       }
@@ -369,7 +369,7 @@ async function consumeTaskStreamEvent(
       return;
     }
     const inlineResource = readInlineResource(envelope.payload);
-    const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '视频素材已就绪，等待浏览器本地渲染');
+    const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '视频素材已就绪，正在生成视频');
     if (browserRenderedVideo) {
       handlers.onVideo(browserRenderedVideo);
     }
@@ -541,7 +541,7 @@ async function applyTaskSnapshot(
       handlers.onVideo(videoResult);
     }
     if (readString(task.responseSummary.audioBase64)) {
-      const browserRenderedVideo = readBrowserRenderedVideoResult(task.responseSummary, '视频素材已就绪，正在恢复本地渲染');
+      const browserRenderedVideo = readBrowserRenderedVideoResult(task.responseSummary, '视频素材已就绪，正在恢复视频生成');
       if (browserRenderedVideo) {
         handlers.onVideo(browserRenderedVideo);
       }
@@ -600,8 +600,8 @@ async function maybeStartBrowserRender(
   }
   browserRenderState.started = true;
   browserRenderState.errorMessage = '';
-  handlers.onProgress(78, '浏览器本地渲染中');
-  handlers.onLine('已收到语音素材，开始浏览器本地渲染');
+  handlers.onProgress(78, '视频生成中');
+  handlers.onLine('已收到语音素材，开始生成视频');
   browserRenderState.promise = renderTalkingVideoInBrowser(
     {
       taskId: browserRenderState.taskId,
@@ -613,7 +613,7 @@ async function maybeStartBrowserRender(
     },
     {
       onProgress: (percent, message) => {
-        handlers.onProgress(Math.max(78, percent), '浏览器本地渲染中');
+        handlers.onProgress(Math.max(78, percent), '视频生成中');
         if (message) {
           handlers.onLine(message);
         }
@@ -622,7 +622,7 @@ async function maybeStartBrowserRender(
   )
     .then((rendered) => {
       browserRenderState.completed = true;
-      handlers.onSummary('视频已在当前浏览器本地渲染完成');
+      handlers.onSummary('视频生成完成');
       handlers.onVideo({
         title: readString(payload.title) || readString(payload.topic) || '教学视频',
         videoUrl: rendered.videoUrl,
@@ -630,26 +630,26 @@ async function maybeStartBrowserRender(
         duration: readDuration(payload),
         style: readVideoStyle(payload),
         knowledgePoint: readString(payload.knowledgePoint) || readString(payload.topic),
-        expiresHint: '视频已在当前浏览器本地生成',
+        expiresHint: '视频已生成',
         fileName: rendered.fileName,
         renderStatus: 'ready',
-        renderMessage: '浏览器本地渲染完成',
+        renderMessage: '视频生成完成',
       });
       handlers.onProgress(100, '视频生成完成');
     })
     .catch((error) => {
       browserRenderState.started = false;
-      browserRenderState.errorMessage = getErrorMessage(error);
+      browserRenderState.errorMessage = toVideoGenerationErrorMessage(error);
       const failedVideo = readBrowserRenderedVideoResult(payload, browserRenderState.errorMessage);
       if (failedVideo) {
         handlers.onVideo({
           ...failedVideo,
           renderStatus: 'failed',
           renderMessage: browserRenderState.errorMessage,
-          expiresHint: '浏览器本地渲染失败',
+          expiresHint: '视频生成失败',
         });
       }
-      handlers.onLine(`浏览器本地渲染失败：${browserRenderState.errorMessage}`);
+      handlers.onLine(`视频生成失败：${browserRenderState.errorMessage}`);
     })
     .finally(() => {
       browserRenderState.promise = null;
@@ -674,7 +674,7 @@ async function settleBrowserRender(
     return true;
   }
   if (browserRenderState.promise) {
-    handlers.onProgress(88, '等待浏览器本地渲染完成');
+    handlers.onProgress(88, '等待视频生成完成');
     await browserRenderState.promise;
   }
   return !browserRenderState.errorMessage;
@@ -723,6 +723,27 @@ function responseSummaryToLines(summary: Record<string, unknown>, service: Engin
       'resourceFailures',
       'traceId',
       'taskId',
+      'score',
+      'totalScore',
+      'confidence',
+      'confidenceScore',
+      'confidence_score',
+      'qualityScore',
+      'videoUrl',
+      'video_url',
+      'finalVideoUrl',
+      'final_video_url',
+      'thumbnailUrl',
+      'thumbnail_url',
+      'posterUrl',
+      'coverUrl',
+      'downloadUrl',
+      'download_url',
+      'resourceUrl',
+      'resource_url',
+      'fileUrl',
+      'file_url',
+      'url',
     ].includes(key))
     .map(([key, value]) => formatUserFacingTaskMessage(`${labelForSummaryKey(key, service)}：${stringifyCompact(value)}`))
     .filter((line) => !line.endsWith('：'));
@@ -1073,7 +1094,7 @@ function buildProfileDimensionScores(input: {
       subject: '节奏稳定度',
       score: habitScore,
       fullMark: 100,
-      hint: studyFrequency || '当前主要根据会话行为推断',
+      hint: studyFrequency || '等待更多学习节奏数据',
       description: '表示系统观察到的学习频率、复盘和自测信号是否稳定。',
     },
     {
@@ -1598,6 +1619,17 @@ export function formatUserFacingTaskMessage(value: string): string {
   return raw;
 }
 
+function toVideoGenerationErrorMessage(error: unknown): string {
+  const userFacingMessage = formatUserFacingTaskMessage(getErrorMessage(error));
+  if (!userFacingMessage) {
+    return '请重新生成视频后再试。';
+  }
+  if (/MediaRecorder|iframe|DH Live|浏览器本地渲染|浏览器渲染|本地渲染/i.test(userFacingMessage)) {
+    return '请重新生成视频后再试。';
+  }
+  return userFacingMessage;
+}
+
 function looksLikeInternalTaskDetail(value: string): boolean {
   const normalized = value.trim();
   return normalized.startsWith('原始查询：')
@@ -1839,7 +1871,7 @@ function mapVideoProgressEvent(eventType: SmartEngineStreamEvent['event']): { pr
     case 'video_gen:speech':
       return { progress: 50, status: '语音合成完成', message: '语音合成完成' };
     case 'video_gen:avatar':
-      return { progress: 75, status: '浏览器本地渲染中', message: '浏览器本地渲染中...' };
+      return { progress: 75, status: '视频生成中', message: '视频生成中...' };
     case 'video_gen:complete':
       return { progress: 100, status: '视频素材已就绪', message: '视频素材已就绪' };
     default:
@@ -2081,7 +2113,7 @@ function readBrowserRenderedVideoResult(
     duration: readDuration(payload),
     style: readVideoStyle(payload),
     knowledgePoint: readString(payload.knowledgePoint) || readString(payload.topic),
-    expiresHint: '视频将在当前浏览器本地生成',
+    expiresHint: '视频正在生成',
     fileName: readString(payload.fileName) || undefined,
     renderStatus: 'rendering',
     renderMessage,

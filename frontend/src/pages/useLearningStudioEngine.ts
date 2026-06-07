@@ -517,11 +517,11 @@ export function useLearningStudioEngine({
       ...current,
       engineState: 'ENGINE_FAILED',
       taskStatus: currentTaskId ? '正在取消任务' : '已停止实时接收',
-      serviceResultLines: current.serviceResultLines.includes('已向后端发送取消请求，正在等待确认。')
+      serviceResultLines: current.serviceResultLines.includes('已发送取消请求，正在等待确认。')
         ? current.serviceResultLines
         : [
           ...current.serviceResultLines,
-          currentTaskId ? '已向后端发送取消请求，正在等待确认。' : '已停止当前页面的实时接收。',
+          currentTaskId ? '已发送取消请求，正在等待确认。' : '已停止当前页面的实时接收。',
         ],
     }));
     if (!currentTaskId) {
@@ -533,9 +533,9 @@ export function useLearningStudioEngine({
         ...current,
         engineState: 'ENGINE_FAILED',
         taskStatus: '任务已取消',
-        serviceResultLines: current.serviceResultLines.includes('后端任务已取消。')
+        serviceResultLines: current.serviceResultLines.includes('任务已取消。')
           ? current.serviceResultLines
-          : [...current.serviceResultLines, '后端任务已取消。'],
+          : [...current.serviceResultLines, '任务已取消。'],
       }));
     } catch (error) {
       const message = getErrorMessage(error);

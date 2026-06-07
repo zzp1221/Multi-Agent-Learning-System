@@ -6,6 +6,7 @@ import com.project.api.auth.dto.RegisterRequest;
 import com.project.api.auth.dto.UserView;
 import com.project.application.audit.AuditService;
 import com.project.application.common.ApplicationException;
+import com.project.application.resource.ResourceSemanticWarmupService;
 import com.project.domain.user.UserAccount;
 import com.project.domain.user.UserAccountRepository;
 import com.project.security.JwtAuthenticatedUser;
@@ -14,6 +15,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 拥有注册和登录用例的应用服务。
@@ -30,17 +33,20 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final AuditService auditService;
+    private final ResourceSemanticWarmupService resourceSemanticWarmupService;
 
     public AuthService(
         UserAccountRepository userAccountRepository,
         PasswordEncoder passwordEncoder,
         JwtProvider jwtProvider,
-        AuditService auditService
+        AuditService auditService,
+        ResourceSemanticWarmupService resourceSemanticWarmupService
     ) {
         this.userAccountRepository = userAccountRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtProvider = jwtProvider;
         this.auditService = auditService;
+        this.resourceSemanticWarmupService = resourceSemanticWarmupService;
     }
 
     @Transactional
@@ -70,6 +76,7 @@ public class AuthService {
         }
 
         auditService.log("AUTH", "INFO", "用户登录成功", userAccount.getId(), null, java.util.Map.of("loginId", userAccount.getLoginId()));
+        triggerResourceWarmupAfterCommit(userAccount.getId());
         return buildAuthResponse(userAccount);
     }
 
@@ -97,5 +104,19 @@ public class AuthService {
             userAccount.getFullName(),
             userAccount.getMajorCode()
         );
+    }
+
+    private void triggerResourceWarmupAfterCommit(java.util.UUID userId) {
+        Runnable trigger = () -> resourceSemanticWarmupService.submitCurrentStageWarmup(userId);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            trigger.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                trigger.run();
+            }
+        });
     }
 }

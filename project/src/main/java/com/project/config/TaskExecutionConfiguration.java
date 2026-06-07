@@ -30,6 +30,16 @@ public class TaskExecutionConfiguration {
         return buildExecutor("voice-", 8);
     }
 
+    @Bean
+    public TaskExecutor noteIndexTaskExecutor() {
+        return buildExecutor("note-index-", 2);
+    }
+
+    @Bean
+    public TaskExecutor resourceSemanticWarmupTaskExecutor() {
+        return buildExecutor("resource-warmup-", 2);
+    }
+
     private TaskExecutor buildExecutor(String threadNamePrefix, int concurrencyLimit) {
         SimpleAsyncTaskExecutor executor = new SimpleAsyncTaskExecutor();
         executor.setVirtualThreads(true);

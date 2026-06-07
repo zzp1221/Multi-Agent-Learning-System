@@ -1,4 +1,3 @@
-import importlib.util
 from pathlib import Path
 
 import pytest
@@ -349,14 +348,16 @@ async def test_generation_service_writes_non_document_assets_from_llm_output(
     assert pending_slides_asset.display_mode == "SLIDE_OUTLINE_CONFIRMATION"
     assert pending_slides_asset.local_path is None
     assert "联合索引PPT大纲" in pending_slides_asset.inline_content
-    if importlib.util.find_spec("pptx") is None:
-        with pytest.raises(RuntimeError, match="python-pptx produced no file"):
-            await service.build_asset(asset_type="SLIDES", params=confirmed_params, snapshot=snapshot)
-    else:
-        slides_asset = await service.build_asset(asset_type="SLIDES", params=confirmed_params, snapshot=snapshot)
-        assert slides_asset.display_mode == "DOWNLOAD_CARD"
-        assert slides_asset.file_name == "slides_task-multi.pptx"
-        assert service._count_pptx_slides(Path(slides_asset.local_path).read_bytes()) >= 4
+    slides_asset = await service.build_asset(asset_type="SLIDES", params=confirmed_params, snapshot=snapshot)
+    assert slides_asset.display_mode == "DOWNLOAD_CARD"
+    assert slides_asset.file_name == "slides_task-multi.html"
+    assert slides_asset.mime_type == "text/html; charset=UTF-8"
+    html = Path(slides_asset.local_path).read_text(encoding="utf-8")
+    assert html.startswith("<!DOCTYPE html>")
+    assert 'data-generated-by="zhixue-html-ppt"' in html
+    assert html.count('<section class="slide') >= 9
+    assert "<script" in html
+    assert "application/vnd.openxmlformats" not in slides_asset.mime_type
     assert mindmap_asset.display_mode == "INLINE_MERMAID"
     assert mindmap_asset.file_name == "mindmap_task-multi.mmd"
     assert Path(mindmap_asset.local_path).exists()
@@ -467,7 +468,6 @@ async def test_generation_service_accepts_nested_confirmed_slide_outline(
     monkeypatch.setenv("MIMO_API_KEY", "unit-test-mimo-key")
     get_settings.cache_clear()
     monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMiMoClient)
-    monkeypatch.setattr(service, "_build_pptx_bytes", lambda **kwargs: b"nested-confirm-pptx")
 
     asset = await service.build_asset(
         asset_type="SLIDES",
@@ -484,9 +484,12 @@ async def test_generation_service_accepts_nested_confirmed_slide_outline(
     )
 
     assert asset.display_mode == "DOWNLOAD_CARD"
-    assert asset.file_name == "slides_task-nested-confirm.pptx"
+    assert asset.file_name == "slides_task-nested-confirm.html"
     assert Path(asset.local_path).exists()
-    assert Path(asset.local_path).read_bytes() == b"nested-confirm-pptx"
+    html = Path(asset.local_path).read_text(encoding="utf-8")
+    assert "<title>Java线程创建基础概念学习PPT大纲</title>" in html
+    assert "线程创建概览" in html
+    assert html.count('<section class="slide') == 9
     get_settings.cache_clear()
 
 
@@ -561,14 +564,15 @@ async def test_generation_service_normalizes_short_slide_bullets_to_download_car
 
     captured: dict[str, list[dict[str, object]]] = {}
 
-    def fake_build_pptx_bytes(**kwargs):
+    def fake_render_deck(self, **kwargs):
+        del self
         captured["slides"] = kwargs["slides"]
-        return b"pptx"
+        return "<!DOCTYPE html><html><body>deck</body></html>"
 
     monkeypatch.setenv("MIMO_API_KEY", "unit-test-mimo-key")
     get_settings.cache_clear()
     monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMiMoClient)
-    monkeypatch.setattr(service, "_build_pptx_bytes", fake_build_pptx_bytes)
+    monkeypatch.setattr("src.ai_modules.generation.html_ppt_builder.HtmlPptDeckBuilder.render", fake_render_deck)
 
     asset = await service.build_asset(
         asset_type="SLIDES",
@@ -582,7 +586,7 @@ async def test_generation_service_normalizes_short_slide_bullets_to_download_car
     )
 
     assert asset.display_mode == "DOWNLOAD_CARD"
-    assert asset.file_name == "slides_task-short-bullets.pptx"
+    assert asset.file_name == "slides_task-short-bullets.html"
     assert len(captured["slides"][0]["bullets"]) == 3
     get_settings.cache_clear()
 

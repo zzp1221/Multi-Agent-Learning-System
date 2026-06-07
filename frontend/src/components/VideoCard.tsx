@@ -121,7 +121,7 @@ export default function VideoCard(props: VideoCardProps) {
   }, [resolvedVideoUrl, props.videoUrl]);
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-white/90 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-900/86 dark:ring-slate-700/70">
+    <div className="overflow-hidden rounded-2xl bg-white/90 shadow-[0_12px_34px_rgba(15,23,42,0.08)] dark:bg-slate-900/86 dark:shadow-slate-950/24">
       {/* Video Player Area */}
       <div className="relative aspect-video bg-slate-900">
         {/* Thumbnail / Background */}
@@ -142,7 +142,7 @@ export default function VideoCard(props: VideoCardProps) {
             <div className="flex flex-col items-center gap-3 px-4 text-center">
               <LoaderCircle className="h-8 w-8 animate-spin text-white/70" />
               {isPendingRender ? (
-                <span className="text-sm font-medium text-white/80">{props.renderMessage || '浏览器本地渲染中，请稍候'}</span>
+                <span className="text-sm font-medium text-white/80">{props.renderMessage || '视频生成中，请稍候'}</span>
               ) : null}
             </div>
           </div>
@@ -152,8 +152,8 @@ export default function VideoCard(props: VideoCardProps) {
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/70 px-4 text-center">
             <div className="space-y-2 text-white">
               <TriangleAlert className="mx-auto h-8 w-8 text-amber-300" />
-              <p className="text-sm font-semibold">浏览器本地渲染失败</p>
-              <p className="text-xs text-white/70">{props.renderMessage || '请重新生成视频或换用支持 MediaRecorder 的浏览器。'}</p>
+              <p className="text-sm font-semibold">视频生成失败</p>
+              <p className="text-xs text-white/70">{props.renderMessage || '请重新生成视频后再试。'}</p>
             </div>
           </div>
         ) : null}
@@ -220,7 +220,7 @@ export default function VideoCard(props: VideoCardProps) {
               }
             }}
           >
-            当前浏览器不支持视频播放，请直接下载后查看。
+            视频暂时无法直接播放，请下载后查看。
           </video>
         ) : null}
       </div>
@@ -253,19 +253,19 @@ export default function VideoCard(props: VideoCardProps) {
           ) : null}
           {isPendingRender ? (
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-              本地渲染中
+              生成中
             </span>
           ) : null}
           {isFailedRender ? (
             <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
-              渲染失败
+              生成失败
             </span>
           ) : null}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 pt-3 shadow-[inset_0_1px_0_rgba(241,245,249,0.86)] dark:shadow-[inset_0_1px_0_rgba(30,41,59,0.86)]">
-          <span className="text-xs text-slate-400 dark:text-slate-500">{props.expiresHint || '视频资源已生成'}</span>
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50/70 px-3 py-2.5 dark:bg-slate-950/34">
+          <span className="text-xs text-slate-400 dark:text-slate-500">{videoAvailabilityLabel(props)}</span>
           {props.videoUrl ? (
             <a
               href={resolvedVideoUrl || resolveMediaUrl(props.videoUrl)}
@@ -281,6 +281,16 @@ export default function VideoCard(props: VideoCardProps) {
       </div>
     </div>
   );
+}
+
+function videoAvailabilityLabel(props: VideoCardProps): string {
+  if (props.renderStatus === 'rendering') {
+    return '视频正在生成';
+  }
+  if (props.renderStatus === 'failed') {
+    return '视频暂不可用';
+  }
+  return props.videoUrl ? '视频可播放或下载' : '视频资源已生成';
 }
 
 function resolveMediaUrl(url: string): string {

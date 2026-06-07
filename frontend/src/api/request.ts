@@ -243,9 +243,26 @@ export const request = {
  */
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
-    return error.message;
+    return toUserFacingErrorMessage(error.message);
   }
   return '未知错误';
+}
+
+function toUserFacingErrorMessage(message: string): string {
+  const normalized = message.trim();
+  if (!normalized) {
+    return '请求失败，请稍后重试';
+  }
+  if (/\b401\b/.test(normalized) || normalized.includes('请先登录') || normalized.includes('认证信息无效')) {
+    return '登录状态已失效，请重新登录';
+  }
+  if (/(traceId|taskId|Traceback|RuntimeError|ValidationError|AxiosError|Request failed|Network Error|HTTP\s*\d{3}|status\s*code\s*\d{3})/i.test(normalized)) {
+    return '请求暂时没有完成，请稍后重试';
+  }
+  if (/^\{[\s\S]*\}$/.test(normalized) || /^\[[\s\S]*\]$/.test(normalized)) {
+    return '请求暂时没有完成，请稍后重试';
+  }
+  return normalized;
 }
 
 export function isUnauthorizedError(error: unknown): boolean {

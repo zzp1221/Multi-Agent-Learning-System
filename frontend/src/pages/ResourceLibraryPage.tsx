@@ -82,11 +82,11 @@ const CS_CATEGORIES = [
 const CATEGORY_LABELS = new Map(CS_CATEGORIES.map((item) => [item.value, item.label]));
 
 const TYPE_STYLE: Record<string, { label: string; className: string; icon: ComponentType<{ className?: string }> }> = {
-  COURSE: { label: '课程', icon: GraduationCap, className: 'bg-blue-50 text-blue-700 ring-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-500/20' },
-  DOCUMENT: { label: '文档', icon: FileText, className: 'bg-indigo-50 text-indigo-700 ring-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20' },
-  VIDEO: { label: '视频', icon: PlayCircle, className: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20' },
-  CASE: { label: '案例', icon: Boxes, className: 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20' },
-  NOTE: { label: '笔记', icon: BookOpen, className: 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20' },
+  COURSE: { label: '课程', icon: GraduationCap, className: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300' },
+  DOCUMENT: { label: '文档', icon: FileText, className: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' },
+  VIDEO: { label: '视频', icon: PlayCircle, className: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300' },
+  CASE: { label: '案例', icon: Boxes, className: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' },
+  NOTE: { label: '笔记', icon: BookOpen, className: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' },
 };
 
 export default function ResourceLibraryPage() {
@@ -160,17 +160,25 @@ export default function ResourceLibraryPage() {
       setRecommendations([]);
       return;
     }
-    try {
-      const [nextStats, nextTags, nextRecommendations] = await Promise.all([
-        resourcesApi.stats(),
-        resourcesApi.tags(16),
-        resourcesApi.recommendations(5),
-      ]);
-      setStats(nextStats);
-      setTags(nextTags);
-      setRecommendations(nextRecommendations);
-    } catch (sidebarError) {
-      console.error('Failed to load resource sidebars:', sidebarError);
+    const [statsResult, tagsResult, recommendationsResult] = await Promise.allSettled([
+      resourcesApi.stats(),
+      resourcesApi.tags(16),
+      resourcesApi.recommendations(5),
+    ]);
+    if (statsResult.status === 'fulfilled') {
+      setStats(statsResult.value);
+    } else {
+      console.error('Failed to load resource stats:', statsResult.reason);
+    }
+    if (tagsResult.status === 'fulfilled') {
+      setTags(tagsResult.value);
+    } else {
+      console.error('Failed to load resource tags:', tagsResult.reason);
+    }
+    if (recommendationsResult.status === 'fulfilled') {
+      setRecommendations(recommendationsResult.value);
+    } else {
+      console.error('Failed to load resource recommendations:', recommendationsResult.reason);
     }
   }, [isAuthenticated]);
 
@@ -329,22 +337,22 @@ export default function ResourceLibraryPage() {
     <ResourceShell>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <main className="min-w-0 space-y-5">
-          <section className="overflow-hidden rounded-[28px] bg-white/72 p-5 shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70 dark:shadow-slate-950/20">
+          <section className="overflow-hidden rounded-[28px] bg-white/76 p-5 shadow-[0_18px_56px_rgba(59,97,155,0.09)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">资源库</h1>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">真实可访问学习资源，支持筛选、收藏、进度记录和 RAG 语义检索。</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">搜索、收藏和继续学习，都集中在这里。</p>
               </div>
               <Link
                 to="/resources/generation"
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary-50 px-4 text-sm font-semibold text-primary-700 ring-1 ring-primary-100 transition hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-200 dark:ring-primary-500/20 dark:hover:bg-primary-500/20"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary-50 px-4 text-sm font-semibold text-primary-700 transition hover:bg-primary-100 dark:bg-primary-500/10 dark:text-primary-200 dark:hover:bg-primary-500/20"
               >
                 <Layers3 className="h-4 w-4" />
                 资源生成
               </Link>
             </div>
             <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-              <label className="flex min-h-11 items-center rounded-xl bg-white/88 px-3 ring-1 ring-blue-100/80 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-500/15 dark:bg-slate-950/80 dark:ring-slate-700/70">
+              <label className="flex min-h-11 items-center rounded-xl bg-white/88 px-3 shadow-sm shadow-slate-200/24 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/32 dark:bg-slate-950/72 dark:shadow-none dark:focus-within:bg-slate-950">
                 <Search className="mr-2 h-4 w-4 text-slate-400" />
                 <input
                   value={keyword}
@@ -376,10 +384,10 @@ export default function ResourceLibraryPage() {
                     key={tab.value}
                     type="button"
                     onClick={() => setActiveType(tab.value)}
-                    className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-semibold ring-1 transition ${
+                    className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition ${
                       active
-                        ? 'bg-primary-600 text-white ring-primary-600 shadow-sm shadow-primary-500/20'
-                        : 'bg-white text-slate-600 ring-blue-100 hover:bg-primary-50 hover:text-primary-700 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-primary-500/10'
+                        ? 'bg-primary-600 text-white shadow-sm shadow-primary-500/20'
+                        : 'bg-white/72 text-slate-600 hover:bg-primary-50 hover:text-primary-700 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:bg-primary-500/10'
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -389,7 +397,7 @@ export default function ResourceLibraryPage() {
               })}
             </div>
 
-            <div className="mt-5 grid gap-4 pt-5 shadow-[inset_0_1px_0_rgba(219,234,254,0.72)] dark:shadow-[inset_0_1px_0_rgba(51,65,85,0.72)]">
+            <div className="mt-5 grid gap-4 pt-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
                   <Filter className="h-4 w-4 text-slate-400" />
@@ -397,17 +405,17 @@ export default function ResourceLibraryPage() {
                   <input
                     value={subcategory}
                     onChange={(event) => setSubcategory(event.target.value)}
-                    placeholder="Subcategory"
-                    className="h-10 w-32 rounded-xl bg-white/88 px-3 text-sm text-slate-700 outline-none ring-1 ring-blue-100/80 transition focus:ring-2 focus:ring-primary-500/15 dark:bg-slate-950/80 dark:text-slate-200 dark:ring-slate-700/70"
+                    placeholder="细分方向"
+                    className="h-10 w-32 rounded-xl bg-white/84 px-3 text-sm text-slate-700 outline-none shadow-sm shadow-slate-200/20 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/68 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950"
                   />
                   <Select value={difficulty} onChange={setDifficulty} options={DIFFICULTIES} />
                   <input
                     value={source}
                     onChange={(event) => setSource(event.target.value)}
-                    placeholder="来源"
-                    className="h-10 w-32 rounded-xl bg-white/88 px-3 text-sm text-slate-700 outline-none ring-1 ring-blue-100/80 transition focus:ring-2 focus:ring-primary-500/15 dark:bg-slate-950/80 dark:text-slate-200 dark:ring-slate-700/70"
+                    placeholder="平台"
+                    className="h-10 w-32 rounded-xl bg-white/84 px-3 text-sm text-slate-700 outline-none shadow-sm shadow-slate-200/20 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/68 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950"
                   />
-                  <label className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-sm font-medium text-slate-600 ring-1 ring-blue-100 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-700">
+                  <label className="inline-flex h-10 items-center gap-2 rounded-xl bg-white/72 px-3 text-sm font-medium text-slate-600 dark:bg-slate-950/70 dark:text-slate-300">
                     <input
                       type="checkbox"
                       checked={favoriteOnly}
@@ -425,7 +433,7 @@ export default function ResourceLibraryPage() {
 
               <div className="rounded-[20px] bg-slate-50/70 p-3 dark:bg-slate-950/32">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                  <div className="flex min-h-11 flex-1 items-center rounded-xl bg-white px-3 ring-1 ring-blue-100 focus-within:ring-2 focus-within:ring-primary-500/20 dark:bg-slate-950 dark:ring-slate-700">
+                  <div className="flex min-h-11 flex-1 items-center rounded-xl bg-white/88 px-3 shadow-sm shadow-slate-200/22 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/30 dark:bg-slate-950/72 dark:shadow-none dark:focus-within:bg-slate-950">
                     <Sparkles className="mr-2 h-4 w-4 text-primary-500" />
                     <input
                       value={semanticQuery}
@@ -446,7 +454,7 @@ export default function ResourceLibraryPage() {
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
                   >
                     {semanticLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                    RAG 检索
+                    语义搜索
                   </button>
                 </div>
                 {semantic ? (
@@ -457,7 +465,7 @@ export default function ResourceLibraryPage() {
           </section>
 
           {error ? (
-            <div className="flex items-start gap-2 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-100/80 dark:bg-rose-500/10 dark:text-rose-200 dark:ring-rose-500/20">
+            <div className="flex items-start gap-2 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">
               <TriangleAlert className="mt-0.5 h-4 w-4" />
               <span>{error}</span>
             </div>
@@ -492,7 +500,7 @@ export default function ResourceLibraryPage() {
                   void loadResources(nextPage, false);
                 }}
                 disabled={loading}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-white/88 px-5 text-sm font-semibold text-primary-700 ring-1 ring-blue-100/80 transition hover:bg-primary-50 disabled:opacity-70 dark:bg-slate-900/80 dark:text-primary-300 dark:ring-slate-700/70"
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-white/88 px-5 text-sm font-semibold text-primary-700 shadow-sm shadow-blue-100/30 transition hover:bg-primary-50 disabled:opacity-70 dark:bg-slate-900/80 dark:text-primary-300"
               >
                 {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 加载更多
@@ -536,9 +544,9 @@ function ResourceShell({ children }: { children: React.ReactNode }) {
 
 function AccessState({ onLogin }: { onLogin: () => void }) {
   return (
-    <div className="flex min-h-[520px] items-center justify-center rounded-[28px] bg-white/72 p-6 text-center shadow-[0_18px_56px_rgba(59,97,155,0.10)] ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/68 dark:ring-slate-800/70">
+    <div className="flex min-h-[520px] items-center justify-center rounded-[28px] bg-white/76 p-6 text-center shadow-[0_18px_56px_rgba(59,97,155,0.09)] backdrop-blur-xl dark:bg-slate-900/68">
       <div className="max-w-md">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 ring-1 ring-primary-100 dark:bg-primary-500/10 dark:text-primary-300 dark:ring-primary-500/20">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
           <BookOpen className="h-6 w-6" />
         </div>
         <h1 className="mt-4 text-xl font-bold text-slate-950 dark:text-white">登录后进入资源库</h1>
@@ -560,7 +568,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (value:
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-10 rounded-xl bg-white/88 px-3 text-sm text-slate-700 outline-none ring-1 ring-blue-100/80 transition focus:ring-2 focus:ring-primary-500/15 dark:bg-slate-950/80 dark:text-slate-200 dark:ring-slate-700/70"
+      className="h-10 rounded-xl bg-white/84 px-3 text-sm text-slate-700 outline-none shadow-sm shadow-slate-200/20 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/68 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950"
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>{option.label}</option>
@@ -586,7 +594,7 @@ function ResourceCard({
   const Icon = style.icon;
   const progress = Math.max(0, Math.min(100, resource.progress ?? 0));
   return (
-    <article className="group flex min-h-[286px] flex-col rounded-2xl bg-white/84 p-4 shadow-sm shadow-blue-100/50 ring-1 ring-white/80 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-100/70 dark:bg-slate-900/84 dark:ring-slate-800/70 dark:shadow-slate-950/20">
+    <article className="group flex min-h-[286px] flex-col rounded-2xl bg-white/82 p-4 shadow-sm shadow-blue-100/28 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/92 hover:shadow-lg hover:shadow-blue-100/42 dark:bg-slate-900/78 dark:shadow-slate-950/18">
       <div className="relative overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
         {resource.coverUrl ? (
           <img src={resource.coverUrl} alt="" className="h-32 w-full object-cover" />
@@ -595,7 +603,7 @@ function ResourceCard({
             <Icon className="h-10 w-10 text-primary-500/80" />
           </div>
         )}
-        <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 ${style.className}`}>
+        <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${style.className}`}>
           <Icon className="h-3.5 w-3.5" />
           {style.label}
         </span>
@@ -613,7 +621,7 @@ function ResourceCard({
             type="button"
             onClick={() => onToggleFavorite(resource)}
             disabled={saving}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 ring-1 ring-blue-100/80 transition hover:bg-primary-50 hover:text-primary-600 disabled:opacity-60 dark:ring-slate-700/70 dark:hover:bg-primary-500/10"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-primary-50 hover:text-primary-600 disabled:opacity-60 dark:hover:bg-primary-500/10"
             title={resource.favorite ? '取消收藏' : '收藏'}
           >
             {resource.favorite ? <BookmarkCheck className="h-4 w-4 text-amber-500" /> : <Bookmark className="h-4 w-4" />}
@@ -633,7 +641,7 @@ function ResourceCard({
         <div className="mt-auto pt-4">
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
             <span>{difficultyLabel(resource.difficultyLevel)}</span>
-            <span>{resource.durationMinutes ? `${resource.durationMinutes} 分钟` : resource.sourceName || '外部资源'}</span>
+            <span>{resource.durationMinutes ? `${resource.durationMinutes} 分钟` : resourcePlatform(resource)}</span>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
             <div className="h-full rounded-full bg-primary-600 transition-all" style={{ width: `${progress}%` }} />
@@ -651,7 +659,7 @@ function ResourceCard({
             <button
               type="button"
               onClick={() => onOpenDetail(resource)}
-              className="inline-flex h-10 items-center justify-center rounded-xl px-3 text-sm font-semibold text-slate-600 ring-1 ring-blue-100/80 transition hover:bg-primary-50 hover:text-primary-700 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:bg-primary-500/10"
+              className="inline-flex h-10 items-center justify-center rounded-xl px-3 text-sm font-semibold text-slate-600 transition hover:bg-primary-50 hover:text-primary-700 dark:text-slate-300 dark:hover:bg-primary-500/10"
             >
               详情
             </button>
@@ -665,7 +673,7 @@ function ResourceCard({
 function SemanticResults({ response, onOpenDetail }: { response: ResourceSemanticSearchResponse; onOpenDetail: (resource: ResourceItem) => void }) {
   if (!response.available) {
     return (
-      <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-100/80 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-500/20">
+      <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
         {response.message}
       </div>
     );
@@ -680,13 +688,13 @@ function SemanticResults({ response, onOpenDetail }: { response: ResourceSemanti
           key={result.resourceId}
           type="button"
           onClick={() => result.resource && onOpenDetail(result.resource)}
-          className="w-full rounded-xl bg-white px-3 py-2 text-left ring-1 ring-blue-100 transition hover:bg-primary-50 dark:bg-slate-950 dark:ring-slate-700 dark:hover:bg-primary-500/10"
+          className="w-full rounded-xl bg-white/78 px-3 py-2 text-left transition hover:bg-primary-50 dark:bg-slate-950/72 dark:hover:bg-primary-500/10"
         >
           <div className="flex items-center justify-between gap-3">
-            <span className="line-clamp-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{result.resource?.title || result.resourceId}</span>
-            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">{Math.round(result.score * 100)}%</span>
+            <span className="line-clamp-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{result.resource?.title || '推荐资源'}</span>
+            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">适合学习</span>
           </div>
-          <p className="mt-1 line-clamp-1 text-xs text-slate-500 dark:text-slate-400">{result.hits[0]?.content || result.reason}</p>
+          <p className="mt-1 line-clamp-1 text-xs text-slate-500 dark:text-slate-400">{result.hits[0]?.content || result.resource?.summaryText || '找到与你的问题相关的学习内容'}</p>
         </button>
       ))}
     </div>
@@ -695,7 +703,7 @@ function SemanticResults({ response, onOpenDetail }: { response: ResourceSemanti
 
 function StatsPanel({ stats }: { stats: ResourceStatsResponse | null }) {
   return (
-    <section className="rounded-[22px] bg-white/68 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/60 dark:ring-slate-800/70">
+    <section className="rounded-[22px] bg-white/68 p-4 shadow-sm shadow-blue-100/24 backdrop-blur dark:bg-slate-900/60">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-slate-950 dark:text-white">学习数据</h2>
         <BarChart3 className="h-4 w-4 text-primary-500" />
@@ -734,9 +742,9 @@ function CoveragePanel({
     .sort((left, right) => right[1] - left[1])
     .slice(0, 8);
   return (
-    <section className="rounded-[22px] bg-white/68 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/60 dark:ring-slate-800/70">
+    <section className="rounded-[22px] bg-white/68 p-4 shadow-sm shadow-blue-100/24 backdrop-blur dark:bg-slate-900/60">
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-slate-950 dark:text-white">CS 覆盖</h2>
+        <h2 className="font-bold text-slate-950 dark:text-white">方向覆盖</h2>
         <BarChart3 className="h-4 w-4 text-primary-500" />
       </div>
       <div className="mt-3 space-y-2">
@@ -750,7 +758,7 @@ function CoveragePanel({
               className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition ${
                 active
                   ? 'bg-primary-600 text-white'
-                  : 'bg-white text-slate-700 ring-1 ring-blue-100 hover:bg-primary-50 dark:bg-slate-950 dark:text-slate-200 dark:ring-slate-700 dark:hover:bg-primary-500/10'
+                  : 'bg-white/72 text-slate-700 hover:bg-primary-50 dark:bg-slate-950/70 dark:text-slate-200 dark:hover:bg-primary-500/10'
               }`}
             >
               <span className="line-clamp-1 font-semibold">{categoryLabel(key)}</span>
@@ -765,7 +773,7 @@ function CoveragePanel({
 
 function RecommendationPanel({ items, onOpenDetail }: { items: ResourceItem[]; onOpenDetail: (resource: ResourceItem) => void }) {
   return (
-    <section className="rounded-[22px] bg-white/68 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/60 dark:ring-slate-800/70">
+    <section className="rounded-[22px] bg-white/68 p-4 shadow-sm shadow-blue-100/24 backdrop-blur dark:bg-slate-900/60">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-slate-950 dark:text-white">为你推荐</h2>
         <Sparkles className="h-4 w-4 text-primary-500" />
@@ -778,7 +786,7 @@ function RecommendationPanel({ items, onOpenDetail }: { items: ResourceItem[]; o
             </div>
             <div className="min-w-0">
               <div className="line-clamp-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{item.title}</div>
-              <div className="mt-1 text-xs text-emerald-600 dark:text-emerald-300">{Math.round((item.qualityScore ?? 0.88) * 100)}% 匹配度</div>
+              <div className="mt-1 text-xs text-emerald-600 dark:text-emerald-300">适合继续学习</div>
             </div>
           </button>
         )) : <p className="text-sm text-slate-500 dark:text-slate-400">暂无推荐资源。</p>}
@@ -789,7 +797,7 @@ function RecommendationPanel({ items, onOpenDetail }: { items: ResourceItem[]; o
 
 function TagsPanel({ tags, onPick }: { tags: ResourceTag[]; onPick: (tag: string) => void }) {
   return (
-    <section className="rounded-[22px] bg-white/68 p-4 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/60 dark:ring-slate-800/70">
+    <section className="rounded-[22px] bg-white/68 p-4 shadow-sm shadow-blue-100/24 backdrop-blur dark:bg-slate-900/60">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-slate-950 dark:text-white">热门标签</h2>
         <Tags className="h-4 w-4 text-primary-500" />
@@ -828,14 +836,14 @@ function DetailDrawer({
       <aside className="h-full w-full max-w-xl overflow-y-auto bg-white p-5 shadow-2xl dark:bg-slate-950" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <span className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 ${style.className}`}>
+            <span className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${style.className}`}>
               <Icon className="h-3.5 w-3.5" />
               {style.label}
             </span>
             <h2 className="mt-3 text-xl font-bold leading-7 text-slate-950 dark:text-white">{resource.title}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{resource.summaryText || '暂无摘要'}</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-xl px-3 py-1.5 text-sm text-slate-500 ring-1 ring-slate-200/80 transition hover:bg-slate-50 dark:text-slate-300 dark:ring-slate-700/70 dark:hover:bg-slate-900">关闭</button>
+          <button type="button" onClick={onClose} className="rounded-xl px-3 py-1.5 text-sm text-slate-500 transition hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-900">关闭</button>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {resource.tags.map((tag) => <span key={tag} className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">{tag}</span>)}
@@ -844,16 +852,16 @@ function DetailDrawer({
           <Info label="CS 方向" value={categoryLabel(resource.csCategory)} />
           <Info label="子方向" value={resource.csSubcategory} />
           <Info label="难度" value={difficultyLabel(resource.difficultyLevel)} />
-          <Info label="来源" value={resource.sourceName || resource.sourceKind} />
-          <Info label="可访问性" value={resource.accessibilityStatus || (resource.httpStatus ? String(resource.httpStatus) : '待检测')} />
-          <Info label="RAG 分块" value={loading ? '读取中' : `${detail.chunkCount} 段`} />
+          <Info label="平台" value={resourcePlatform(resource)} />
         </div>
-        {detail.previewChunks.length ? (
-          <div className="mt-5 rounded-2xl bg-blue-50/50 p-4 ring-1 ring-blue-100/70 dark:bg-slate-900/70 dark:ring-slate-800/70">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">命中文本预览</h3>
-            <div className="mt-3 space-y-2">
-              {detail.previewChunks.map((chunk, index) => (
-                <p key={`${index}-${chunk.slice(0, 16)}`} className="line-clamp-3 rounded-xl bg-white px-3 py-2 text-sm leading-6 text-slate-600 dark:bg-slate-950 dark:text-slate-300">{chunk}</p>
+        {loading || detail.previewChunks.length ? (
+          <div className="mt-5 rounded-2xl bg-blue-50/50 p-4 dark:bg-slate-900/70">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">内容预览</h3>
+            <div className="mt-3 space-y-3">
+              {loading ? (
+                <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">正在整理内容预览...</p>
+              ) : detail.previewChunks.map((chunk, index) => (
+                <p key={`${index}-${chunk.slice(0, 16)}`} className="line-clamp-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{chunk}</p>
               ))}
             </div>
           </div>
@@ -872,7 +880,7 @@ function DetailDrawer({
             type="button"
             onClick={() => onToggleFavorite(resource)}
             disabled={saving}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-slate-600 ring-1 ring-blue-100/80 transition hover:bg-primary-50 hover:text-primary-700 disabled:opacity-70 dark:text-slate-300 dark:ring-slate-700/70"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-slate-600 transition hover:bg-primary-50 hover:text-primary-700 disabled:opacity-70 dark:text-slate-300"
           >
             {resource.favorite ? <BookmarkCheck className="h-4 w-4 text-amber-500" /> : <Bookmark className="h-4 w-4" />}
             {resource.favorite ? '已收藏' : '收藏'}
@@ -885,7 +893,7 @@ function DetailDrawer({
 
 function Info({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="rounded-xl bg-slate-50/80 px-3 py-2 ring-1 ring-white/70 dark:bg-slate-900/80 dark:ring-slate-800/70">
+    <div className="rounded-xl bg-slate-50/80 px-3 py-2 dark:bg-slate-900/80">
       <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
       <div className="mt-1 line-clamp-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{value || '-'}</div>
     </div>
@@ -894,7 +902,7 @@ function Info({ label, value }: { label: string; value?: string }) {
 
 function LoadingState() {
   return (
-    <div className="flex min-h-[360px] items-center justify-center rounded-[24px] bg-white/64 text-sm text-slate-500 shadow-sm shadow-blue-100/35 ring-1 ring-white/80 dark:bg-slate-900/60 dark:text-slate-400 dark:ring-slate-800/70">
+    <div className="flex min-h-[360px] items-center justify-center rounded-[24px] bg-white/64 text-sm text-slate-500 shadow-sm shadow-blue-100/24 dark:bg-slate-900/60 dark:text-slate-400">
       <LoaderCircle className="mr-2 h-4 w-4 animate-spin text-primary-500" />
       正在加载资源库
     </div>
@@ -903,12 +911,12 @@ function LoadingState() {
 
 function EmptyState({ onReload }: { onReload: () => void }) {
   return (
-    <div className="flex min-h-[360px] items-center justify-center rounded-[24px] bg-white/64 p-6 text-center shadow-sm shadow-blue-100/35 ring-1 ring-white/80 dark:bg-slate-900/60 dark:ring-slate-800/70">
+    <div className="flex min-h-[360px] items-center justify-center rounded-[24px] bg-white/64 p-6 text-center shadow-sm shadow-blue-100/24 dark:bg-slate-900/60">
       <div>
         <CheckCircle2 className="mx-auto h-8 w-8 text-slate-300" />
         <h2 className="mt-3 text-base font-bold text-slate-900 dark:text-white">没有匹配的资源</h2>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">调整搜索词或筛选条件后再试。</p>
-        <button type="button" onClick={onReload} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-primary-700 ring-1 ring-blue-100/80 hover:bg-primary-50 dark:text-primary-300 dark:ring-slate-700/70">
+        <button type="button" onClick={onReload} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:text-primary-300">
           <RefreshCw className="h-4 w-4" />
           重新加载
         </button>
@@ -926,6 +934,10 @@ function categoryLabel(value?: string) {
     return '';
   }
   return CATEGORY_LABELS.get(value) ?? value;
+}
+
+function resourcePlatform(resource: ResourceItem): string {
+  return resource.sourceName || '学习资源';
 }
 
 function difficultyLabel(value?: string) {

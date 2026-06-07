@@ -419,7 +419,7 @@ export default function Layout() {
           </div>
           <div>
             <p className="text-base font-semibold text-slate-900 dark:text-white">智学引擎</p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">AI学习智能体平台</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">智能学习工作台</p>
           </div>
         </NavLink>
       </div>
@@ -458,7 +458,7 @@ export default function Layout() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute left-0 top-full z-50 mt-2 w-full min-w-[210px] overflow-hidden rounded-2xl bg-white/94 py-1.5 shadow-xl shadow-blue-100/70 ring-1 ring-white/80 backdrop-blur-xl dark:bg-slate-900/94 dark:ring-slate-700/60 dark:shadow-slate-900/50"
+                className="absolute left-0 top-full z-50 mt-2 w-full min-w-[210px] overflow-hidden rounded-2xl bg-white/94 py-1.5 shadow-xl shadow-blue-100/60 backdrop-blur-xl dark:bg-slate-900/94 dark:shadow-slate-900/50"
               >
                 <button
                   type="button"
@@ -514,61 +514,61 @@ export default function Layout() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="px-5 pb-4">
-        <label className="flex items-center rounded-2xl bg-white/70 px-3 py-2 ring-1 ring-blue-100/70 transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-500/15 dark:bg-slate-900/80 dark:ring-slate-700/70">
-          <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <input
-            value={historySearch}
-            onChange={(event) => setHistorySearch(event.target.value)}
-            placeholder="搜索历史对话"
-            className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-300 dark:placeholder:text-slate-500"
-          />
-        </label>
-      </div>
+      {isAuthenticated ? (
+        <div className="px-5 pb-4">
+          <label className="flex items-center rounded-2xl bg-white/70 px-3 py-2 shadow-sm shadow-blue-100/50 transition-all focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/32 dark:bg-slate-900/80 dark:shadow-none dark:focus-within:bg-slate-900 dark:focus-within:shadow-primary-950/24">
+            <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <input
+              value={historySearch}
+              onChange={(event) => setHistorySearch(event.target.value)}
+              placeholder="搜索历史对话"
+              className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-300 dark:placeholder:text-slate-500"
+            />
+          </label>
+        </div>
+      ) : null}
 
-      {/* Conversation List */}
-      <div className="mt-1 flex-1 overflow-y-auto scrollbar-thin px-4 pb-4">
-        <div className="mb-2 flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-          <span className="inline-flex items-center gap-2">
-          <History className="h-3.5 w-3.5" />
-          最近对话
-          </span>
+      {isAuthenticated ? (
+        <div className="mt-1 flex-1 overflow-y-auto scrollbar-thin px-4 pb-4">
+          <div className="mb-2 flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+            <span className="inline-flex items-center gap-2">
+            <History className="h-3.5 w-3.5" />
+            最近对话
+            </span>
+          </div>
+          <div className="space-y-1">
+            <AnimatePresence mode="popLayout">
+              {filteredConversationHistory.length > 0 ? filteredConversationHistory.map((item, index) => (
+                <motion.button
+                  key={item.conversationId}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: Math.min(index * 0.02, 0.3) }}
+                  type="button"
+                  onClick={() => handleOpenConversation(item)}
+                  className={`group w-full truncate rounded-xl px-3 py-2 text-left text-sm transition-all duration-200 ${
+                    item.conversationId === activeConversationId
+                      ? 'bg-white text-primary-700 shadow-sm shadow-blue-100/70 dark:bg-primary-500/10 dark:text-primary-400'
+                      : 'text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
+                  title={item.lastMessagePreview || item.title}
+                >
+                  <div className="truncate text-[13px] font-medium">{item.title}</div>
+                  {item.lastMessagePreview ? (
+                    <div className="mt-0.5 truncate text-[11px] opacity-60">{item.lastMessagePreview}</div>
+                  ) : null}
+                </motion.button>
+              )) : (
+                <div className="rounded-lg px-3 py-2 text-[13px] text-slate-400 dark:text-slate-500">
+                  {historySearch.trim() ? '没有匹配的历史对话' : '暂无最近对话'}
+                </div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
-        <div className="space-y-1">
-          <AnimatePresence mode="popLayout">
-            {filteredConversationHistory.length > 0 ? filteredConversationHistory.map((item, index) => (
-              <motion.button
-                key={item.conversationId}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: Math.min(index * 0.02, 0.3) }}
-                type="button"
-                onClick={() => handleOpenConversation(item)}
-                className={`group w-full truncate rounded-xl px-3 py-2 text-left text-sm transition-all duration-200 ${
-                  item.conversationId === activeConversationId
-                    ? 'bg-white text-primary-700 shadow-sm shadow-blue-100/70 ring-1 ring-blue-100 dark:bg-primary-500/10 dark:text-primary-400 dark:ring-primary-500/20'
-                    : 'text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
-                title={item.lastMessagePreview || item.title}
-              >
-                <div className="truncate text-[13px] font-medium">{item.title}</div>
-                {item.lastMessagePreview ? (
-                  <div className="mt-0.5 truncate text-[11px] opacity-60">{item.lastMessagePreview}</div>
-                ) : null}
-              </motion.button>
-            )) : (
-              <div className="rounded-lg px-3 py-2 text-[13px] text-slate-400 dark:text-slate-500">
-                {isAuthenticated
-                  ? historySearch.trim()
-                    ? '没有匹配的历史对话'
-                    : '暂无最近对话'
-                  : '登录后显示最近对话'}
-              </div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
+      ) : (
+        <div className="flex-1" />
+      )}
 
       {/* Auth / User */}
       <div className="app-sidebar-auth">
@@ -584,7 +584,7 @@ export default function Layout() {
             立即登录
           </button>
         ) : (
-          <div className="rounded-2xl bg-white/70 px-3 py-2.5 shadow-sm shadow-blue-100/50 ring-1 ring-white/80 dark:bg-slate-800/50 dark:ring-slate-700/60">
+          <div className="rounded-2xl bg-white/70 px-3 py-2.5 shadow-sm shadow-blue-100/50 dark:bg-slate-800/50 dark:shadow-none">
             <div className="text-[11px] text-slate-400 dark:text-slate-500">当前用户</div>
             <div className="mt-0.5 text-sm font-medium text-slate-800 dark:text-slate-200">{userDisplayName}</div>
             <button type="button" onClick={handleLogout} className="mt-1.5 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
@@ -594,18 +594,19 @@ export default function Layout() {
         )}
       </div>
 
-      {/* Footer */}
-      <div className="px-5 py-4 shadow-[inset_0_1px_0_rgba(217,227,245,0.62)] dark:shadow-[inset_0_1px_0_rgba(51,65,85,0.58)]">
-        <div className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-2 shadow-sm shadow-blue-100/50 ring-1 ring-white/70 dark:bg-slate-800/50 dark:ring-slate-700/50">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
-            <Clock3 className="h-3.5 w-3.5" />
-            同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
+      {isAuthenticated ? (
+        <div className="px-5 pb-4 pt-2">
+          <div className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-2 shadow-sm shadow-blue-100/50 dark:bg-slate-800/50 dark:shadow-none">
+            <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
+              <Clock3 className="h-3.5 w-3.5" />
+              同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
+            </div>
+            <button type="button" onClick={() => void loadRecentConversations()} className="text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+              刷新
+            </button>
           </div>
-          <button type="button" onClick={() => void loadRecentConversations()} className="text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
-            刷新
-          </button>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 
@@ -657,12 +658,11 @@ export default function Layout() {
               <Compass className="h-4 w-4 text-primary-500" />
               <span className="hidden sm:inline">{inProfile ? '个人画像' : inNotes ? 'AI 笔记本' : inMistakes ? '错题本' : inResources ? '资源库' : inEngine ? '个性化学习路径' : '新对话'}</span>
               <span className="hidden text-slate-300 sm:inline">/</span>
-              <span className="hidden sm:inline">{inProfile ? '真实学习画像' : inNotes ? '知识笔记、版本历史与 RAG 问答' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏、进度与 RAG 检索' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
+              <span className="hidden sm:inline">{inProfile ? '学习节奏与能力概览' : inNotes ? '知识笔记、版本历史与智能问答' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏与学习进度' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
               <span className="sm:hidden">{inProfile ? '个人画像' : inNotes ? 'AI 笔记' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : '智能对话'}</span>
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
-            <span className="app-api-chip hidden lg:inline-flex">API 调用</span>
             <ThemeToggle />
             {!isAuthenticated ? (
               <button
@@ -751,8 +751,8 @@ function ProfileOnboardingModal(props: {
     return null;
   }
 
-  const inputClass = 'w-full rounded-xl bg-white/86 px-3.5 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900/80 dark:text-slate-200 dark:ring-slate-700/70';
-  const optionsClass = 'w-full rounded-xl bg-white/86 px-3.5 py-2.5 text-sm outline-none ring-1 ring-slate-200/80 transition-all focus:ring-2 focus:ring-primary-500/20 dark:bg-slate-900/80 dark:text-slate-200 dark:ring-slate-700/70';
+  const inputClass = 'w-full rounded-xl bg-slate-50/86 px-3.5 py-2.5 text-sm outline-none transition-all focus:bg-white focus:shadow-[0_10px_24px_rgba(59,130,246,0.14)] dark:bg-slate-950/70 dark:text-slate-200 dark:focus:bg-slate-950/90 dark:focus:shadow-[0_12px_28px_rgba(14,165,233,0.12)]';
+  const optionsClass = 'w-full rounded-xl bg-slate-50/86 px-3.5 py-2.5 text-sm outline-none transition-all focus:bg-white focus:shadow-[0_10px_24px_rgba(59,130,246,0.14)] dark:bg-slate-950/70 dark:text-slate-200 dark:focus:bg-slate-950/90 dark:focus:shadow-[0_12px_28px_rgba(14,165,233,0.12)]';
 
   const submit = async () => {
     const payload: ProfileOnboardingPayload = {
@@ -783,8 +783,8 @@ function ProfileOnboardingModal(props: {
   return (
     <div className="fixed inset-0 z-[130] flex items-center justify-center px-4 py-6">
       <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" />
-      <div className="relative max-h-[92dvh] w-full max-w-[560px] overflow-y-auto rounded-[24px] bg-white/94 shadow-2xl ring-1 ring-white/80 backdrop-blur dark:bg-slate-900/94 dark:ring-slate-700/60">
-        <div className="px-5 py-4 shadow-[inset_0_-1px_0_rgba(226,232,240,0.68)] dark:shadow-[inset_0_-1px_0_rgba(51,65,85,0.62)]">
+      <div className="relative max-h-[92dvh] w-full max-w-[560px] overflow-y-auto rounded-[24px] bg-white/94 shadow-2xl shadow-slate-950/12 backdrop-blur dark:bg-slate-900/94 dark:shadow-slate-950/40">
+        <div className="px-5 pb-3 pt-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white">
               <UserRoundSearch className="h-4 w-4" />

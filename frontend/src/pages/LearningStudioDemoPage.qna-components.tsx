@@ -101,17 +101,17 @@ function SlideOutlineConfirmationCard(props: {
   }
   const pending = confirmation.status === 'pending';
   return (
-    <div className="mt-4 rounded-xl bg-blue-50/70 p-3 ring-1 ring-blue-100/70 dark:bg-primary-500/10 dark:ring-primary-500/20">
+    <div className="mt-4 rounded-xl bg-blue-50/70 p-3 shadow-sm shadow-blue-100/70 dark:bg-primary-500/10 dark:shadow-none">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="text-xs font-semibold text-primary-600 dark:text-primary-300">PPT 大纲待确认</div>
           <div className="mt-1 truncate text-sm font-bold text-slate-800 dark:text-slate-100">{confirmation.title}</div>
         </div>
-        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-blue-100 dark:bg-slate-900 dark:text-slate-300 dark:ring-primary-500/20">
+        <span className="rounded-full bg-white/88 px-2.5 py-1 text-xs font-semibold text-slate-500 dark:bg-slate-900/80 dark:text-slate-300">
           {confirmation.status === 'confirmed' ? '已确认' : confirmation.status === 'rejected' ? '未生成' : '等待确认'}
         </span>
       </div>
-      <div className="mt-3 max-h-64 overflow-auto rounded-lg bg-white/88 px-3 py-2 text-sm leading-6 text-slate-700 ring-1 ring-blue-100/70 dark:bg-slate-950/80 dark:text-slate-300 dark:ring-slate-700/70">
+      <div className="mt-3 max-h-64 overflow-auto rounded-lg bg-white/88 px-3 py-2 text-sm leading-6 text-slate-700 shadow-sm shadow-blue-100/60 dark:bg-slate-950/80 dark:text-slate-300 dark:shadow-none">
         <MarkdownRenderer content={confirmation.outline} />
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -128,7 +128,7 @@ function SlideOutlineConfirmationCard(props: {
           type="button"
           disabled={!pending}
           onClick={() => props.onReject?.(props.message)}
-          className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/88 px-3 text-sm font-semibold text-slate-600 ring-1 ring-slate-200/80 transition hover:text-rose-600 hover:ring-rose-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900/82 dark:text-slate-300 dark:ring-slate-700/70"
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/88 px-3 text-sm font-semibold text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900/82 dark:text-slate-300 dark:shadow-none dark:hover:bg-rose-500/10"
         >
           <XCircle className="h-4 w-4" />
           暂不生成
@@ -336,7 +336,7 @@ export function InputPanel(props: {
           {props.pendingImages.length ? (
             <div className="qna-pending-images">
               {props.pendingImages.map((image) => (
-                <div key={image.id} className="group relative overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-200/70 dark:bg-slate-800 dark:ring-slate-700/70">
+                <div key={image.id} className="group relative overflow-hidden rounded-2xl bg-slate-50 shadow-sm shadow-slate-200/70 dark:bg-slate-800 dark:shadow-none">
                   <img src={image.previewUrl} alt="待上传图片" className="h-24 w-24 object-cover" />
                   <button
                     type="button"
@@ -404,7 +404,7 @@ export function InputPanel(props: {
                   onClick={props.onToggleDeepReasoning}
                   disabled={props.busy}
                   aria-pressed={Boolean(props.deepReasoningEnabled)}
-                  title="开启后本轮对话会使用问题分析、分步推理、自我批判、最终回答的深度推理链"
+                  title="开启后更适合复杂问题和多步骤解答"
                   className={`qna-mode-button ${props.deepReasoningEnabled ? 'is-active' : ''}`}
                 >
                   <BrainCircuit className="h-4 w-4" />

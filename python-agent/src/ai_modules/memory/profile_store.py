@@ -1080,6 +1080,7 @@ class PostgresProfileStore:
                 input=[{"text": text}],
                 dimension=self.settings.knowledge_embedding_dimension,
                 output_type="dense",
+                request_timeout=max(1.0, self.settings.knowledge_embedding_timeout_seconds),
             )
             if response.status_code != 200:
                 return None

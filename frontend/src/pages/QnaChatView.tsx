@@ -57,7 +57,7 @@ export default function QnaChatView(props: QnaChatViewProps) {
           <InputPanel
             value={props.qnaInput}
             busy={props.qnaBusy}
-            placeholder="输入学习问题，Enter 发送，Shift + Enter 换行"
+            placeholder="输入学习问题，或描述你想解决的内容"
             pendingImages={props.pendingImages ?? []}
             errorMessage={props.imageErrorMessage}
             deepReasoningEnabled={props.deepReasoningEnabled}

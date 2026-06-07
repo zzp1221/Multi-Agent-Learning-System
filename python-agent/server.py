@@ -10,10 +10,12 @@ import os
 import re
 import secrets
 import tempfile
+import uuid
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry import trace
@@ -38,6 +40,7 @@ MESSAGE_STORE = MongoConversationMessageStore()
 ACTIVE_STREAM_TASKS: dict[str, asyncio.Task[None]] = {}
 INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token"
 INTERNAL_TOKEN_FILE = Path("/run/secrets/zhixue-python-agent-internal-token")
+RESOURCE_IMPORT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "zhixue-ai-resource-library")
 
 
 class FileCancelledTasks:
@@ -92,11 +95,28 @@ class ResourceSemanticHit(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ResourceExternalCandidate(BaseModel):
+    title: str
+    source_url: str = Field(alias="sourceUrl")
+    source_name: str = Field(default="", alias="sourceName")
+    summary_text: str = Field(default="", alias="summaryText")
+    resource_type: str = Field(default="READING", alias="resourceType")
+    display_type: str = Field(default="DOCUMENT", alias="displayType")
+    difficulty_level: str = Field(default="MIXED", alias="difficultyLevel")
+    cover_url: str = Field(default="", alias="coverUrl")
+    quality_score: float = Field(default=0.6, alias="qualityScore")
+    popularity_score: float = Field(default=0.0, alias="popularityScore")
+    tags: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class ResourceSemanticResult(BaseModel):
     resource_id: str = Field(alias="resourceId")
     score: float
     reason: str
     hits: list[ResourceSemanticHit] = Field(default_factory=list)
+    external_resource: ResourceExternalCandidate | None = Field(default=None, alias="externalResource")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -216,6 +236,10 @@ def _embedding_vec_str(vec: list[float]) -> str:
     return "[" + ",".join(str(v) for v in vec) + "]"
 
 
+def _resource_uuid(url: str) -> str:
+    return str(uuid.uuid5(RESOURCE_IMPORT_NAMESPACE, f"resource:{url}"))
+
+
 def _embed_resource_query(query: str) -> list[float]:
     from retrieval.vector_searcher import VectorSearcher
 
@@ -272,13 +296,281 @@ def _search_resource_chunks(query: str, top_k: int, domain: str | None = None, u
             return [dict(row) for row in cur.fetchall()]
 
 
-def _build_resource_semantic_response(query: str, rows: list[dict]) -> ResourceSemanticSearchResponse:
+def _search_resource_chunks_with_hybrid_rag(
+    query: str,
+    top_k: int,
+    domain: str | None = None,
+    user_id: str | None = None,
+) -> list[dict]:
+    try:
+        from src.ai_modules.retrieval import HybridRetrievalService
+
+        raw_result = HybridRetrievalService().retrieve_raw(
+            query,
+            web_search_enabled=False,
+        )
+    except Exception as exc:
+        LOGGER.warning("Hybrid RAG resource lookup skipped for query=%r: %s", query, exc)
+        return []
+
+    refs = _hybrid_rag_candidate_refs(raw_result, top_k=top_k)
+    if not refs:
+        return []
+    return _resource_rows_for_hybrid_refs(refs, top_k=top_k, domain=domain, user_id=user_id)
+
+
+async def _search_resource_tavily_candidates(query: str, top_k: int) -> list[ResourceExternalCandidate]:
+    if top_k <= 0 or not SETTINGS.tavily_api_key.strip():
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(
+                SETTINGS.tavily_base_url,
+                json={
+                    "api_key": SETTINGS.tavily_api_key,
+                    "query": query,
+                    "topic": "general",
+                    "search_depth": "advanced",
+                    "max_results": min(20, max(top_k * 3, top_k)),
+                    "include_images": True,
+                    "include_answer": False,
+                    "include_raw_content": False,
+                },
+            )
+            response.raise_for_status()
+    except Exception as exc:
+        LOGGER.warning("Tavily resource fallback failed for query=%r: %s", query, exc)
+        return []
+
+    payload = response.json()
+    raw_results = payload.get("results")
+    if not isinstance(raw_results, list):
+        return []
+
+    candidates: list[ResourceExternalCandidate] = []
+    seen_urls: set[str] = set()
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        url = _clean_text(item.get("url"))
+        title = _clean_text(item.get("title"))
+        if not title or not _is_http_url(url):
+            continue
+        normalized_url = url.rstrip("/")
+        if normalized_url.lower() in seen_urls:
+            continue
+        seen_urls.add(normalized_url.lower())
+        summary = _clean_text(item.get("content"))
+        source_name = _source_name(normalized_url)
+        resource_type, display_type = _classify_external_resource(normalized_url)
+        candidates.append(
+            ResourceExternalCandidate(
+                title=title[:160],
+                sourceUrl=normalized_url,
+                sourceName=source_name,
+                summaryText=summary[:500],
+                resourceType=resource_type,
+                displayType=display_type,
+                difficultyLevel="MIXED",
+                coverUrl=_extract_tavily_image(item, payload),
+                qualityScore=0.6,
+                popularityScore=0.0,
+                tags=_external_resource_tags(query),
+            )
+        )
+        if len(candidates) >= top_k:
+            break
+    return candidates
+
+
+def _clean_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _is_http_url(value: str) -> bool:
+    lowered = value.lower()
+    return lowered.startswith("http://") or lowered.startswith("https://")
+
+
+def _source_name(url: str) -> str:
+    from urllib.parse import urlparse
+
+    host = urlparse(url).netloc.lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _classify_external_resource(url: str) -> tuple[str, str]:
+    lowered = url.lower()
+    source_name = _source_name(url)
+    if source_name in {"bilibili.com", "youtube.com", "youtu.be"}:
+        return "VIDEO", "VIDEO"
+    if source_name in {"github.com", "gitee.com", "gitlab.com", "gist.github.com"}:
+        return "CODE", "CASE"
+    if lowered.endswith(".pdf"):
+        return "DOCUMENT", "DOCUMENT"
+    return "READING", "DOCUMENT"
+
+
+def _extract_tavily_image(item: dict[str, Any], payload: dict[str, Any]) -> str:
+    for key in ("thumbnailUrl", "thumbnail_url", "image", "imageUrl"):
+        value = item.get(key)
+        if isinstance(value, str) and _is_http_url(value):
+            return value
+    item_images = item.get("images")
+    if isinstance(item_images, list):
+        for value in item_images:
+            if isinstance(value, str) and _is_http_url(value):
+                return value
+    payload_images = payload.get("images")
+    if isinstance(payload_images, list):
+        for value in payload_images:
+            if isinstance(value, str) and _is_http_url(value):
+                return value
+    return ""
+
+
+def _external_resource_tags(query: str) -> list[str]:
+    terms = re.findall(r"[A-Za-z0-9+\-#_.]{2,}|[\u4e00-\u9fff]{2,}", query)
+    seen: set[str] = set()
+    tags: list[str] = []
+    for term in terms:
+        normalized = term.strip()
+        key = normalized.lower()
+        if not normalized or key in seen:
+            continue
+        seen.add(key)
+        tags.append(normalized[:32])
+        if len(tags) >= 6:
+            break
+    return tags
+
+
+def _hybrid_rag_candidate_refs(raw_result: dict[str, Any], top_k: int) -> list[str]:
+    if not isinstance(raw_result, dict):
+        return []
+    refs: list[str] = []
+    seen: set[str] = set()
+
+    def append_ref(value: Any) -> None:
+        ref = str(value or "").strip()
+        if not ref:
+            return
+        normalized = ref.lower()
+        if normalized in seen:
+            return
+        seen.add(normalized)
+        refs.append(ref)
+
+    for item in raw_result.get("top", []):
+        if isinstance(item, (list, tuple)) and item:
+            append_ref(item[0])
+
+    channels = raw_result.get("channels", {})
+    vector_results = channels.get("vector", []) if isinstance(channels, dict) else []
+    for item in vector_results:
+        if not isinstance(item, (list, tuple)) or len(item) < 4:
+            continue
+        if str(item[3]).strip().lower() == "resource":
+            append_ref(item[0])
+
+    return refs[: max(top_k * 4, top_k)]
+
+
+def _resource_rows_for_hybrid_refs(
+    refs: list[str],
+    top_k: int,
+    domain: str | None = None,
+    user_id: str | None = None,
+) -> list[dict]:
+    db_config = SETTINGS.postgres_connect_kwargs()
+    with psycopg2.connect(**db_config) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                WITH ranked_ref AS (
+                  SELECT ref, ordinality::int AS rag_rank
+                  FROM unnest(%s::text[]) WITH ORDINALITY AS candidate(ref, ordinality)
+                ),
+                matched_resources AS (
+                  SELECT DISTINCT ON (lr.id)
+                    rc.id AS chunk_id,
+                    rc.resource_id::text AS resource_id,
+                    rc.chunk_no,
+                    rc.content,
+                    ROUND((1.0 / (60 + ranked_ref.rag_rank))::numeric, 4) AS similarity,
+                    COALESCE(rd.source_ref, lr.metadata_json ->> 'sourceUrl', '') AS source_url,
+                    concat_ws(' ', rd.title, rd.summary_text, rd.transcript_text, lr.title, lr.summary_text, lr.tags::text, lr.metadata_json::text, rc.content) AS searchable_text,
+                    'hybrid_rag' AS retrieval_channel,
+                    ranked_ref.rag_rank
+                  FROM ranked_ref
+                  JOIN rag.resource_document rd ON rd.source_ref = ranked_ref.ref
+                  JOIN app.learning_resource lr ON lr.id = rd.resource_id
+                  JOIN LATERAL (
+                    SELECT rc.*
+                    FROM rag.resource_chunk rc
+                    WHERE rc.document_id = rd.id
+                      AND (%s IS NULL OR rc.domain = %s)
+                      AND (
+                        rc.access_scope::text = 'GLOBAL'
+                        OR (
+                          %s IS NOT NULL
+                          AND rc.access_scope::text = 'USER'
+                          AND rc.owner_user_id = %s::uuid
+                        )
+                        OR (
+                          %s IS NOT NULL
+                          AND rc.access_scope::text = 'COURSE'
+                          AND EXISTS (
+                            SELECT 1
+                            FROM app.user_course_enrollments e
+                            WHERE e.user_id = %s::uuid AND e.course_id = rc.course_id
+                          )
+                        )
+                      )
+                    ORDER BY rc.chunk_no ASC
+                    LIMIT 1
+                  ) rc ON TRUE
+                  WHERE lr.status = 'ACTIVE'
+                  ORDER BY lr.id, ranked_ref.rag_rank, rc.chunk_no
+                )
+                SELECT
+                  chunk_id,
+                  resource_id,
+                  chunk_no,
+                  content,
+                  similarity,
+                  similarity AS rank_score,
+                  source_url,
+                  searchable_text,
+                  retrieval_channel,
+                  '现有多管道RAG召回' AS retrieval_reason
+                FROM matched_resources
+                ORDER BY rag_rank
+                LIMIT %s
+                """,
+                [refs, domain, domain, user_id, user_id, user_id, user_id, top_k],
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def _build_resource_semantic_response(
+    query: str,
+    rows: list[dict],
+    external_candidates: list[ResourceExternalCandidate] | None = None,
+) -> ResourceSemanticSearchResponse:
     grouped: dict[str, ResourceSemanticResult] = {}
     for row in rows:
         resource_id = str(row.get("resource_id") or "")
         if not resource_id:
             continue
-        similarity = float(row.get("similarity") or 0)
+        try:
+            similarity = float(row.get("similarity") or 0)
+        except (TypeError, ValueError):
+            similarity = 0.0
+        score = float(row.get("rank_score") or similarity)
+        reason = str(row.get("retrieval_reason") or "向量语义匹配")
         hit = ResourceSemanticHit(
             chunkId=int(row.get("chunk_id") or 0),
             chunkNo=int(row.get("chunk_no") or 0),
@@ -290,14 +582,29 @@ def _build_resource_semantic_response(query: str, rows: list[dict]) -> ResourceS
         if result is None:
             grouped[resource_id] = ResourceSemanticResult(
                 resourceId=resource_id,
-                score=similarity,
-                reason="向量语义匹配",
+                score=score,
+                reason=reason,
                 hits=[hit],
             )
         else:
             result.hits.append(hit)
-            result.score = max(result.score, similarity)
+            result.score = max(result.score, score)
     results = sorted(grouped.values(), key=lambda item: item.score, reverse=True)
+    seen_resource_ids = {item.resource_id for item in results}
+    for index, candidate in enumerate(external_candidates or [], start=1):
+        resource_id = _resource_uuid(candidate.source_url)
+        if resource_id in seen_resource_ids:
+            continue
+        seen_resource_ids.add(resource_id)
+        results.append(
+            ResourceSemanticResult(
+                resourceId=resource_id,
+                score=round(max(0.1, 0.75 - index * 0.01), 4),
+                reason="tavily_current_stage_fallback",
+                hits=[],
+                externalResource=candidate,
+            )
+        )
     return ResourceSemanticSearchResponse(
         query=query,
         available=True,
@@ -880,20 +1187,34 @@ async def search_resources_semantic(
     normalized_query = query.strip()
     if not normalized_query:
         raise HTTPException(status_code=400, detail="query must not be blank")
+    rag_error = ""
+    rows: list[dict] = []
     try:
-        rows = _search_resource_chunks(
+        rows = _search_resource_chunks_with_hybrid_rag(
             normalized_query,
             top_k=top_k,
             domain=domain or SETTINGS.retrieval_domain,
             user_id=user_id,
         )
-        response = _build_resource_semantic_response(normalized_query, rows)
+        if not rows:
+            rows = _search_resource_chunks(
+                normalized_query,
+                top_k=top_k,
+                domain=domain or SETTINGS.retrieval_domain,
+                user_id=user_id,
+            )
     except Exception as exc:
-        LOGGER.warning("Resource semantic search unavailable for query=%r: %s", normalized_query, exc)
+        rag_error = str(exc)
+        LOGGER.warning("Resource RAG search unavailable for query=%r: %s", normalized_query, exc)
+
+    remaining = max(0, top_k - len({str(row.get("resource_id") or "") for row in rows if row.get("resource_id")}))
+    external_candidates = await _search_resource_tavily_candidates(normalized_query, remaining)
+    response = _build_resource_semantic_response(normalized_query, rows, external_candidates)
+    if rag_error and not response.results:
         response = ResourceSemanticSearchResponse(
             query=normalized_query,
             available=False,
-            message=f"semantic search unavailable: {exc}",
+            message=f"semantic search unavailable: {rag_error}",
             results=[],
         )
     return JSONResponse(response.model_dump(by_alias=True, mode="json"))
