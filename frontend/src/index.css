@@ -23,8 +23,8 @@
   --color-surface-900: oklch(0.20 0.01 260);
   --color-surface-950: oklch(0.15 0.01 260);
 
-  --font-sans: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
 
   --animate-shimmer: shimmer 2s infinite;
   --animate-fade-in: fade-in 0.3s ease-out;
