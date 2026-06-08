@@ -1,6 +1,24 @@
 #!/bin/sh
 set -e
 
+load_env_override() {
+  key="$1"
+  file="$2"
+  [ -f "$file" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$key="*)
+        value="${line#*=}"
+        value="$(printf '%s' "$value" | tr -d '\r')"
+        [ -n "$value" ] && export "$key=$value"
+        return 0
+        ;;
+    esac
+  done < "$file"
+}
+
+load_env_override "TAVILY_API_KEY" "/app/.env"
+
 PORT="${APP_PORT:-8000}"
 WORKERS="${UVICORN_WORKERS:-1}"
 
