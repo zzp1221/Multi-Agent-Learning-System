@@ -18,6 +18,7 @@ load_env_override() {
 }
 
 load_env_override "TAVILY_API_KEY" "/app/.env"
+load_env_override "PYTHON_AGENT_INTERNAL_TOKEN" "/app/.env"
 
 PORT="${APP_PORT:-8000}"
 WORKERS="${UVICORN_WORKERS:-1}"
