@@ -41,6 +41,7 @@ ACTIVE_STREAM_TASKS: dict[str, asyncio.Task[None]] = {}
 INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token"
 INTERNAL_TOKEN_FILE = Path("/run/secrets/zhixue-python-agent-internal-token")
 RESOURCE_IMPORT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "zhixue-ai-resource-library")
+TAVILY_RESOURCE_QUERY_MAX_CHARS = 240
 
 
 class FileCancelledTasks:
@@ -322,13 +323,14 @@ def _search_resource_chunks_with_hybrid_rag(
 async def _search_resource_tavily_candidates(query: str, top_k: int) -> list[ResourceExternalCandidate]:
     if top_k <= 0 or not SETTINGS.tavily_api_key.strip():
         return []
+    tavily_query = _tavily_resource_query(query)
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(
                 SETTINGS.tavily_base_url,
                 json={
                     "api_key": SETTINGS.tavily_api_key,
-                    "query": query,
+                    "query": tavily_query,
                     "topic": "general",
                     "search_depth": "advanced",
                     "max_results": min(20, max(top_k * 3, top_k)),
@@ -339,7 +341,7 @@ async def _search_resource_tavily_candidates(query: str, top_k: int) -> list[Res
             )
             response.raise_for_status()
     except Exception as exc:
-        LOGGER.warning("Tavily resource fallback failed for query=%r: %s", query, exc)
+        LOGGER.warning("Tavily resource fallback failed for query=%r: %s", tavily_query, exc)
         return []
 
     payload = response.json()
@@ -375,12 +377,33 @@ async def _search_resource_tavily_candidates(query: str, top_k: int) -> list[Res
                 coverUrl=_extract_tavily_image(item, payload),
                 qualityScore=0.6,
                 popularityScore=0.0,
-                tags=_external_resource_tags(query),
+                tags=_external_resource_tags(tavily_query),
             )
         )
         if len(candidates) >= top_k:
             break
     return candidates
+
+
+def _tavily_resource_query(query: str) -> str:
+    normalized = _clean_text(query)
+    if len(normalized) <= TAVILY_RESOURCE_QUERY_MAX_CHARS:
+        return normalized
+    terms = re.findall(r"[A-Za-z0-9+\-#_.]{2,}|[\u4e00-\u9fff]{2,}", normalized)
+    parts: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        key = term.lower()
+        if key in seen:
+            continue
+        candidate = " ".join([*parts, term])
+        if len(candidate) > TAVILY_RESOURCE_QUERY_MAX_CHARS:
+            break
+        seen.add(key)
+        parts.append(term)
+    if parts:
+        return " ".join(parts)
+    return normalized[:TAVILY_RESOURCE_QUERY_MAX_CHARS].rstrip()
 
 
 def _clean_text(value: Any) -> str:

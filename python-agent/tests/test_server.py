@@ -251,6 +251,62 @@ def test_resource_semantic_search_uses_tavily_when_embedding_unavailable(client,
     assert payload["results"][0]["externalResource"]["sourceUrl"] == "https://example.com/dp-guide"
 
 
+@pytest.mark.asyncio
+async def test_resource_tavily_fallback_shortens_long_context_query(monkeypatch) -> None:
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "results": [
+                    {
+                        "url": "https://example.com/rbtree",
+                        "title": "Red Black Tree Rotations",
+                        "content": "insert fixup recolor rotation",
+                    }
+                ]
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            captured["timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, json):
+            captured["url"] = url
+            captured["json"] = json
+            return FakeResponse()
+
+    monkeypatch.setattr(server.SETTINGS, "tavily_api_key", "test-key")
+    monkeypatch.setattr(server.SETTINGS, "tavily_base_url", "https://api.tavily.test/search")
+    monkeypatch.setattr(server.httpx, "AsyncClient", FakeAsyncClient)
+
+    long_query = (
+        "当前学习路径上下文：" + "红黑树 插入 修复 recolor rotate uncle grandparent " * 30
+    )
+
+    candidates = await server._search_resource_tavily_candidates(long_query, 2)
+
+    tavily_query = captured["json"]["query"]
+    assert len(tavily_query) <= server.TAVILY_RESOURCE_QUERY_MAX_CHARS
+    assert "红黑树" in tavily_query
+    assert "recolor" in tavily_query
+    assert captured["json"]["max_results"] == 6
+    assert candidates[0].source_url == "https://example.com/rbtree"
+
+
+def test_resource_tavily_query_keeps_short_query_unchanged() -> None:
+    assert server._tavily_resource_query("dynamic programming") == "dynamic programming"
+
+
 def test_resource_semantic_search_fills_short_rag_results_with_tavily(client, monkeypatch) -> None:
     def hybrid_search(query, top_k, domain=None, user_id=None):
         assert query == "graph traversal current stage"
