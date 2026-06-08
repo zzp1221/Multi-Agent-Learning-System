@@ -103,6 +103,7 @@ class SmartEngineOrchestratorServiceTest {
         PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
         LearningPathProgressService progressService = mock(LearningPathProgressService.class);
         PracticeResultPersistenceService practiceResultPersistenceService = mock(PracticeResultPersistenceService.class);
+        AuditService auditService = mock(AuditService.class);
 
         SmartEngineTask task = completedPracticeTask(userId, taskId);
         when(taskStateMachineService.recordPythonEvent(eq(taskId), any(), eq(9)))
@@ -116,16 +117,17 @@ class SmartEngineOrchestratorServiceTest {
                     Map.of("status", "SUCCESS", "summary", "判题完成")
                 ),
                 true
-            ));
+        ));
         when(taskStateMachineService.getTask(taskId)).thenReturn(task);
         when(progressService.handleStageTestResult(userId, taskId)).thenReturn(true);
+        when(practiceResultPersistenceService.persistCompletedPracticeJudgeResult(task)).thenReturn(3);
 
         SmartEngineOrchestratorService service = new SmartEngineOrchestratorService(
             taskStateMachineService,
             sseEmitterService,
             queueProvider,
             mock(IdempotencyService.class),
-            mock(AuditService.class),
+            auditService,
             mock(UserProfileCurrentRepository.class),
             mock(PersonalizedLearningContextService.class),
             refreshService,
@@ -136,6 +138,7 @@ class SmartEngineOrchestratorServiceTest {
         service.recordWorkerEvent(taskId, new PythonStreamEvent("done", "judge", Map.of("status", "SUCCESS")), 9);
 
         verify(practiceResultPersistenceService).persistCompletedPracticeJudgeResult(task);
+        verify(auditService).log(eq("TASK"), eq("LOW"), eq("Persisted practice judge result"), eq(userId), eq(taskId), eq(Map.of("itemCount", 3)));
         verify(progressService).handleStageTestResult(userId, taskId);
         verify(refreshService, never()).triggerPracticeRefresh(any(), any());
     }

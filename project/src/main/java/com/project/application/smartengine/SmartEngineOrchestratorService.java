@@ -256,7 +256,7 @@ public class SmartEngineOrchestratorService {
         try {
             int persisted = practiceResultPersistenceService.persistCompletedPracticeJudgeResult(task);
             if (persisted > 0) {
-                auditService.log("PRACTICE", "LOW", "Persisted practice judge result", task.getUserId(), task.getId(), Map.of("itemCount", persisted));
+                auditService.log("TASK", "LOW", "Persisted practice judge result", task.getUserId(), task.getId(), Map.of("itemCount", persisted));
             }
         } catch (RuntimeException ex) {
             LOGGER.warn("Failed to persist practice judge result taskId={}", task.getId(), ex);
