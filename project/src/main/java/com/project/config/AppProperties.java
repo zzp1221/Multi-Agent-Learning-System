@@ -186,8 +186,8 @@ public class AppProperties {
 
     public static class RateLimit {
         private boolean enabled = true;
-        private int userRequestsPerMinute = 60;
-        private int ipRequestsPerMinute = 100;
+        private int userRequestsPerMinute = 240;
+        private int ipRequestsPerMinute = 600;
 
         public boolean isEnabled() {
             return enabled;

@@ -78,8 +78,8 @@ app:
     ttl: ${APP_IDEMPOTENCY_TTL:24h}
   rate-limit:
     enabled: ${APP_RATE_LIMIT_ENABLED:true}
-    user-requests-per-minute: ${APP_RATE_LIMIT_USER_PER_MINUTE:60}
-    ip-requests-per-minute: ${APP_RATE_LIMIT_IP_PER_MINUTE:100}
+    user-requests-per-minute: ${APP_RATE_LIMIT_USER_PER_MINUTE:240}
+    ip-requests-per-minute: ${APP_RATE_LIMIT_IP_PER_MINUTE:600}
   download:
     artifact-ttl-seconds: ${APP_DOWNLOAD_ARTIFACT_TTL_SECONDS:1800}
   upload:
