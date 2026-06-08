@@ -287,6 +287,7 @@ class SmartEngineStreamWorker:
                     name=f"smart-engine-task:{message_id}",
                 )
                 task._smart_engine_message_id = message_id  # type: ignore[attr-defined]
+                task._smart_engine_task_id = fields.get("taskId", "")  # type: ignore[attr-defined]
                 in_flight_message_ids.add(message_id)
                 in_flight.add(task)
         except asyncio.CancelledError:
@@ -331,11 +332,40 @@ class SmartEngineStreamWorker:
                 await task
 
     async def _cancel_processing_tasks(self, in_flight: set[asyncio.Task[None]]) -> None:
+        tasks_to_cancel = [task for task in in_flight if not task.done()]
         for task in in_flight:
             if not task.done():
                 task.cancel()
         if in_flight:
-            await asyncio.gather(*in_flight, return_exceptions=True)
+            all_tasks = list(in_flight)
+            results = await asyncio.gather(*all_tasks, return_exceptions=True)
+            result_by_task = dict(zip(all_tasks, results))
+            await self._report_cancelled_processing_tasks(
+                tasks_to_cancel,
+                [result_by_task.get(task) for task in tasks_to_cancel],
+            )
+
+    async def _report_cancelled_processing_tasks(
+        self,
+        tasks: list[asyncio.Task[None]],
+        results: list[Any | None],
+    ) -> None:
+        for task, result in zip(tasks, results):
+            if result is None:
+                continue
+            task_id = getattr(task, "_smart_engine_task_id", "")
+            message_id = getattr(task, "_smart_engine_message_id", "")
+            if not isinstance(task_id, str) or not task_id or not isinstance(message_id, str) or not message_id:
+                continue
+            try:
+                await self._post_worker_failed(
+                    task_id,
+                    "PYTHON_WORKER_CANCELLED",
+                    "Python worker stopped before task completed",
+                )
+                await self._ack_and_clear_retry(message_id)
+            except JavaCallbackError:
+                LOGGER.exception("Failed to report cancelled SmartEngine task task_id=%s message_id=%s", task_id, message_id)
 
     async def _collect_finished_tasks(
         self,
@@ -499,6 +529,10 @@ class SmartEngineStreamWorker:
                 raise
 
     async def _read_one_message(self) -> tuple[str, dict[str, str]] | None:
+        reclaimed = await self._reclaim_stale_pending_message()
+        if reclaimed is not None:
+            return reclaimed
+
         fresh = await self._redis.xreadgroup(
             self.settings.smart_engine_consumer_group,
             self.settings.smart_engine_consumer_name,
@@ -517,6 +551,27 @@ class SmartEngineStreamWorker:
             block=1,
         )
         return self._first_message(pending)
+
+    async def _reclaim_stale_pending_message(self) -> tuple[str, dict[str, str]] | None:
+        min_idle_ms = max(1, self.leader_lock_ttl_seconds) * 1000
+        try:
+            claimed = await self._redis.xautoclaim(
+                self.settings.smart_engine_stream_key,
+                self.settings.smart_engine_consumer_group,
+                self.settings.smart_engine_consumer_name,
+                min_idle_ms,
+                "0-0",
+                count=1,
+            )
+        except ResponseError as exc:
+            if "unknown command" in str(exc).lower():
+                return None
+            raise
+        messages = claimed[1] if isinstance(claimed, (list, tuple)) and len(claimed) > 1 else []
+        if not messages:
+            return None
+        message_id, fields = messages[0]
+        return message_id, dict(fields)
 
     def _first_message(self, response: list[Any]) -> tuple[str, dict[str, str]] | None:
         if not response:

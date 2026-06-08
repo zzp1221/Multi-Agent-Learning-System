@@ -46,6 +46,26 @@ class FakeLeaderRedis:
         return 1
 
 
+class FakeReadRedis:
+    def __init__(self, claimed=None, fresh=None, pending=None) -> None:
+        self.claimed = claimed or []
+        self.fresh = fresh or []
+        self.pending = pending or []
+        self.xreadgroup_calls: list[dict[str, str]] = []
+        self.xautoclaim_args: tuple[Any, ...] | None = None
+
+    async def xautoclaim(self, *args: Any, **kwargs: Any):
+        self.xautoclaim_args = args + (kwargs,)
+        return ("0-0", self.claimed, [])
+
+    async def xreadgroup(self, group: str, consumer: str, streams: dict[str, str], **kwargs: Any):
+        del group, consumer, kwargs
+        self.xreadgroup_calls.append(streams)
+        stream_id = next(iter(streams.values()))
+        messages = self.fresh if stream_id == ">" else self.pending
+        return [["zhixue:smart-engine:tasks", messages]] if messages else []
+
+
 class FakeSyncLeaderRedis(FakeLeaderRedis):
     def eval(self, script: str, numkeys: int, key: str, token: str, *args: Any) -> int:
         return self.eval_sync(script, numkeys, key, token, *args)
@@ -191,6 +211,11 @@ class BlockingProcessWorker(CapturingWorker):
         time.sleep(self.block_seconds)
 
 
+class CancelledProcessingWorker(CapturingWorker):
+    async def wait_forever(self) -> None:
+        await asyncio.Event().wait()
+
+
 class InvalidGenerationSupervisor:
     async def stream(self, request, cancelled=None):
         del request, cancelled
@@ -304,6 +329,47 @@ async def test_worker_does_not_process_same_pending_message_twice() -> None:
     worker._sync_redis.values[lock_key] = "other-token"
     worker.release_processing_event.set()
     await asyncio.wait_for(consume_task, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_worker_reports_inflight_task_cancelled_before_ack() -> None:
+    worker = CancelledProcessingWorker(UnusedSupervisor())
+    task = asyncio.create_task(worker.wait_forever())
+    task._smart_engine_message_id = "message-cancelled"  # type: ignore[attr-defined]
+    task._smart_engine_task_id = "task-cancelled"  # type: ignore[attr-defined]
+
+    await worker._cancel_processing_tasks({task})
+
+    assert worker.failed == [
+        (
+            "task-cancelled",
+            "PYTHON_WORKER_CANCELLED",
+            "Python worker stopped before task completed",
+        )
+    ]
+    assert worker.acked == ["message-cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_worker_reclaims_stale_pending_before_reading_fresh_messages() -> None:
+    worker = CapturingWorker(UnusedSupervisor())
+    worker._redis = FakeReadRedis(claimed=[("stale-message", valid_fields())])
+
+    message = await worker._read_one_message()
+
+    assert message == ("stale-message", valid_fields())
+    assert worker._redis.xreadgroup_calls == []
+
+
+@pytest.mark.asyncio
+async def test_worker_falls_back_to_fresh_read_when_no_stale_pending() -> None:
+    worker = CapturingWorker(UnusedSupervisor())
+    worker._redis = FakeReadRedis(fresh=[("fresh-message", valid_fields())])
+
+    message = await worker._read_one_message()
+
+    assert message == ("fresh-message", valid_fields())
+    assert worker._redis.xreadgroup_calls == [{worker.settings.smart_engine_stream_key: ">"}]
 
 
 @pytest.mark.asyncio
