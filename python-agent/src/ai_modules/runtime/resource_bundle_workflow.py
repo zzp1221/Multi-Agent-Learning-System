@@ -498,8 +498,7 @@ class ResourceBundleWorkflow:
             marker in message
             for marker in (
                 "review llm failed",
-                "fallback is disabled",
-                "fallback is not allowed",
+                "safety review llm failed",
                 "missing generatedby=llm",
                 "missing contentorigin=llm",
                 "missing llm provider",

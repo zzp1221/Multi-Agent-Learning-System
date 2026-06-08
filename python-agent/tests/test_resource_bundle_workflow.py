@@ -147,6 +147,15 @@ class _FailingResourceAgent(PlaceholderAgent):
         yield  # pragma: no cover
 
 
+class _FailingPracticeResourceAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("failing practice", "practice")
+
+    async def run(self, **kwargs):
+        raise RuntimeError("Practice question LLM generation failed; template fallback is not allowed")
+        yield  # pragma: no cover
+
+
 class _QualityGateFailingResourceAgent(PlaceholderAgent):
     def __init__(self) -> None:
         super().__init__("quality gate failing", "quality_gate_generation")
@@ -317,6 +326,38 @@ async def test_resource_bundle_partial_failed_publishes_only_successful_real_out
     assert events[-1].event == "done"
     assert events[-1].payload.status == "PARTIAL_FAILED"
     assert events[-1].payload.resource_failures[0]["resourceType"] == "SLIDES"
+
+
+@pytest.mark.asyncio
+async def test_resource_bundle_quiz_llm_failure_is_partial_when_other_resources_succeed() -> None:
+    supervisor = PythonAgentSupervisor()
+    _install_success_bundle(supervisor)
+    supervisor.agent_registry["practice"] = _FailingPracticeResourceAgent()
+    request = EngineStreamRequest(
+        serviceType="RESOURCE_GENERATION",
+        params={"resourceTypes": ["DOCUMENT", "QUIZ", "MINDMAP"], "query": "联合索引"},
+        taskId="task-quiz-partial-bundle",
+        traceId="trace-quiz-partial-bundle",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert [event.event for event in events].count("question_batch") == 0
+    assert [
+        event.payload.asset_type
+        for event in events
+        if event.event == "resource_file"
+    ] == ["DOCUMENT", "MINDMAP"]
+    assert any(
+        event.event == "progress"
+        and event.payload.status == "FAILED"
+        and event.payload.artifact_type == "QUIZ"
+        for event in events
+    )
+    assert events[-1].event == "done"
+    assert events[-1].payload.status == "PARTIAL_FAILED"
+    assert events[-1].payload.resource_failures[0]["resourceType"] == "QUIZ"
+    assert "template fallback is not allowed" in events[-1].payload.resource_failures[0]["error"]
 
 
 @pytest.mark.asyncio
