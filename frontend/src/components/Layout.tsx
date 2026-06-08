@@ -101,6 +101,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
+  const [profileOnboardingNeeded, setProfileOnboardingNeeded] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const currentUserIdRef = useRef('');
 
@@ -163,23 +164,22 @@ export default function Layout() {
     }
   };
 
-  const ensureProfileOnboarding = useCallback(async (user: AuthUser | null) => {
+  const refreshProfileOnboardingState = useCallback(async (user: AuthUser | null) => {
     const userId = user?.userId ?? user?.id;
     if (userId === undefined || userId === null) {
+      setProfileOnboardingNeeded(false);
+      setProfileOnboardingOpen(false);
       return;
     }
     const normalizedUserId = String(userId);
     try {
       const response = await smartEngineApi.getCurrentProfile(normalizedUserId);
       const hasProfile = Boolean(response.profile && Object.keys(response.profile).length > 0);
-      setProfileOnboardingOpen(!hasProfile);
-      if (!hasProfile) {
-        navigate('/profile');
-      }
+      setProfileOnboardingNeeded(!hasProfile);
     } catch (error) {
       console.error('Failed to check profile onboarding:', error);
     }
-  }, [navigate]);
+  }, []);
 
   useEffect(() => {
     const bootstrapAuth = async () => {
@@ -199,7 +199,7 @@ export default function Layout() {
         }
         window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(resolved));
         applyAuthenticatedUser(resolved);
-        void ensureProfileOnboarding(resolved);
+        void refreshProfileOnboardingState(resolved);
         await loadRecentConversations();
       } catch (error) {
         if (isUnauthorizedError(error)) {
@@ -216,7 +216,17 @@ export default function Layout() {
     };
 
     bootstrapAuth();
-  }, [applyAuthenticatedUser, ensureProfileOnboarding]);
+  }, [applyAuthenticatedUser, refreshProfileOnboardingState]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setProfileOnboardingOpen(false);
+      return;
+    }
+    if (profileOnboardingNeeded && (inProfile || inEngine)) {
+      setProfileOnboardingOpen(true);
+    }
+  }, [inEngine, inProfile, isAuthenticated, profileOnboardingNeeded]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -331,6 +341,7 @@ export default function Layout() {
       setLastSyncAt('');
       setActiveConversationId('');
       setProfileOnboardingOpen(false);
+      setProfileOnboardingNeeded(false);
     }
   };
 
@@ -698,7 +709,7 @@ export default function Layout() {
         onSuccess={(user) => {
           applyAuthenticatedUser(user);
           setModalOpen(false);
-          void ensureProfileOnboarding(user);
+          void refreshProfileOnboardingState(user);
           void loadRecentConversations();
         }}
       />
@@ -707,6 +718,7 @@ export default function Layout() {
           open={profileOnboardingOpen}
           currentUser={currentUser}
           onCompleted={() => {
+            setProfileOnboardingNeeded(false);
             setProfileOnboardingOpen(false);
             navigate('/profile');
           }}

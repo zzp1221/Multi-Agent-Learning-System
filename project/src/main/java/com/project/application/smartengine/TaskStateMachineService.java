@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -286,8 +287,34 @@ public class TaskStateMachineService {
         task.setCurrentStage(pythonEvent.stage());
         Object percentValue = payload.get("percent");
         if (percentValue instanceof Number number) {
-            task.setProgressPercent(BigDecimal.valueOf(number.doubleValue()));
+            BigDecimal currentPercent = normalizeProgressPercent(task.getProgressPercent());
+            BigDecimal progressPercent = normalizeProgressPercent(number).max(currentPercent);
+            task.setProgressPercent(progressPercent);
+            payload.put("percent", toProgressPayloadValue(progressPercent));
         }
+    }
+
+    private BigDecimal normalizeProgressPercent(Number number) {
+        if (number == null) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal percent = BigDecimal.valueOf(number.doubleValue()).setScale(2, RoundingMode.HALF_UP);
+        if (percent.compareTo(BigDecimal.ZERO) < 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal maxPercent = BigDecimal.valueOf(100).setScale(2, RoundingMode.HALF_UP);
+        if (percent.compareTo(maxPercent) > 0) {
+            return maxPercent;
+        }
+        return percent;
+    }
+
+    private Number toProgressPayloadValue(BigDecimal percent) {
+        BigDecimal stripped = percent.stripTrailingZeros();
+        if (stripped.scale() <= 0) {
+            return stripped.intValueExact();
+        }
+        return percent.doubleValue();
     }
 
     private void applyIntermediateEvent(SmartEngineTask task, PythonStreamEvent pythonEvent) {

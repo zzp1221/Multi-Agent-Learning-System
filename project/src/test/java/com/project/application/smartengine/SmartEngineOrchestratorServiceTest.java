@@ -45,6 +45,7 @@ class SmartEngineOrchestratorServiceTest {
         PersonalizedLearningContextService contextService = mock(PersonalizedLearningContextService.class);
         PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
         LearningPathProgressService progressService = mock(LearningPathProgressService.class);
+        PracticeResultPersistenceService practiceResultPersistenceService = mock(PracticeResultPersistenceService.class);
 
         SmartEngineTask task = pendingTask(userId);
         when(taskStateMachineService.createTask(any(), eq(userId), any(), eq(ServiceType.PERSONALIZED_LEARNING), any()))
@@ -70,7 +71,8 @@ class SmartEngineOrchestratorServiceTest {
             profileRepository,
             contextService,
             refreshService,
-            progressService
+            progressService,
+            practiceResultPersistenceService
         );
 
         service.submit(user, new SubmitTaskRequest(
@@ -100,6 +102,7 @@ class SmartEngineOrchestratorServiceTest {
         ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
         PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
         LearningPathProgressService progressService = mock(LearningPathProgressService.class);
+        PracticeResultPersistenceService practiceResultPersistenceService = mock(PracticeResultPersistenceService.class);
 
         SmartEngineTask task = completedPracticeTask(userId, taskId);
         when(taskStateMachineService.recordPythonEvent(eq(taskId), any(), eq(9)))
@@ -126,11 +129,13 @@ class SmartEngineOrchestratorServiceTest {
             mock(UserProfileCurrentRepository.class),
             mock(PersonalizedLearningContextService.class),
             refreshService,
-            progressService
+            progressService,
+            practiceResultPersistenceService
         );
 
         service.recordWorkerEvent(taskId, new PythonStreamEvent("done", "judge", Map.of("status", "SUCCESS")), 9);
 
+        verify(practiceResultPersistenceService).persistCompletedPracticeJudgeResult(task);
         verify(progressService).handleStageTestResult(userId, taskId);
         verify(refreshService, never()).triggerPracticeRefresh(any(), any());
     }
@@ -145,6 +150,7 @@ class SmartEngineOrchestratorServiceTest {
         ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
         PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
         LearningPathProgressService progressService = mock(LearningPathProgressService.class);
+        PracticeResultPersistenceService practiceResultPersistenceService = mock(PracticeResultPersistenceService.class);
 
         SmartEngineTask task = completedPracticeTask(userId, taskId);
         when(taskStateMachineService.recordPythonEvent(eq(taskId), any(), eq(11)))
@@ -171,11 +177,13 @@ class SmartEngineOrchestratorServiceTest {
             mock(UserProfileCurrentRepository.class),
             mock(PersonalizedLearningContextService.class),
             refreshService,
-            progressService
+            progressService,
+            practiceResultPersistenceService
         );
 
         service.recordWorkerEvent(taskId, new PythonStreamEvent("done", "judge", Map.of("status", "SUCCESS")), 11);
 
+        verify(practiceResultPersistenceService).persistCompletedPracticeJudgeResult(task);
         verify(progressService).handleStageTestResult(userId, taskId);
         verify(refreshService).triggerPracticeRefresh(userId, "practice_judge_completed");
     }

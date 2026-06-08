@@ -41,6 +41,7 @@ public class SmartEngineOrchestratorService {
     private final PersonalizedLearningContextService personalizedLearningContextService;
     private final PersonalizedLearningRefreshService personalizedLearningRefreshService;
     private final LearningPathProgressService learningPathProgressService;
+    private final PracticeResultPersistenceService practiceResultPersistenceService;
 
     public SmartEngineOrchestratorService(
         TaskStateMachineService taskStateMachineService,
@@ -51,7 +52,8 @@ public class SmartEngineOrchestratorService {
         UserProfileCurrentRepository userProfileCurrentRepository,
         PersonalizedLearningContextService personalizedLearningContextService,
         PersonalizedLearningRefreshService personalizedLearningRefreshService,
-        LearningPathProgressService learningPathProgressService
+        LearningPathProgressService learningPathProgressService,
+        PracticeResultPersistenceService practiceResultPersistenceService
     ) {
         this.taskStateMachineService = taskStateMachineService;
         this.sseEmitterService = sseEmitterService;
@@ -62,6 +64,7 @@ public class SmartEngineOrchestratorService {
         this.personalizedLearningContextService = personalizedLearningContextService;
         this.personalizedLearningRefreshService = personalizedLearningRefreshService;
         this.learningPathProgressService = learningPathProgressService;
+        this.practiceResultPersistenceService = practiceResultPersistenceService;
     }
 
     public SubmitTaskAcceptance submit(JwtAuthenticatedUser currentUser, SubmitTaskRequest request) {
@@ -242,10 +245,22 @@ public class SmartEngineOrchestratorService {
         if (task.getServiceType() != ServiceType.PRACTICE_JUDGE || task.getTaskStatus() != TaskStatus.COMPLETED) {
             return;
         }
+        persistPracticeResult(task);
         if (learningPathProgressService.handleStageTestResult(task.getUserId(), task.getId())) {
             return;
         }
         personalizedLearningRefreshService.triggerPracticeRefresh(task.getUserId(), "practice_judge_completed");
+    }
+
+    private void persistPracticeResult(SmartEngineTask task) {
+        try {
+            int persisted = practiceResultPersistenceService.persistCompletedPracticeJudgeResult(task);
+            if (persisted > 0) {
+                auditService.log("PRACTICE", "LOW", "Persisted practice judge result", task.getUserId(), task.getId(), Map.of("itemCount", persisted));
+            }
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Failed to persist practice judge result taskId={}", task.getId(), ex);
+        }
     }
 
     public void markWorkerFailed(UUID taskId, String errorCode, String message) {

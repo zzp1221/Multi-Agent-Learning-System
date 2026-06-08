@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.argThat;
 
 @ExtendWith(MockitoExtension.class)
 class TaskStateMachineProvenanceTest {
@@ -263,6 +265,31 @@ class TaskStateMachineProvenanceTest {
         assertThat(task.getProgressPercent()).isEqualByComparingTo("42");
         assertThat(task.getCompletedAt()).isNull();
         assertThat(task.getResponseSummary()).containsEntry("status", "WAITING_CONFIRMATION");
+    }
+
+    @Test
+    void progressEventDoesNotMoveBackwardOrPublishLowerPercent() {
+        task.setProgressPercent(new BigDecimal("90"));
+
+        TaskStreamEventPayload result = service.recordPythonEvent(
+            taskId,
+            new PythonStreamEvent(
+                "progress",
+                "learning_path",
+                Map.of(
+                    "stage", "learning_path",
+                    "percent", 45
+                )
+            )
+        );
+
+        assertThat(result.event()).isEqualTo("progress");
+        assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.RUNNING);
+        assertThat(task.getProgressPercent()).isEqualByComparingTo("90");
+        assertThat((Number) result.payload().get("percent")).isEqualTo(90);
+        verify(taskEventRepository).save(argThat(event ->
+            ((Number) event.getEventPayload().get("percent")).intValue() == 90
+        ));
     }
 
     @Test
