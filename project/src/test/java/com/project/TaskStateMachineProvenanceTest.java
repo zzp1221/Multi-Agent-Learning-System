@@ -293,6 +293,57 @@ class TaskStateMachineProvenanceTest {
     }
 
     @Test
+    void videoProgressEventDoesNotPublishLowerPercent() {
+        task.setProgressPercent(new BigDecimal("60"));
+
+        TaskStreamEventPayload startResult = service.recordPythonEvent(
+            taskId,
+            new PythonStreamEvent(
+                "video_gen:start",
+                "video_started",
+                Map.of(
+                    "assetType", "VIDEO",
+                    "stage", "video_started",
+                    "percent", 10
+                )
+            )
+        );
+
+        assertThat(startResult.event()).isEqualTo("video_gen:start");
+        assertThat(task.getProgressPercent()).isEqualByComparingTo("60");
+        assertThat((Number) startResult.payload().get("percent")).isEqualTo(60);
+        verify(taskEventRepository).save(argThat(event ->
+            event.getEventType().equals("video_gen:start")
+                && ((Number) event.getEventPayload().get("percent")).intValue() == 60
+        ));
+
+        TaskStreamEventPayload speechResult = service.recordPythonEvent(
+            taskId,
+            new PythonStreamEvent(
+                "video_gen:speech",
+                "speech_synthesized",
+                Map.ofEntries(
+                    Map.entry("assetType", "VIDEO"),
+                    Map.entry("stage", "speech_synthesized"),
+                    Map.entry("percent", 85),
+                    Map.entry("generatedBy", "LLM"),
+                    Map.entry("contentOrigin", "LLM"),
+                    Map.entry("provider", "test-provider"),
+                    Map.entry("model", "test-model"),
+                    Map.entry("agentName", "video_generation"),
+                    Map.entry("evidenceIds", List.of("doc-1")),
+                    Map.entry("fallback", false),
+                    Map.entry("fromCache", false)
+                )
+            )
+        );
+
+        assertThat(speechResult.event()).isEqualTo("video_gen:speech");
+        assertThat(task.getProgressPercent()).isEqualByComparingTo("85");
+        assertThat((Number) speechResult.payload().get("percent")).isEqualTo(85);
+    }
+
+    @Test
     void duplicateTerminalSeqStillFailsActiveTaskAtNextSequence() {
         SmartEngineTaskEvent existingEvent = new SmartEngineTaskEvent();
         existingEvent.setTask(task);

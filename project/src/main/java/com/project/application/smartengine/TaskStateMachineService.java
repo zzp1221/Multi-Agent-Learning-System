@@ -126,11 +126,23 @@ public class TaskStateMachineService {
         } else {
             switch (eventType) {
                 case PROGRESS -> applyProgressEvent(task, pythonEvent, payload);
-                case RESOURCE_FILE -> payload = applyResourceFileEvent(task, payload);
-                case QUESTION_BATCH, JUDGE_RESULT, VIDEO_GEN_SPEECH, VIDEO_GEN_COMPLETE -> applyStructuredResultEvent(task, pythonEvent, payload);
+                case RESOURCE_FILE -> {
+                    clampPayloadProgressFields(task, payload);
+                    payload = applyResourceFileEvent(task, payload);
+                }
+                case QUESTION_BATCH, JUDGE_RESULT, VIDEO_GEN_SPEECH, VIDEO_GEN_COMPLETE -> {
+                    clampPayloadProgressFields(task, payload);
+                    applyStructuredResultEvent(task, pythonEvent, payload);
+                }
                 case DONE -> applyDoneEvent(task, payload);
-                case ERROR -> applyErrorEvent(task, payload);
-                default -> applyIntermediateEvent(task, pythonEvent);
+                case ERROR -> {
+                    clampPayloadProgressFields(task, payload);
+                    applyErrorEvent(task, payload);
+                }
+                default -> {
+                    clampPayloadProgressFields(task, payload);
+                    applyIntermediateEvent(task, pythonEvent);
+                }
             }
         }
         if (!skipVideoSync && eventType != StreamEventType.RESOURCE_FILE) {
@@ -285,12 +297,10 @@ public class TaskStateMachineService {
     private void applyProgressEvent(SmartEngineTask task, PythonStreamEvent pythonEvent, Map<String, Object> payload) {
         task.setTaskStatus(TaskStatus.RUNNING);
         task.setCurrentStage(pythonEvent.stage());
-        Object percentValue = payload.get("percent");
-        if (percentValue instanceof Number number) {
-            BigDecimal currentPercent = normalizeProgressPercent(task.getProgressPercent());
-            BigDecimal progressPercent = normalizeProgressPercent(number).max(currentPercent);
+        BigDecimal progressPercent = clampedPayloadProgress(task, payload);
+        if (progressPercent != null) {
             task.setProgressPercent(progressPercent);
-            payload.put("percent", toProgressPayloadValue(progressPercent));
+            writePayloadProgressFields(payload, progressPercent);
         }
     }
 
@@ -307,6 +317,55 @@ public class TaskStateMachineService {
             return maxPercent;
         }
         return percent;
+    }
+
+    private void clampPayloadProgressFields(SmartEngineTask task, Map<String, Object> payload) {
+        BigDecimal progressPercent = clampedPayloadProgress(task, payload);
+        if (progressPercent != null) {
+            task.setProgressPercent(progressPercent);
+            writePayloadProgressFields(payload, progressPercent);
+        }
+    }
+
+    private BigDecimal clampedPayloadProgress(SmartEngineTask task, Map<String, Object> payload) {
+        BigDecimal currentPercent = normalizeProgressPercent(task.getProgressPercent());
+        BigDecimal percent = progressValue(payload.get("percent"));
+        BigDecimal progress = progressValue(payload.get("progress"));
+        if (percent == null && progress == null) {
+            return null;
+        }
+        BigDecimal next = currentPercent;
+        if (percent != null) {
+            next = next.max(percent);
+        }
+        if (progress != null) {
+            next = next.max(progress);
+        }
+        return next;
+    }
+
+    private BigDecimal progressValue(Object value) {
+        if (value instanceof Number number) {
+            return normalizeProgressPercent(number);
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return normalizeProgressPercent(Double.parseDouble(text.trim()));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private void writePayloadProgressFields(Map<String, Object> payload, BigDecimal progressPercent) {
+        Number value = toProgressPayloadValue(progressPercent);
+        if (progressValue(payload.get("percent")) != null) {
+            payload.put("percent", value);
+        }
+        if (progressValue(payload.get("progress")) != null) {
+            payload.put("progress", value);
+        }
     }
 
     private Number toProgressPayloadValue(BigDecimal percent) {
@@ -349,6 +408,7 @@ public class TaskStateMachineService {
             Object summaryValue = payload.getOrDefault("summary", "Python Agent execution failed");
             task.setErrorMessage(summaryValue == null ? "Python Agent execution failed" : String.valueOf(summaryValue));
         }
+        clampPayloadProgressFields(task, payload);
         Map<String, Object> mergedSummary = new LinkedHashMap<>(task.getResponseSummary());
         mergedSummary.putAll(payload);
         task.setResponseSummary(mergedSummary);
