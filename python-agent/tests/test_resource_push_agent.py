@@ -90,6 +90,38 @@ def test_resource_push_agent_rejects_generic_unrelated_resources() -> None:
     )
 
 
+def test_resource_push_agent_generic_backend_project_terms_do_not_pass_threshold() -> None:
+    agent = ResourcePushAgent()
+    profile_context = {
+        "primaryWeakPoint": "项目实现",
+        "currentCourse": "软件工程",
+        "currentChapter": "后端开发项目实现",
+        "learningGoal": "掌握后端开发项目实现",
+        "weakPoints": ["后端开发", "项目实现"],
+    }
+
+    generic_score = agent._score_topic_relevance(
+        title="微信小程序后端开发项目实战教程",
+        summary="从零实现项目接口和页面联调",
+        url="https://example.com/miniprogram-backend-project",
+        profile_context=profile_context,
+    )
+    specific_score = agent._score_topic_relevance(
+        title="Spring Boot 后端接口分层与项目实现",
+        summary="结合 REST API、Service 分层和持久化完成后端项目",
+        url="https://example.com/spring-boot-project",
+        profile_context={
+            **profile_context,
+            "primaryWeakPoint": "Spring Boot 接口分层",
+            "currentChapter": "Spring Boot 后端接口分层",
+            "weakPoints": ["Spring Boot", "接口分层"],
+        },
+    )
+
+    assert generic_score < 4
+    assert specific_score >= 4
+
+
 def test_resource_push_agent_builds_external_plan_for_learning_path_steps(monkeypatch) -> None:
     agent = ResourcePushAgent()
 

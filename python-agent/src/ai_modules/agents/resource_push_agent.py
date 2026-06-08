@@ -30,6 +30,36 @@ LOGGER = logging.getLogger(__name__)
 MIN_TOPIC_RELEVANCE_SCORE = 4
 PATH_RECOMMENDATION_TYPES = ("DOCUMENT", "VIDEO", "PRACTICAL_CASE")
 MAX_STEP_EXTERNAL_RESOURCE_TYPES = 4
+GENERIC_TOPIC_TERMS = {
+    "学习",
+    "课程",
+    "教程",
+    "入门",
+    "基础",
+    "开发",
+    "后端",
+    "后端开发",
+    "项目",
+    "项目实现",
+    "实战",
+    "实现",
+    "软件工程",
+    "计算机",
+    "编程",
+    "掌握",
+    "理解",
+    "应用",
+    "backend",
+    "course",
+    "development",
+    "engineering",
+    "guide",
+    "learning",
+    "programming",
+    "project",
+    "software",
+    "tutorial",
+}
 GENERIC_RESOURCE_TERMS = {
     "资源",
     "讲解文档",
@@ -1139,6 +1169,9 @@ class ResourcePushAgent(PlaceholderAgent):
         for term, weight in self._topic_relevance_terms(profile_context):
             if self._contains_topic_term(weighted_text, term):
                 score += weight
+        matched_specific_topic = self._matches_specific_topic(weighted_text, profile_context)
+        if score > 0 and not matched_specific_topic:
+            return min(score, MIN_TOPIC_RELEVANCE_SCORE - 1)
         return score
 
     def _topic_relevance_terms(self, profile_context: dict[str, Any]) -> list[tuple[str, int]]:
@@ -1183,6 +1216,42 @@ class ResourcePushAgent(PlaceholderAgent):
         if re.fullmatch(r"[a-z0-9_+\-.#]+", lowered):
             return re.search(rf"(?<![a-z0-9_+\-.#]){re.escape(lowered)}(?![a-z0-9_+\-.#])", text) is not None
         return lowered in text
+
+    def _matches_specific_topic(self, weighted_text: str, profile_context: dict[str, Any]) -> bool:
+        raw_topics: list[str] = []
+        for key in ("primaryWeakPoint", "currentChapter"):
+            text = self._normalize_text(profile_context.get(key))
+            if text:
+                raw_topics.append(text)
+        weak_points = profile_context.get("weakPoints")
+        if isinstance(weak_points, list):
+            raw_topics.extend(self._normalize_text(item) for item in weak_points if self._normalize_text(item))
+
+        for raw_topic in raw_topics:
+            if self._is_generic_topic_phrase(raw_topic):
+                continue
+            for term in self._split_topic_terms(raw_topic):
+                if not self._is_generic_topic_term(term) and self._contains_topic_term(weighted_text, term):
+                    return True
+        return False
+
+    def _is_generic_topic_term(self, term: str) -> bool:
+        normalized = term.lower().strip()
+        return not normalized or normalized in GENERIC_TOPIC_TERMS or any(
+            normalized in generic_term or generic_term in normalized
+            for generic_term in GENERIC_TOPIC_TERMS
+        )
+
+    def _is_generic_topic_phrase(self, text: str) -> bool:
+        normalized = text.lower().strip()
+        if not normalized:
+            return True
+        stripped = normalized
+        for generic_term in sorted(GENERIC_TOPIC_TERMS, key=len, reverse=True):
+            if generic_term:
+                stripped = stripped.replace(generic_term, " ")
+        stripped = re.sub(r"[\s/、，,；;：:。.!！?？()（）\[\]\"'“”]+", "", stripped)
+        return not stripped
 
     def _resource_type_label(self, preferred_type: str) -> str:
         return {
