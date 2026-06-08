@@ -154,7 +154,7 @@ export default function ProfilePage() {
 
   return (
     <ProfileShell>
-      <div className="space-y-5">
+      <div className="min-w-0 space-y-5">
         <header className="rounded-[28px] bg-white/72 px-5 py-5 shadow-[0_18px_56px_rgba(59,97,155,0.10)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20 md:px-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
@@ -201,7 +201,7 @@ export default function ProfilePage() {
           onRetry={() => void loadAnalytics()}
         />
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
           <DimensionPanel profile={profile} />
           <WeakPointTopThree items={weakPointItems} />
         </div>
@@ -212,7 +212,7 @@ export default function ProfilePage() {
 
 function ProfileShell({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto max-w-[1280px] px-1 pb-10">
+    <div className="mx-auto w-full max-w-[1280px] min-w-0 px-1 pb-10">
       {children}
     </div>
   );
@@ -230,7 +230,7 @@ function PanelShell({
   return (
     <section
       id={id}
-      className={`rounded-[24px] bg-white/66 p-5 shadow-[0_14px_40px_rgba(59,97,155,0.08)] backdrop-blur dark:bg-slate-900/62 dark:shadow-slate-950/20 md:p-6 ${className}`}
+      className={`min-w-0 rounded-[24px] bg-white/66 p-5 shadow-[0_14px_40px_rgba(59,97,155,0.08)] backdrop-blur dark:bg-slate-900/62 dark:shadow-slate-950/20 md:p-6 ${className}`}
     >
       {children}
     </section>
@@ -293,8 +293,9 @@ function BehaviorTrendPanel(props: {
             </button>
           </div>
         ) : hasData ? (
-          <div className="grid min-h-[230px] gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="flex min-h-[230px] items-end gap-2 rounded-2xl bg-slate-50 px-4 pb-4 pt-5 dark:bg-slate-950/40">
+          <div className="grid min-w-0 min-h-[230px] gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="min-w-0 overflow-x-auto rounded-2xl bg-slate-50 dark:bg-slate-950/40">
+              <div className="flex min-h-[230px] min-w-[520px] items-end gap-2 px-4 pb-4 pt-5 sm:min-w-0">
               {visibleTrend.map((point) => {
                 const activity = sumTrendActivity(point);
                 const height = `${Math.max(8, Math.round((activity / maxActivity) * 100))}%`;
@@ -317,6 +318,7 @@ function BehaviorTrendPanel(props: {
                   </div>
                 );
               })}
+              </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
               <BehaviorSignal label="对话" value={props.summary.conversationCount} color="bg-primary-500" />

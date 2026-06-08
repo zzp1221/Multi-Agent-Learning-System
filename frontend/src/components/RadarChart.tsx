@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   PolarAngleAxis,
   PolarGrid,
@@ -36,6 +36,10 @@ interface RadarChartProps {
  * 雷达图组件（自动归一化到统一比例）
  */
 export default function RadarChart({ data, height = 320, className = '' }: RadarChartProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerReady, setContainerReady] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
+
   // 归一化数据：将所有维度归一化到最大满分
   const normalizedData = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -71,9 +75,38 @@ export default function RadarChart({ data, height = 320, className = '' }: Radar
   const tooltipTitle = isDark ? '#f8fafc' : '#0f172a';
   const tooltipMuted = isDark ? '#94a3b8' : '#64748b';
 
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) {
+      return undefined;
+    }
+    const updateReady = () => {
+      const rect = node.getBoundingClientRect();
+      const nextReady = rect.width > 0 && rect.height > 0;
+      setContainerReady(nextReady);
+      if (nextReady) {
+        setContainerWidth(Math.round(rect.width));
+      }
+    };
+    updateReady();
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+    const observer = new ResizeObserver(updateReady);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [height]);
+
   return (
-    <div className={className} style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
+    <div ref={containerRef} className={className} style={{ height, minWidth: 0 }}>
+      {containerReady ? (
+      <ResponsiveContainer
+        width="100%"
+        height="100%"
+        initialDimension={{ width: containerWidth || 1, height }}
+        minWidth={1}
+        minHeight={1}
+      >
         <RechartsRadarChart data={normalizedData}>
           <PolarGrid stroke={gridColor} />
           <PolarAngleAxis
@@ -127,6 +160,7 @@ export default function RadarChart({ data, height = 320, className = '' }: Radar
           />
         </RechartsRadarChart>
       </ResponsiveContainer>
+      ) : null}
     </div>
   );
 }
