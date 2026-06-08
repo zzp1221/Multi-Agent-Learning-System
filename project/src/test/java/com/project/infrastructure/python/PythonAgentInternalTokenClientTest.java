@@ -2,6 +2,7 @@ package com.project.infrastructure.python;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.config.AppProperties;
+import com.project.security.InternalTokenProvider;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -29,6 +30,7 @@ class PythonAgentInternalTokenClientTest {
 
     private HttpServer server;
     private AppProperties appProperties;
+    private InternalTokenProvider internalTokenProvider;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -39,6 +41,7 @@ class PythonAgentInternalTokenClientTest {
         appProperties.getPythonAgent().setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
         appProperties.getPythonAgent().setInternalToken(INTERNAL_TOKEN);
         appProperties.getPythonAgent().setReadTimeout(Duration.ofSeconds(2));
+        internalTokenProvider = new InternalTokenProvider(appProperties);
     }
 
     @AfterEach
@@ -61,7 +64,8 @@ class PythonAgentInternalTokenClientTest {
 
         HttpPythonConversationMessageClient client = new HttpPythonConversationMessageClient(
             new ObjectMapper(),
-            appProperties
+            appProperties,
+            internalTokenProvider
         );
 
         client.appendMessage(conversationId, UUID.randomUUID(), "user", "hello", List.of());
@@ -82,7 +86,8 @@ class PythonAgentInternalTokenClientTest {
 
         HttpStreamingPythonAgentClient client = new HttpStreamingPythonAgentClient(
             new ObjectMapper(),
-            appProperties
+            appProperties,
+            internalTokenProvider
         );
 
         client.cancel("task-1");
@@ -112,7 +117,8 @@ class PythonAgentInternalTokenClientTest {
 
         HttpResourceSemanticSearchClient client = new HttpResourceSemanticSearchClient(
             new ObjectMapper(),
-            appProperties
+            appProperties,
+            internalTokenProvider
         );
 
         client.search(UUID.fromString("60000000-0000-0000-0000-000000000006"), "\u52a8\u6001 \u89c4\u5212", 8);

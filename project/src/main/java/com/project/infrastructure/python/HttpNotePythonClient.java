@@ -11,6 +11,7 @@ import com.project.application.note.NoteSemanticResult;
 import com.project.application.note.NoteSemanticSearchResult;
 import com.project.application.note.NoteTodoResult;
 import com.project.config.AppProperties;
+import com.project.security.InternalTokenProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -20,8 +21,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,7 +29,6 @@ import java.util.UUID;
 public class HttpNotePythonClient implements NotePythonClient {
 
     private static final String INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token";
-    private static final Path INTERNAL_TOKEN_FILE = Path.of("/run/secrets/zhixue-python-agent-internal-token");
     private static final TypeReference<PythonNoteAnalysisPayload> ANALYSIS_TYPE = new TypeReference<>() {
     };
     private static final TypeReference<PythonNoteIndexPayload> INDEX_TYPE = new TypeReference<>() {
@@ -40,11 +38,17 @@ public class HttpNotePythonClient implements NotePythonClient {
 
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
+    private final InternalTokenProvider internalTokenProvider;
     private final HttpClient httpClient;
 
-    public HttpNotePythonClient(ObjectMapper objectMapper, AppProperties appProperties) {
+    public HttpNotePythonClient(
+        ObjectMapper objectMapper,
+        AppProperties appProperties,
+        InternalTokenProvider internalTokenProvider
+    ) {
         this.objectMapper = objectMapper;
         this.appProperties = appProperties;
+        this.internalTokenProvider = internalTokenProvider;
         this.httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(appProperties.getPythonAgent().getConnectTimeout())
@@ -164,22 +168,7 @@ public class HttpNotePythonClient implements NotePythonClient {
     }
 
     private String internalToken() {
-        String token = appProperties.getPythonAgent().getInternalToken();
-        if (token == null || token.isBlank()) {
-            token = readInternalTokenFile();
-        }
-        if (token == null || token.isBlank()) {
-            throw new IllegalStateException("PYTHON_AGENT_INTERNAL_TOKEN must be configured");
-        }
-        return token.trim();
-    }
-
-    private String readInternalTokenFile() {
-        try {
-            return Files.exists(INTERNAL_TOKEN_FILE) ? Files.readString(INTERNAL_TOKEN_FILE, StandardCharsets.UTF_8) : "";
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to read Python agent internal token file", ex);
-        }
+        return internalTokenProvider.requireConfigured();
     }
 
     private record PythonNoteAnalysisPayload(

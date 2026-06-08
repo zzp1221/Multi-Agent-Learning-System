@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.api.conversation.dto.ConversationMessageItemResponse;
 import com.project.application.conversation.PythonConversationMessageClient;
 import com.project.config.AppProperties;
+import com.project.security.InternalTokenProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -14,8 +15,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,17 +28,22 @@ import java.util.UUID;
 public class HttpPythonConversationMessageClient implements PythonConversationMessageClient {
 
     private static final String INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token";
-    private static final Path INTERNAL_TOKEN_FILE = Path.of("/run/secrets/zhixue-python-agent-internal-token");
     private static final TypeReference<List<PythonConversationMessagePayload>> LIST_TYPE = new TypeReference<>() {
     };
 
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
+    private final InternalTokenProvider internalTokenProvider;
     private final HttpClient httpClient;
 
-    public HttpPythonConversationMessageClient(ObjectMapper objectMapper, AppProperties appProperties) {
+    public HttpPythonConversationMessageClient(
+        ObjectMapper objectMapper,
+        AppProperties appProperties,
+        InternalTokenProvider internalTokenProvider
+    ) {
         this.objectMapper = objectMapper;
         this.appProperties = appProperties;
+        this.internalTokenProvider = internalTokenProvider;
         this.httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(appProperties.getPythonAgent().getConnectTimeout())
@@ -141,21 +145,6 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
     }
 
     private String internalToken() {
-        String token = appProperties.getPythonAgent().getInternalToken();
-        if (token == null || token.isBlank()) {
-            token = readInternalTokenFile();
-        }
-        if (token == null || token.isBlank()) {
-            throw new IllegalStateException("PYTHON_AGENT_INTERNAL_TOKEN must be configured");
-        }
-        return token.trim();
-    }
-
-    private String readInternalTokenFile() {
-        try {
-            return Files.exists(INTERNAL_TOKEN_FILE) ? Files.readString(INTERNAL_TOKEN_FILE, StandardCharsets.UTF_8) : "";
-        } catch (IOException ex) {
-            throw new IllegalStateException("Failed to read Python agent internal token file", ex);
-        }
+        return internalTokenProvider.requireConfigured();
     }
 }
