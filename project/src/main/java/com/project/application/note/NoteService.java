@@ -68,7 +68,7 @@ public class NoteService {
     private static final TypeReference<Map<String, Object>> STRING_OBJECT_MAP = new TypeReference<>() {
     };
     private static final Pattern MARKDOWN_SYNTAX = Pattern.compile(
-        "(?m)^#{1,6}\\s+|```[\\s\\S]*?```|`([^`]+)`|!\\[[^]]*]\\([^)]*\\)|\\[([^]]+)]\\([^)]*\\)|[*_~>#\\-+]"
+        "(?m)^#{1,6}\\s+|^\\s{0,3}>\\s?|^\\s*[-+*]\\s+|```[\\s\\S]*?```|`([^`]+)`|!\\[[^]]*]\\([^)]*\\)|\\[([^]]+)]\\([^)]*\\)|(?<![\\p{L}\\p{N}_])[*_~]+|[*_~]+(?![\\p{L}\\p{N}_])"
     );
 
     private final NamedParameterJdbcTemplate jdbcTemplate;

@@ -14,6 +14,7 @@ import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Queue;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,6 +26,76 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class NoteServiceTest {
+
+    @Test
+    void createNotePlainTextPreservesWordInternalHyphenAndUnderscore() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000102");
+        UUID resourceId = UUID.fromString("62000000-0000-0000-0000-000000000102");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        NotePythonClient notePythonClient = mock(NotePythonClient.class);
+        ResourceLibraryService resourceLibraryService = mock(ResourceLibraryService.class);
+        CapturingTaskExecutor noteIndexTaskExecutor = new CapturingTaskExecutor();
+        AtomicReference<UUID> insertedNoteId = new AtomicReference<>();
+        AtomicReference<String> insertedPlainText = new AtomicReference<>();
+
+        when(jdbcTemplate.update(anyString(), any(MapSqlParameterSource.class))).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0, String.class);
+            MapSqlParameterSource params = invocation.getArgument(1, MapSqlParameterSource.class);
+            if (sql.contains("INSERT INTO app.note(")) {
+                insertedNoteId.set((UUID) params.getValue("noteId"));
+                insertedPlainText.set((String) params.getValue("plainText"));
+            }
+            return 1;
+        });
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Integer.class))).thenReturn(1);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class))).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0, String.class);
+            if (sql.contains("FROM app.note n")) {
+                return List.of(new NoteDetailResponse(
+                    insertedNoteId.get(),
+                    null,
+                    "Search Probe",
+                    "# Search Probe\nThis paragraph keeps smoke-b-api-20260608 and body_kw_20260608 searchable.\n- list marker removed",
+                    insertedPlainText.get(),
+                    "hash",
+                    List.of(),
+                    10,
+                    1,
+                    null,
+                    null,
+                    null,
+                    false,
+                    resourceId
+                ));
+            }
+            if (sql.contains("FROM app.note_tag_link")) {
+                return List.of();
+            }
+            return List.of();
+        });
+
+        NoteService service = new NoteService(
+            jdbcTemplate,
+            new ObjectMapper(),
+            notePythonClient,
+            resourceLibraryService,
+            noteIndexTaskExecutor
+        );
+
+        service.createNote(
+            userId,
+            new CreateNoteRequest(
+                "Search Probe",
+                "# Search Probe\nThis paragraph keeps smoke-b-api-20260608 and body_kw_20260608 searchable.\n- list marker removed",
+                null,
+                List.of()
+            )
+        );
+
+        assertThat(insertedPlainText.get())
+            .contains("smoke-b-api-20260608", "body_kw_20260608", "list marker removed")
+            .doesNotContain("smoke b api 20260608", "body kw 20260608");
+    }
 
     @Test
     void createNoteReturnsBeforeRagIndexTaskRuns() {
