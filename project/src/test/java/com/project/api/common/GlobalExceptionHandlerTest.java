@@ -3,6 +3,7 @@ package com.project.api.common;
 import com.project.api.common.dto.ApiMessageResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
 import java.io.IOException;
 
@@ -27,5 +28,16 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(500);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().code()).isEqualTo("INTERNAL_ERROR");
+    }
+
+    @Test
+    void handlesUnreadableJsonAsBadRequest() {
+        ResponseEntity<ApiMessageResponse> response = handler.handleMessageNotReadableException(
+            new HttpMessageNotReadableException("Unsupported serviceType: BAD_TYPE_99")
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo("INVALID_ARGUMENT");
     }
 }
