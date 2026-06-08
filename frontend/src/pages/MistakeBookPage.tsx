@@ -161,6 +161,7 @@ export default function MistakeBookPage() {
   }, [loadMistakes]);
 
   const stats = data?.stats ?? { dueCount: 0, activeCount: 0, masteredCount: 0 };
+  const hasDueMistakes = stats.dueCount > 0;
   const hasMore = Boolean(data && mistakes.length < data.total);
   const activeFilterLabels = useMemo(() => {
     const labels: string[] = [];
@@ -256,6 +257,11 @@ export default function MistakeBookPage() {
     if (reviewBusy) {
       return;
     }
+    if (!hasDueMistakes) {
+      setReviewSession(null);
+      setReviewMessage('当前没有可复习的错题');
+      return;
+    }
     setReviewBusy(true);
     setReviewMessage('');
     try {
@@ -267,7 +273,7 @@ export default function MistakeBookPage() {
     } finally {
       setReviewBusy(false);
     }
-  }, [reviewBusy]);
+  }, [hasDueMistakes, reviewBusy]);
 
   useEffect(() => {
     const startReview = () => {
@@ -372,7 +378,7 @@ export default function MistakeBookPage() {
           <button
             type="button"
             onClick={handleStartReview}
-            disabled={reviewBusy}
+            disabled={reviewBusy || !hasDueMistakes}
             className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-primary-600 px-5 text-base font-semibold text-white shadow-lg shadow-primary-500/20 transition-all hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-16"
           >
             {reviewBusy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <RotateCcw className="h-5 w-5" />}
