@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -98,7 +99,7 @@ class NoteServiceTest {
     }
 
     @Test
-    void createNoteReturnsBeforeRagIndexTaskRuns() {
+    void createNoteReturnsBeforeRagIndexTaskRunsAndRetriesTransientFailures() {
         UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000101");
         UUID resourceId = UUID.fromString("62000000-0000-0000-0000-000000000101");
         UUID tagId = UUID.fromString("61000000-0000-0000-0000-000000000101");
@@ -110,7 +111,9 @@ class NoteServiceTest {
         when(jdbcTemplate.update(anyString(), any(MapSqlParameterSource.class))).thenReturn(1);
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Integer.class))).thenReturn(1);
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(UUID.class))).thenReturn(tagId);
-        when(notePythonClient.index(any(NoteRagIndexRequest.class))).thenReturn(new NoteRagIndexResult(true, 1, "ok"));
+        when(notePythonClient.index(any(NoteRagIndexRequest.class)))
+            .thenReturn(new NoteRagIndexResult(false, 0, "temporary embedding timeout"))
+            .thenReturn(new NoteRagIndexResult(true, 1, "ok"));
         when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class))).thenAnswer(invocation -> {
             String sql = invocation.getArgument(0, String.class);
             MapSqlParameterSource params = invocation.getArgument(1, MapSqlParameterSource.class);
@@ -158,7 +161,7 @@ class NoteServiceTest {
 
         noteIndexTaskExecutor.runNext();
 
-        verify(notePythonClient).index(any(NoteRagIndexRequest.class));
+        verify(notePythonClient, times(2)).index(any(NoteRagIndexRequest.class));
     }
 
     private static final class CapturingTaskExecutor implements TaskExecutor {

@@ -63,6 +63,8 @@ public class NoteService {
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 80;
     private static final int MAX_TAGS_PER_NOTE = 12;
+    private static final int NOTE_RAG_INDEX_MAX_ATTEMPTS = 3;
+    private static final long NOTE_RAG_INDEX_RETRY_BACKOFF_MILLIS = 100L;
     private static final TypeReference<List<Map<String, Object>>> TAG_LIST_TYPE = new TypeReference<>() {
     };
     private static final TypeReference<Map<String, Object>> STRING_OBJECT_MAP = new TypeReference<>() {
@@ -488,10 +490,31 @@ public class NoteService {
     }
 
     private void safeIndexNoteForRag(UUID userId, UUID noteId) {
+        for (int attempt = 1; attempt <= NOTE_RAG_INDEX_MAX_ATTEMPTS; attempt += 1) {
+            try {
+                indexNoteForRag(userId, noteId);
+                return;
+            } catch (RuntimeException ex) {
+                if (attempt >= NOTE_RAG_INDEX_MAX_ATTEMPTS) {
+                    LOGGER.warn("Note RAG indexing failed noteId={} attempts={}: {}", noteId, attempt, ex.getMessage());
+                    return;
+                }
+                LOGGER.warn("Note RAG indexing attempt failed noteId={} attempt={}: {}", noteId, attempt, ex.getMessage());
+                if (!sleepBeforeNoteIndexRetry(attempt)) {
+                    LOGGER.warn("Note RAG indexing retry interrupted noteId={}", noteId);
+                    return;
+                }
+            }
+        }
+    }
+
+    private boolean sleepBeforeNoteIndexRetry(int attempt) {
         try {
-            indexNoteForRag(userId, noteId);
-        } catch (RuntimeException ex) {
-            LOGGER.warn("Note RAG indexing failed noteId={}: {}", noteId, ex.getMessage());
+            Thread.sleep(NOTE_RAG_INDEX_RETRY_BACKOFF_MILLIS * attempt);
+            return true;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
