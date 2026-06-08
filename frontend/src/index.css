@@ -619,6 +619,12 @@
     text-wrap: pretty;
   }
 
+  .qna-markdown :where(pre, code) {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .qna-stream-cursor {
     display: inline-block;
     height: 1.05em;

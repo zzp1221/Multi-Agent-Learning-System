@@ -75,7 +75,7 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
   const code = children?.trim() || '';
 
   return (
-    <div className="relative group my-3">
+    <div className="relative group my-3 max-w-full min-w-0 overflow-hidden">
       {/* 语言标签和复制按钮 */}
       <div className="flex items-center justify-between rounded-t-xl bg-slate-700/92 px-4 py-2 shadow-sm shadow-slate-950/18">
         <span className="text-xs text-slate-400 font-mono">
@@ -116,9 +116,22 @@ export default function CodeBlock({ language, children }: CodeBlockProps) {
               borderBottomRightRadius: '0.75rem',
               fontSize: '0.875rem',
               lineHeight: '1.5',
+              maxWidth: '100%',
+              overflowWrap: 'anywhere',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+            codeTagProps={{
+              style: {
+                maxWidth: '100%',
+                overflowWrap: 'anywhere',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              },
             }}
             showLineNumbers={code.split('\n').length > 3}
             wrapLines
+            wrapLongLines
           >
             {code}
           </SyntaxHighlighter>
