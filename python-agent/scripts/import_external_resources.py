@@ -79,6 +79,10 @@ class ResourceCandidate:
     metadata_text: str | None = None
     cs_category: str = "GENERAL_CS"
     cs_subcategory: str = "General"
+    wiki_slug: str | None = None
+    wiki_title: str | None = None
+    wiki_source_ref: str | None = None
+    wiki_aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -106,7 +110,10 @@ class ParsedDocument:
 
 @dataclass
 class ImportStats:
+    candidate_offset: int = 0
     discovered: int = 0
+    selected: int = 0
+    processed: int = 0
     accessible: int = 0
     inserted_metadata: int = 0
     rag_ingested: int = 0
@@ -116,6 +123,7 @@ class ImportStats:
     source_counts: dict[str, int] = field(default_factory=dict)
     category_counts: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    embedding_preflight: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -279,13 +287,54 @@ def parse_html_document(html: bytes | str, fallback_title: str | None = None) ->
     return ParsedDocument(title=title[:240], text=text, summary=summary, content_hash=content_hash)
 
 
-def parse_candidate_document(candidate: ResourceCandidate, html: bytes | str) -> ParsedDocument:
+def is_wiki_bound_candidate(candidate: ResourceCandidate) -> bool:
+    return bool(candidate.wiki_slug or candidate.wiki_source_ref)
+
+
+def _wiki_metadata_text(candidate: ResourceCandidate) -> str:
     if candidate.metadata_text:
-        text = _normalize_text(candidate.metadata_text)
+        return _normalize_text(candidate.metadata_text)
+    lines = [
+        f"Wiki title: {candidate.wiki_title}" if candidate.wiki_title else "",
+        f"Wiki slug: {candidate.wiki_slug}" if candidate.wiki_slug else "",
+        f"Wiki source ref: {candidate.wiki_source_ref}" if candidate.wiki_source_ref else "",
+        f"Aliases: {', '.join(candidate.wiki_aliases)}" if candidate.wiki_aliases else "",
+        f"Resource title: {candidate.title}" if candidate.title else "",
+        f"Resource summary: {candidate.summary}" if candidate.summary else "",
+        f"Tags: {', '.join(candidate.tags)}" if candidate.tags else "",
+        f"URL: {candidate.url}",
+    ]
+    return _normalize_text("\n".join(line for line in lines if line))
+
+
+def parse_candidate_document(candidate: ResourceCandidate, html: bytes | str) -> ParsedDocument:
+    if is_wiki_bound_candidate(candidate):
+        text = _wiki_metadata_text(candidate)
         summary = _normalize_text(candidate.summary or text)[:420]
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         return ParsedDocument(
-            title=_normalize_text(candidate.title or "Untitled resource")[:240],
+            title=_normalize_text(candidate.title or candidate.wiki_title or "Untitled resource")[:240],
+            text=text,
+            summary=summary,
+            content_hash=content_hash,
+        )
+    if candidate.metadata_text:
+        metadata_text = _normalize_text(candidate.metadata_text)
+        if candidate.display_type == "VIDEO" or candidate.resource_type == "VIDEO":
+            summary = _normalize_text(candidate.summary or metadata_text)[:420]
+            content_hash = hashlib.sha256(metadata_text.encode("utf-8")).hexdigest()
+            return ParsedDocument(
+                title=_normalize_text(candidate.title or "Untitled resource")[:240],
+                text=metadata_text,
+                summary=summary,
+                content_hash=content_hash,
+            )
+        parsed = parse_html_document(html, fallback_title=candidate.title)
+        text = _normalize_text(f"{metadata_text}\n\n{parsed.text}")
+        summary = _normalize_text(candidate.summary or parsed.summary or metadata_text)[:420]
+        content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return ParsedDocument(
+            title=parsed.title,
             text=text,
             summary=summary,
             content_hash=content_hash,
@@ -307,8 +356,27 @@ def estimate_tokens(text: str) -> int:
     return max(1, int(cjk / 1.5 + other / 4))
 
 
+def _split_oversized_paragraph(paragraph: str, target_chars: int, overlap_chars: int) -> list[str]:
+    if len(paragraph) <= target_chars:
+        return [paragraph]
+    parts: list[str] = []
+    step = max(1, target_chars - max(0, overlap_chars))
+    for start in range(0, len(paragraph), step):
+        part = paragraph[start : start + target_chars].strip()
+        if part:
+            parts.append(part)
+        if start + target_chars >= len(paragraph):
+            break
+    return parts
+
+
 def chunk_text(text: str, *, target_chars: int = 2600, overlap_chars: int = 320, min_chars: int = 260) -> list[str]:
-    paragraphs = [part.strip() for part in text.split("\n") if part.strip()]
+    paragraphs = [
+        part
+        for paragraph in text.split("\n")
+        for part in _split_oversized_paragraph(paragraph.strip(), target_chars, overlap_chars)
+        if part.strip()
+    ]
     chunks: list[str] = []
     current = ""
     for paragraph in paragraphs:
@@ -319,6 +387,8 @@ def chunk_text(text: str, *, target_chars: int = 2600, overlap_chars: int = 320,
             chunks.append(current)
         carry = current[-overlap_chars:] if overlap_chars > 0 else ""
         current = f"{carry}\n{paragraph}".strip()
+        if len(current) > target_chars:
+            current = paragraph.strip()
     if len(current) >= min_chars:
         chunks.append(current)
     if not chunks and len(text.strip()) >= min_chars:
@@ -327,7 +397,9 @@ def chunk_text(text: str, *, target_chars: int = 2600, overlap_chars: int = 320,
 
 
 def chunk_candidate_text(candidate: ResourceCandidate, parsed: ParsedDocument) -> list[str]:
-    if candidate.metadata_text:
+    if is_wiki_bound_candidate(candidate) or (
+        candidate.metadata_text and (candidate.display_type == "VIDEO" or candidate.resource_type == "VIDEO")
+    ):
         return chunk_text(parsed.text, target_chars=1200, overlap_chars=120, min_chars=40)
     return chunk_text(parsed.text)
 
@@ -430,6 +502,10 @@ def _candidate_from_source(
     tags = _as_tags(default_tags, source_tags, resource.get("tags", []))
     cs_category = str(resource.get("csCategory") or _source_value(source, defaults, "csCategory", "GENERAL_CS")).strip().upper()
     cs_subcategory = str(resource.get("csSubcategory") or _source_value(source, defaults, "csSubcategory", "General")).strip()
+    wiki_slug = _clean_markup_text(resource.get("wikiSlug") or "")
+    wiki_title = _clean_markup_text(resource.get("wikiTitle") or "")
+    wiki_source_ref = _clean_markup_text(resource.get("wikiSourceRef") or "")
+    wiki_aliases = tuple(_split_tags(resource.get("wikiAliases", [])))
     metadata_text = _normalize_text(str(resource.get("metadataText") or "")) or None
     if not metadata_text and display_type == "VIDEO" and (title or summary or tags):
         metadata_text = _build_video_metadata_text(
@@ -470,6 +546,10 @@ def _candidate_from_source(
         metadata_text=metadata_text,
         cs_category=cs_category,
         cs_subcategory=cs_subcategory,
+        wiki_slug=wiki_slug or None,
+        wiki_title=wiki_title or None,
+        wiki_source_ref=wiki_source_ref or None,
+        wiki_aliases=wiki_aliases,
     )
 
 
@@ -642,9 +722,10 @@ def _round_robin(source_candidates: list[list[ResourceCandidate]]) -> list[Resou
             if index >= len(items):
                 continue
             candidate = items[index]
-            if candidate.url in seen_urls:
+            dedupe_key = candidate_dedupe_key(candidate)
+            if dedupe_key in seen_urls:
                 continue
-            seen_urls.add(candidate.url)
+            seen_urls.add(dedupe_key)
             candidates.append(candidate)
     return candidates
 
@@ -670,12 +751,13 @@ def _append_candidate(
 ) -> bool:
     if limit is not None and len(selected) >= limit:
         return False
-    if candidate.url in seen_urls:
+    dedupe_key = candidate_dedupe_key(candidate)
+    if dedupe_key in seen_urls:
         return False
     source_quota = source_quotas.get(candidate.source_id)
     if source_quota is not None and source_counts.get(candidate.source_id, 0) >= source_quota:
         return False
-    seen_urls.add(candidate.url)
+    seen_urls.add(dedupe_key)
     selected.append(candidate)
     source_counts[candidate.source_id] = source_counts.get(candidate.source_id, 0) + 1
     category_counts[candidate.cs_category] = category_counts.get(candidate.cs_category, 0) + 1
@@ -847,25 +929,48 @@ def iter_candidates(config: dict[str, Any], client: httpx.Client, *, limit: int 
     return _select_with_category_quotas(config, _round_robin(candidates_by_source), limit=limit)
 
 
-def check_accessibility(client: httpx.Client, url: str, *, max_bytes: int = 5_000_000) -> AccessResult:
+def check_accessibility(
+    client: httpx.Client,
+    url: str,
+    *,
+    max_bytes: int = 5_000_000,
+    validate_content_type: bool = True,
+) -> AccessResult:
     checked_at = _now_iso()
     headers = {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.8,*/*;q=0.5",
         "User-Agent": BROWSER_USER_AGENT,
     }
     try:
-        response = client.get(url, headers=headers)
-        content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-        body = response.content[:max_bytes]
-        content_error = _unsupported_content_error(content_type, body) if 200 <= response.status_code < 400 else ""
+        with client.stream("GET", url, headers=headers) as response:
+            content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+            chunks: list[bytes] = []
+            remaining = max(0, max_bytes)
+            if remaining:
+                for chunk in response.iter_bytes():
+                    if not chunk:
+                        continue
+                    part = chunk[:remaining]
+                    chunks.append(part)
+                    remaining -= len(part)
+                    if remaining <= 0:
+                        break
+            body = b"".join(chunks)
+            content_error = (
+                _unsupported_content_error(content_type, body)
+                if validate_content_type and 200 <= response.status_code < 400
+                else ""
+            )
+            final_url = str(response.url)
+            status_code = response.status_code
         return AccessResult(
             original_url=url,
-            final_url=str(response.url),
-            status_code=response.status_code,
+            final_url=final_url,
+            status_code=status_code,
             content_type=content_type,
             checked_at=checked_at,
             body=body,
-            error=content_error or ("" if 200 <= response.status_code < 400 else f"HTTP {response.status_code}"),
+            error=content_error or ("" if 200 <= status_code < 400 else f"HTTP {status_code}"),
         )
     except httpx.HTTPError as exc:
         return AccessResult(
@@ -886,12 +991,87 @@ def document_uuid(url: str) -> str:
     return str(uuid.uuid5(IMPORT_NAMESPACE, f"resource-document:{url}"))
 
 
+def candidate_identity(candidate: ResourceCandidate) -> str:
+    if is_wiki_bound_candidate(candidate):
+        slug = candidate.wiki_slug or candidate.wiki_source_ref or ""
+        return f"{candidate.url}#wiki={slug}"
+    return candidate.url
+
+
+def candidate_dedupe_key(candidate: ResourceCandidate) -> str:
+    return candidate_identity(candidate).rstrip("/").lower()
+
+
+def candidate_resource_uuid(candidate: ResourceCandidate) -> str:
+    return resource_uuid(candidate_identity(candidate))
+
+
+def candidate_document_uuid(candidate: ResourceCandidate) -> str:
+    return document_uuid(candidate_identity(candidate))
+
+
+def _url_match_values(url: str) -> list[str]:
+    values: list[str] = []
+    for value in (url, url.rstrip("/")):
+        if value and value not in values:
+            values.append(value)
+    if url and not url.endswith("/"):
+        values.append(f"{url}/")
+    return values
+
+
+def _url_match_key(url: str | None) -> str:
+    return (url or "").rstrip("/").lower()
+
+
+def _wiki_existing_keys(candidate: ResourceCandidate) -> set[str]:
+    if not is_wiki_bound_candidate(candidate):
+        return set()
+    wiki_keys = [value for value in (candidate.wiki_slug, candidate.wiki_source_ref) if value]
+    return {
+        f"{wiki_key.lower()}\0{_url_match_key(url)}"
+        for wiki_key in wiki_keys
+        for url in _url_match_values(candidate.url)
+    }
+
+
+def _row_wiki_existing_keys(
+    wiki_slug: str | None,
+    wiki_source_ref: str | None,
+    original_url: str | None,
+    source_url: str | None,
+) -> set[str]:
+    wiki_keys = [value for value in (wiki_slug, wiki_source_ref) if value]
+    urls = [value for value in (original_url, source_url) if value]
+    return {f"{wiki_key.lower()}\0{_url_match_key(url)}" for wiki_key in wiki_keys for url in urls}
+
+
+def resource_source_ref(candidate: ResourceCandidate, metadata: dict[str, Any]) -> str:
+    if candidate.wiki_source_ref:
+        return candidate.wiki_source_ref
+    if candidate.wiki_slug:
+        return f"wiki://{candidate.wiki_slug}"
+    return str(metadata["sourceUrl"])
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def vector_literal(values: list[float]) -> str:
     return "[" + ",".join(str(float(value)) for value in values) + "]"
+
+
+def _candidate_tags(candidate: ResourceCandidate) -> list[str]:
+    tags: list[str] = []
+    seen: set[str] = set()
+    for raw_tag in [*candidate.tags, candidate.wiki_title, *candidate.wiki_aliases]:
+        tag = str(raw_tag or "").strip()
+        key = tag.lower()
+        if tag and key not in seen:
+            seen.add(key)
+            tags.append(tag)
+    return tags
 
 
 def build_metadata(
@@ -903,6 +1083,7 @@ def build_metadata(
     rag_status: str,
 ) -> dict[str, Any]:
     source_url = access.final_url or candidate.url
+    ingested_by = "wiki_resource_importer" if (candidate.wiki_slug or candidate.wiki_source_ref) else "external_resource_importer"
     metadata = {
         "sourceUrl": source_url,
         "originalUrl": candidate.url,
@@ -919,12 +1100,20 @@ def build_metadata(
         "csCategory": candidate.cs_category,
         "csSubcategory": candidate.cs_subcategory,
         "discoveredBy": candidate.source_id,
-        "ingestedBy": "external_resource_importer",
+        "ingestedBy": ingested_by,
         "contentHash": parsed.content_hash,
         "metadataRag": bool(candidate.metadata_text),
         "ragReady": rag_ready,
         "ragStatus": rag_status,
     }
+    if candidate.wiki_slug:
+        metadata["wikiSlug"] = candidate.wiki_slug
+    if candidate.wiki_title:
+        metadata["wikiTitle"] = candidate.wiki_title
+    if candidate.wiki_source_ref:
+        metadata["wikiSourceRef"] = candidate.wiki_source_ref
+    if candidate.wiki_aliases:
+        metadata["wikiAliases"] = list(candidate.wiki_aliases)
     if source_url != candidate.url:
         metadata["redirected"] = True
     return metadata
@@ -938,7 +1127,7 @@ def upsert_learning_resource(
     metadata: dict[str, Any],
 ) -> str:
     source_url = metadata["sourceUrl"]
-    resource_id = resource_uuid(source_url)
+    resource_id = candidate_resource_uuid(candidate)
     cur.execute(
         """
         INSERT INTO app.learning_resource (
@@ -969,7 +1158,7 @@ def upsert_learning_resource(
             candidate.resource_type,
             candidate.difficulty,
             parsed.summary,
-            _json(list(candidate.tags)),
+            _json(_candidate_tags(candidate)),
             _json(metadata),
         ),
     )
@@ -988,8 +1177,9 @@ def upsert_resource_rag(
     if len(chunks) != len(embeddings):
         raise ValueError("chunks and embeddings length mismatch")
     source_url = metadata["sourceUrl"]
-    resource_id = resource_uuid(source_url)
-    doc_id = document_uuid(source_url)
+    source_ref = resource_source_ref(candidate, metadata)
+    resource_id = candidate_resource_uuid(candidate)
+    doc_id = candidate_document_uuid(candidate)
     cur.execute(
         """
         INSERT INTO rag.resource_document (
@@ -1021,7 +1211,7 @@ def upsert_resource_rag(
             candidate.domain,
             candidate.resource_type,
             candidate.difficulty,
-            source_url,
+            source_ref,
             parsed.summary,
             parsed.text[:120000],
             _json(metadata),
@@ -1058,6 +1248,8 @@ def upsert_resource_rag(
                     "sourceUrl": source_url,
                     "csCategory": candidate.cs_category,
                     "csSubcategory": candidate.cs_subcategory,
+                    "wikiSlug": candidate.wiki_slug,
+                    "wikiSourceRef": candidate.wiki_source_ref,
                     "chunkHash": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
                 }),
             ),
@@ -1078,6 +1270,10 @@ def generate_embeddings(
 ) -> list[list[float]]:
     if not api_key:
         raise RuntimeError("embedding API key is not configured")
+    token_estimates = [estimate_tokens(text) for text in texts]
+    oversized = [tokens for tokens in token_estimates if tokens > 12000]
+    if oversized:
+        raise RuntimeError(f"embedding input too long: estimated tokens {max(oversized)} exceeds 12000")
     os.environ["DASHSCOPE_API_KEY"] = api_key
     from dashscope import MultiModalEmbedding
 
@@ -1117,6 +1313,44 @@ def generate_embeddings(
     return embeddings
 
 
+def run_embedding_preflight(
+    *,
+    api_key: str,
+    model: str,
+    dimension: int,
+    request_timeout: float,
+    batch_size: int,
+    embedder: Callable[..., list[list[float]]] = generate_embeddings,
+) -> dict[str, Any]:
+    test_texts = [
+        "embedding preflight for wiki resource import",
+        "semantic resource search should return dense vectors",
+        "wiki bound learning resources use qwen3 vl embeddings",
+    ]
+    embeddings = embedder(
+        test_texts,
+        api_key=api_key,
+        model=model,
+        dimension=dimension,
+        batch_size=max(1, min(batch_size, len(test_texts))),
+        request_timeout=request_timeout,
+    )
+    if len(embeddings) != len(test_texts):
+        raise RuntimeError(f"Embedding preflight count mismatch: expected {len(test_texts)}, got {len(embeddings)}")
+    dimensions = [len(item) for item in embeddings]
+    if any(value != dimension for value in dimensions):
+        raise RuntimeError(f"Embedding preflight dimension mismatch: expected {dimension}, got {dimensions}")
+    if any(not item or not any(float(value) != 0.0 for value in item) for item in embeddings):
+        raise RuntimeError("Embedding preflight returned an empty or all-zero vector")
+    return {
+        "model": model,
+        "dimension": dimension,
+        "texts": len(test_texts),
+        "dimensions": dimensions,
+        "passed": True,
+    }
+
+
 def _connect_postgres() -> Any:
     import psycopg2
 
@@ -1130,7 +1364,13 @@ def load_config(path: Path) -> dict[str, Any]:
 def fetch_candidate_content(candidate: ResourceCandidate, *, timeout_seconds: float, max_bytes: int) -> CandidateContent:
     try:
         with httpx.Client(follow_redirects=True, timeout=timeout_seconds) as client:
-            access = check_accessibility(client, candidate.url, max_bytes=max_bytes)
+            metadata_only_url = is_wiki_bound_candidate(candidate)
+            access = check_accessibility(
+                client,
+                candidate.url,
+                max_bytes=0 if metadata_only_url else max_bytes,
+                validate_content_type=not metadata_only_url,
+            )
         if not access.accessible:
             return CandidateContent(candidate=candidate, access=access)
         parsed = parse_candidate_document(candidate, access.body)
@@ -1160,7 +1400,13 @@ def iter_candidate_contents(
 ) -> Iterable[CandidateContent]:
     if access_workers <= 1:
         for candidate in candidates:
-            access = check_accessibility(client, candidate.url, max_bytes=max_bytes)
+            metadata_only_url = is_wiki_bound_candidate(candidate)
+            access = check_accessibility(
+                client,
+                candidate.url,
+                max_bytes=0 if metadata_only_url else max_bytes,
+                validate_content_type=not metadata_only_url,
+            )
             parsed = parse_candidate_document(candidate, access.body) if access.accessible else None
             yield CandidateContent(candidate=candidate, access=access, parsed=parsed)
         return
@@ -1178,6 +1424,7 @@ def import_resources(
     *,
     config_path: Path,
     limit: int,
+    candidate_offset: int = 0,
     rag_limit: int,
     metadata_only: bool,
     require_embeddings: bool,
@@ -1188,6 +1435,8 @@ def import_resources(
     rag_missing_only: bool = False,
     embedding_batch_size: int = 2,
     access_workers: int = 1,
+    preflight_embeddings: bool = False,
+    progress_every: int = 0,
     embedder: Callable[..., list[list[float]]] = generate_embeddings,
     db_factory: Callable[[], Any] = _connect_postgres,
 ) -> ImportStats:
@@ -1199,9 +1448,25 @@ def import_resources(
 
     config = load_config(config_path)
     stats = ImportStats()
+    stats.candidate_offset = max(0, candidate_offset)
+    if preflight_embeddings and can_embed:
+        stats.embedding_preflight = run_embedding_preflight(
+            api_key=api_key,
+            model=settings.knowledge_embedding_model_name,
+            dimension=settings.knowledge_embedding_dimension,
+            request_timeout=settings.knowledge_embedding_timeout_seconds,
+            batch_size=embedding_batch_size,
+            embedder=embedder,
+        )
     with httpx.Client(follow_redirects=True, timeout=timeout_seconds) as client:
-        candidates = iter_candidates(config, client, limit=limit)
+        selection_limit = None if limit <= 0 else stats.candidate_offset + limit
+        candidates = iter_candidates(config, client, limit=selection_limit)
         stats.discovered = len(candidates)
+        if stats.candidate_offset:
+            candidates = candidates[stats.candidate_offset :]
+        if limit > 0:
+            candidates = candidates[:limit]
+        stats.selected = len(candidates)
         for candidate in candidates:
             stats.source_counts[candidate.source_id] = stats.source_counts.get(candidate.source_id, 0) + 1
             stats.category_counts[candidate.cs_category] = stats.category_counts.get(candidate.cs_category, 0) + 1
@@ -1211,14 +1476,31 @@ def import_resources(
                 candidates = filter_existing_candidates(conn, candidates)
             if rag_missing_only and conn is not None:
                 candidates = filter_rag_missing_candidates(conn, candidates)
-            safe_access_workers = max(1, access_workers if metadata_only or not can_embed else 1)
             for content in iter_candidate_contents(
                 candidates,
                 client=client,
                 timeout_seconds=timeout_seconds,
                 max_bytes=max_bytes,
-                access_workers=safe_access_workers,
+                access_workers=max(1, access_workers),
             ):
+                stats.processed += 1
+                if progress_every > 0 and stats.processed % progress_every == 0:
+                    print(
+                        json.dumps(
+                            {
+                                "event": "progress",
+                                "processed": stats.processed,
+                                "selected": stats.selected,
+                                "accessible": stats.accessible,
+                                "insertedMetadata": stats.inserted_metadata,
+                                "ragIngested": stats.rag_ingested,
+                                "skippedInaccessible": stats.skipped_inaccessible,
+                                "failed": stats.failed,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
                 candidate = content.candidate
                 try:
                     if content.error:
@@ -1292,36 +1574,103 @@ def filter_existing_candidates(conn: Any, candidates: list[ResourceCandidate]) -
     if not candidates:
         return candidates
     existing_ids: set[str] = set()
+    existing_wiki_keys: set[str] = set()
     with conn.cursor() as cur:
         for offset in range(0, len(candidates), 500):
             batch = candidates[offset : offset + 500]
             cur.execute(
                 "SELECT id::text FROM app.learning_resource WHERE id = ANY(%s::uuid[])",
-                ([resource_uuid(candidate.url) for candidate in batch],),
+                ([candidate_resource_uuid(candidate) for candidate in batch],),
             )
             existing_ids.update(str(row[0]) for row in cur.fetchall())
-    return [candidate for candidate in candidates if resource_uuid(candidate.url) not in existing_ids]
+            wiki_batch = [candidate for candidate in batch if is_wiki_bound_candidate(candidate)]
+            if not wiki_batch:
+                continue
+            wiki_slugs = sorted({candidate.wiki_slug for candidate in wiki_batch if candidate.wiki_slug})
+            wiki_source_refs = sorted({candidate.wiki_source_ref for candidate in wiki_batch if candidate.wiki_source_ref})
+            urls = sorted({url for candidate in wiki_batch for url in _url_match_values(candidate.url)})
+            cur.execute(
+                """
+                SELECT metadata_json ->> 'wikiSlug',
+                       metadata_json ->> 'wikiSourceRef',
+                       metadata_json ->> 'originalUrl',
+                       metadata_json ->> 'sourceUrl'
+                FROM app.learning_resource
+                WHERE metadata_json ->> 'ingestedBy' = 'wiki_resource_importer'
+                  AND (
+                    metadata_json ->> 'wikiSlug' = ANY(%s::text[])
+                    OR metadata_json ->> 'wikiSourceRef' = ANY(%s::text[])
+                  )
+                  AND (
+                    metadata_json ->> 'originalUrl' = ANY(%s::text[])
+                    OR metadata_json ->> 'sourceUrl' = ANY(%s::text[])
+                  )
+                """,
+                (wiki_slugs, wiki_source_refs, urls, urls),
+            )
+            for row in cur.fetchall():
+                existing_wiki_keys.update(_row_wiki_existing_keys(row[0], row[1], row[2], row[3]))
+    return [
+        candidate
+        for candidate in candidates
+        if candidate_resource_uuid(candidate) not in existing_ids
+        and not (_wiki_existing_keys(candidate) & existing_wiki_keys)
+    ]
 
 
 def filter_rag_missing_candidates(conn: Any, candidates: list[ResourceCandidate]) -> list[ResourceCandidate]:
     if not candidates:
         return candidates
     existing_ids: set[str] = set()
+    existing_wiki_keys: set[str] = set()
     with conn.cursor() as cur:
         for offset in range(0, len(candidates), 500):
             batch = candidates[offset : offset + 500]
             cur.execute(
                 "SELECT resource_id::text FROM rag.resource_document WHERE resource_id = ANY(%s::uuid[])",
-                ([resource_uuid(candidate.url) for candidate in batch],),
+                ([candidate_resource_uuid(candidate) for candidate in batch],),
             )
             existing_ids.update(str(row[0]) for row in cur.fetchall())
-    return [candidate for candidate in candidates if resource_uuid(candidate.url) not in existing_ids]
+            wiki_batch = [candidate for candidate in batch if is_wiki_bound_candidate(candidate)]
+            if not wiki_batch:
+                continue
+            wiki_slugs = sorted({candidate.wiki_slug for candidate in wiki_batch if candidate.wiki_slug})
+            wiki_source_refs = sorted({candidate.wiki_source_ref for candidate in wiki_batch if candidate.wiki_source_ref})
+            urls = sorted({url for candidate in wiki_batch for url in _url_match_values(candidate.url)})
+            cur.execute(
+                """
+                SELECT metadata_json ->> 'wikiSlug',
+                       metadata_json ->> 'wikiSourceRef',
+                       metadata_json ->> 'originalUrl',
+                       metadata_json ->> 'sourceUrl'
+                FROM rag.resource_document
+                WHERE metadata_json ->> 'ingestedBy' = 'wiki_resource_importer'
+                  AND (
+                    metadata_json ->> 'wikiSlug' = ANY(%s::text[])
+                    OR metadata_json ->> 'wikiSourceRef' = ANY(%s::text[])
+                  )
+                  AND (
+                    metadata_json ->> 'originalUrl' = ANY(%s::text[])
+                    OR metadata_json ->> 'sourceUrl' = ANY(%s::text[])
+                  )
+                """,
+                (wiki_slugs, wiki_source_refs, urls, urls),
+            )
+            for row in cur.fetchall():
+                existing_wiki_keys.update(_row_wiki_existing_keys(row[0], row[1], row[2], row[3]))
+    return [
+        candidate
+        for candidate in candidates
+        if candidate_resource_uuid(candidate) not in existing_ids
+        and not (_wiki_existing_keys(candidate) & existing_wiki_keys)
+    ]
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Import accessible external learning resources into Zhixue.")
     parser.add_argument("--source-file", type=Path, default=DEFAULT_SOURCE_FILE)
     parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument("--offset", type=int, default=0, help="Skip this many selected candidates before importing.")
     parser.add_argument("--rag-limit", type=int, default=300)
     parser.add_argument("--metadata-only", action="store_true")
     parser.add_argument("--require-embeddings", action="store_true")
@@ -1332,6 +1681,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--rag-missing-only", action="store_true")
     parser.add_argument("--embedding-batch-size", type=int, default=2)
     parser.add_argument("--access-workers", type=int, default=1)
+    parser.add_argument("--preflight-embeddings", action="store_true")
+    parser.add_argument("--progress-every", type=int, default=0)
     return parser.parse_args(argv)
 
 
@@ -1340,6 +1691,7 @@ def main(argv: list[str] | None = None) -> int:
     stats = import_resources(
         config_path=args.source_file,
         limit=args.limit,
+        candidate_offset=args.offset,
         rag_limit=args.rag_limit,
         metadata_only=args.metadata_only,
         require_embeddings=args.require_embeddings,
@@ -1350,6 +1702,8 @@ def main(argv: list[str] | None = None) -> int:
         rag_missing_only=args.rag_missing_only,
         embedding_batch_size=args.embedding_batch_size,
         access_workers=args.access_workers,
+        preflight_embeddings=args.preflight_embeddings,
+        progress_every=args.progress_every,
     )
     print(json.dumps(stats.__dict__, ensure_ascii=False, indent=2))
     return 1 if stats.failed else 0

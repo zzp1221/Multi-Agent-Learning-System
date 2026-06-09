@@ -25,6 +25,7 @@ import {
   QNA_CONVERSATION_CACHE_STORAGE_KEY,
   QNA_SNAPSHOT_STORAGE_KEY,
   SELECTED_CONVERSATION_STORAGE_KEY,
+  buildSlideOutlineConfirmationContent,
   buildConversationSyncSignature,
   conversationCacheKey,
   hasPendingAssistantResponse,
@@ -48,7 +49,6 @@ interface QnaSendOverride {
   text: string;
   confirmedSlideOutlineText?: string;
   confirmedSlideTopic?: string;
-  confirmedSlideOutline?: boolean;
 }
 
 interface QnaLearningContext {
@@ -94,6 +94,7 @@ export function useLearningStudioQna({
   const qnaStreamTokensRef = useRef<Record<string, string>>({});
   const qnaHistorySyncTokensRef = useRef<Record<string, number>>({});
   const confirmedSlideOutlineStreamsRef = useRef<Record<string, boolean>>({});
+  const slideOutlineRevealTimersRef = useRef<Record<string, number>>({});
   const qnaRequestVersionRef = useRef(0);
   const previousModeRef = useRef(mode);
 
@@ -109,12 +110,22 @@ export function useLearningStudioQna({
     || qnaMessages.length > 1
     || qnaMessages.some((item) => item.role === 'user');
 
+  const clearSlideOutlineRevealTimers = useCallback(() => {
+    Object.values(slideOutlineRevealTimersRef.current).forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    slideOutlineRevealTimersRef.current = {};
+  }, []);
+
   const abortQnaStreams = useCallback(() => {
     Object.values(qnaStreamControllersRef.current).forEach((controller) => controller.abort());
     qnaStreamControllersRef.current = {};
     qnaStreamTokensRef.current = {};
     qnaHistorySyncTokensRef.current = {};
-  }, []);
+    clearSlideOutlineRevealTimers();
+  }, [clearSlideOutlineRevealTimers]);
+
+  useEffect(() => clearSlideOutlineRevealTimers, [clearSlideOutlineRevealTimers]);
 
   const clearPersistedQnaSnapshot = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -184,6 +195,7 @@ export function useLearningStudioQna({
 
   const resetQnaConversation = useCallback(() => {
     qnaRequestVersionRef.current += 1;
+    clearSlideOutlineRevealTimers();
     cacheConversationView(conversationIdRef.current, {
       qnaInput: qnaInputRef.current,
       qnaMessages: qnaMessagesRef.current,
@@ -204,7 +216,7 @@ export function useLearningStudioQna({
       window.sessionStorage.removeItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY);
     }
     window.dispatchEvent(new CustomEvent('app:active-conversation-changed', { detail: { conversationId: '' } }));
-  }, [cacheConversationView, clearPersistedQnaSnapshot, conversationIdRef, setConversationId, setQnaStateView]);
+  }, [cacheConversationView, clearPersistedQnaSnapshot, clearSlideOutlineRevealTimers, conversationIdRef, setConversationId, setQnaStateView]);
 
   useEffect(() => {
     qnaMessagesRef.current = qnaMessages;
@@ -696,6 +708,19 @@ export function useLearningStudioQna({
     if ((!text && uploadedImageUrls.length === 0) || qnaBusy) {
       return false;
     }
+    if (!override && text && uploadedImageUrls.length === 0) {
+      const pendingSlideMessage = findLatestPendingSlideOutlineMessage(qnaMessagesRef.current);
+      if (pendingSlideMessage) {
+        const intent = readSlideOutlineReplyIntent(text);
+        if (intent === 'confirm') {
+          return submitSlideOutlineConfirmation(pendingSlideMessage, text);
+        }
+        if (intent === 'reject') {
+          rejectSlideOutlineInConversation(pendingSlideMessage, text);
+          return true;
+        }
+      }
+    }
     if (!isAuthenticated) {
       openAuthModal('login', '请先登录');
       return false;
@@ -832,7 +857,11 @@ export function useLearningStudioQna({
             if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
               delete qnaStreamControllersRef.current[currentConversationId];
             }
-            updateQnaConversationMessages(currentConversationId, removePendingAssistantPlaceholder, { qnaState: 'QNA_IDLE' });
+            updateQnaConversationMessages(
+              currentConversationId,
+              removePendingAssistantPlaceholder,
+              { qnaState: hasActiveSlideOutlineReveal() ? 'QNA_STREAMING' : 'QNA_IDLE' },
+            );
             window.dispatchEvent(new Event('app:conversation-updated'));
           },
           onError: (error) => {
@@ -1023,52 +1052,6 @@ export function useLearningStudioQna({
     pendingQnaImages.forEach(revokePendingImage);
   }, [pendingQnaImages, revokePendingImage]);
 
-  const handleConfirmSlideOutline = useCallback((message: ChatMessage) => {
-    const confirmation = message.slideConfirmation;
-    if (!confirmation || confirmation.status !== 'pending') {
-      return;
-    }
-    const confirmedTopic = cleanupConfirmedSlideTopic(confirmation.topic || '');
-    void handleQnaSend({
-      text: '确认此大纲并生成 PPT 文件',
-      confirmedSlideOutline: true,
-      confirmedSlideOutlineText: confirmation.outline,
-      confirmedSlideTopic: confirmedTopic || undefined,
-    }).then((accepted) => {
-      if (!accepted) {
-        return;
-      }
-      updateQnaConversationMessages(
-        conversationIdRef.current,
-        (messages) => messages.map((item) =>
-          item.id === message.id
-            ? { ...item, slideConfirmation: { ...confirmation, status: 'confirmed' } }
-            : item,
-        ),
-      );
-    });
-  }, [conversationIdRef, handleQnaSend, updateQnaConversationMessages]);
-
-  const handleRejectSlideOutline = useCallback((message: ChatMessage) => {
-    const confirmation = message.slideConfirmation;
-    if (!confirmation || confirmation.status !== 'pending') {
-      return;
-    }
-    updateQnaConversationMessages(
-      conversationIdRef.current,
-      (messages) => messages.map((item) =>
-        item.id === message.id
-          ? {
-            ...item,
-            content: item.content || '已取消本次 PPT 生成。',
-            slideConfirmation: { ...confirmation, status: 'rejected' },
-          }
-          : item,
-      ),
-    );
-    markSlideOutlineRejected(conversationIdRef.current, confirmation.title);
-  }, [conversationIdRef, updateQnaConversationMessages]);
-
   return {
     resetQnaConversation,
     abortQnaStreams,
@@ -1087,8 +1070,6 @@ export function useLearningStudioQna({
       onToggleWebSearch: () => setQnaWebSearchEnabled((prev) => !prev),
       onPickImages: handlePickQnaImages,
       onRemoveImage: handleRemovePendingQnaImage,
-      onConfirmSlideOutline: handleConfirmSlideOutline,
-      onRejectSlideOutline: handleRejectSlideOutline,
     },
   };
 
@@ -1109,6 +1090,7 @@ export function useLearningStudioQna({
       appendSlideOutlineErrorMessage(targetConversationId);
       return true;
     }
+    const messageId = `qna-slide-outline-${Date.now()}`;
     updateQnaConversationMessages(
       targetConversationId,
       (messages) => {
@@ -1118,7 +1100,7 @@ export function useLearningStudioQna({
             index === existingIndex
               ? {
                 ...item,
-                content: item.content || 'PPT 大纲已生成，请确认后继续生成演示文件。',
+                content: item.content || '',
                 slideConfirmation: confirmation,
               }
               : item,
@@ -1127,16 +1109,128 @@ export function useLearningStudioQna({
         return [
           ...removePendingAssistantPlaceholder(messages),
           {
-            id: `qna-slide-outline-${Date.now()}`,
+            id: messageId,
             role: 'assistant',
-            content: 'PPT 大纲已生成，请确认后继续生成演示文件。',
+            content: '',
             slideConfirmation: confirmation,
           },
         ];
       },
       { qnaState: 'QNA_STREAMING' },
     );
+    const existingMessage = qnaMessagesRef.current.find((item) => item.slideConfirmation?.id === confirmation.id);
+    revealSlideOutlineMessage(targetConversationId, existingMessage?.id ?? messageId, confirmation);
     return true;
+  }
+
+  function submitSlideOutlineConfirmation(message: ChatMessage, userText: string): Promise<boolean> {
+    const confirmation = message.slideConfirmation;
+    if (!confirmation || confirmation.status !== 'pending') {
+      return Promise.resolve(false);
+    }
+    const confirmedTopic = cleanupConfirmedSlideTopic(confirmation.topic || '');
+    return handleQnaSend({
+      text: userText || '确认生成 PPT',
+      confirmedSlideOutlineText: confirmation.outline,
+      confirmedSlideTopic: confirmedTopic || undefined,
+    }).then((accepted) => {
+      if (!accepted) {
+        return false;
+      }
+      updateQnaConversationMessages(
+        conversationIdRef.current,
+        (messages) => messages.map((item) =>
+          item.id === message.id
+            ? { ...item, slideConfirmation: { ...confirmation, status: 'confirmed' as const } }
+            : item,
+        ),
+      );
+      return true;
+    });
+  }
+
+  function rejectSlideOutlineInConversation(message: ChatMessage, userText: string): void {
+    const confirmation = message.slideConfirmation;
+    if (!confirmation || confirmation.status !== 'pending') {
+      return;
+    }
+    const now = Date.now();
+    updateQnaConversationMessages(
+      conversationIdRef.current,
+      (messages) => [
+        ...messages.map((item) =>
+          item.id === message.id
+            ? { ...item, slideConfirmation: { ...confirmation, status: 'rejected' as const } }
+            : item,
+        ),
+        {
+          id: `qna-user-slide-reject-${now}`,
+          role: 'user' as const,
+          content: userText || '暂不生成',
+        },
+        {
+          id: `qna-assistant-slide-reject-${now}`,
+          role: 'assistant' as const,
+          content: '已停止生成 PPT 文件。需要时你可以重新让我生成。',
+        },
+      ],
+      { qnaInput: '', qnaState: 'QNA_IDLE' },
+    );
+    markSlideOutlineRejected(conversationIdRef.current, confirmation.title);
+    window.dispatchEvent(new Event('app:conversation-updated'));
+  }
+
+  function revealSlideOutlineMessage(
+    targetConversationId: string,
+    messageId: string,
+    confirmation: SlideOutlineConfirmation,
+  ): void {
+    const fullContent = buildSlideOutlineConfirmationContent(confirmation);
+    const timerKey = `${conversationCacheKey(targetConversationId)}:${messageId}`;
+    const existingTimer = slideOutlineRevealTimersRef.current[timerKey];
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+    const cacheKey = conversationCacheKey(targetConversationId);
+    const sourceMessages = conversationIdRef.current === targetConversationId.trim()
+      ? qnaMessagesRef.current
+      : qnaConversationCacheRef.current[cacheKey]?.qnaMessages ?? [];
+    const currentMessage = sourceMessages.find((item) => item.id === messageId);
+    let visibleLength = Math.min(currentMessage?.content.length ?? 0, fullContent.length);
+    if (visibleLength >= fullContent.length) {
+      return;
+    }
+
+    const revealNextChunk = () => {
+      const chunkSize = fullContent.length > 3000 ? 42 : 24;
+      visibleLength = Math.min(fullContent.length, visibleLength + chunkSize);
+      const done = visibleLength >= fullContent.length;
+      if (done) {
+        delete slideOutlineRevealTimersRef.current[timerKey];
+      }
+      updateQnaConversationMessages(
+        targetConversationId,
+        (messages) => messages.map((item) =>
+          item.id === messageId
+            ? { ...item, content: fullContent.slice(0, visibleLength), slideConfirmation: confirmation }
+            : item,
+        ),
+        { qnaState: done && !hasActiveConversationStream(targetConversationId) && !hasActiveSlideOutlineReveal() ? 'QNA_IDLE' : 'QNA_STREAMING' },
+      );
+      if (!done) {
+        slideOutlineRevealTimersRef.current[timerKey] = window.setTimeout(revealNextChunk, 24);
+      }
+    };
+
+    slideOutlineRevealTimersRef.current[timerKey] = window.setTimeout(revealNextChunk, 16);
+  }
+
+  function hasActiveConversationStream(targetConversationId: string): boolean {
+    return Boolean(qnaStreamTokensRef.current[targetConversationId.trim()]);
+  }
+
+  function hasActiveSlideOutlineReveal(): boolean {
+    return Object.keys(slideOutlineRevealTimersRef.current).length > 0;
   }
 
   function appendSlideOutlineErrorMessage(targetConversationId: string): void {
@@ -1201,6 +1295,9 @@ function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage
     return messages;
   }
   const lastIndex = messages.length - 1;
+  if (messages[lastIndex]?.slideConfirmation) {
+    return messages;
+  }
   return messages.filter((_, index) => index !== lastIndex);
 }
 
@@ -1234,12 +1331,45 @@ function restorePendingSlideOutlineMessages(conversationId: string, messages: Ch
       {
         id: `qna-slide-outline-restored-${resource.id}`,
         role: 'assistant',
-        content: 'PPT 大纲已生成，请确认后继续生成演示文件。',
+        content: buildSlideOutlineConfirmationContent(confirmation),
         slideConfirmation: confirmation,
       },
     ];
   }
   return nextMessages;
+}
+
+function findLatestPendingSlideOutlineMessage(messages: ChatMessage[]): ChatMessage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === 'assistant' && message.slideConfirmation?.status === 'pending') {
+      return message;
+    }
+  }
+  return null;
+}
+
+function readSlideOutlineReplyIntent(input: string): 'confirm' | 'reject' | null {
+  const normalized = input.trim().toLowerCase().replace(/\s+/g, '');
+  if (!normalized) {
+    return null;
+  }
+  if (
+    /^(确认|确认生成|生成|继续|可以|可以生成|好的|好|ok|yes|y|go|继续生成|生成ppt|生成ppt文件|确认生成ppt|确认生成ppt文件)$/.test(normalized)
+    || (normalized.includes('确认') && normalized.includes('生成'))
+    || (normalized.includes('继续') && normalized.includes('生成'))
+  ) {
+    return 'confirm';
+  }
+  if (
+    /^(暂不生成|不生成|不要|不用|取消|停止|先不|先不要|no|n)$/.test(normalized)
+    || normalized.includes('不生成')
+    || normalized.includes('暂不')
+    || normalized.includes('取消')
+  ) {
+    return 'reject';
+  }
+  return null;
 }
 
 function recordResourceStreamEvent(

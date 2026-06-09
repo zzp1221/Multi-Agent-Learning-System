@@ -432,6 +432,54 @@ def test_accessibility_rejects_binary_content() -> None:
     assert result.error == "BINARY_CONTENT"
 
 
+def test_wiki_bound_fetch_validates_url_without_reading_body() -> None:
+    candidate = import_external_resources.ResourceCandidate(
+        source_id="wiki-graph",
+        source_name="Wiki Resource Importer",
+        url="https://example.test/graph",
+        title="Graph Guide",
+        domain="COMPUTER_SCIENCE",
+        resource_type="READING",
+        display_type="DOCUMENT",
+        difficulty="MIXED",
+        license="Public web page",
+        copyright_status="PUBLICLY_ACCESSIBLE_WEB_RESOURCE",
+        tags=("graph",),
+        quality_score=0.88,
+        popularity_score=0.6,
+        summary="BFS and DFS guide",
+        metadata_text="Wiki title: Graph Traversal\nWiki slug: algorithms/graph-traversal\nResource title: Graph Guide",
+        wiki_slug="algorithms/graph-traversal",
+        wiki_title="Graph Traversal",
+        wiki_source_ref="wiki://algorithms/graph-traversal",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            content=b"<html><body>" + b"web body should not be read " * 1000 + b"</body></html>",
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        [content] = list(
+            import_external_resources.iter_candidate_contents(
+                [candidate],
+                client=client,
+                timeout_seconds=1.0,
+                max_bytes=100000,
+                access_workers=1,
+            )
+        )
+
+    assert content.access.accessible is True
+    assert content.access.body == b""
+    assert content.parsed is not None
+    assert content.parsed.text == candidate.metadata_text
+    assert "web body should not be read" not in content.parsed.text
+
+
 def test_html_parser_ignores_scripts_and_builds_summary() -> None:
     parsed = import_external_resources.parse_html_document(
         b"<html><head><title>Fallback</title><script>bad()</script></head>"
@@ -503,9 +551,68 @@ def test_metadata_rag_uses_short_chunk_threshold_for_video_resources() -> None:
     assert "神经网络" in chunks[0]
 
 
+def test_chunk_text_splits_single_oversized_paragraph() -> None:
+    text = "x" * 7000
+
+    chunks = import_external_resources.chunk_text(text, target_chars=1200, overlap_chars=100, min_chars=260)
+
+    assert len(chunks) > 1
+    assert max(len(chunk) for chunk in chunks) <= 1200
+
+
 def test_generate_embeddings_refuses_missing_api_key() -> None:
     with pytest.raises(RuntimeError, match="embedding API key"):
         import_external_resources.generate_embeddings(["hello"], api_key="", model="qwen3-vl-embedding", dimension=1024)
+
+
+def test_generate_embeddings_refuses_oversized_input_before_api_call() -> None:
+    with pytest.raises(RuntimeError, match="embedding input too long"):
+        import_external_resources.generate_embeddings(
+            ["x" * 60000],
+            api_key="key",
+            model="qwen3-vl-embedding",
+            dimension=1024,
+        )
+
+
+def test_embedding_preflight_validates_three_1024_vectors() -> None:
+    captured = {}
+
+    def fake_embedder(texts, **kwargs):
+        captured["texts"] = texts
+        captured["kwargs"] = kwargs
+        return [[0.01] * 1024 for _ in texts]
+
+    result = import_external_resources.run_embedding_preflight(
+        api_key="key",
+        model="qwen3-vl-embedding",
+        dimension=1024,
+        request_timeout=3.0,
+        batch_size=2,
+        embedder=fake_embedder,
+    )
+
+    assert result["passed"] is True
+    assert result["model"] == "qwen3-vl-embedding"
+    assert result["dimensions"] == [1024, 1024, 1024]
+    assert len(captured["texts"]) == 3
+    assert captured["kwargs"]["dimension"] == 1024
+
+
+def test_embedding_preflight_rejects_bad_dimensions() -> None:
+    def fake_embedder(texts, **kwargs):
+        del kwargs
+        return [[0.01] * 1024, [0.02] * 8, [0.03] * 1024]
+
+    with pytest.raises(RuntimeError, match="dimension mismatch"):
+        import_external_resources.run_embedding_preflight(
+            api_key="key",
+            model="qwen3-vl-embedding",
+            dimension=1024,
+            request_timeout=3.0,
+            batch_size=3,
+            embedder=fake_embedder,
+        )
 
 
 def test_upsert_resource_and_rag_use_real_vector_payloads() -> None:
@@ -573,6 +680,101 @@ def test_upsert_resource_and_rag_use_real_vector_payloads() -> None:
     assert json.loads(cursor.calls[-1][1][-1])["csCategory"] == "PROGRAMMING_LANGUAGES"
 
 
+def test_wiki_source_ref_is_written_to_resource_document() -> None:
+    class RecordingCursor:
+        def __init__(self) -> None:
+            self.calls = []
+            self.next_fetchone = None
+
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+
+        def fetchone(self):
+            return self.next_fetchone
+
+    cursor = RecordingCursor()
+    candidate = import_external_resources.ResourceCandidate(
+        source_id="wiki-deadlock",
+        source_name="Wiki Resource Importer",
+        url="https://example.test/deadlock",
+        title="Deadlock Guide",
+        domain="COMPUTER_SCIENCE",
+        resource_type="READING",
+        display_type="DOCUMENT",
+        difficulty="MIXED",
+        license="Public web page",
+        copyright_status="PUBLICLY_ACCESSIBLE_WEB_RESOURCE",
+        tags=("concurrency",),
+        quality_score=0.88,
+        popularity_score=0.6,
+        summary="deadlock prevention",
+        metadata_text="Wiki title: Deadlock\nResource title: Deadlock Guide",
+        cs_category="OPERATING_SYSTEMS",
+        cs_subcategory="Concurrency",
+        wiki_slug="操作系统/死锁",
+        wiki_title="死锁",
+        wiki_source_ref="wiki://操作系统/死锁",
+        wiki_aliases=("deadlock",),
+    )
+    access = import_external_resources.AccessResult(
+        original_url=candidate.url,
+        final_url=candidate.url,
+        status_code=200,
+        content_type="text/html",
+        checked_at="2026-06-08T00:00:00+00:00",
+        body=b"<h1>Deadlock Guide</h1><p>deadlock prevention and recovery</p>",
+    )
+    parsed = import_external_resources.parse_candidate_document(candidate, access.body)
+    metadata = import_external_resources.build_metadata(candidate, access, parsed, rag_ready=True, rag_status="READY")
+    cursor.next_fetchone = (import_external_resources.document_uuid(candidate.url),)
+
+    import_external_resources.upsert_learning_resource(cursor, candidate, access, parsed, metadata)
+    import_external_resources.upsert_resource_rag(cursor, candidate, access, parsed, metadata, ["deadlock chunk"], [[0.1] * 1024])
+
+    resource_doc_call = next(call for call in cursor.calls if "INSERT INTO rag.resource_document" in call[0])
+    resource_chunk_call = next(call for call in cursor.calls if "INSERT INTO rag.resource_chunk" in call[0])
+    assert resource_doc_call[1][6] == "wiki://操作系统/死锁"
+    assert metadata["ingestedBy"] == "wiki_resource_importer"
+    assert metadata["wikiSlug"] == "操作系统/死锁"
+    assert metadata["wikiSourceRef"] == "wiki://操作系统/死锁"
+    assert json.loads(resource_chunk_call[1][-1])["wikiSlug"] == "操作系统/死锁"
+
+
+def test_wiki_bound_resource_rag_uses_metadata_text_only() -> None:
+    candidate = import_external_resources.ResourceCandidate(
+        source_id="wiki-graph",
+        source_name="Wiki Resource Importer",
+        url="https://example.test/graph",
+        title="Graph Guide",
+        domain="COMPUTER_SCIENCE",
+        resource_type="READING",
+        display_type="DOCUMENT",
+        difficulty="BASIC",
+        license="Public web page",
+        copyright_status="PUBLICLY_ACCESSIBLE_WEB_RESOURCE",
+        tags=("graph", "bfs"),
+        quality_score=0.9,
+        popularity_score=0.6,
+        summary="BFS and DFS overview",
+        metadata_text="Wiki title: 图遍历\nWiki slug: algorithms/graph-traversal\nResource title: Graph Guide\nTags: graph, bfs\nURL: https://example.test/graph",
+        wiki_slug="algorithms/graph-traversal",
+        wiki_title="图遍历",
+        wiki_source_ref="wiki://algorithms/graph-traversal",
+        wiki_aliases=("BFS", "DFS"),
+    )
+
+    parsed = import_external_resources.parse_candidate_document(
+        candidate,
+        b"<html><body><p>large crawler body should not enter wiki resource rag chunks</p></body></html>",
+    )
+    chunks = import_external_resources.chunk_candidate_text(candidate, parsed)
+
+    assert "Wiki title: 图遍历" in parsed.text
+    assert "Graph Guide" in parsed.text
+    assert "large crawler body" not in parsed.text
+    assert chunks == [parsed.text]
+
+
 def test_dry_run_never_calls_embedder_or_database(tmp_path, monkeypatch) -> None:
     config_path = tmp_path / "sources.json"
     config_path.write_text(
@@ -630,6 +832,7 @@ def test_dry_run_never_calls_embedder_or_database(tmp_path, monkeypatch) -> None
         timeout_seconds=1,
         max_bytes=100000,
         access_workers=2,
+        preflight_embeddings=True,
         embedder=fail_embedder,
         db_factory=fail_db_factory,
     )
@@ -640,6 +843,56 @@ def test_dry_run_never_calls_embedder_or_database(tmp_path, monkeypatch) -> None
     assert stats.rag_ingested == 0
     assert stats.skipped_rag == 1
     assert stats.source_counts == {"docs": 1}
+
+
+def test_import_preflight_failure_happens_before_database_open(tmp_path, monkeypatch) -> None:
+    config_path = tmp_path / "sources.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "defaults": {"domain": "COMPUTER_SCIENCE", "resourceType": "READING", "difficulty": "BASIC"},
+                "sources": [
+                    {
+                        "id": "docs",
+                        "sourceName": "Docs",
+                        "sourceType": "urls",
+                        "resources": [{"title": "Docs", "url": "https://example.test/docs"}],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeSettings:
+        effective_embedding_api_key = "key"
+        knowledge_embedding_model_name = "qwen3-vl-embedding"
+        knowledge_embedding_dimension = 1024
+        knowledge_embedding_timeout_seconds = 1.0
+
+    monkeypatch.setattr(import_external_resources, "get_settings", lambda: FakeSettings())
+
+    def fail_embedder(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("preflight failed")
+
+    def fail_db_factory():
+        raise AssertionError("preflight failure must not open database")
+
+    with pytest.raises(RuntimeError, match="preflight failed"):
+        import_external_resources.import_resources(
+            config_path=config_path,
+            limit=1,
+            rag_limit=1,
+            metadata_only=False,
+            require_embeddings=True,
+            dry_run=False,
+            timeout_seconds=1,
+            max_bytes=100000,
+            preflight_embeddings=True,
+            embedder=fail_embedder,
+            db_factory=fail_db_factory,
+        )
 
 
 def test_filter_existing_candidates_uses_stable_resource_ids() -> None:
@@ -705,6 +958,55 @@ def test_filter_existing_candidates_uses_stable_resource_ids() -> None:
     assert [candidate.url for candidate in remaining] == ["https://example.test/new"]
 
 
+def test_filter_existing_candidates_matches_legacy_wiki_slug_and_url() -> None:
+    class RecordingCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params):
+            del params
+            self.sql = sql
+
+        def fetchall(self):
+            if "metadata_json ->> 'wikiSlug'" in self.sql:
+                return [("algorithms/graph", "wiki://algorithms/graph", "https://example.test/shared", "https://example.test/shared/")]
+            return []
+
+    class RecordingConnection:
+        def cursor(self):
+            return RecordingCursor()
+
+    def candidate(slug: str) -> import_external_resources.ResourceCandidate:
+        return import_external_resources.ResourceCandidate(
+            source_id=f"wiki-{slug}",
+            source_name="Wiki Resource Importer",
+            url="https://example.test/shared",
+            title="Shared",
+            domain="COMPUTER_SCIENCE",
+            resource_type="READING",
+            display_type="DOCUMENT",
+            difficulty="MIXED",
+            license="Public web page",
+            copyright_status="PUBLICLY_ACCESSIBLE_WEB_RESOURCE",
+            tags=("shared",),
+            quality_score=0.8,
+            popularity_score=0.5,
+            wiki_slug=slug,
+            wiki_source_ref=f"wiki://{slug}",
+            metadata_text=f"Wiki slug: {slug}",
+        )
+
+    remaining = import_external_resources.filter_existing_candidates(
+        RecordingConnection(),
+        [candidate("algorithms/graph"), candidate("data-structures/tree")],
+    )
+
+    assert [item.wiki_slug for item in remaining] == ["data-structures/tree"]
+
+
 def test_filter_rag_missing_candidates_skips_documented_resources() -> None:
     class RecordingCursor:
         def __enter__(self):
@@ -746,3 +1048,70 @@ def test_filter_rag_missing_candidates_skips_documented_resources() -> None:
     )
 
     assert [item.url for item in remaining] == ["https://example.test/rag-missing"]
+
+
+def test_wiki_bound_resource_identity_includes_slug_for_shared_urls() -> None:
+    base = {
+        "source_id": "wiki-shared",
+        "source_name": "Wiki Resource Importer",
+        "url": "https://example.test/shared",
+        "title": "Shared Guide",
+        "domain": "COMPUTER_SCIENCE",
+        "resource_type": "READING",
+        "display_type": "DOCUMENT",
+        "difficulty": "MIXED",
+        "license": "Public web page",
+        "copyright_status": "PUBLICLY_ACCESSIBLE_WEB_RESOURCE",
+        "tags": ("shared",),
+        "quality_score": 0.84,
+        "popularity_score": 0.5,
+        "metadata_text": "Wiki title: Shared",
+    }
+    graph = import_external_resources.ResourceCandidate(**base, wiki_slug="algorithms/graph")
+    tree = import_external_resources.ResourceCandidate(**base, wiki_slug="data-structures/tree")
+    plain = import_external_resources.ResourceCandidate(**base)
+
+    assert import_external_resources.candidate_dedupe_key(graph) != import_external_resources.candidate_dedupe_key(tree)
+    assert import_external_resources.candidate_resource_uuid(graph) != import_external_resources.candidate_resource_uuid(tree)
+    assert import_external_resources.candidate_resource_uuid(plain) == import_external_resources.resource_uuid(plain.url)
+
+
+def test_round_robin_keeps_shared_url_for_different_wiki_pages() -> None:
+    config = {
+        "defaults": {"domain": "COMPUTER_SCIENCE", "resourceType": "READING", "difficulty": "MIXED"},
+        "sources": [
+            {
+                "id": "wiki-a",
+                "sourceName": "Wiki Resource Importer",
+                "sourceType": "urls",
+                "resources": [
+                    {
+                        "title": "Shared Guide",
+                        "url": "https://example.test/shared",
+                        "wikiSlug": "algorithms/graph",
+                        "wikiSourceRef": "wiki://algorithms/graph",
+                        "metadataText": "Wiki title: Graph",
+                    }
+                ],
+            },
+            {
+                "id": "wiki-b",
+                "sourceName": "Wiki Resource Importer",
+                "sourceType": "urls",
+                "resources": [
+                    {
+                        "title": "Shared Guide",
+                        "url": "https://example.test/shared",
+                        "wikiSlug": "data-structures/tree",
+                        "wikiSourceRef": "wiki://data-structures/tree",
+                        "metadataText": "Wiki title: Tree",
+                    }
+                ],
+            },
+        ],
+    }
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, request=request)))
+
+    candidates = import_external_resources.iter_candidates(config, client, limit=10)
+
+    assert [candidate.wiki_slug for candidate in candidates] == ["algorithms/graph", "data-structures/tree"]

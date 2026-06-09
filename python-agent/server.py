@@ -317,7 +317,7 @@ def _search_resource_chunks_with_hybrid_rag(
     refs = _hybrid_rag_candidate_refs(raw_result, top_k=top_k)
     if not refs:
         return []
-    return _resource_rows_for_hybrid_refs(refs, top_k=top_k, domain=domain, user_id=user_id)
+    return _resource_rows_for_hybrid_refs(refs, top_k=top_k, domain=domain, user_id=user_id, query=query)
 
 
 async def _search_resource_tavily_candidates(query: str, top_k: int) -> list[ResourceExternalCandidate]:
@@ -470,6 +470,18 @@ def _external_resource_tags(query: str) -> list[str]:
     return tags
 
 
+def _resource_ref_variants(value: Any) -> list[str]:
+    ref = str(value or "").strip()
+    if not ref:
+        return []
+    if ref.lower().startswith("wiki://"):
+        raw = ref[7:]
+        return [ref, raw] if raw else [ref]
+    if ref.startswith(("http://", "https://")):
+        return [ref]
+    return [ref, f"wiki://{ref}"]
+
+
 def _hybrid_rag_candidate_refs(raw_result: dict[str, Any], top_k: int) -> list[str]:
     if not isinstance(raw_result, dict):
         return []
@@ -477,14 +489,12 @@ def _hybrid_rag_candidate_refs(raw_result: dict[str, Any], top_k: int) -> list[s
     seen: set[str] = set()
 
     def append_ref(value: Any) -> None:
-        ref = str(value or "").strip()
-        if not ref:
-            return
-        normalized = ref.lower()
-        if normalized in seen:
-            return
-        seen.add(normalized)
-        refs.append(ref)
+        for ref in _resource_ref_variants(value):
+            normalized = ref.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            refs.append(ref)
 
     for item in raw_result.get("top", []):
         if isinstance(item, (list, tuple)) and item:
@@ -498,7 +508,55 @@ def _hybrid_rag_candidate_refs(raw_result: dict[str, Any], top_k: int) -> list[s
         if str(item[3]).strip().lower() == "resource":
             append_ref(item[0])
 
-    return refs[: max(top_k * 4, top_k)]
+    return refs[: max(top_k * 8, top_k)]
+
+
+def _resource_query_terms(query: str) -> list[str]:
+    terms = re.findall(r"[A-Za-z0-9+\-#_.]{2,}|[\u4e00-\u9fff]{2,}", query)
+    seen: set[str] = set()
+    result: list[str] = []
+    for term in terms:
+        normalized = term.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(term)
+    return result[:12]
+
+
+def _lexical_coverage(query: str, text: str) -> float:
+    terms = _resource_query_terms(query)
+    if not terms:
+        return 0.0
+    haystack = str(text or "").lower()
+    matched = sum(1 for term in terms if term.lower() in haystack)
+    return round(matched / len(terms), 4)
+
+
+def _safe_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _rank_resource_rows(query: str, rows: list[dict], top_k: int) -> list[dict]:
+    ranked: list[dict] = []
+    seen_types: set[str] = set()
+    for row in rows:
+        coverage = _lexical_coverage(query, str(row.get("searchable_text") or row.get("content") or ""))
+        base_score = _safe_float(row.get("rank_score"), _safe_float(row.get("similarity")))
+        quality_score = max(0.0, min(1.0, _safe_float(row.get("quality_score"), 0.5)))
+        resource_type = str(row.get("resource_type") or "").upper()
+        diversity_bonus = 0.02 if resource_type and resource_type not in seen_types else 0.0
+        seen_types.add(resource_type)
+        rank_score = round(base_score * 0.72 + coverage * 0.20 + quality_score * 0.08 + diversity_bonus, 4)
+        item = dict(row)
+        item["lexical_coverage"] = coverage
+        item["rank_score"] = rank_score
+        ranked.append(item)
+    ranked.sort(key=lambda item: (_safe_float(item.get("rank_score")), _safe_float(item.get("similarity"))), reverse=True)
+    return ranked[:top_k]
 
 
 def _resource_rows_for_hybrid_refs(
@@ -506,6 +564,7 @@ def _resource_rows_for_hybrid_refs(
     top_k: int,
     domain: str | None = None,
     user_id: str | None = None,
+    query: str = "",
 ) -> list[dict]:
     db_config = SETTINGS.postgres_connect_kwargs()
     with psycopg2.connect(**db_config) as conn:
@@ -523,8 +582,11 @@ def _resource_rows_for_hybrid_refs(
                     rc.chunk_no,
                     rc.content,
                     ROUND((1.0 / (60 + ranked_ref.rag_rank))::numeric, 4) AS similarity,
+                    ROUND((1.0 / (60 + ranked_ref.rag_rank))::numeric, 4) AS base_rank_score,
                     COALESCE(rd.source_ref, lr.metadata_json ->> 'sourceUrl', '') AS source_url,
                     concat_ws(' ', rd.title, rd.summary_text, rd.transcript_text, lr.title, lr.summary_text, lr.tags::text, lr.metadata_json::text, rc.content) AS searchable_text,
+                    lr.resource_type::text AS resource_type,
+                    COALESCE(NULLIF(lr.metadata_json ->> 'qualityScore', '')::double precision, rc.quality_score, 0.5) AS quality_score,
                     'hybrid_rag' AS retrieval_channel,
                     ranked_ref.rag_rank
                   FROM ranked_ref
@@ -564,18 +626,20 @@ def _resource_rows_for_hybrid_refs(
                   chunk_no,
                   content,
                   similarity,
-                  similarity AS rank_score,
+                  base_rank_score AS rank_score,
                   source_url,
                   searchable_text,
+                  resource_type,
+                  quality_score,
                   retrieval_channel,
                   '现有多管道RAG召回' AS retrieval_reason
                 FROM matched_resources
                 ORDER BY rag_rank
                 LIMIT %s
                 """,
-                [refs, domain, domain, user_id, user_id, user_id, user_id, top_k],
+                [refs, domain, domain, user_id, user_id, user_id, user_id, max(top_k * 3, top_k)],
             )
-            return [dict(row) for row in cur.fetchall()]
+            return _rank_resource_rows(query, [dict(row) for row in cur.fetchall()], top_k)
 
 
 def _build_resource_semantic_response(

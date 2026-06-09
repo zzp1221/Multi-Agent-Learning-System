@@ -624,9 +624,11 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop Sidebar */}
-      <aside className="app-sidebar fixed left-0 top-0 z-40 hidden h-screen w-[302px] flex-col md:flex">
-        {sidebarContent}
-      </aside>
+      {!inNotes ? (
+        <aside className="app-sidebar fixed left-0 top-0 z-40 hidden h-screen w-[302px] flex-col md:flex">
+          {sidebarContent}
+        </aside>
+      ) : null}
 
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
@@ -654,47 +656,50 @@ export default function Layout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="app-main min-w-0 flex-1 md:ml-[302px]">
+      <main className={inNotes ? 'app-main min-w-0 flex-1' : 'app-main min-w-0 flex-1 md:ml-[302px]'}>
         {/* Top Header */}
-        <header className="app-topbar sticky top-0 z-30 flex items-center justify-between gap-3 px-3 sm:px-4 md:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 md:hidden"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-            <div className="app-breadcrumb min-w-0">
-              <Compass className="h-4 w-4 text-primary-500" />
-              <span className="hidden sm:inline">{inProfile ? '个人画像' : inNotes ? 'AI 笔记本' : inMistakes ? '错题本' : inResources ? '资源库' : inEngine ? '个性化学习路径' : '新对话'}</span>
-              <span className="hidden text-slate-300 sm:inline">/</span>
-              <span className="hidden sm:inline">{inProfile ? '学习节奏与能力概览' : inNotes ? '知识笔记、版本历史与智能问答' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏与学习进度' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
-              <span className="sm:hidden">{inProfile ? '个人画像' : inNotes ? 'AI 笔记' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : '智能对话'}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 md:gap-3">
-            <ThemeToggle />
-            {!isAuthenticated ? (
+        {!inNotes ? (
+          <header className="app-topbar sticky top-0 z-30 flex items-center justify-between gap-3 px-3 sm:px-4 md:px-8">
+            <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
-                onClick={() => openAuthModal('login', '')}
-                className="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 md:hidden"
+                onClick={() => setSidebarOpen(true)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 md:hidden"
               >
-                登录
+                <Menu className="h-5 w-5" />
               </button>
-            ) : null}
-          </div>
-        </header>
+              <div className="app-breadcrumb min-w-0">
+                <Compass className="h-4 w-4 text-primary-500" />
+                <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源库' : inEngine ? '个性化学习路径' : '新对话'}</span>
+                <span className="hidden text-slate-300 sm:inline">/</span>
+                <span className="hidden sm:inline">{inProfile ? '学习节奏与能力概览' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏与学习进度' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
+                <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : '智能对话'}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 md:gap-3">
+              <ThemeToggle />
+              {!isAuthenticated ? (
+                <button
+                  type="button"
+                  onClick={() => openAuthModal('login', '')}
+                  className="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 md:hidden"
+                >
+                  登录
+                </button>
+              ) : null}
+            </div>
+          </header>
+        ) : null}
 
         {/* Page Content */}
-        <div className={inEngine || inResources || inMistakes || inNotes || inProfile ? 'px-3 py-4 sm:px-4 md:px-8 md:py-6' : ''}>
+        <div className={inNotes ? '' : inEngine || inResources || inMistakes || inProfile ? 'px-3 py-4 sm:px-4 md:px-8 md:py-6' : ''}>
           <motion.div
             key={inProfile ? 'profile-shell' : inNotes ? 'notes-shell' : inMistakes ? 'mistake-shell' : inResources ? 'resource-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
+            className={inNotes ? 'min-h-screen' : undefined}
           >
             <Outlet context={{ isAuthenticated, currentUser, openAuthModal } satisfies LayoutOutletContext} />
           </motion.div>
@@ -724,16 +729,20 @@ export default function Layout() {
           }}
         />
       ) : null}
-      <FloatingVoiceAssistant
-        isAuthenticated={isAuthenticated}
-        voiceUserId={currentUser?.id}
-        openAuthModal={openAuthModal}
-      />
-      <FloatingPracticeAssistant
-        isAuthenticated={isAuthenticated}
-        currentUser={currentUser}
-        openAuthModal={openAuthModal}
-      />
+      {!inNotes ? (
+        <>
+          <FloatingVoiceAssistant
+            isAuthenticated={isAuthenticated}
+            voiceUserId={currentUser?.id}
+            openAuthModal={openAuthModal}
+          />
+          <FloatingPracticeAssistant
+            isAuthenticated={isAuthenticated}
+            currentUser={currentUser}
+            openAuthModal={openAuthModal}
+          />
+        </>
+      ) : null}
       <StageTestExamPage />
     </div>
   );

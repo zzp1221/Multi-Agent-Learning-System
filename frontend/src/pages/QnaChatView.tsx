@@ -24,8 +24,6 @@ interface QnaChatViewProps {
   onToggleWebSearch: () => void;
   onPickImages?: (files: File[]) => void;
   onRemoveImage?: (id: string) => void;
-  onConfirmSlideOutline?: (message: ChatMessage) => void;
-  onRejectSlideOutline?: (message: ChatMessage) => void;
 }
 
 const suggestionChips = [
@@ -93,8 +91,6 @@ export default function QnaChatView(props: QnaChatViewProps) {
       <ChatPanel
         busy={props.qnaBusy}
         messages={props.qnaMessages}
-        onConfirmSlideOutline={props.onConfirmSlideOutline}
-        onRejectSlideOutline={props.onRejectSlideOutline}
       />
       <InputPanel
         value={props.qnaInput}

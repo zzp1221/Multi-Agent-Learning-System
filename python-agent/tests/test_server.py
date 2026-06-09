@@ -168,11 +168,12 @@ def test_hybrid_rag_resource_lookup_maps_existing_rag_refs(monkeypatch) -> None:
                 },
             }
 
-    def fake_resource_rows(refs, top_k, domain=None, user_id=None):
+    def fake_resource_rows(refs, top_k, domain=None, user_id=None, query=""):
         captured["refs"] = refs
         captured["top_k"] = top_k
         captured["domain"] = domain
         captured["user_id"] = user_id
+        captured["row_query"] = query
         return [{"resource_id": "70000000-0000-0000-0000-000000000011"}]
 
     monkeypatch.setattr(retrieval_module, "HybridRetrievalService", FakeHybridRetrievalService)
@@ -188,9 +189,75 @@ def test_hybrid_rag_resource_lookup_maps_existing_rag_refs(monkeypatch) -> None:
     assert rows == [{"resource_id": "70000000-0000-0000-0000-000000000011"}]
     assert captured["query"] == "Java Runnable synchronized volatile"
     assert captured["web_search_enabled"] is False
-    assert captured["refs"] == ["knowledge-thread", "https://example.com/java-thread"]
+    assert captured["refs"] == ["knowledge-thread", "wiki://knowledge-thread", "https://example.com/java-thread"]
     assert captured["domain"] == "COMPUTER_SCIENCE"
     assert captured["user_id"] == "60000000-0000-0000-0000-000000000008"
+
+
+def test_hybrid_rag_resource_lookup_maps_raw_wiki_slug_to_wiki_source_ref(monkeypatch) -> None:
+    import src.ai_modules.retrieval as retrieval_module
+
+    captured = {}
+
+    class FakeHybridRetrievalService:
+        def retrieve_raw(self, query, web_search_enabled=False):
+            del query, web_search_enabled
+            return {
+                "top": [("操作系统/死锁", "死锁", 0.2)],
+                "channels": {"vector": []},
+            }
+
+    def fake_resource_rows(refs, top_k, domain=None, user_id=None, query=""):
+        captured.update({"refs": refs, "query": query, "top_k": top_k, "domain": domain, "user_id": user_id})
+        return [{"resource_id": "70000000-0000-0000-0000-000000000022"}]
+
+    monkeypatch.setattr(retrieval_module, "HybridRetrievalService", FakeHybridRetrievalService)
+    monkeypatch.setattr(server, "_resource_rows_for_hybrid_refs", fake_resource_rows)
+
+    rows = server._search_resource_chunks_with_hybrid_rag(
+        "死锁",
+        top_k=3,
+        domain="COMPUTER_SCIENCE",
+        user_id="60000000-0000-0000-0000-000000000008",
+    )
+
+    assert rows == [{"resource_id": "70000000-0000-0000-0000-000000000022"}]
+    assert captured["refs"] == ["操作系统/死锁", "wiki://操作系统/死锁"]
+    assert captured["query"] == "死锁"
+
+
+def test_resource_ranking_uses_generic_features_without_topic_rules() -> None:
+    rows = [
+        {
+            "resource_id": "a",
+            "similarity": 0.5,
+            "rank_score": 0.5,
+            "resource_type": "READING",
+            "quality_score": 0.7,
+            "searchable_text": "unrelated notes",
+        },
+        {
+            "resource_id": "b",
+            "similarity": 0.49,
+            "rank_score": 0.49,
+            "resource_type": "VIDEO",
+            "quality_score": 0.9,
+            "searchable_text": "graph traversal bfs dfs examples",
+        },
+    ]
+
+    ranked = server._rank_resource_rows("graph traversal bfs", rows, top_k=2)
+
+    assert [item["resource_id"] for item in ranked] == ["b", "a"]
+    assert ranked[0]["lexical_coverage"] == 1.0
+
+
+def test_resource_recommendation_code_has_no_fixed_topic_special_cases() -> None:
+    source = Path(server.__file__).read_text(encoding="utf-8")
+    forbidden_terms = ["java并发编程", "AQS", "线程池", "React state", "B+树", "死锁", "数据库索引"]
+
+    for term in forbidden_terms:
+        assert term not in source
 
 
 def test_resource_semantic_search_degrades_when_embedding_unavailable(client, monkeypatch) -> None:

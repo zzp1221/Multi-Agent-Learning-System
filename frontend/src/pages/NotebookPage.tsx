@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   Bold,
   BookOpen,
@@ -12,12 +12,17 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  GitFork,
   Heading2,
   History,
+  Image,
   Italic,
   List,
   ListChecks,
   LoaderCircle,
+  Link2,
+  Maximize2,
+  Minimize2,
   MessageCircle,
   Network,
   Pencil,
@@ -30,6 +35,7 @@ import {
   Sparkles,
   Square,
   Tags,
+  Table2,
   Trash2,
   TriangleAlert,
   XCircle,
@@ -64,6 +70,7 @@ interface NoteDraftSnapshot {
 
 export default function NotebookPage() {
   const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [tags, setTags] = useState<NoteTag[]>([]);
@@ -675,9 +682,24 @@ export default function NotebookPage() {
     setMarkdownDraft((current) => `${current}${current.endsWith('\n') || !current ? '' : '\n'}${before}${placeholder}${after}`);
   };
 
+  const insertTable = () => {
+    insertMarkdown('| 项目 | 说明 |\n| --- | --- |\n| ', ' | 内容 |', '主题');
+  };
+
+  const insertMindMap = () => {
+    insertMarkdown('```mermaid\nmindmap\n  root(主题)\n    ', '\n```', '分支');
+  };
+
+  const handleExitFullscreen = () => {
+    if (saveStatus === 'dirty') {
+      void saveDraft();
+    }
+    navigate('/');
+  };
+
   if (!isAuthenticated) {
     return (
-      <div className="mx-auto flex min-h-[70vh] max-w-3xl items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center px-4 py-6">
         <div className="rounded-2xl bg-white/90 p-8 text-center shadow-sm shadow-slate-200/50 dark:bg-slate-900/80 dark:shadow-slate-950/20">
           <BookOpen className="mx-auto h-12 w-12 text-primary-500" />
           <h1 className="mt-4 text-xl font-semibold text-slate-950 dark:text-white">AI 笔记本</h1>
@@ -696,18 +718,27 @@ export default function NotebookPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1720px] space-y-3">
-      <div className="flex flex-col gap-3 rounded-2xl bg-white/95 px-4 py-3 shadow-sm shadow-slate-200/35 dark:bg-slate-900/90 dark:shadow-slate-950/20 lg:flex-row lg:items-center lg:justify-between">
+    <div className="min-h-screen w-full space-y-4 px-3 py-3 sm:px-4 lg:px-5">
+      <div className="flex flex-col gap-4 rounded-[1.4rem] border border-white/70 bg-white/92 px-5 py-4 shadow-[0_18px_48px_rgba(64,91,142,0.08)] dark:border-slate-800/70 dark:bg-slate-900/88 dark:shadow-slate-950/20 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm shadow-primary-500/20">
-            <BookOpen className="h-5 w-5" />
+          <button
+            type="button"
+            onClick={handleExitFullscreen}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition hover:bg-white hover:text-slate-900 hover:shadow-sm dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 sm:w-auto sm:px-3 sm:gap-2"
+            title="退出全屏并返回工作台"
+          >
+            <Minimize2 className="h-4 w-4" />
+            <span className="hidden text-sm font-medium sm:inline">退出全屏</span>
+          </button>
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary-600 text-white shadow-lg shadow-primary-500/20">
+            <BookOpen className="h-6 w-6" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold text-slate-950 dark:text-white">AI 笔记本</h1>
-            <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">目录、标签、编辑和当前笔记问答集中处理</p>
+            <h1 className="truncate text-2xl font-semibold leading-tight text-slate-950 dark:text-white">AI 笔记本</h1>
+            <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">目录、标签、编辑、检索和当前笔记问答集中处理</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <WorkbenchStat icon={<FileText className="h-3.5 w-3.5" />} label="笔记" value={String(total)} />
           <WorkbenchStat icon={<Folder className="h-3.5 w-3.5" />} label="目录" value={String(folders.length)} />
           <WorkbenchStat icon={<Tags className="h-3.5 w-3.5" />} label="标签" value={String(tags.length)} />
@@ -715,7 +746,7 @@ export default function NotebookPage() {
             type="button"
             onClick={() => void handleCreateNote()}
             disabled={creating}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary-600 px-3 text-sm font-medium text-white shadow-sm hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-lg shadow-primary-500/18 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             新建
@@ -730,25 +761,25 @@ export default function NotebookPage() {
         </div>
       ) : null}
 
-      <div className="grid overflow-hidden rounded-2xl bg-white/95 shadow-sm shadow-slate-200/35 dark:bg-slate-900/90 dark:shadow-slate-950/20 xl:h-[calc(100vh-156px)] xl:min-h-[760px] xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-        <aside className="flex min-h-0 flex-col bg-slate-50/70 dark:bg-slate-950/30">
-          <div className="px-4 py-3">
+      <div className="grid items-start gap-4 xl:grid-cols-[300px_minmax(0,1fr)_340px] 2xl:grid-cols-[320px_minmax(0,1fr)_380px]">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[1.4rem] border border-white/70 bg-white/88 shadow-[0_18px_46px_rgba(64,91,142,0.08)] dark:border-slate-800/70 dark:bg-slate-900/86 dark:shadow-slate-950/20 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
+          <div className="px-5 py-5">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">我的笔记</div>
-                <div className="mt-0.5 text-xs text-slate-400">{selectedFolderName}</div>
+                <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">我的笔记</div>
+                <div className="mt-1 text-sm text-slate-400">{selectedFolderName}</div>
               </div>
               <button
                 type="button"
                 onClick={() => void handleCreateNote()}
                 disabled={creating}
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950"
+                className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950"
                 title="新建笔记"
               >
                 {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               </button>
             </div>
-            <label className="mt-3 flex h-9 items-center rounded-lg bg-white/82 px-3 shadow-sm shadow-slate-200/25 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/35 dark:bg-slate-900/70 dark:shadow-none dark:focus-within:bg-slate-900">
+            <label className="mt-4 flex h-11 items-center rounded-xl bg-slate-50/80 px-3 shadow-sm shadow-slate-200/25 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/35 dark:bg-slate-950/60 dark:shadow-none dark:focus-within:bg-slate-900">
               <Search className="mr-2 h-4 w-4 shrink-0 text-slate-400" />
               <input
                 value={keyword}
@@ -786,8 +817,8 @@ export default function NotebookPage() {
             ) : null}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <section className="px-3 py-3">
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <section className="px-3 py-4">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                 <Folder className="h-4 w-4 text-primary-500" />
@@ -837,7 +868,7 @@ export default function NotebookPage() {
             </div>
           </section>
 
-          <section className="px-3 py-3">
+          <section className="px-3 py-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
               <Tags className="h-4 w-4 text-primary-500" />
               标签
@@ -868,7 +899,7 @@ export default function NotebookPage() {
             </div>
           </section>
 
-          <section className="px-2 py-3">
+          <section className="px-2 py-4">
             <div className="mb-2 flex items-center justify-between px-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">笔记列表</div>
               <span className="text-xs text-slate-400">{loading ? '同步中' : `${notes.length}/${total}`}</span>
@@ -883,9 +914,9 @@ export default function NotebookPage() {
                 type="button"
                 onClick={() => handleSelectNote(item.id)}
                 className={cn(
-                  'group mb-2 w-full rounded-xl px-3 py-2.5 text-left transition-all',
+                  'group mb-3 w-full rounded-2xl px-4 py-3 text-left transition-all',
                   selectedNoteId === item.id
-                    ? 'bg-white text-primary-800 shadow-sm shadow-primary-100/60 dark:bg-primary-500/10 dark:text-primary-200 dark:shadow-none'
+                    ? 'bg-white text-primary-800 shadow-md shadow-primary-100/55 ring-1 ring-primary-100/80 dark:bg-primary-500/10 dark:text-primary-200 dark:shadow-none dark:ring-primary-500/15'
                     : 'bg-transparent text-slate-700 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-900',
                 )}
               >
@@ -932,23 +963,23 @@ export default function NotebookPage() {
           </div>
         </aside>
 
-        <main className="flex min-h-[760px] min-w-0 flex-col bg-white dark:bg-slate-900">
+        <main className="flex min-h-[780px] min-w-0 flex-col overflow-hidden rounded-[1.4rem] border border-white/70 bg-white shadow-[0_22px_56px_rgba(64,91,142,0.1)] dark:border-slate-800/70 dark:bg-slate-900 dark:shadow-slate-950/22 xl:min-h-[calc(100vh-2rem)]">
           {detailLoading ? (
             <div className="flex min-h-[620px] flex-1 items-center justify-center">
               <LoaderCircle className="h-7 w-7 animate-spin text-primary-500" />
             </div>
           ) : detail ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="px-5 py-4">
-                <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
+              <div className="border-b border-slate-100 px-7 py-6 dark:border-slate-800/80">
+                <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
                   <div className="min-w-0 flex-1">
                     <input
                       value={titleDraft}
                       onChange={(event) => setTitleDraft(event.target.value)}
-                      className="w-full min-w-0 bg-transparent text-2xl font-semibold leading-tight text-slate-950 outline-none placeholder:text-slate-400 dark:text-white"
+                      className="w-full min-w-0 bg-transparent text-3xl font-semibold leading-tight text-slate-950 outline-none placeholder:text-slate-400 dark:text-white"
                       placeholder="笔记标题"
                     />
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
                       <span>上次保存：{formatDate(detail.lastSavedAt ?? detail.updatedAt)}</span>
                       <span className="h-3 w-px bg-slate-200 dark:bg-slate-700" />
                       <span>{detail.ragIndexed ? '已可智能检索' : '正在同步内容'}</span>
@@ -959,15 +990,15 @@ export default function NotebookPage() {
                     type="button"
                     onClick={() => void saveDraft()}
                     disabled={saveStatus === 'saving'}
-                    className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950"
+                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950"
                   >
                     {saveStatus === 'saving' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     保存
                   </button>
                 </div>
 
-                <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_200px]">
-                  <label className="flex min-w-0 items-center gap-2 rounded-lg bg-slate-50/80 px-3 py-2 shadow-sm shadow-slate-200/20 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/30 dark:bg-slate-950/60 dark:shadow-none dark:focus-within:bg-slate-950/86">
+                <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+                  <label className="flex min-w-0 items-center gap-2 rounded-xl bg-slate-50/80 px-4 py-3 shadow-sm shadow-slate-200/20 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/30 dark:bg-slate-950/60 dark:shadow-none dark:focus-within:bg-slate-950/86">
                     <Tags className="h-4 w-4 shrink-0 text-slate-400" />
                     <input
                       value={tagInput}
@@ -976,7 +1007,7 @@ export default function NotebookPage() {
                       className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400 dark:text-slate-200"
                     />
                   </label>
-                  <label className="flex items-center gap-2 rounded-lg bg-slate-50/80 px-3 py-2 shadow-sm shadow-slate-200/20 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/30 dark:bg-slate-950/60 dark:shadow-none dark:focus-within:bg-slate-950/86">
+                  <label className="flex items-center gap-2 rounded-xl bg-slate-50/80 px-4 py-3 shadow-sm shadow-slate-200/20 transition focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/30 dark:bg-slate-950/60 dark:shadow-none dark:focus-within:bg-slate-950/86">
                     <Folder className="h-4 w-4 shrink-0 text-slate-400" />
                     <select
                       value={folderDraftId}
@@ -992,34 +1023,38 @@ export default function NotebookPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50/70 px-4 py-2.5 dark:bg-slate-950/30">
-                <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/72 px-6 py-4 dark:border-slate-800/80 dark:bg-slate-950/30">
+                <div className="flex flex-wrap items-center gap-2">
                   <SegmentButton active={inputMode === 'markdown'} onClick={() => setInputMode('markdown')} icon={<FileText className="h-4 w-4" />} label="Markdown" />
                   <SegmentButton active={inputMode === 'rich'} onClick={() => setInputMode('rich')} icon={<Pencil className="h-4 w-4" />} label="富文本" />
-                  <span className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
+                  <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700" />
                   <IconTool title="标题" onClick={() => insertMarkdown('## ', '', '小标题')} icon={<Heading2 className="h-4 w-4" />} />
                   <IconTool title="加粗" onClick={() => insertMarkdown('**', '**', '重点')} icon={<Bold className="h-4 w-4" />} />
                   <IconTool title="斜体" onClick={() => insertMarkdown('*', '*', '术语')} icon={<Italic className="h-4 w-4" />} />
                   <IconTool title="列表" onClick={() => insertMarkdown('- ', '', '条目')} icon={<List className="h-4 w-4" />} />
                   <IconTool title="待办" onClick={() => insertMarkdown('- [ ] ', '', '待办')} icon={<ListChecks className="h-4 w-4" />} />
                   <IconTool title="代码" onClick={() => insertMarkdown('```\n', '\n```', 'code')} icon={<Code2 className="h-4 w-4" />} />
+                  <IconTool title="链接" onClick={() => insertMarkdown('[', '](https://)', '链接文字')} icon={<Link2 className="h-4 w-4" />} />
+                  <IconTool title="图片" onClick={() => insertMarkdown('![', '](https://)', '图片说明')} icon={<Image className="h-4 w-4" />} />
+                  <IconTool title="表格" onClick={insertTable} icon={<Table2 className="h-4 w-4" />} />
+                  <IconTool title="思维导图" onClick={insertMindMap} icon={<GitFork className="h-4 w-4" />} />
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <SegmentButton active={editorMode === 'write'} onClick={() => setEditorMode('write')} icon={<Pencil className="h-4 w-4" />} label="编辑" />
                   <SegmentButton active={editorMode === 'split'} onClick={() => setEditorMode('split')} icon={<Square className="h-4 w-4" />} label="分栏" />
                   <SegmentButton active={editorMode === 'preview'} onClick={() => setEditorMode('preview')} icon={<Eye className="h-4 w-4" />} label="预览" />
                 </div>
               </div>
 
-              <div className={cn('grid min-h-0 flex-1 overflow-hidden', editorMode === 'split' ? 'lg:grid-cols-2' : 'grid-cols-1')}>
+              <div className={cn('grid min-h-0 flex-1 overflow-hidden bg-white dark:bg-slate-900', editorMode === 'split' ? 'lg:grid-cols-2' : 'grid-cols-1')}>
                 {editorMode !== 'preview' ? (
-                  <div className={cn('min-h-[520px] min-w-0', editorMode === 'split' ? 'lg:bg-slate-50/30 lg:dark:bg-slate-950/20' : '')}>
+                  <div className={cn('min-h-[620px] min-w-0', editorMode === 'split' ? 'lg:border-r lg:border-slate-100 lg:bg-slate-50/36 lg:dark:border-slate-800/80 lg:dark:bg-slate-950/20' : '')}>
                     {inputMode === 'markdown' ? (
                       <textarea
                         value={markdownDraft}
                         onChange={(event) => setMarkdownDraft(event.target.value)}
                         spellCheck={false}
-                        className="h-full min-h-[520px] w-full resize-none bg-transparent px-6 py-5 font-mono text-sm leading-7 text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200"
+                        className="h-full min-h-[620px] w-full resize-none bg-transparent px-8 py-7 font-mono text-[15px] leading-8 text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-200"
                         placeholder="记录概念、推导、例题、疑问和复盘。"
                       />
                     ) : (
@@ -1028,11 +1063,11 @@ export default function NotebookPage() {
                   </div>
                 ) : null}
                 {editorMode !== 'write' ? (
-                  <div className="min-h-[520px] min-w-0 overflow-y-auto px-6 py-5">
+                  <div className="min-h-[620px] min-w-0 overflow-y-auto bg-white px-8 py-7 dark:bg-slate-900">
                     {markdownDraft.trim() ? (
                       <MarkdownRenderer content={markdownDraft} />
                     ) : (
-                      <div className="flex h-full min-h-[420px] items-center justify-center rounded-xl bg-slate-50 text-sm text-slate-400 dark:bg-slate-950/70 dark:text-slate-500">
+                      <div className="flex h-full min-h-[460px] items-center justify-center rounded-2xl bg-slate-50 text-sm text-slate-400 dark:bg-slate-950/70 dark:text-slate-500">
                         预览区会实时展示笔记内容
                       </div>
                     )}
@@ -1040,12 +1075,22 @@ export default function NotebookPage() {
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50/70 px-5 py-2.5 text-xs text-slate-500 dark:bg-slate-950/30 dark:text-slate-400">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/72 px-6 py-3 text-xs text-slate-500 dark:border-slate-800/80 dark:bg-slate-950/30 dark:text-slate-400">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill icon={<FileText className="h-3.5 w-3.5" />} label={`${draftWordCount} 字`} />
                   <StatusPill icon={<Clock3 className="h-3.5 w-3.5" />} label={`${draftReadingMinutes} 分钟`} />
                 </div>
-                <span className="truncate">内容会自动保存并写入版本历史</span>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <button type="button" onClick={() => void handleAnalyze(Boolean(analysis))} disabled={!detail || analysisLoading} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 font-medium text-primary-600 shadow-sm shadow-slate-200/30 transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:text-primary-300 dark:shadow-none">
+                    {analysisLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                    AI 总结
+                  </button>
+                  <button type="button" onClick={() => void handleRelatedResources()} disabled={!detail || relatedLoading} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 font-medium text-slate-600 shadow-sm shadow-slate-200/30 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none">
+                    {relatedLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Network className="h-3.5 w-3.5" />}
+                    插入资源
+                  </button>
+                  <span className="truncate">内容会自动保存并写入版本历史</span>
+                </div>
               </div>
             </div>
           ) : (
@@ -1059,95 +1104,112 @@ export default function NotebookPage() {
           )}
         </main>
 
-        <aside className="flex min-h-0 flex-col bg-slate-50/70 dark:bg-slate-950/30">
-          <div className="px-4 py-3">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
-                <Brain className="h-4 w-4" />
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[1.4rem] border border-white/70 bg-white/88 shadow-[0_18px_46px_rgba(64,91,142,0.08)] dark:border-slate-800/70 dark:bg-slate-900/86 dark:shadow-slate-950/20 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
+          <div className="border-b border-slate-100 px-5 py-5 dark:border-slate-800/80">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
+                  <Brain className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">AI 助手</div>
+                  <div className="truncate text-sm text-slate-400">{detail ? '基于当前笔记上下文' : '选择笔记后启用'}</div>
+                </div>
               </div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">AI 助手</div>
-                <div className="truncate text-xs text-slate-400">{detail ? '基于当前笔记上下文' : '选择笔记后启用'}</div>
+              <div className="flex items-center gap-2 text-slate-400">
+                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800" title="展开面板">
+                  <Maximize2 className="h-4 w-4" />
+                </button>
               </div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <AiMiniStat label="字数" value={String(draftWordCount)} />
+              <AiMiniStat label="阅读" value={`${draftReadingMinutes}分`} />
+              <AiMiniStat label="版本" value={String(versions.length)} />
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
-            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+            <section className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-200/45 ring-1 ring-slate-100/80 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800/80">
               <PanelHeader
                 icon={<Sparkles className="h-4 w-4" />}
                 title="自动摘要"
                 action={(
-                  <button type="button" onClick={() => void handleAnalyze(Boolean(analysis))} disabled={!detail || analysisLoading} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-500/10">
+                  <button type="button" onClick={() => void handleAnalyze(Boolean(analysis))} disabled={!detail || analysisLoading} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-500/10">
                     {analysisLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                     {analysis ? '重写' : '生成'}
                   </button>
                 )}
               />
               {analysis ? (
-                <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700 dark:bg-slate-950/70 dark:text-slate-300">{analysis.summary || '暂无摘要'}</p>
+                <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 dark:bg-slate-950/70 dark:text-slate-300">{analysis.summary || '暂无摘要'}</p>
               ) : (
-                <EmptyInline text="生成摘要、知识点和待办建议。" />
+                <EmptyInline text="生成摘要、知识点和待办建议。" spacious />
               )}
             </section>
 
-            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
+            <section className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-200/45 ring-1 ring-slate-100/80 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800/80">
               <PanelHeader icon={<ListChecks className="h-4 w-4" />} title="知识点与待办" />
-              <div className="mt-3">
+              <div className="mt-4">
                 <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">知识点</div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-2">
                   {analysis?.keywords.length ? analysis.keywords.map((item) => (
-                    <span key={item} className="rounded-full bg-primary-50 px-2 py-1 text-xs font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">{item}</span>
-                  )) : <EmptyInline text="未提取到知识点。" />}
+                    <span key={item} className="rounded-full bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">{item}</span>
+                  )) : <EmptyInline text="未提取到知识点。" spacious />}
                 </div>
               </div>
-              <div className="mt-3">
+              <div className="mt-4">
                 <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">待办建议</div>
                 <div className="space-y-2">
                   {analysis?.todos.length ? analysis.todos.map((todo) => (
-                    <div key={`${todo.title}-${todo.priority}`} className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-950/70">
+                    <div key={`${todo.title}-${todo.priority}`} className="flex items-start gap-3 rounded-xl bg-slate-50 px-3 py-3 text-sm dark:bg-slate-950/70">
                       <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-primary-500" />
                       <div className="min-w-0 flex-1">
                         <div className="line-clamp-2 text-slate-700 dark:text-slate-300">{todo.title}</div>
-                        <div className="mt-0.5 text-[11px] text-slate-400">{todo.priority}</div>
+                        <div className="mt-1 text-[11px] text-slate-400">{todo.priority}</div>
                       </div>
                     </div>
-                  )) : <EmptyInline text="暂无待办建议。" />}
+                  )) : <EmptyInline text="暂无待办建议。" spacious />}
                 </div>
               </div>
             </section>
 
-            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
+            <section className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-200/45 ring-1 ring-slate-100/80 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800/80">
               <PanelHeader
                 icon={<Network className="h-4 w-4" />}
                 title="关联资源"
                 action={(
-                  <button type="button" onClick={() => void handleRelatedResources()} disabled={!detail || relatedLoading} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-500/10">
+                  <button type="button" onClick={() => void handleRelatedResources()} disabled={!detail || relatedLoading} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-500/10">
                     {relatedLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     推荐
                   </button>
                 )}
               />
-              <div className="mt-3 space-y-2">
+              <div className="mt-4 space-y-3">
                 {relatedResources?.results.length ? relatedResources.results.slice(0, 5).map((item) => (
-                  <a key={item.resourceId} href={`/resources?resourceId=${item.resourceId}`} className="block rounded-lg bg-slate-50 px-3 py-2 text-sm transition hover:bg-white dark:bg-slate-950/70 dark:hover:bg-slate-900">
-                    <div className="flex items-start justify-between gap-2">
+                  <a key={item.resourceId} href={`/resources?resourceId=${item.resourceId}`} className="block rounded-xl bg-slate-50 px-3 py-3 text-sm transition hover:bg-white hover:shadow-sm hover:shadow-slate-200/50 dark:bg-slate-950/70 dark:hover:bg-slate-900 dark:hover:shadow-none">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate font-medium text-slate-800 dark:text-slate-100">{item.resource?.title ?? '相关资源'}</div>
                         <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.reason || item.resource?.summaryText || '语义相关资源'}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                          <span>{item.resource?.displayType || item.resource?.resourceType || '资源'}</span>
+                          {item.resource?.durationMinutes ? <span>{item.resource.durationMinutes} 分钟</span> : null}
+                          <span>匹配 {Math.round(item.score * 100)}%</span>
+                        </div>
                       </div>
                       <ExternalLink className="h-4 w-4 shrink-0 text-slate-400" />
                     </div>
                   </a>
                 )) : (
-                  <EmptyInline text={relatedResources?.message || '基于当前笔记语义推荐学习资源。'} />
+                  <EmptyInline text={relatedResources?.message || '基于当前笔记语义推荐学习资源。'} spacious />
                 )}
               </div>
             </section>
 
-            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
+            <section className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-200/45 ring-1 ring-slate-100/80 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800/80">
               <PanelHeader icon={<Search className="h-4 w-4" />} title="语义搜索" />
-              <div className="mt-3 flex gap-2">
+              <div className="mt-4 flex gap-2">
                 <input
                   value={semanticQuery}
                   onChange={(event) => setSemanticQuery(event.target.value)}
@@ -1157,46 +1219,46 @@ export default function NotebookPage() {
                     }
                   }}
                   placeholder="用问题检索笔记"
-                  className="min-w-0 flex-1 rounded-lg bg-slate-50/80 px-3 py-2 text-sm outline-none shadow-sm shadow-slate-200/18 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/60 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950/86"
+                  className="min-w-0 flex-1 rounded-xl bg-slate-50/80 px-3 py-2.5 text-sm outline-none shadow-sm shadow-slate-200/18 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/60 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950/86"
                 />
-                <button type="button" onClick={() => void handleSemanticSearch()} disabled={semanticLoading || !semanticQuery.trim()} className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950">
+                <button type="button" onClick={() => void handleSemanticSearch()} disabled={semanticLoading || !semanticQuery.trim()} className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950">
                   {semanticLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 </button>
               </div>
-              <div className="mt-3 space-y-2">
+              <div className="mt-4 space-y-2">
                 {semanticResults?.results.length ? semanticResults.results.map((item) => (
-                  <button key={item.note.id} type="button" onClick={() => handleSelectNote(item.note.id)} className="w-full rounded-lg bg-slate-50 px-3 py-2 text-left transition hover:bg-white dark:bg-slate-950/70 dark:hover:bg-slate-900">
+                  <button key={item.note.id} type="button" onClick={() => handleSelectNote(item.note.id)} className="w-full rounded-xl bg-slate-50 px-3 py-3 text-left transition hover:bg-white dark:bg-slate-950/70 dark:hover:bg-slate-900">
                     <div className="flex items-center justify-between gap-2">
                       <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{item.note.title}</div>
                     </div>
                     <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.reason || item.hits[0]?.content || item.note.preview}</p>
                   </button>
                 )) : (
-                  <EmptyInline text={semanticResults?.message || '保存后可用问题快速找到相关笔记。'} />
+                  <EmptyInline text={semanticResults?.message || '保存后可用问题快速找到相关笔记。'} spacious />
                 )}
               </div>
             </section>
 
-            <section className="rounded-xl bg-white/82 p-3 shadow-sm shadow-slate-200/30 dark:bg-slate-900/74 dark:shadow-none">
+            <section className="rounded-2xl bg-white p-4 shadow-sm shadow-slate-200/45 ring-1 ring-slate-100/80 dark:bg-slate-900 dark:shadow-none dark:ring-slate-800/80">
               <PanelHeader
                 icon={<History className="h-4 w-4" />}
                 title="版本历史"
                 action={(
-                  <button type="button" onClick={() => detail && void loadVersions(detail.id)} disabled={!detail || versionsLoading} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-500/10">
+                  <button type="button" onClick={() => detail && void loadVersions(detail.id)} disabled={!detail || versionsLoading} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-500/10">
                     {versionsLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     刷新
                   </button>
                 )}
               />
-              <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+              <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
                 {versions.length > 0 ? versions.map((item) => (
-                  <div key={item.id} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950/70">
+                  <div key={item.id} className="rounded-xl bg-slate-50 px-3 py-3 dark:bg-slate-950/70">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="text-sm font-medium text-slate-800 dark:text-slate-100">版本 {item.versionNo}</div>
                         <div className="mt-0.5 truncate text-[11px] text-slate-400">{formatDate(item.createdAt)} · {item.changeSummary}</div>
                       </div>
-                      <button type="button" onClick={() => void handleRestoreVersion(item)} disabled={Boolean(restoringVersionId)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-500/10">
+                      <button type="button" onClick={() => void handleRestoreVersion(item)} disabled={Boolean(restoringVersionId)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-300 dark:hover:bg-primary-500/10">
                         {restoringVersionId === item.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
                         恢复
                       </button>
@@ -1204,21 +1266,21 @@ export default function NotebookPage() {
                     <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.plainText || item.title}</p>
                   </div>
                 )) : (
-                  <EmptyInline text="保存后会产生版本历史。" />
+                  <EmptyInline text="保存后会产生版本历史。" spacious />
                 )}
               </div>
             </section>
           </div>
 
-          <section className="bg-white px-3 py-3 dark:bg-slate-900">
+          <section className="border-t border-slate-100 bg-white px-4 py-4 dark:border-slate-800/80 dark:bg-slate-900">
             <PanelHeader icon={<MessageCircle className="h-4 w-4" />} title="当前笔记问答" />
-            <div className="mt-3 max-h-52 space-y-2 overflow-y-auto rounded-lg bg-slate-50 p-3 dark:bg-slate-950/70">
+            <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-2xl bg-slate-50 p-3 dark:bg-slate-950/70">
               {chatMessages.length > 0 ? chatMessages.map((message) => (
-                <div key={message.id} className={cn('rounded-lg px-3 py-2 text-sm leading-6', message.role === 'user' ? 'ml-8 bg-primary-600 text-white' : 'mr-8 bg-white text-slate-700 shadow-sm shadow-slate-200/40 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none')}>
+                <div key={message.id} className={cn('rounded-xl px-3 py-2 text-sm leading-6', message.role === 'user' ? 'ml-8 bg-primary-600 text-white' : 'mr-8 bg-white text-slate-700 shadow-sm shadow-slate-200/40 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none')}>
                   {message.role === 'assistant' ? <MarkdownRenderer content={message.content} isStreaming={chatStreaming && !message.content.trim()} /> : message.content}
                 </div>
               )) : (
-                <EmptyInline text="提问时会携带当前笔记标题和正文摘录。" />
+                <EmptyInline text="提问时会携带当前笔记标题和正文摘录。" spacious />
               )}
             </div>
             {chatError ? (
@@ -1238,14 +1300,14 @@ export default function NotebookPage() {
                   }
                 }}
                 placeholder="基于当前笔记提问"
-                className="min-w-0 flex-1 rounded-lg bg-slate-50/80 px-3 py-2 text-sm outline-none shadow-sm shadow-slate-200/18 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/60 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950/86"
+                className="min-w-0 flex-1 rounded-xl bg-slate-50/80 px-3 py-2.5 text-sm outline-none shadow-sm shadow-slate-200/18 transition focus:bg-white focus:shadow-md focus:shadow-primary-100/30 dark:bg-slate-950/60 dark:text-slate-200 dark:shadow-none dark:focus:bg-slate-950/86"
               />
               {chatStreaming ? (
-                <button type="button" onClick={handleStopChat} className="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700" title="停止">
+                <button type="button" onClick={handleStopChat} className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-600 text-white hover:bg-rose-700" title="停止">
                   <Square className="h-4 w-4 fill-current" />
                 </button>
               ) : (
-                <button type="button" onClick={() => void handleAskNoteAi()} disabled={!detail || !chatInput.trim()} className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50" title="发送">
+                <button type="button" onClick={() => void handleAskNoteAi()} disabled={!detail || !chatInput.trim()} className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-600 text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50" title="发送">
                   <Send className="h-4 w-4" />
                 </button>
               )}
@@ -1321,7 +1383,7 @@ function StatusPill(props: { icon: React.ReactNode; label: string }) {
 
 function WorkbenchStat(props: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <span className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-50 px-2.5 text-xs text-slate-500 dark:bg-slate-950/70 dark:text-slate-400">
+    <span className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-50 px-3 text-sm text-slate-500 shadow-sm shadow-slate-200/20 dark:bg-slate-950/70 dark:text-slate-400 dark:shadow-none">
       <span className="text-primary-500">{props.icon}</span>
       <span>{props.label}</span>
       <span className="font-semibold text-slate-800 dark:text-slate-100">{props.value}</span>
@@ -1329,10 +1391,19 @@ function WorkbenchStat(props: { icon: React.ReactNode; label: string; value: str
   );
 }
 
+function AiMiniStat(props: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-2 text-center dark:bg-slate-950/60">
+      <div className="truncate text-[11px] text-slate-400">{props.label}</div>
+      <div className="mt-0.5 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{props.value}</div>
+    </div>
+  );
+}
+
 function PanelHeader(props: { icon: React.ReactNode; title: string; action?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+      <div className="flex min-w-0 items-center gap-2 text-base font-semibold text-slate-800 dark:text-slate-100">
         <span className="text-primary-500">{props.icon}</span>
         <span className="truncate">{props.title}</span>
       </div>
@@ -1347,7 +1418,7 @@ function SegmentButton(props: { active: boolean; onClick: () => void; icon: Reac
       type="button"
       onClick={props.onClick}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+        'inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-sm font-medium transition-colors',
         props.active
           ? 'bg-primary-600 text-white'
           : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700',
@@ -1366,7 +1437,7 @@ function IconTool(props: { title: string; onClick: () => void; icon: React.React
       title={props.title}
       onMouseDown={(event) => event.preventDefault()}
       onClick={props.onClick}
-      className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+      className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
     >
       {props.icon}
     </button>
@@ -1389,8 +1460,15 @@ function SaveStatusBadge(props: { status: SaveStatus; error: string }) {
   return <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400"><Clock3 className="h-3.5 w-3.5" />未修改</span>;
 }
 
-function EmptyInline(props: { text: string }) {
-  return <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-400 dark:bg-slate-950/70 dark:text-slate-500">{props.text}</div>;
+function EmptyInline(props: { text: string; spacious?: boolean }) {
+  return (
+    <div className={cn(
+      'rounded-xl bg-slate-50 px-3 text-xs leading-5 text-slate-400 dark:bg-slate-950/70 dark:text-slate-500',
+      props.spacious ? 'py-3' : 'py-2',
+    )}>
+      {props.text}
+    </div>
+  );
 }
 
 function filterButtonClass(active: boolean): string {
