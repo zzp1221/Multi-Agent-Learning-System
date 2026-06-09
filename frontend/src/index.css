@@ -23,7 +23,7 @@
   --color-surface-900: oklch(0.20 0.01 260);
   --color-surface-950: oklch(0.15 0.01 260);
 
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-sans: 'Plus Jakarta Sans', 'HarmonyOS Sans SC', 'MiSans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
 
   --animate-shimmer: shimmer 2s infinite;
@@ -100,14 +100,14 @@
   .app-main {
     min-height: 100vh;
     background:
-      radial-gradient(circle at 78% 9%, rgba(87, 130, 255, 0.16), transparent 30%),
-      linear-gradient(180deg, #f8fbff 0%, #f5f9ff 48%, #fbfdff 100%);
+      linear-gradient(135deg, rgba(234, 246, 255, 0.78) 0%, transparent 42%),
+      linear-gradient(180deg, #f9fbf8 0%, #f4f8fb 50%, #fbfdff 100%);
   }
 
   .dark .app-main {
     background:
-      radial-gradient(circle at 78% 9%, rgba(83, 124, 255, 0.2), transparent 30%),
-      linear-gradient(180deg, #0c1324 0%, #101827 52%, #0b1120 100%);
+      linear-gradient(135deg, rgba(17, 95, 122, 0.22) 0%, transparent 44%),
+      linear-gradient(180deg, #0b1116 0%, #101722 52%, #0b1018 100%);
   }
 
   .app-sidebar {
@@ -225,13 +225,12 @@
 
   .qna-landing-shell {
     position: relative;
-    display: flex;
+    display: grid;
     min-height: calc(100dvh - 78px);
-    flex-direction: column;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    padding: 56px 32px 72px;
+    padding: 44px 32px 58px;
     isolation: isolate;
   }
 
@@ -240,28 +239,71 @@
     position: absolute;
     inset: 0;
     z-index: -2;
-    background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+    background:
+      linear-gradient(90deg, rgba(14, 165, 233, 0.04) 1px, transparent 1px),
+      linear-gradient(180deg, rgba(14, 165, 233, 0.04) 1px, transparent 1px),
+      linear-gradient(180deg, #fbfdf8 0%, #f5f9fb 100%);
+    background-size: 72px 72px, 72px 72px, auto;
+  }
+
+  .qna-landing-grid {
+    display: grid;
+    width: min(100%, 1180px);
+    grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.72fr);
+    align-items: center;
+    gap: 28px;
+  }
+
+  .qna-landing-primary {
+    min-width: 0;
   }
 
   .qna-hero-panel {
     position: relative;
     z-index: 1;
-    text-align: center;
+    max-width: 760px;
+    text-align: left;
+  }
+
+  .qna-eyebrow {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.76);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 12px 30px rgba(39, 86, 130, 0.08);
+    color: #48756c;
+    padding: 0 12px;
+    font-size: 10px;
+    font-weight: 760;
+    letter-spacing: 0;
+    text-transform: uppercase;
   }
 
   .qna-hero-title {
     margin: 0;
-    color: #111827;
-    font-size: 46px;
-    font-weight: 760;
-    line-height: 1.12;
+    color: #14202c;
+    font-size: 72px;
+    font-weight: 820;
+    line-height: 0.98;
+    text-wrap: balance;
+  }
+
+  .qna-hero-title span {
+    display: block;
+    margin-top: 10px;
+    max-width: 720px;
+    color: #334457;
   }
 
   .qna-hero-subtitle {
-    margin-top: 12px;
-    color: #64748b;
-    font-size: 17px;
-    font-weight: 450;
+    margin-top: 20px;
+    max-width: 640px;
+    color: #637282;
+    font-size: 16px;
+    font-weight: 480;
+    line-height: 1.9;
+    text-wrap: pretty;
   }
 
   .qna-landing-composer {
@@ -283,14 +325,15 @@
   .qna-composer {
     margin: 0 auto;
     border: 0;
-    background: rgba(248, 251, 255, 0.82);
-    box-shadow: 0 10px 30px rgba(30, 64, 120, 0.07);
-    backdrop-filter: blur(18px);
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82), 0 24px 70px rgba(46, 80, 112, 0.11);
+    outline: 1px solid rgba(141, 164, 185, 0.14);
+    transition: box-shadow 0.62s cubic-bezier(0.32,0.72,0,1), transform 0.62s cubic-bezier(0.32,0.72,0,1), background-color 0.62s cubic-bezier(0.32,0.72,0,1);
   }
 
   .qna-composer:focus-within {
-    box-shadow: 0 14px 34px rgba(39, 93, 180, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 28px 86px rgba(39, 93, 180, 0.15);
+    transform: translateY(-2px);
   }
 
   .qna-composer-landing {
@@ -477,7 +520,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 10px;
     margin-top: 22px;
     color: #64748b;
@@ -497,13 +540,527 @@
     color: #52647d;
     font-size: 13px;
     font-weight: 580;
-    transition: box-shadow 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+    transition: box-shadow 0.48s cubic-bezier(0.32,0.72,0,1), color 0.48s cubic-bezier(0.32,0.72,0,1), background-color 0.48s cubic-bezier(0.32,0.72,0,1), transform 0.48s cubic-bezier(0.32,0.72,0,1);
   }
 
   .qna-suggestion-chip:hover {
     background: #fff;
     box-shadow: 0 12px 28px rgba(76, 116, 218, 0.14);
     color: #255fd6;
+    transform: translateY(-2px);
+  }
+
+  .qna-cycle-shell {
+    position: relative;
+    z-index: 1;
+    border-radius: 34px;
+    background: rgba(255, 255, 255, 0.48);
+    box-shadow: 0 34px 90px rgba(45, 77, 105, 0.12);
+    outline: 1px solid rgba(255, 255, 255, 0.82);
+    padding: 7px;
+  }
+
+  .qna-cycle-core {
+    border-radius: 27px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 252, 251, 0.86));
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9);
+    padding: 18px;
+  }
+
+  .qna-cycle-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 4px 4px 14px;
+  }
+
+  .qna-cycle-head span {
+    color: #6f7d89;
+    font-size: 11px;
+    font-weight: 740;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .qna-cycle-head strong {
+    color: #1d2d3b;
+    font-size: 15px;
+    font-weight: 780;
+  }
+
+  .qna-cycle-track {
+    display: grid;
+    gap: 10px;
+  }
+
+  .qna-cycle-step {
+    display: grid;
+    min-height: 78px;
+    grid-template-columns: 42px 42px minmax(0, 1fr) 24px;
+    align-items: center;
+    gap: 10px;
+    border-radius: 22px;
+    background: rgba(245, 248, 250, 0.78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    padding: 10px;
+    text-align: left;
+    transition: transform 0.58s cubic-bezier(0.32,0.72,0,1), background-color 0.58s cubic-bezier(0.32,0.72,0,1), box-shadow 0.58s cubic-bezier(0.32,0.72,0,1);
+  }
+
+  .qna-cycle-step:hover {
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 16px 34px rgba(50, 91, 122, 0.1);
+    transform: translateY(-2px);
+  }
+
+  .qna-cycle-step:active {
+    transform: scale(0.99);
+  }
+
+  .qna-cycle-step-index {
+    color: #9aa5b0;
+    font-size: 12px;
+    font-weight: 780;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+
+  .qna-cycle-step-icon {
+    display: inline-flex;
+    height: 42px;
+    width: 42px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    background: #e8f5f2;
+    color: #237d74;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  }
+
+  .qna-cycle-step-copy {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .qna-cycle-step-copy strong {
+    color: #233342;
+    font-size: 14px;
+    font-weight: 780;
+  }
+
+  .qna-cycle-step-copy small {
+    color: #71808d;
+    font-size: 12px;
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+
+  .qna-cycle-step-arrow {
+    color: #9ba8b2;
+    transition: transform 0.58s cubic-bezier(0.32,0.72,0,1), color 0.58s cubic-bezier(0.32,0.72,0,1);
+  }
+
+  .qna-cycle-step:hover .qna-cycle-step-arrow {
+    color: #237d74;
+    transform: translate(2px, -2px);
+  }
+
+  .learning-service-page {
+    color: #14202c;
+  }
+
+  .learning-service-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 34px;
+    background: rgba(255, 255, 255, 0.44);
+    box-shadow: 0 30px 90px rgba(45, 77, 105, 0.12);
+    outline: 1px solid rgba(255, 255, 255, 0.82);
+    padding: 7px;
+  }
+
+  .learning-service-hero::before {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border-radius: 27px;
+    background:
+      linear-gradient(120deg, rgba(255,255,255,0.96), rgba(247,252,251,0.88) 58%, rgba(236,248,246,0.86));
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9);
+  }
+
+  .learning-service-topline,
+  .learning-service-grid {
+    position: relative;
+    z-index: 1;
+  }
+
+  .learning-service-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px 8px;
+  }
+
+  .learning-service-badge {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 9px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.76);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), 0 14px 32px rgba(48, 87, 120, 0.08);
+    color: #39586f;
+    padding: 0 15px;
+    font-size: 13px;
+    font-weight: 760;
+  }
+
+  .learning-service-close {
+    display: inline-flex;
+    height: 40px;
+    width: 40px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.7);
+    color: #768590;
+    transition: transform 0.48s cubic-bezier(0.32,0.72,0,1), color 0.48s cubic-bezier(0.32,0.72,0,1), background-color 0.48s cubic-bezier(0.32,0.72,0,1);
+  }
+
+  .learning-service-close:hover {
+    background: #fff;
+    color: #2563eb;
+    transform: translateY(-1px);
+  }
+
+  .learning-service-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 0.78fr);
+    align-items: center;
+    gap: 30px;
+    padding: 12px 26px 30px;
+  }
+
+  .learning-service-copy h1 {
+    margin: 14px 0 0;
+    max-width: 720px;
+    color: #14202c;
+    font-size: 64px;
+    font-weight: 830;
+    line-height: 1.02;
+    text-wrap: balance;
+  }
+
+  .learning-service-copy p {
+    margin: 18px 0 0;
+    max-width: 660px;
+    color: #657382;
+    font-size: 16px;
+    line-height: 1.9;
+    text-wrap: pretty;
+  }
+
+  .learning-service-map {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+  }
+
+  .learning-service-map span {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.66);
+    color: #7b8790;
+    padding: 0 13px;
+    font-size: 12px;
+    font-weight: 720;
+  }
+
+  .learning-service-map span.is-active {
+    background: #e8f5f2;
+    color: #237d74;
+  }
+
+  .learning-service-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 28px;
+  }
+
+  .learning-service-card {
+    position: relative;
+    display: grid;
+    min-height: 168px;
+    align-content: space-between;
+    border-radius: 26px;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84), 0 16px 42px rgba(48, 87, 120, 0.08);
+    padding: 18px;
+    text-align: left;
+    transition: transform 0.62s cubic-bezier(0.32,0.72,0,1), box-shadow 0.62s cubic-bezier(0.32,0.72,0,1), background-color 0.62s cubic-bezier(0.32,0.72,0,1);
+  }
+
+  .learning-service-card:hover {
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 22px 56px rgba(48, 87, 120, 0.12);
+    transform: translateY(-3px);
+  }
+
+  .learning-service-card:active {
+    transform: scale(0.99);
+  }
+
+  .learning-service-card.is-active {
+    background: #f0fbf9;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 22px 60px rgba(35, 125, 116, 0.14);
+  }
+
+  .learning-service-card-stage {
+    color: #7d8c97;
+    font-size: 11px;
+    font-weight: 760;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .learning-service-card-icon {
+    display: inline-flex;
+    height: 48px;
+    width: 48px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18px;
+    color: white;
+    box-shadow: 0 16px 32px rgba(35, 125, 116, 0.16);
+  }
+
+  .learning-service-card-copy {
+    display: grid;
+    gap: 8px;
+  }
+
+  .learning-service-card-copy strong {
+    color: #1b2b39;
+    font-size: 18px;
+    font-weight: 790;
+  }
+
+  .learning-service-card-copy small {
+    color: #657382;
+    font-size: 13px;
+    line-height: 1.65;
+    text-wrap: pretty;
+  }
+
+  .learning-service-card-check {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+    display: inline-flex;
+    height: 26px;
+    width: 26px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #237d74;
+    color: white;
+  }
+
+  .learning-service-visual-shell {
+    min-width: 0;
+  }
+
+  .learning-service-workbench {
+    display: grid;
+    gap: 2px;
+    overflow: hidden;
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.54);
+    box-shadow: 0 24px 70px rgba(43, 83, 145, 0.09);
+    outline: 1px solid rgba(255, 255, 255, 0.72);
+    padding: 7px;
+  }
+
+  .learning-service-form-panel {
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.54);
+    padding: 20px;
+  }
+
+  .learning-path-gate {
+    display: grid;
+    min-height: calc(100dvh - 126px);
+    place-items: center;
+    padding: 34px 0;
+  }
+
+  .learning-path-gate-panel {
+    display: grid;
+    width: min(100%, 1040px);
+    max-width: 100%;
+    grid-template-columns: minmax(0, 0.95fr) minmax(340px, 0.72fr);
+    gap: 26px;
+    border-radius: 34px;
+    background: rgba(255, 255, 255, 0.48);
+    box-shadow: 0 30px 90px rgba(45, 77, 105, 0.12);
+    outline: 1px solid rgba(255, 255, 255, 0.82);
+    padding: 7px;
+  }
+
+  .learning-path-gate-copy,
+  .learning-path-gate-flow {
+    min-width: 0;
+    border-radius: 27px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 252, 251, 0.86));
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9);
+  }
+
+  .learning-path-gate-copy {
+    display: grid;
+    align-content: center;
+    padding: 38px;
+  }
+
+  .learning-path-gate-icon {
+    display: inline-flex;
+    height: 58px;
+    width: 58px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 22px;
+    background: #e8f5f2;
+    color: #237d74;
+    margin-top: 18px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  }
+
+  .learning-path-gate-copy h1 {
+    margin: 18px 0 0;
+    max-width: 680px;
+    color: #14202c;
+    font-size: 52px;
+    font-weight: 830;
+    line-height: 1.06;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+  }
+
+  .learning-path-gate-copy p {
+    margin: 18px 0 0;
+    max-width: 640px;
+    color: #657382;
+    font-size: 16px;
+    line-height: 1.9;
+    text-wrap: pretty;
+  }
+
+  .learning-path-gate-button {
+    display: inline-flex;
+    width: fit-content;
+    min-height: 50px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #155eef;
+    box-shadow: 0 18px 38px rgba(21, 94, 239, 0.22);
+    color: white;
+    margin-top: 28px;
+    padding: 0 22px;
+    font-size: 14px;
+    font-weight: 760;
+    transition: transform 0.48s cubic-bezier(0.32,0.72,0,1), box-shadow 0.48s cubic-bezier(0.32,0.72,0,1), background-color 0.48s cubic-bezier(0.32,0.72,0,1);
+  }
+
+  .learning-path-gate-button:hover {
+    background: #0f4fd1;
+    box-shadow: 0 22px 48px rgba(21, 94, 239, 0.28);
+    transform: translateY(-2px);
+  }
+
+  .learning-path-gate-button:active {
+    transform: scale(0.98);
+  }
+
+  .learning-path-gate-flow {
+    padding: 18px;
+  }
+
+  .learning-path-gate-flow-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 4px 4px 14px;
+  }
+
+  .learning-path-gate-flow-head span {
+    color: #6f7d89;
+    font-size: 11px;
+    font-weight: 740;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .learning-path-gate-flow-head strong {
+    color: #1d2d3b;
+    font-size: 15px;
+    font-weight: 780;
+    overflow-wrap: anywhere;
+  }
+
+  .learning-path-gate-step {
+    display: grid;
+    min-height: 76px;
+    grid-template-columns: 42px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    border-radius: 22px;
+    background: rgba(245, 248, 250, 0.78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    margin-top: 10px;
+    padding: 13px;
+  }
+
+  .learning-path-gate-step span {
+    color: #9aa5b0;
+    font-size: 12px;
+    font-weight: 780;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .learning-path-gate-step div {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .learning-path-gate-step strong {
+    color: #233342;
+    font-size: 14px;
+    font-weight: 780;
+  }
+
+  .learning-path-gate-step small {
+    color: #71808d;
+    font-size: 12px;
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 1280px) {
+    .learning-service-workbench {
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    }
   }
 
   .qna-chat-shell {
@@ -686,7 +1243,7 @@
 
   .dark .qna-composer,
   .dark .qna-suggestion-chip {
-    background: rgba(15, 23, 42, 0.9);
+    background: rgba(16, 24, 34, 0.9);
     box-shadow: 0 18px 42px rgba(2, 6, 23, 0.34);
     color: #cbd5e1;
   }
@@ -700,7 +1257,11 @@
   }
 
   .dark .qna-landing-shell::before {
-    background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+    background:
+      linear-gradient(90deg, rgba(45, 212, 191, 0.05) 1px, transparent 1px),
+      linear-gradient(180deg, rgba(45, 212, 191, 0.05) 1px, transparent 1px),
+      linear-gradient(180deg, #0d1319 0%, #101720 100%);
+    background-size: 72px 72px, 72px 72px, auto;
   }
 
   .dark .qna-hero-subtitle {
@@ -735,6 +1296,78 @@
     box-shadow: 0 12px 28px rgba(2, 6, 23, 0.32);
     color: #cbd5e1;
   }
+
+  .dark .qna-eyebrow,
+  .dark .learning-service-badge,
+  .dark .learning-service-close {
+    background: rgba(19, 29, 40, 0.82);
+    color: #bfd8d4;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 14px 32px rgba(2, 6, 23, 0.25);
+  }
+
+  .dark .qna-cycle-shell,
+  .dark .learning-service-hero,
+  .dark .learning-service-workbench,
+  .dark .learning-path-gate-panel {
+    background: rgba(21, 30, 40, 0.54);
+    box-shadow: 0 30px 90px rgba(2, 6, 23, 0.34);
+    outline-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .dark .qna-cycle-core,
+  .dark .learning-service-hero::before,
+  .dark .learning-path-gate-copy,
+  .dark .learning-path-gate-flow {
+    background: linear-gradient(180deg, rgba(17, 25, 34, 0.96), rgba(12, 19, 28, 0.9));
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
+  }
+
+  .dark .qna-cycle-head strong,
+  .dark .qna-cycle-step-copy strong,
+  .dark .learning-service-copy h1,
+  .dark .learning-service-card-copy strong,
+  .dark .learning-path-gate-copy h1,
+  .dark .learning-path-gate-flow-head strong,
+  .dark .learning-path-gate-step strong {
+    color: #f2f7f5;
+  }
+
+  .dark .qna-cycle-head span,
+  .dark .qna-cycle-step-copy small,
+  .dark .learning-service-copy p,
+  .dark .learning-service-card-copy small,
+  .dark .learning-path-gate-copy p,
+  .dark .learning-path-gate-flow-head span,
+  .dark .learning-path-gate-step small {
+    color: #9baab8;
+  }
+
+  .dark .qna-cycle-step,
+  .dark .learning-service-card,
+  .dark .learning-service-form-panel,
+  .dark .learning-path-gate-step {
+    background: rgba(18, 27, 37, 0.78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .dark .qna-cycle-step:hover,
+  .dark .learning-service-card:hover,
+  .dark .learning-service-card.is-active {
+    background: rgba(24, 36, 47, 0.92);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 42px rgba(2, 6, 23, 0.32);
+  }
+
+  .dark .qna-cycle-step-icon,
+  .dark .learning-service-map span.is-active,
+  .dark .learning-path-gate-icon {
+    background: rgba(35, 125, 116, 0.18);
+    color: #93e3d8;
+  }
+
+  .dark .learning-service-map span {
+    background: rgba(18, 27, 37, 0.72);
+    color: #93a4b4;
+  }
 }
 
 @media (max-width: 768px) {
@@ -753,12 +1386,29 @@
 
   .qna-landing-shell {
     min-height: calc(100dvh - 68px);
-    padding: 30px 14px 44px;
+    align-items: start;
+    padding: 24px 14px 44px;
+  }
+
+  .qna-landing-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .qna-hero-panel {
+    max-width: none;
+  }
+
+  .qna-eyebrow {
+    min-height: 26px;
+    padding: 0 10px;
+    font-size: 9px;
   }
 
   .qna-landing-composer {
     width: 100%;
     max-width: calc(100vw - 28px);
+    margin-top: 20px;
   }
 
   .qna-composer {
@@ -766,11 +1416,13 @@
   }
 
   .qna-hero-title {
-    font-size: 36px;
+    font-size: 38px;
+    line-height: 1.05;
   }
 
   .qna-hero-subtitle {
     font-size: 15px;
+    line-height: 1.72;
   }
 
   .qna-input-frame-chat {
@@ -841,6 +1493,121 @@
     margin-top: 22px;
   }
 
+  .qna-cycle-shell {
+    border-radius: 26px;
+    padding: 5px;
+  }
+
+  .qna-cycle-core {
+    border-radius: 21px;
+    padding: 14px;
+  }
+
+  .qna-cycle-head {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .qna-cycle-step {
+    min-height: 72px;
+    grid-template-columns: 34px 38px minmax(0, 1fr);
+  }
+
+  .qna-cycle-step-icon {
+    height: 38px;
+    width: 38px;
+    border-radius: 14px;
+  }
+
+  .qna-cycle-step-arrow {
+    display: none;
+  }
+
+  .learning-service-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 10px 14px 18px;
+  }
+
+  .learning-service-copy h1 {
+    font-size: 38px;
+    line-height: 1.06;
+  }
+
+  .learning-service-copy p {
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .learning-service-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .learning-service-card {
+    min-height: 142px;
+  }
+
+  .learning-service-visual-shell {
+    display: none;
+  }
+
+  .learning-service-workbench {
+    border-radius: 24px;
+    padding: 5px;
+  }
+
+  .learning-service-form-panel {
+    border-radius: 19px;
+    padding: 16px;
+  }
+
+  .learning-path-gate {
+    min-height: calc(100dvh - 108px);
+    padding: 18px 0 32px;
+  }
+
+  .learning-path-gate-panel {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    border-radius: 26px;
+    padding: 5px;
+  }
+
+  .learning-path-gate-copy,
+  .learning-path-gate-flow {
+    border-radius: 21px;
+    max-width: 100%;
+  }
+
+  .learning-path-gate-copy {
+    padding: 24px 18px;
+  }
+
+  .learning-path-gate-copy h1 {
+    font-size: 36px;
+    line-height: 1.08;
+  }
+
+  .learning-path-gate-copy p {
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .learning-path-gate-button {
+    width: 100%;
+  }
+
+  .learning-path-gate-flow {
+    padding: 14px;
+  }
+
+  .learning-path-gate-flow-head {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
   .qna-chat-shell {
     height: calc(100dvh - 68px);
     width: 100%;
@@ -867,7 +1634,7 @@
 
 @media (max-width: 480px) {
   .qna-landing-shell {
-    padding: 22px 12px 32px;
+    padding: 20px 12px 32px;
   }
 
   .qna-landing-composer {
@@ -876,7 +1643,7 @@
   }
 
   .qna-hero-title {
-    font-size: 30px;
+    font-size: 32px;
   }
 
   .qna-hero-subtitle {
@@ -931,6 +1698,70 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-width: calc(100vw - 24px);
     width: calc(100vw - 24px);
+  }
+
+  .qna-cycle-step {
+    grid-template-columns: 32px 36px minmax(0, 1fr);
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .qna-cycle-step-copy strong {
+    font-size: 13px;
+  }
+
+  .qna-cycle-step-copy small {
+    font-size: 11px;
+  }
+
+  .learning-service-topline {
+    padding: 14px 12px 6px;
+  }
+
+  .learning-service-badge {
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .learning-service-copy h1 {
+    font-size: 32px;
+  }
+
+  .learning-service-map {
+    gap: 7px;
+  }
+
+  .learning-service-map span {
+    min-height: 30px;
+    padding: 0 11px;
+  }
+
+  .learning-path-gate-copy {
+    padding: 22px 14px;
+  }
+
+  .learning-path-gate-copy h1 {
+    font-size: 28px;
+    word-break: break-all;
+  }
+
+  .learning-path-gate-flow-head strong {
+    word-break: break-all;
+  }
+
+  .learning-path-gate-step {
+    min-height: 70px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 11px;
+  }
+
+  .learning-path-gate-step strong {
+    font-size: 13px;
+  }
+
+  .learning-path-gate-step small {
+    font-size: 11px;
   }
 }
 

@@ -51,6 +51,7 @@ export function ServiceHeroVisual() {
 }
 
 export function TaskStatusPreview(props: {
+  phaseIcon?: ReactNode;
   selectedServiceLabel: string;
   taskId: string;
   taskProgress: number;
@@ -66,12 +67,12 @@ export function TaskStatusPreview(props: {
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3 sm:items-center">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50/80 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
-          <TrendingUp className="h-4 w-4" />
+            {props.phaseIcon ?? <TrendingUp className="h-4 w-4" />}
           </div>
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">生成进度</h2>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">学习动作进展</h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {props.selectedServiceLabel || '先选择一项智能服务'}
+              {props.selectedServiceLabel || '先选择一个学习环节'}
             </p>
           </div>
         </div>
@@ -92,21 +93,21 @@ export function TaskStatusPreview(props: {
 
       <div className="mt-6 grid grid-cols-3 gap-3 text-xs text-slate-500 dark:text-slate-400">
         <div className="rounded-2xl bg-white/45 px-3 py-3 dark:bg-slate-900/34">
-          <div className="font-semibold text-slate-700 dark:text-slate-200">选择</div>
+          <div className="font-semibold text-slate-700 dark:text-slate-200">定位</div>
           <div className="mt-1">{props.selectedServiceLabel || '待选择'}</div>
         </div>
         <div className="rounded-2xl bg-white/45 px-3 py-3 dark:bg-slate-900/34">
-          <div className="font-semibold text-slate-700 dark:text-slate-200">生成</div>
+          <div className="font-semibold text-slate-700 dark:text-slate-200">执行</div>
           <div className="mt-1">{hasTask ? '进行中' : '待启动'}</div>
         </div>
         <div className="rounded-2xl bg-white/45 px-3 py-3 dark:bg-slate-900/34">
-          <div className="font-semibold text-slate-700 dark:text-slate-200">查看</div>
+          <div className="font-semibold text-slate-700 dark:text-slate-200">承接</div>
           <div className="mt-1">{props.taskProgress >= 100 ? '已就绪' : '自动刷新'}</div>
         </div>
       </div>
 
       <p className="mt-6 text-sm leading-7 text-slate-500 dark:text-slate-400">
-        提交后保持在当前页面即可实时查看进度，完成后结果会自动出现在下方。
+        提交后保持在当前页面即可实时查看进度，完成结果会继续进入路径、资源或复盘环节。
       </p>
     </section>
   );

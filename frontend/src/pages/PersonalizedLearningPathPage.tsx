@@ -62,6 +62,14 @@ const emptyStageTestState: StageTestState = {
 const LEARNING_PATH_EMPTY_RECHECK_INTERVAL_MS = 2500;
 const LEARNING_PATH_EMPTY_RECHECK_MAX_ATTEMPTS = 12;
 
+const learningGateSteps = [
+  { step: '01', title: '建立画像', summary: '记录基础、目标、偏好和学习节奏' },
+  { step: '02', title: '诊断薄弱点', summary: '结合问答、练习、错题和资源反馈' },
+  { step: '03', title: '生成阶段路径', summary: '拆出当前阶段目标、检查点和预计投入' },
+  { step: '04', title: '匹配学习资源', summary: '推荐文档、案例、练习、视频和拓展阅读' },
+  { step: '05', title: '阶段检测复盘', summary: '测试后回流错题本和下一轮路径调整' },
+];
+
 export default function PersonalizedLearningPathPage() {
   const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
   const [data, setData] = useState<LearningPathCurrentResponse | null>(null);
@@ -330,21 +338,42 @@ export default function PersonalizedLearningPathPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="mx-auto flex min-h-[calc(100dvh-78px)] max-w-[980px] items-center justify-center px-5">
-        <div className="w-full max-w-[520px] px-6 py-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/15 dark:text-primary-300">
+      <div className="learning-path-gate">
+        <section className="learning-path-gate-panel">
+          <div className="learning-path-gate-copy">
+            <div className="qna-eyebrow">Personal learning loop</div>
+            <div className="learning-path-gate-icon">
             <Route className="h-6 w-6" />
+            </div>
+            <h1>登录后接入你的完整学习闭环</h1>
+            <p>
+              智学引擎会把画像、问答、练习、错题和资源使用情况连起来，持续生成阶段路径和下一步学习动作。
+            </p>
+            <button
+              type="button"
+              onClick={() => openAuthModal('login', '登录后查看个性化学习路径')}
+              className="learning-path-gate-button"
+            >
+              登录查看学习路径
+            </button>
           </div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white">个性化学习路径</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">登录后查看你的阶段目标、学习进度和推荐资源。</p>
-          <button
-            type="button"
-            onClick={() => openAuthModal('login', '登录后查看个性化学习路径')}
-            className="mt-6 inline-flex h-11 items-center justify-center rounded-2xl bg-primary-600 px-5 text-sm font-semibold text-white shadow-lg shadow-primary-500/20 transition hover:bg-primary-700"
-          >
-            登录查看
-          </button>
-        </div>
+
+          <div className="learning-path-gate-flow" aria-label="学习路径生成流程">
+            <div className="learning-path-gate-flow-head">
+              <span>路径生成</span>
+              <strong>从数据到行动</strong>
+            </div>
+            {learningGateSteps.map((item) => (
+              <div key={item.step} className="learning-path-gate-step">
+                <span>{item.step}</span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <small>{item.summary}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     );
   }

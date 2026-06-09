@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { CheckCircle2, FileText, GraduationCap, X } from 'lucide-react';
+import { CheckCircle2, FileText, GraduationCap, Sparkles, Target, X } from 'lucide-react';
 import type { LayoutOutletContext } from '../components/Layout';
 import QnaChatView from './QnaChatView';
 import {
@@ -31,26 +31,34 @@ const TaskResultPanel = lazy(() =>
   import('./LearningStudioDemoPage.components').then((module) => ({ default: module.TaskResultPanel }))
 );
 
-const serviceDescriptions: Record<EngineService, { summary: string; detail: string; accent: string }> = {
+const serviceDescriptions: Record<EngineService, { summary: string; detail: string; accent: string; stage: string; action: string }> = {
   resource: {
-    summary: '基于你的目标生成文档、课件、练习和视频',
+    summary: '把当前知识点补齐为可直接学习的材料包',
     detail: '填写课程与知识点后，系统会生成可阅读、可下载的学习内容。',
-    accent: 'from-blue-500 to-sky-400',
+    accent: 'from-cyan-500 to-emerald-400',
+    stage: '资源补齐',
+    action: '生成学习资源',
   },
   personalized: {
-    summary: '自动规划阶段目标，并匹配下一步资源',
+    summary: '综合画像、练习和错题，生成下一阶段学习路径',
     detail: '系统会读取学习画像、进度和练习记录，生成清晰的学习路径。',
     accent: 'from-indigo-500 to-cyan-400',
+    stage: '路径规划',
+    action: '生成个性化方案',
   },
   path: {
     summary: '结合掌握情况，生成可执行学习路径',
     detail: '系统会根据当前学习状态给出阶段安排、检查点和重点知识。',
     accent: 'from-indigo-500 to-blue-400',
+    stage: '路径规划',
+    action: '规划阶段路线',
   },
   push: {
     summary: '按当前薄弱点推荐合适资源',
     detail: '系统会优先推荐与当前阶段匹配的讲解、案例和拓展内容。',
     accent: 'from-cyan-500 to-emerald-400',
+    stage: '资源推送',
+    action: '刷新推荐资源',
   },
 };
 
@@ -211,86 +219,80 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
   return (
     <Suspense fallback={<div className="mx-auto max-w-[1180px] rounded-[28px] bg-white/76 px-6 py-10 text-center text-sm text-slate-500 shadow-[0_14px_42px_rgba(59,97,155,0.08)] dark:bg-slate-900/68">正在加载学习服务...</div>}>
-      <div className="mx-auto max-w-[1120px] space-y-6 px-0 pb-8 sm:space-y-7 sm:pb-10 md:px-0">
-        <section className="overflow-hidden rounded-[28px] bg-white/76 shadow-[0_18px_56px_rgba(59,97,155,0.09)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20">
-          <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6 sm:py-5 md:px-8">
-            <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-600 text-white shadow-lg shadow-blue-500/18 sm:h-11 sm:w-11">
-                <GraduationCap className="h-5 w-5" />
-              </div>
-              <div className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">智能服务</div>
+      <div className="learning-service-page mx-auto max-w-[1180px] space-y-6 px-0 pb-8 sm:space-y-7 sm:pb-10 md:px-0">
+        <section className="learning-service-hero">
+          <div className="learning-service-topline">
+            <div className="learning-service-badge">
+              <GraduationCap className="h-4 w-4" />
+              <span>学习编排中心</span>
             </div>
             <button
               type="button"
               onClick={() => navigate('/')}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-blue-50 hover:text-primary-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-primary-300"
+              className="learning-service-close"
               aria-label="返回对话"
             >
               <X className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="relative overflow-hidden px-4 py-6 dark:bg-slate-900/40 sm:px-6 sm:py-8 md:px-8 md:py-10">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.18),transparent_34%),linear-gradient(120deg,rgba(248,251,255,0.95),rgba(255,255,255,0.55)_48%,rgba(231,243,255,0.82))] dark:bg-[radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.2),transparent_34%),linear-gradient(120deg,rgba(15,23,42,0.95),rgba(30,41,59,0.82)_52%,rgba(17,24,39,0.92))]" />
-            <div className="relative grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(360px,0.78fr)] lg:items-center lg:gap-8">
-              <div>
-                <h1 className="text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-[34px] md:text-[46px]">
-                  选择一项<span className="text-primary-600 dark:text-primary-300">智能服务</span>
-                </h1>
-                <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-slate-400 sm:text-base">
-                  按学习目标生成内容、路径和推荐，过程清晰，结果集中展示。
-                </p>
-
-                <div className="mt-6 grid gap-3 sm:mt-8 sm:grid-cols-2 sm:gap-4">
-                  {serviceButtons.map((item) => {
-                    const active = selectedService === item.id;
-                    const description = serviceDescriptions[item.id];
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => withAuth(() => handleSelectService(item.id))}
-                        className={`group relative min-h-[132px] rounded-2xl bg-white/66 p-4 text-left shadow-sm shadow-blue-100/24 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/92 hover:shadow-lg hover:shadow-blue-100/36 dark:bg-slate-950/38 dark:shadow-none sm:min-h-[148px] sm:p-6 ${
-                          active
-                            ? 'bg-primary-50/78 shadow-primary-100/45 dark:bg-primary-500/10'
-                            : ''
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 sm:gap-5">
-                          <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${description.accent} text-white shadow-md shadow-blue-500/18 sm:h-14 sm:w-14`}>
-                            <item.icon className="h-6 w-6" />
-                          </span>
-                          <span className="min-w-0">
-                            <span className={`block text-base font-bold ${active ? 'text-primary-700 dark:text-primary-300' : 'text-slate-900 dark:text-white'}`}>
-                              {item.label}
-                            </span>
-                            <span className="mt-2 block text-sm leading-6 text-slate-500 dark:text-slate-400">
-                              {description.summary}
-                            </span>
-                          </span>
-                        </div>
-                        {active ? (
-                          <span className="absolute right-4 top-4 flex h-6 w-6 items-center justify-center rounded-full bg-primary-600 text-white sm:right-5 sm:top-5">
-                            <CheckCircle2 className="h-4 w-4" />
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
+          <div className="learning-service-grid">
+            <div className="learning-service-copy">
+              <div className="qna-eyebrow">Study loop</div>
+              <h1>把学习过程拆成可执行的下一步</h1>
+              <p>
+                从画像和薄弱点出发，先生成阶段路径，再补齐资源、安排练习，最终回到错题和笔记复盘。
+              </p>
+              <div className="learning-service-map" aria-label="学习过程">
+                {['画像', '路径', '资源', '练习', '复盘'].map((item, index) => (
+                  <span key={item} className={index < 2 ? 'is-active' : ''}>
+                    {item}
+                  </span>
+                ))}
               </div>
 
+              <div className="learning-service-actions">
+                {serviceButtons.map((item) => {
+                  const active = selectedService === item.id;
+                  const description = serviceDescriptions[item.id];
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => withAuth(() => handleSelectService(item.id))}
+                      className={`learning-service-card ${active ? 'is-active' : ''}`}
+                    >
+                      <span className="learning-service-card-stage">{description.stage}</span>
+                      <span className={`learning-service-card-icon bg-gradient-to-br ${description.accent}`}>
+                        <item.icon className="h-5 w-5" />
+                      </span>
+                      <span className="learning-service-card-copy">
+                        <strong>{description.action}</strong>
+                        <small>{description.summary}</small>
+                      </span>
+                      {active ? (
+                        <span className="learning-service-card-check">
+                          <CheckCircle2 className="h-4 w-4" />
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="learning-service-visual-shell">
               <ServiceHeroVisual />
             </div>
           </div>
         </section>
 
-        <div className="grid gap-2 overflow-hidden rounded-[24px] bg-white/72 p-2 shadow-[0_14px_42px_rgba(43,83,145,0.08)] backdrop-blur dark:bg-slate-900/62 dark:shadow-slate-950/20 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <section className="rounded-[20px] bg-white/44 p-4 dark:bg-slate-950/18 sm:p-6">
+        <div className="learning-service-workbench">
+          <section className="learning-service-form-panel">
             <EngineSectionHeader
               icon={<FileText className="h-4 w-4" />}
-              title={selectedService === 'personalized' ? '自动分析范围' : (selectedServiceButton ? `${selectedServiceButton.label}参数` : '服务参数')}
-              subtitle={selectedServiceDescription?.detail ?? '选择服务后开始生成，系统会整理并展示结果。'}
+              title={selectedService === 'personalized' ? '输入范围：系统自动读取' : (selectedServiceButton ? `${selectedServiceButton.label}参数` : '先选择学习动作')}
+              subtitle={selectedServiceDescription?.detail ?? '选择一个学习动作后，系统会把输入、生成进度和结果串在同一条流程里。'}
             />
             <div className="mt-5 sm:mt-6">
               <ServiceDynamicForm
@@ -316,6 +318,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
           </section>
 
           <TaskStatusPreview
+            phaseIcon={selectedService === 'resource' ? <Sparkles className="h-4 w-4" /> : <Target className="h-4 w-4" />}
             selectedServiceLabel={selectedServiceButton?.label ?? ''}
             taskId={taskId}
             taskProgress={taskProgress}
