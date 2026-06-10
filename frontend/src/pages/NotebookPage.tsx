@@ -42,8 +42,9 @@ import {
 } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import type { LayoutOutletContext } from '../components/Layout';
-import { conversationApi, type ConversationStreamEventPayload } from '../api/conversation';
+import { conversationApi } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
+import { readConversationChunk } from '../api/sse';
 import { notesApi, type NoteAnalysis, type NoteDetail, type NoteFolder, type NoteListItem, type NoteSemanticSearchResponse, type NoteTag, type NoteVersion } from '../api/notes';
 import type { ResourceSemanticSearchResponse } from '../api/resources';
 
@@ -1567,22 +1568,6 @@ function formatDate(value?: string): string {
 function buildNoteExcerpt(title: string, markdown: string): string {
   const text = markdownToPlainText(markdown);
   return [`标题：${title.trim() || '未命名笔记'}`, `正文摘录：${text.slice(0, 1800)}`].join('\n');
-}
-
-function readConversationChunk(data: ConversationStreamEventPayload, eventName: string): string {
-  if (eventName === 'done' || eventName === 'error') {
-    return '';
-  }
-  const payload = data.payload ?? {};
-  return readString(payload.text)
-    || readString(payload.chunk)
-    || readString(payload.delta)
-    || readString(payload.message)
-    || readString(payload.content);
-}
-
-function readString(value: unknown): string {
-  return typeof value === 'string' ? value : '';
 }
 
 function markdownToRichHtml(markdown: string): string {

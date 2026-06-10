@@ -51,14 +51,14 @@ export default function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      className="relative flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+      className="app-theme-toggle"
       title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
     >
       <motion.div
         key={theme}
         initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
         animate={{ rotate: 0, opacity: 1, scale: 1 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
+        transition={{ duration: 0.46, ease: [0.32, 0.72, 0, 1] }}
       >
         {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
       </motion.div>

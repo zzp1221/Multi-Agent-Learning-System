@@ -1,11 +1,10 @@
 package com.project.infrastructure.python;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.application.smartengine.PythonAgentClient;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
-import com.project.application.smartengine.StreamEventType;
+import com.project.application.streaming.PythonSseEventDecoder;
 import com.project.config.AppProperties;
 import com.project.security.InternalTokenProvider;
 import org.slf4j.Logger;
@@ -35,8 +34,6 @@ import java.util.function.Consumer;
 public class HttpStreamingPythonAgentClient implements PythonAgentClient {
 
     private static final String INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token";
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpStreamingPythonAgentClient.class);
 
     private final ObjectMapper objectMapper;
@@ -198,8 +195,8 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
         try (BufferedReader reader = new BufferedReader(
             new InputStreamReader(response.body(), StandardCharsets.UTF_8)
         )) {
+            PythonSseEventDecoder decoder = new PythonSseEventDecoder(objectMapper);
             String eventType = null;
-            String currentStage = null;
             StringBuilder dataBuffer = new StringBuilder();
             String line;
 
@@ -216,48 +213,25 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
                     continue;
                 }
                 if (line.isBlank()) {
-                    currentStage = dispatch(eventType, dataBuffer.toString(), currentStage, eventConsumer);
+                    dispatch(decoder, eventType, dataBuffer.toString(), eventConsumer);
                     eventType = null;
                     dataBuffer.setLength(0);
                 }
             }
 
             if (!dataBuffer.isEmpty() || eventType != null) {
-                dispatch(eventType, dataBuffer.toString(), currentStage, eventConsumer);
+                dispatch(decoder, eventType, dataBuffer.toString(), eventConsumer);
             }
         }
     }
 
-    private String dispatch(
+    private void dispatch(
+        PythonSseEventDecoder decoder,
         String eventType,
         String rawData,
-        String currentStage,
         Consumer<PythonStreamEvent> eventConsumer
     ) throws IOException {
-        if ((eventType == null || eventType.isBlank()) && (rawData == null || rawData.isBlank())) {
-            return currentStage;
-        }
-
-        Map<String, Object> envelope = rawData == null || rawData.isBlank()
-            ? new LinkedHashMap<>()
-            : objectMapper.readValue(rawData, MAP_TYPE);
-        Object payloadCandidate = envelope.get("payload");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> payload = payloadCandidate instanceof Map<?, ?>
-            ? new LinkedHashMap<>((Map<String, Object>) payloadCandidate)
-            : envelope;
-
-        String resolvedEventType = eventType;
-        if ((resolvedEventType == null || resolvedEventType.isBlank()) && envelope.get("event") instanceof String envelopeEventType) {
-            resolvedEventType = envelopeEventType;
-        }
-        String stage = payload.get("stage") instanceof String stageValue ? stageValue : currentStage;
-        eventConsumer.accept(new PythonStreamEvent(
-            StreamEventType.resolve(resolvedEventType).wireValue(),
-            stage,
-            payload
-        ));
-        return stage;
+        decoder.decode(eventType, rawData).ifPresent(eventConsumer);
     }
 
     /**

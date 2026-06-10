@@ -64,6 +64,46 @@ export interface MistakeReviewSessionResponse {
   completedAt?: string;
 }
 
+export interface TrainingMicroPractice {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: string;
+  knowledgeTags: string[];
+  prompt: string;
+}
+
+export interface MistakeCampGroup {
+  campId: string;
+  title: string;
+  mistakeType: string;
+  knowledgeTag: string;
+  explanation: string;
+  mistakeCount: number;
+  dueCount: number;
+  masteredCount: number;
+  totalWrongCount: number;
+  totalReviewCount: number;
+  masteryChange: number;
+  nextReviewAt?: string | null;
+  representativeMistakes: MistakeRecordResponse[];
+  microPractices: TrainingMicroPractice[];
+  practiceContext: Record<string, unknown>;
+}
+
+export interface MistakeTrainingCampResponse {
+  userId: string;
+  generatedAt: string;
+  summary: {
+    campCount: number;
+    activeMistakeCount: number;
+    dueMistakeCount: number;
+    masteredMistakeCount: number;
+    topFocus: string;
+  };
+  camps: MistakeCampGroup[];
+}
+
 export interface SubmitReviewSessionRequest {
   items: Array<{
     mistakeRecordId: string;
@@ -98,5 +138,9 @@ export const mistakesApi = {
 
   submitReviewSession(sessionId: string, payload: SubmitReviewSessionRequest): Promise<MistakeReviewSessionResponse> {
     return request.post<MistakeReviewSessionResponse>(`/api/mistakes/review/${sessionId}/submit`, payload);
+  },
+
+  trainingCamps(): Promise<MistakeTrainingCampResponse> {
+    return request.get<MistakeTrainingCampResponse>('/api/mistakes/training-camps', { dedupe: false });
   },
 };

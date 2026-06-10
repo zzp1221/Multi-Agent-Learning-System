@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+
+StructuredOutputMode = Literal["json_object", "json_schema", "none"]
 
 
 class ProviderEndpointConfig(BaseModel):
@@ -15,6 +20,7 @@ class ProviderEndpointConfig(BaseModel):
     timeout_ms: int = Field(default=60000, alias="timeoutMs")
     app_id_env: str | None = Field(default=None, alias="appIdEnv")
     api_secret_env: str | None = Field(default=None, alias="apiSecretEnv")
+    structured_output_mode: StructuredOutputMode = Field(default="json_object", alias="structuredOutputMode")
     models: dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)

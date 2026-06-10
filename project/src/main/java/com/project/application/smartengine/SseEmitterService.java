@@ -1,5 +1,6 @@
 package com.project.application.smartengine;
 
+import com.project.application.streaming.SseStreamSender;
 import com.project.domain.task.SmartEngineTask;
 import com.project.domain.task.SmartEngineTaskEvent;
 import com.project.domain.task.SmartEngineTaskEventRepository;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 管理实时 SSE 订阅者，并为重连场景重放已持久化的事件。
@@ -113,14 +115,13 @@ public class SseEmitterService {
     }
 
     private void send(Subscriber subscriber, TaskStreamEventPayload payload) throws IOException {
-        if (payload.seq() <= subscriber.lastSentSeq) {
-            return;
-        }
-        subscriber.emitter.send(SseEmitter.event()
-            .name(payload.event())
-            .id(String.valueOf(payload.seq()))
-            .data(payload));
-        subscriber.lastSentSeq = Math.max(subscriber.lastSentSeq, payload.seq());
+        subscriber.sender.sendReplayable(
+            payload.event(),
+            payload.seq(),
+            payload,
+            seq -> seq > subscriber.lastSentSeq.get()
+        );
+        subscriber.lastSentSeq.set(Math.max(subscriber.lastSentSeq.get(), payload.seq()));
     }
 
     /**
@@ -162,10 +163,12 @@ public class SseEmitterService {
 
     private static final class Subscriber {
         private final SseEmitter emitter;
-        private int lastSentSeq;
+        private final AtomicInteger lastSentSeq = new AtomicInteger();
+        private final SseStreamSender sender;
 
         private Subscriber(SseEmitter emitter) {
             this.emitter = emitter;
+            this.sender = new SseStreamSender(emitter, lastSentSeq);
         }
     }
 }

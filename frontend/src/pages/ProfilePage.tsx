@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, type ReactNode, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   CalendarClock,
+  GitBranch,
   LineChart,
   LoaderCircle,
   Lock,
+  Network,
+  Play,
+  RefreshCw,
   Target,
   TriangleAlert,
   UserRoundSearch,
@@ -13,19 +17,28 @@ import RadarChart from '../components/RadarChart';
 import { getErrorMessage } from '../api/request';
 import {
   smartEngineApi,
+  type KnowledgeGraphNode,
+  type KnowledgeGraphResponse,
   type ProfileBehaviorTrendPoint,
   type UserProfileAnalyticsResponse,
 } from '../api/smartEngine';
+import { conversationApi } from '../api/conversation';
+import { smartEngineApi as engineApi } from '../api/smartEngine';
+import { readStreamPayload } from '../api/sse';
+import { studyWorkbenchApi, type KnowledgeNodeDetailResponse } from '../api/studyWorkbench';
 import type { LayoutOutletContext } from '../components/Layout';
 import {
   EMPTY_VALUE,
+  type PracticeQuestionBatch,
   type ProfileSnapshot,
   type WeakPointRank,
 } from './LearningStudioDemoPage.types';
-import { mapProfileResponse } from './LearningStudioDemoPage.utils';
+import { mapProfileResponse, readPracticeQuestionBatch } from './LearningStudioDemoPage.utils';
+import { openPracticeSession } from './practiceSessionStore';
 
 export default function ProfilePage() {
   const { isAuthenticated, currentUser, openAuthModal } = useOutletContext<LayoutOutletContext>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [profile, setProfile] = useState<ProfileSnapshot | null>(null);
   const [updatedAt, setUpdatedAt] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,6 +46,14 @@ export default function ProfilePage() {
   const [analytics, setAnalytics] = useState<UserProfileAnalyticsResponse | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState('');
+  const [knowledgeGraph, setKnowledgeGraph] = useState<KnowledgeGraphResponse | null>(null);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [knowledgeError, setKnowledgeError] = useState('');
+  const [selectedNodeKey, setSelectedNodeKey] = useState(searchParams.get('node') ?? '');
+  const [nodeDetail, setNodeDetail] = useState<KnowledgeNodeDetailResponse | null>(null);
+  const [nodeDetailLoading, setNodeDetailLoading] = useState(false);
+  const [nodeDetailError, setNodeDetailError] = useState('');
+  const [practiceGeneratingKey, setPracticeGeneratingKey] = useState('');
 
   const loadProfile = useCallback(async () => {
     if (!isAuthenticated || !currentUser) {
@@ -75,23 +96,146 @@ export default function ProfilePage() {
     }
   }, [currentUser, isAuthenticated]);
 
+  const loadKnowledgeGraph = useCallback(async () => {
+    if (!isAuthenticated || !currentUser) {
+      setKnowledgeGraph(null);
+      setKnowledgeError('');
+      return;
+    }
+    setKnowledgeLoading(true);
+    setKnowledgeError('');
+    try {
+      setKnowledgeGraph(await smartEngineApi.getKnowledgeGraph(String(currentUser.id)));
+    } catch (loadError) {
+      setKnowledgeGraph(null);
+      setKnowledgeError(getErrorMessage(loadError));
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }, [currentUser, isAuthenticated]);
+
+  const loadNodeDetail = useCallback(async (nodeKey: string) => {
+    if (!isAuthenticated || !currentUser || !nodeKey) {
+      setNodeDetail(null);
+      setNodeDetailError('');
+      return;
+    }
+    setNodeDetailLoading(true);
+    setNodeDetailError('');
+    try {
+      setNodeDetail(await studyWorkbenchApi.knowledgeNodeDetail(String(currentUser.id), nodeKey));
+    } catch (loadError) {
+      setNodeDetail(null);
+      setNodeDetailError(getErrorMessage(loadError));
+    } finally {
+      setNodeDetailLoading(false);
+    }
+  }, [currentUser, isAuthenticated]);
+
   useEffect(() => {
     void loadProfile();
     void loadAnalytics();
-  }, [loadAnalytics, loadProfile]);
+    void loadKnowledgeGraph();
+  }, [loadAnalytics, loadKnowledgeGraph, loadProfile]);
 
   useEffect(() => {
     const handleProfileUpdated = () => {
       void loadProfile();
       void loadAnalytics();
+      void loadKnowledgeGraph();
     };
     window.addEventListener('app:profile-updated', handleProfileUpdated);
     return () => window.removeEventListener('app:profile-updated', handleProfileUpdated);
-  }, [loadAnalytics, loadProfile]);
+  }, [loadAnalytics, loadKnowledgeGraph, loadProfile]);
+
+  useEffect(() => {
+    const nodeKey = searchParams.get('node') ?? '';
+    setSelectedNodeKey(nodeKey);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (selectedNodeKey) {
+      void loadNodeDetail(selectedNodeKey);
+    } else {
+      setNodeDetail(null);
+      setNodeDetailError('');
+    }
+  }, [loadNodeDetail, selectedNodeKey]);
 
   const displayName = currentUser?.fullName || currentUser?.loginId || currentUser?.username || '同学';
   const weakPointItems = useMemo(() => profile ? buildWeakPointItems(profile).slice(0, 3) : [], [profile]);
   const trendSummary = useMemo(() => buildTrendSummary(analytics), [analytics]);
+
+  const selectKnowledgeNode = (nodeKey: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (nodeKey) {
+      next.set('node', nodeKey);
+    } else {
+      next.delete('node');
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  const startNodePractice = async (detail: KnowledgeNodeDetailResponse) => {
+    if (!currentUser || practiceGeneratingKey) {
+      return;
+    }
+    setPracticeGeneratingKey(detail.node.key);
+    setNodeDetailError('');
+    let receivedBatch: PracticeQuestionBatch | null = null;
+    try {
+      const conversation = await conversationApi.createConversation();
+      const response = await engineApi.submit({
+        conversationId: conversation.conversationId,
+        serviceType: 'PRACTICE_JUDGE',
+        params: {
+          topic: detail.node.topic,
+          query: `${detail.node.topic} 知识点针对性练习`,
+          count: 5,
+          questionCount: 5,
+          learningContext: {
+            ...detail.practiceContext,
+            chapter: detail.node.topic,
+            questionCount: 5,
+          },
+        },
+      });
+      await engineApi.streamTask(response.taskId, {
+        onEvent: (event) => {
+          if (event.event === 'question_batch') {
+            const batch = readPracticeQuestionBatch(event.payload ?? readStreamPayload(event.data));
+            if (batch) {
+              receivedBatch = batch;
+            }
+          }
+          if (event.event === 'error') {
+            setNodeDetailError('练习生成失败，请稍后重试');
+          }
+        },
+        onDone: () => undefined,
+        onError: (streamError) => setNodeDetailError(getErrorMessage(streamError)),
+      });
+      if (!receivedBatch) {
+        const task = await engineApi.getTask(response.taskId, { dedupe: false, retry: 2 });
+        receivedBatch = readPracticeQuestionBatch(task.responseSummary);
+      }
+      if (!receivedBatch) {
+        throw new Error('未收到完整练习题目');
+      }
+      openPracticeSession({
+        batch: receivedBatch,
+        source: 'engine',
+        ownerUserId: currentUser.id,
+        phaseId: detail.node.key,
+        phaseTitle: detail.node.topic,
+        conversationId: conversation.conversationId,
+      });
+    } catch (practiceError) {
+      setNodeDetailError(getErrorMessage(practiceError));
+    } finally {
+      setPracticeGeneratingKey('');
+    }
+  };
 
   if (!isAuthenticated) {
     return (
@@ -175,6 +319,7 @@ export default function ProfilePage() {
                 onClick={() => {
                   void loadProfile();
                   void loadAnalytics();
+                  void loadKnowledgeGraph();
                 }}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm shadow-primary-500/20 outline-none transition-all hover:bg-primary-700 focus-visible:shadow-[0_10px_24px_rgba(59,130,246,0.24)] disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:shadow-[0_10px_24px_rgba(37,99,235,0.24)]"
                 disabled={loading || analyticsLoading}
@@ -201,6 +346,20 @@ export default function ProfilePage() {
           onRetry={() => void loadAnalytics()}
         />
 
+        <KnowledgeGraphInteractionPanel
+          graph={knowledgeGraph}
+          loading={knowledgeLoading}
+          error={knowledgeError}
+          selectedNodeKey={selectedNodeKey}
+          detail={nodeDetail}
+          detailLoading={nodeDetailLoading}
+          detailError={nodeDetailError}
+          practiceGeneratingKey={practiceGeneratingKey}
+          onSelectNode={selectKnowledgeNode}
+          onRetry={() => void loadKnowledgeGraph()}
+          onStartPractice={startNodePractice}
+        />
+
         <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">
           <DimensionPanel profile={profile} />
           <WeakPointTopThree items={weakPointItems} />
@@ -212,7 +371,7 @@ export default function ProfilePage() {
 
 function ProfileShell({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-[1280px] min-w-0 px-1 pb-10">
+    <div className="profile-page mx-auto w-full max-w-[1280px] min-w-0 px-1 pb-10">
       {children}
     </div>
   );
@@ -249,6 +408,209 @@ function SectionTitle({ icon, title, subtitle }: { icon: ReactNode; title: strin
       </div>
     </div>
   );
+}
+
+function KnowledgeGraphInteractionPanel(props: {
+  graph: KnowledgeGraphResponse | null;
+  loading: boolean;
+  error: string;
+  selectedNodeKey: string;
+  detail: KnowledgeNodeDetailResponse | null;
+  detailLoading: boolean;
+  detailError: string;
+  practiceGeneratingKey: string;
+  onSelectNode: (nodeKey: string) => void;
+  onRetry: () => void;
+  onStartPractice: (detail: KnowledgeNodeDetailResponse) => void;
+}) {
+  const nodes = props.graph?.nodes ?? [];
+  const selectedNode = nodes.find((node) => node.key === props.selectedNodeKey) ?? nodes[0] ?? null;
+
+  return (
+    <PanelShell id="knowledge-graph">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <SectionTitle
+          icon={<Network className="h-5 w-5" />}
+          title="知识图谱交互"
+          subtitle="点击知识点查看前置/后续关系、相关错题、资源和针对性练习。"
+        />
+        <button
+          type="button"
+          onClick={props.onRetry}
+          disabled={props.loading}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-medium text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-950/50 dark:text-slate-300 dark:shadow-none"
+        >
+          {props.loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          刷新图谱
+        </button>
+      </div>
+
+      <div className="mt-6 min-h-[300px]">
+        {props.loading && !nodes.length ? (
+          <AnalyticsStateMessage text="正在读取知识图谱" />
+        ) : props.error ? (
+          <div className="rounded-2xl bg-red-50/80 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-200">
+            {props.error}
+          </div>
+        ) : nodes.length ? (
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
+            <div className="grid max-h-[520px] gap-3 overflow-auto pr-1 md:grid-cols-2 xl:grid-cols-1">
+              {nodes.map((node) => (
+                <button
+                  key={node.key}
+                  type="button"
+                  onClick={() => props.onSelectNode(node.key)}
+                  className={`rounded-2xl p-4 text-left transition ${
+                    node.key === props.selectedNodeKey
+                      ? 'bg-primary-50 text-primary-800 shadow-sm shadow-primary-100/60 dark:bg-primary-500/10 dark:text-primary-200 dark:shadow-none'
+                      : 'bg-slate-50/78 text-slate-700 hover:bg-primary-50/60 dark:bg-slate-950/30 dark:text-slate-300 dark:hover:bg-primary-500/5'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold">{node.topic}</h3>
+                      <p className="mt-1 text-xs opacity-70">{knowledgeStatusLabel(node.status)} · {node.source}</p>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold">{Math.round(node.mastery * 100)}%</span>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-800">
+                    <div
+                      className={`h-full rounded-full ${node.status === 'MASTERED' ? 'bg-emerald-500' : node.status === 'WEAK' ? 'bg-amber-500' : 'bg-primary-500'}`}
+                      style={{ width: `${Math.max(2, Math.round(node.mastery * 100))}%` }}
+                    />
+                  </div>
+                </button>
+              ))}
+            </div>
+            <KnowledgeNodeDetailCard
+              detail={props.detail}
+              loading={props.detailLoading}
+              error={props.detailError}
+              fallbackNode={selectedNode}
+              practiceGeneratingKey={props.practiceGeneratingKey}
+              onStartPractice={props.onStartPractice}
+            />
+          </div>
+        ) : (
+          <EmptyInline text="暂无知识图谱数据。完成练习、阶段测试或画像生成后会自动沉淀知识点。" />
+        )}
+      </div>
+    </PanelShell>
+  );
+}
+
+function KnowledgeNodeDetailCard(props: {
+  detail: KnowledgeNodeDetailResponse | null;
+  loading: boolean;
+  error: string;
+  fallbackNode: KnowledgeGraphNode | null;
+  practiceGeneratingKey: string;
+  onStartPractice: (detail: KnowledgeNodeDetailResponse) => void;
+}) {
+  if (props.loading) {
+    return <AnalyticsStateMessage text="正在读取知识点详情" />;
+  }
+  if (props.error) {
+    return (
+      <div className="rounded-2xl bg-red-50/80 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-200">
+        {props.error}
+      </div>
+    );
+  }
+  const detail = props.detail;
+  const node = detail?.node ?? props.fallbackNode;
+  if (!node) {
+    return <EmptyInline text="请选择一个知识点查看详情。" />;
+  }
+  const busy = props.practiceGeneratingKey === node.key;
+  return (
+    <article className="rounded-2xl bg-slate-50/78 p-5 dark:bg-slate-950/32">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-500 shadow-sm shadow-slate-200/50 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none">
+            <GitBranch className="h-3.5 w-3.5" />
+            {knowledgeStatusLabel(node.status)}
+          </div>
+          <h3 className="mt-3 text-xl font-semibold text-slate-950 dark:text-white">{node.topic}</h3>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">掌握度 {Math.round(node.mastery * 100)}%，来源 {node.source}</p>
+        </div>
+        {detail ? (
+          <button
+            type="button"
+            onClick={() => props.onStartPractice(detail)}
+            disabled={busy}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            立即练习
+          </button>
+        ) : null}
+      </div>
+
+      {detail ? (
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <RelationBlock title="前置知识" items={detail.prerequisites.map((item) => item.topic)} empty="暂无明确前置知识" />
+          <RelationBlock title="后续知识" items={detail.nextNodes.map((item) => item.topic)} empty="暂无明确后续知识" />
+          <RelationBlock title="相关知识" items={detail.relatedNodes.map((item) => item.topic)} empty="暂无相关节点" />
+          <RelationBlock title="推荐动作" items={detail.recommendedNextActions} empty="暂无推荐动作" />
+        </div>
+      ) : null}
+
+      {detail?.relatedMistakes.length ? (
+        <div className="mt-5">
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-white">相关错题</h4>
+          <div className="mt-3 space-y-2">
+            {detail.relatedMistakes.slice(0, 3).map((mistake) => (
+              <div key={mistake.id} className="rounded-xl bg-white/78 px-3 py-2 text-sm text-slate-600 shadow-sm shadow-slate-200/50 dark:bg-slate-900/70 dark:text-slate-300 dark:shadow-none">
+                <div className="line-clamp-2">{mistake.stem}</div>
+                <div className="mt-1 text-xs text-slate-400">错 {mistake.wrongCount} 次 · 复习 {mistake.reviewCount} 次</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {detail?.relatedResources.length ? (
+        <div className="mt-5">
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-white">相关资源</h4>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {detail.relatedResources.slice(0, 4).map((resource) => (
+              <div key={resource.id} className="rounded-xl bg-white/78 px-3 py-2 shadow-sm shadow-slate-200/50 dark:bg-slate-900/70 dark:shadow-none">
+                <div className="line-clamp-2 text-sm font-medium text-slate-800 dark:text-slate-100">{resource.title}</div>
+                <div className="mt-1 text-xs text-slate-400">{resource.displayType || resource.resourceType}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function RelationBlock({ title, items, empty }: { title: string; items: string[]; empty: string }) {
+  return (
+    <div className="rounded-xl bg-white/76 p-3 shadow-sm shadow-slate-200/50 dark:bg-slate-900/70 dark:shadow-none">
+      <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400">{title}</h4>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.length ? items.map((item) => (
+          <span key={item} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            {item}
+          </span>
+        )) : (
+          <span className="text-xs text-slate-400">{empty}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function knowledgeStatusLabel(status: string): string {
+  return {
+    WEAK: '薄弱',
+    IN_PROGRESS: '学习中',
+    NOT_STARTED: '未开始',
+    MASTERED: '已掌握',
+  }[status] ?? status;
 }
 
 function BehaviorTrendPanel(props: {

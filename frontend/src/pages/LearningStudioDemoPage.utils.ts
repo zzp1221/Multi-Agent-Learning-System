@@ -1,4 +1,5 @@
 import { getErrorMessage, isUnauthorizedError } from '../api/request';
+import { readConversationChunk as readConversationChunkFromEnvelope } from '../api/sse';
 import { smartEngineApi } from '../api/smartEngine';
 import { renderTalkingVideoInBrowser } from '../utils/browserVideoRenderer';
 import type {
@@ -64,11 +65,6 @@ export function sanitizeConversationMessageContent(input: string): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-function sanitizeConversationLiveChunk(input: string): string {
-  const normalized = input.replace(/\r\n/g, '\n');
-  return looksLikeTutorChain(normalized) ? '' : normalized;
 }
 
 export async function runByApiTask({
@@ -191,8 +187,7 @@ export async function runByApiTask({
     currentTaskId,
     {
       onEvent: (event) => {
-        const envelope = parseTaskStreamEnvelope(event.data);
-        if (event.event === 'done' && readString(envelope.payload?.status).toUpperCase() === 'WAITING_CONFIRMATION') {
+        if (event.event === 'done' && readString(event.payload?.status).toUpperCase() === 'WAITING_CONFIRMATION') {
           waitingConfirmation = true;
         }
         void consumeTaskStreamEvent(event, handlers, browserRenderState);
@@ -300,24 +295,24 @@ async function consumeTaskStreamEvent(
     errorMessage: string;
   },
 ): Promise<void> {
-  const envelope = parseTaskStreamEnvelope(event.data);
+  const payload = event.payload;
 
   if (event.event === 'progress') {
-    const progress = readNumeric(envelope.payload?.percent) ?? readNumeric(envelope.payload?.progress) ?? 0;
-    handlers.onProgress(progress, readStatusHint(envelope.payload));
-    const learningPlan = readLearningPlan(envelope.payload);
+    const progress = readNumeric(payload?.percent) ?? readNumeric(payload?.progress) ?? 0;
+    handlers.onProgress(progress, readStatusHint(payload));
+    const learningPlan = readLearningPlan(payload);
     if (learningPlan) {
       handlers.onLearningPlan(learningPlan);
     }
-    const masteryDiagnosis = readMasteryDiagnosis(envelope.payload);
+    const masteryDiagnosis = readMasteryDiagnosis(payload);
     if (masteryDiagnosis) {
       handlers.onMasteryDiagnosis(masteryDiagnosis);
     }
-    const criticReview = readCriticReview(envelope.payload);
+    const criticReview = readCriticReview(payload);
     if (criticReview) {
       handlers.onCriticReview(criticReview);
     }
-    const resourcePushPlan = readResourcePushPlan(envelope.payload);
+    const resourcePushPlan = readResourcePushPlan(payload);
     if (resourcePushPlan) {
       handlers.onResourcePushPlan(resourcePushPlan);
     }
@@ -326,56 +321,56 @@ async function consumeTaskStreamEvent(
 
   if (isVideoProgressEvent(event.event)) {
     const stage = mapVideoProgressEvent(event.event);
-    const progress = readNumeric(envelope.payload?.percent) ?? readNumeric(envelope.payload?.progress) ?? stage.progress;
+    const progress = readNumeric(payload?.percent) ?? readNumeric(payload?.progress) ?? stage.progress;
     handlers.onProgress(progress, stage.status);
-    const line = readSummary(envelope.payload) || stage.message;
+    const line = readSummary(payload) || stage.message;
     if (line) {
       handlers.onLine(line);
     }
     if (event.event === 'video_gen:complete') {
-      const summary = readSummary(envelope.payload);
+      const summary = readSummary(payload);
       if (summary) {
         handlers.onSummary(summary);
       }
-      const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '视频生成中，请稍候');
+      const browserRenderedVideo = readBrowserRenderedVideoResult(payload, '视频生成中，请稍候');
       if (browserRenderedVideo) {
         handlers.onVideo(browserRenderedVideo);
       }
-      await maybeStartBrowserRender(envelope.payload, handlers, browserRenderState);
-      const videoResult = readVideoResult(envelope.payload);
+      await maybeStartBrowserRender(payload, handlers, browserRenderState);
+      const videoResult = readVideoResult(payload);
       if (videoResult) {
-        if (!ensureGeneratedPayloadProvenance(envelope.payload, handlers, '视频资源')) {
+        if (!ensureGeneratedPayloadProvenance(payload, handlers, '视频资源')) {
           return;
         }
         handlers.onVideo(videoResult);
       }
     }
     if (event.event === 'video_gen:speech') {
-      const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '已收到语音素材，正在生成视频');
+      const browserRenderedVideo = readBrowserRenderedVideoResult(payload, '已收到语音素材，正在生成视频');
       if (browserRenderedVideo) {
         handlers.onVideo(browserRenderedVideo);
       }
-      await maybeStartBrowserRender(envelope.payload, handlers, browserRenderState);
+      await maybeStartBrowserRender(payload, handlers, browserRenderState);
     }
     return;
   }
 
   if (event.event === 'resource_file') {
-    const title = readString(envelope.payload?.title) || readString(envelope.payload?.fileName) || '资源文件';
-    const downloadUrl = readString(envelope.payload?.downloadUrl);
-    const resourceType = readString(envelope.payload?.assetType);
-    const fileName = readString(envelope.payload?.fileName);
-    if (!ensureGeneratedPayloadProvenance(envelope.payload, handlers, '资源')) {
+    const title = readString(payload?.title) || readString(payload?.fileName) || '资源文件';
+    const downloadUrl = readString(payload?.downloadUrl);
+    const resourceType = readString(payload?.assetType);
+    const fileName = readString(payload?.fileName);
+    if (!ensureGeneratedPayloadProvenance(payload, handlers, '资源')) {
       return;
     }
-    const inlineResource = readInlineResource(envelope.payload);
-    const browserRenderedVideo = readBrowserRenderedVideoResult(envelope.payload, '视频素材已就绪，正在生成视频');
+    const inlineResource = readInlineResource(payload);
+    const browserRenderedVideo = readBrowserRenderedVideoResult(payload, '视频素材已就绪，正在生成视频');
     if (browserRenderedVideo) {
       handlers.onVideo(browserRenderedVideo);
     }
     if (downloadUrl) {
-      const summary = readString(envelope.payload?.summary);
-      const sourceName = readString(envelope.payload?.sourceName);
+      const summary = readString(payload?.summary);
+      const sourceName = readString(payload?.sourceName);
       if (!isSafeRecommendationContent(title, summary, sourceName, downloadUrl)) {
         handlers.onLine('已过滤不安全外部资源');
         return;
@@ -384,15 +379,15 @@ async function consumeTaskStreamEvent(
         title: truncateRecommendationText(title, 20),
         url: downloadUrl,
         fileName: fileName || undefined,
-        expiresHint: formatExpiresHint(envelope.payload),
+        expiresHint: formatExpiresHint(payload),
         resourceType,
-        mimeType: readString(envelope.payload?.mimeType),
+        mimeType: readString(payload?.mimeType),
         summary: truncateRecommendationText(summary, 20),
         sourceName,
-        thumbnailUrl: readUrlField(envelope.payload, ['thumbnailUrl', 'thumbnail_url', 'posterUrl', 'coverUrl']),
-        duration: readDuration(envelope.payload),
-        style: readVideoStyle(envelope.payload),
-        knowledgePoint: readString(envelope.payload?.knowledgePoint) || readString(envelope.payload?.topic),
+        thumbnailUrl: readUrlField(payload, ['thumbnailUrl', 'thumbnail_url', 'posterUrl', 'coverUrl']),
+        duration: readDuration(payload),
+        style: readVideoStyle(payload),
+        knowledgePoint: readString(payload?.knowledgePoint) || readString(payload?.topic),
       });
     }
     if (inlineResource) {
@@ -403,10 +398,10 @@ async function consumeTaskStreamEvent(
   }
 
   if (event.event === 'question_batch') {
-    if (!ensureQuestionBatchProvenance(envelope.payload, handlers)) {
+    if (!ensureQuestionBatchProvenance(payload, handlers)) {
       return;
     }
-    const batch = readPracticeQuestionBatch(envelope.payload);
+    const batch = readPracticeQuestionBatch(payload);
     if (batch) {
       handlers.onQuestionBatch(batch);
       handlers.onLine(`${batch.title} 已生成，可直接在页面作答`);
@@ -415,7 +410,7 @@ async function consumeTaskStreamEvent(
   }
 
   if (event.event === 'judge_result') {
-    const result = readPracticeJudgeResult(envelope.payload);
+    const result = readPracticeJudgeResult(payload);
     if (result) {
       handlers.onJudgeResult(result);
       handlers.onLine(result.summary);
@@ -424,28 +419,28 @@ async function consumeTaskStreamEvent(
   }
 
   if (event.event === 'done') {
-    const summary = readSummary(envelope.payload);
-    const learningPlan = readLearningPlan(envelope.payload);
+    const summary = readSummary(payload);
+    const learningPlan = readLearningPlan(payload);
     if (learningPlan) {
       handlers.onLearningPlan(learningPlan);
     }
-    const masteryDiagnosis = readMasteryDiagnosis(envelope.payload);
+    const masteryDiagnosis = readMasteryDiagnosis(payload);
     if (masteryDiagnosis) {
       handlers.onMasteryDiagnosis(masteryDiagnosis);
     }
-    const criticReview = readCriticReview(envelope.payload);
+    const criticReview = readCriticReview(payload);
     if (criticReview) {
       handlers.onCriticReview(criticReview);
     }
-    const resourcePushPlan = readResourcePushPlan(envelope.payload);
+    const resourcePushPlan = readResourcePushPlan(payload);
     if (resourcePushPlan) {
       handlers.onResourcePushPlan(resourcePushPlan);
     }
-    const agentTrace = readAgentTrace(envelope.payload);
+    const agentTrace = readAgentTrace(payload);
     if (agentTrace.length > 0) {
       handlers.onAgentTrace(agentTrace);
     }
-    const status = readString(envelope.payload?.status).toUpperCase();
+    const status = readString(payload?.status).toUpperCase();
     const doneLabel = status === 'FAILED' || status === 'ERROR'
       ? '任务失败'
       : status === 'PARTIAL_FAILED'
@@ -454,7 +449,7 @@ async function consumeTaskStreamEvent(
           ? '等待确认'
           : '任务完成';
     if (status === 'WAITING_CONFIRMATION') {
-      const currentProgress = readNumeric(envelope.payload?.percent) ?? readNumeric(envelope.payload?.progress) ?? 99;
+      const currentProgress = readNumeric(payload?.percent) ?? readNumeric(payload?.progress) ?? 99;
       handlers.onProgress(currentProgress, doneLabel, { allowDecrease: true, maxProgress: 99 });
     } else {
       handlers.onProgress(100, doneLabel);
@@ -473,16 +468,16 @@ async function consumeTaskStreamEvent(
   }
 
   if (event.event === 'error') {
-    handlers.onLine(formatUserFacingTaskMessage(readSummary(envelope.payload) || '任务执行失败'));
+    handlers.onLine(formatUserFacingTaskMessage(readSummary(payload) || '任务执行失败'));
     return;
   }
 
-  const summaryLine = readSummary(envelope.payload);
+  const summaryLine = readSummary(payload);
   const line = summaryLine
     ? summaryLine
-    : shouldSuppressTaskPayload(envelope.payload)
+    : shouldSuppressTaskPayload(payload)
       ? ''
-      : formatUserFacingTaskMessage(stringifyCompact(envelope.payload));
+      : formatUserFacingTaskMessage(stringifyCompact(payload));
   if (line) {
     handlers.onLine(line);
   }
@@ -680,18 +675,6 @@ async function settleBrowserRender(
   return !browserRenderState.errorMessage;
 }
 
-function parseTaskStreamEnvelope(raw: string): { payload?: Record<string, unknown> } {
-  try {
-    return JSON.parse(raw) as { payload?: Record<string, unknown> };
-  } catch {
-    return {
-      payload: {
-        text: raw,
-      },
-    };
-  }
-}
-
 function responseSummaryToLines(summary: Record<string, unknown>, service: EngineService): string[] {
   if (service === 'path' || service === 'personalized') {
     const learningPath = readRecord(summary.learningPath);
@@ -750,83 +733,7 @@ function responseSummaryToLines(summary: Record<string, unknown>, service: Engin
 }
 
 export function readConversationChunk(data: ConversationStreamEventPayload, eventName: string): string {
-  const payload = data.payload;
-  if (!payload) {
-    return '';
-  }
-
-  const stage = readString(payload.stage);
-  if (shouldSuppressConversationEvent(eventName, payload)) {
-    return '';
-  }
-  if (eventName === 'result_chunk') {
-    if (stage && stage !== 'tutoring') {
-      return '';
-    }
-    if (shouldSuppressConversationPayload(payload)) {
-      return '';
-    }
-    const chunkText = readString(payload.text);
-    return chunkText && !looksLikeStructuredPayloadText(chunkText)
-      ? sanitizeConversationLiveChunk(chunkText)
-      : '';
-  }
-
-  return '';
-}
-
-function shouldSuppressConversationEvent(eventName: string, payload: Record<string, unknown>): boolean {
-  if (
-    eventName === 'progress'
-    || eventName === 'resource_file'
-    || eventName === 'question_batch'
-    || eventName === 'judge_result'
-    || eventName === 'done'
-    || eventName === 'error'
-    || eventName.startsWith('video_gen:')
-  ) {
-    return true;
-  }
-  return shouldSuppressConversationPayload(payload);
-}
-
-function shouldSuppressConversationPayload(payload: Record<string, unknown>): boolean {
-  const stage = readString(payload.stage).toLowerCase();
-  return [
-    'query_rewrite',
-    'retrieving',
-    'retrieval',
-    'critic',
-    'resource',
-    'resource_generation',
-    'practice',
-    'judge',
-    'video',
-    'tool',
-  ].some((item) => stage.includes(item))
-    || Boolean(payload.traceId)
-    || Boolean(payload.taskId)
-    || Boolean(payload.agentTrace)
-    || Boolean(payload.agentName && stage !== 'tutoring')
-    || Boolean(payload.toolName)
-    || Boolean(payload.toolCall)
-    || Boolean(payload.resourceFailures)
-    || Boolean(payload.artifactType)
-    || Boolean(payload.assetType)
-    || Boolean(payload.questions)
-    || Boolean(payload.inlineContent)
-    || Boolean(payload.downloadUrl);
-}
-
-function looksLikeStructuredPayloadText(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return false;
-  }
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-    return true;
-  }
-  return /"(eventType|payload|agentName|traceId|taskId|toolName|questions|inlineContent)"\s*:/.test(trimmed);
+  return readConversationChunkFromEnvelope(data, eventName);
 }
 
 function looksLikeTutorChain(text: string): boolean {

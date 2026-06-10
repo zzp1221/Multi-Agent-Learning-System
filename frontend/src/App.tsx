@@ -4,6 +4,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 
 const LearningStudioDemoPage = lazy(() => import('./pages/LearningStudioDemoPage'));
+const DailyStudyWorkbenchPage = lazy(() => import('./pages/DailyStudyWorkbenchPage'));
 const PersonalizedLearningPathPage = lazy(() => import('./pages/PersonalizedLearningPathPage'));
 const ResourceLibraryPage = lazy(() => import('./pages/ResourceLibraryPage'));
 const MultiAgentResourceGenerationPage = lazy(() => import('./pages/MultiAgentResourceGenerationPage'));
@@ -27,6 +28,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Layout />}>
               <Route index element={<LearningStudioDemoPage mode="qna" />} />
+              <Route path="dashboard" element={<DailyStudyWorkbenchPage />} />
               <Route path="engine" element={<PersonalizedLearningPathPage />} />
               <Route path="resources" element={<ResourceLibraryPage />} />
               <Route path="resources/generation" element={<MultiAgentResourceGenerationPage />} />

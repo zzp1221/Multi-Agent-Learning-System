@@ -49,6 +49,8 @@ def test_settings_build_default_model_routing_config() -> None:
     assert routing.active_provider == "openai_compatible"
     assert routing.resolve_model("main_chat_model") == "qwen3.6-plus"
     assert routing.resolve_model("fast_model", "spark") == "Spark X2-Flash"
+    assert routing.providers["openai_compatible"].structured_output_mode == "json_object"
+    assert routing.providers["spark"].structured_output_mode == "json_object"
 
 
 def test_settings_accepts_ai_openai_compatible_base_url_alias() -> None:

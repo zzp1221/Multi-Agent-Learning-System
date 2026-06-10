@@ -3,6 +3,27 @@ interface RawSseEvent {
   data: string;
 }
 
+export interface StreamEventEnvelope<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+  event?: string;
+  eventType?: string;
+  seq?: number;
+  sequence?: number;
+  timestamp?: string;
+  occurredAt?: string;
+  payload?: TPayload;
+}
+
+export interface ConversationDialogState {
+  conversationId: string;
+  turnId: string;
+  pedagogyStrategy?: string;
+  nextAction?: string;
+}
+
+export interface ConversationStreamEventEnvelope extends StreamEventEnvelope {
+  dialogState?: ConversationDialogState;
+}
+
 interface StreamSseOptions {
   init: RequestInit;
   missingBodyMessage: string;
@@ -131,4 +152,151 @@ function parseSseEventBlock(block: string, defaultEvent = 'message'): RawSseEven
     event,
     data: dataParts.join('\n'),
   };
+}
+
+export function parseStreamEnvelope<TEnvelope extends StreamEventEnvelope = StreamEventEnvelope>(
+  rawData: string,
+  fallbackPayloadKey: 'text' | 'message' = 'text',
+): TEnvelope {
+  try {
+    const parsed = JSON.parse(rawData) as TEnvelope;
+    return {
+      ...parsed,
+      eventType: parsed.eventType ?? parsed.event,
+      sequence: parsed.sequence ?? parsed.seq,
+      occurredAt: parsed.occurredAt ?? parsed.timestamp,
+    };
+  } catch {
+    return {
+      payload: {
+        [fallbackPayloadKey]: rawData,
+      },
+    } as TEnvelope;
+  }
+}
+
+export function readStreamPayload(rawData: string): Record<string, unknown> | undefined {
+  return parseStreamEnvelope(rawData, 'message').payload;
+}
+
+export function readStreamMessage(payload: Record<string, unknown> | undefined): string {
+  if (!payload) {
+    return '';
+  }
+  return readString(payload.message) || readString(payload.text) || readString(payload.summary);
+}
+
+export function readConversationChunk(data: ConversationStreamEventEnvelope, eventName: string): string {
+  const payload = data.payload;
+  if (!payload) {
+    return '';
+  }
+
+  const stage = readString(payload.stage);
+  if (shouldSuppressConversationEvent(eventName, payload)) {
+    return '';
+  }
+  if (eventName === 'result_chunk') {
+    if (stage && stage !== 'tutoring') {
+      return '';
+    }
+    if (shouldSuppressConversationPayload(payload)) {
+      return '';
+    }
+    const chunkText = readString(payload.text);
+    return chunkText && !looksLikeStructuredPayloadText(chunkText)
+      ? sanitizeConversationLiveChunk(chunkText)
+      : '';
+  }
+
+  return readString(payload.chunk)
+    || readString(payload.delta)
+    || readString(payload.message)
+    || readString(payload.content);
+}
+
+function shouldSuppressConversationEvent(eventName: string, payload: Record<string, unknown>): boolean {
+  if (
+    eventName === 'progress'
+    || eventName === 'resource_file'
+    || eventName === 'question_batch'
+    || eventName === 'judge_result'
+    || eventName === 'done'
+    || eventName === 'error'
+    || eventName.startsWith('video_gen:')
+  ) {
+    return true;
+  }
+  return shouldSuppressConversationPayload(payload);
+}
+
+function shouldSuppressConversationPayload(payload: Record<string, unknown>): boolean {
+  const stage = readString(payload.stage).toLowerCase();
+  const serviceType = readString(payload.serviceType).toUpperCase();
+  const assetType = readString(payload.assetType).toUpperCase();
+  const displayMode = readString(payload.displayMode).toUpperCase();
+  const hasDownloadUrl = readString(payload.downloadUrl) || readString(payload.resourceUrl) || readString(payload.url);
+  return [
+    'query_rewrite',
+    'retrieving',
+    'retrieval',
+    'critic',
+    'resource',
+    'resource_generation',
+    'practice',
+    'judge',
+    'video',
+    'tool',
+  ].some((item) => stage.includes(item))
+    || serviceType === 'RESOURCE_GENERATION'
+    || assetType === 'SLIDES'
+    || assetType === 'VIDEO'
+    || displayMode === 'DOWNLOAD_CARD'
+    || Boolean(hasDownloadUrl)
+    || Boolean(payload.traceId)
+    || Boolean(payload.taskId)
+    || Boolean(payload.agentTrace)
+    || Boolean(payload.agentName && stage !== 'tutoring')
+    || Boolean(payload.toolName)
+    || Boolean(payload.toolCall)
+    || Boolean(payload.resourceFailures)
+    || Boolean(payload.artifactType)
+    || Boolean(payload.inlineContent)
+    || Array.isArray(payload.questions)
+    || typeof payload.practiceQuestionBatch === 'object';
+}
+
+function looksLikeStructuredPayloadText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    return true;
+  }
+  return trimmed.includes('"assetType"')
+    || trimmed.includes('"eventType"')
+    || trimmed.includes('"payload"')
+    || trimmed.includes('"agentName"')
+    || trimmed.includes('"traceId"')
+    || trimmed.includes('"taskId"')
+    || trimmed.includes('"toolName"')
+    || trimmed.includes('"downloadUrl"')
+    || trimmed.includes('"questions"')
+    || trimmed.includes('"inlineContent"')
+    || trimmed.includes('"practiceQuestionBatch"')
+    || trimmed.includes('"resourcePushPlan"')
+    || trimmed.includes('"learningPath"');
+}
+
+function sanitizeConversationLiveChunk(text: string): string {
+  const normalized = text.replace(/\r\n/g, '\n');
+  if (normalized.trim().startsWith('```json')) {
+    return '';
+  }
+  return normalized;
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }

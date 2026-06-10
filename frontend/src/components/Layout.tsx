@@ -85,6 +85,7 @@ function clearUserScopedFrontendState(): void {
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const inDashboard = location.pathname.startsWith('/dashboard');
   const inEngine = location.pathname.startsWith('/engine');
   const inResources = location.pathname.startsWith('/resources');
   const inMistakes = location.pathname.startsWith('/mistakes');
@@ -321,6 +322,16 @@ export default function Layout() {
     navigate('/notes');
   }, [isAuthenticated, navigate]);
 
+  const handleOpenDashboard = useCallback(() => {
+    setMoreMenuOpen(false);
+    closeSidebar();
+    if (!isAuthenticated) {
+      openAuthModal('login', '登录后查看每日学习工作台');
+      return;
+    }
+    navigate('/dashboard');
+  }, [isAuthenticated, navigate]);
+
   function openAuthModal(tab: AuthTab = 'login', hint = '请先登录') {
     setDefaultTab(tab);
     setAuthHint(hint);
@@ -457,7 +468,7 @@ export default function Layout() {
           <button
             type="button"
             onClick={() => setMoreMenuOpen((prev) => !prev)}
-            className={`app-sidebar-nav-item ${moreMenuOpen || inEngine || inResources || inMistakes || inNotes || inProfile ? 'is-active' : ''}`}
+            className={`app-sidebar-nav-item ${moreMenuOpen || inDashboard || inEngine || inResources || inMistakes || inNotes || inProfile ? 'is-active' : ''}`}
           >
             <LayoutGrid className="h-4 w-4" />
             更多功能
@@ -465,12 +476,20 @@ export default function Layout() {
           <AnimatePresence>
             {moreMenuOpen ? (
               <motion.div
-                initial={{ opacity: 0, y: -4, scale: 0.96 }}
+                initial={{ opacity: 0, y: 10, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -4, scale: 0.96 }}
-                transition={{ duration: 0.15 }}
-                className="absolute left-0 top-full z-50 mt-2 w-full min-w-[210px] overflow-hidden rounded-2xl bg-white/94 py-1.5 shadow-xl shadow-blue-100/60 backdrop-blur-xl dark:bg-slate-900/94 dark:shadow-slate-900/50"
+                exit={{ opacity: 0, y: 10, scale: 0.96 }}
+                transition={{ duration: 0.42, ease: [0.32, 0.72, 0, 1] }}
+                className="app-more-menu"
               >
+                <button
+                  type="button"
+                  onClick={handleOpenDashboard}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
+                >
+                  <Compass className="h-4 w-4" />
+                  每日学习工作台
+                </button>
                 <button
                   type="button"
                   onClick={handleOpenProfilePage}
@@ -527,7 +546,7 @@ export default function Layout() {
 
       {isAuthenticated ? (
         <div className="px-5 pb-4">
-          <label className="flex items-center rounded-2xl bg-white/70 px-3 py-2 shadow-sm shadow-blue-100/50 transition-all focus-within:bg-white focus-within:shadow-md focus-within:shadow-primary-100/32 dark:bg-slate-900/80 dark:shadow-none dark:focus-within:bg-slate-900 dark:focus-within:shadow-primary-950/24">
+          <label className="app-sidebar-search">
             <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
             <input
               value={historySearch}
@@ -557,7 +576,7 @@ export default function Layout() {
                   transition={{ delay: Math.min(index * 0.02, 0.3) }}
                   type="button"
                   onClick={() => handleOpenConversation(item)}
-                  className={`group w-full truncate rounded-xl px-3 py-2 text-left text-sm transition-all duration-200 ${
+                  className={`app-conversation-item group w-full truncate px-3 py-2 text-left text-sm ${
                     item.conversationId === activeConversationId
                       ? 'bg-white text-primary-700 shadow-sm shadow-blue-100/70 dark:bg-primary-500/10 dark:text-primary-400'
                       : 'text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800'
@@ -590,12 +609,12 @@ export default function Layout() {
               closeSidebar();
               openAuthModal('login', '');
             }}
-            className="w-full rounded-2xl bg-primary-600 px-3 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-primary-700 active:scale-[0.98]"
+            className="app-primary-action"
           >
             立即登录
           </button>
         ) : (
-          <div className="rounded-2xl bg-white/70 px-3 py-2.5 shadow-sm shadow-blue-100/50 dark:bg-slate-800/50 dark:shadow-none">
+          <div className="app-user-card">
             <div className="text-[11px] text-slate-400 dark:text-slate-500">当前用户</div>
             <div className="mt-0.5 text-sm font-medium text-slate-800 dark:text-slate-200">{userDisplayName}</div>
             <button type="button" onClick={handleLogout} className="mt-1.5 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
@@ -607,7 +626,7 @@ export default function Layout() {
 
       {isAuthenticated ? (
         <div className="px-5 pb-4 pt-2">
-          <div className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-2 shadow-sm shadow-blue-100/50 dark:bg-slate-800/50 dark:shadow-none">
+          <div className="app-sync-card">
             <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
               <Clock3 className="h-3.5 w-3.5" />
               同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
@@ -622,10 +641,10 @@ export default function Layout() {
   );
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex min-h-[100dvh] bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop Sidebar */}
       {!inNotes ? (
-        <aside className="app-sidebar fixed left-0 top-0 z-40 hidden h-screen w-[302px] flex-col md:flex">
+        <aside className="app-sidebar fixed bottom-4 left-4 top-4 z-40 hidden w-[286px] flex-col md:flex">
           {sidebarContent}
         </aside>
       ) : null}
@@ -638,7 +657,7 @@ export default function Layout() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: 0.36, ease: [0.32, 0.72, 0, 1] }}
               className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm md:hidden"
               onClick={closeSidebar}
             />
@@ -646,8 +665,8 @@ export default function Layout() {
               initial={{ x: -300 }}
               animate={{ x: 0 }}
               exit={{ x: -300 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-              className="app-sidebar fixed left-0 top-0 z-50 flex h-screen w-[302px] max-w-[86vw] flex-col md:hidden"
+              transition={{ duration: 0.48, ease: [0.32, 0.72, 0, 1] }}
+              className="app-sidebar fixed bottom-3 left-3 top-3 z-50 flex w-[302px] max-w-[86vw] flex-col md:hidden"
             >
               {sidebarContent}
             </motion.aside>
@@ -656,10 +675,10 @@ export default function Layout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className={inNotes ? 'app-main min-w-0 flex-1' : 'app-main min-w-0 flex-1 md:ml-[302px]'}>
+      <main className={inNotes ? 'app-main min-w-0 flex-1' : 'app-main min-w-0 flex-1 md:ml-[318px]'}>
         {/* Top Header */}
         {!inNotes ? (
-          <header className="app-topbar sticky top-0 z-30 flex items-center justify-between gap-3 px-3 sm:px-4 md:px-8">
+          <header className="app-topbar sticky top-3 z-30 flex items-center justify-between gap-3 px-3 sm:px-4 md:px-8">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -692,14 +711,14 @@ export default function Layout() {
         ) : null}
 
         {/* Page Content */}
-        <div className={inNotes ? '' : inEngine || inResources || inMistakes || inProfile ? 'px-3 py-4 sm:px-4 md:px-8 md:py-6' : ''}>
+        <div className={inNotes ? '' : inDashboard || inEngine || inResources || inMistakes || inProfile ? 'app-page-shell' : ''}>
           <motion.div
-            key={inProfile ? 'profile-shell' : inNotes ? 'notes-shell' : inMistakes ? 'mistake-shell' : inResources ? 'resource-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
+            key={inDashboard ? 'dashboard-shell' : inProfile ? 'profile-shell' : inNotes ? 'notes-shell' : inMistakes ? 'mistake-shell' : inResources ? 'resource-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3 }}
-            className={inNotes ? 'min-h-screen' : undefined}
+            transition={{ duration: 0.48, ease: [0.32, 0.72, 0, 1] }}
+            className={inNotes ? 'min-h-[100dvh]' : undefined}
           >
             <Outlet context={{ isAuthenticated, currentUser, openAuthModal } satisfies LayoutOutletContext} />
           </motion.div>

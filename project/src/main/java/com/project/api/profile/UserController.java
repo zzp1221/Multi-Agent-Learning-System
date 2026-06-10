@@ -4,10 +4,12 @@ import com.project.api.profile.dto.KnowledgeGraphResponse;
 import com.project.api.profile.dto.ProfileOnboardingRequest;
 import com.project.api.profile.dto.UserProfileResponse;
 import com.project.api.profile.dto.UserProfileAnalyticsResponse;
+import com.project.api.study.dto.KnowledgeNodeDetailResponse;
 import com.project.application.profile.LearnerKnowledgeGraphService;
 import com.project.application.profile.ProfileOnboardingService;
 import com.project.application.profile.UserProfileAnalyticsService;
 import com.project.application.profile.UserProfileQueryService;
+import com.project.application.study.StudyWorkbenchService;
 import com.project.security.AuthenticatedUserResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,17 +38,20 @@ public class UserController {
     private final UserProfileAnalyticsService userProfileAnalyticsService;
     private final LearnerKnowledgeGraphService learnerKnowledgeGraphService;
     private final ProfileOnboardingService profileOnboardingService;
+    private final StudyWorkbenchService studyWorkbenchService;
 
     public UserController(
         UserProfileQueryService userProfileQueryService,
         UserProfileAnalyticsService userProfileAnalyticsService,
         LearnerKnowledgeGraphService learnerKnowledgeGraphService,
-        ProfileOnboardingService profileOnboardingService
+        ProfileOnboardingService profileOnboardingService,
+        StudyWorkbenchService studyWorkbenchService
     ) {
         this.userProfileQueryService = userProfileQueryService;
         this.userProfileAnalyticsService = userProfileAnalyticsService;
         this.learnerKnowledgeGraphService = learnerKnowledgeGraphService;
         this.profileOnboardingService = profileOnboardingService;
+        this.studyWorkbenchService = studyWorkbenchService;
     }
 
     @GetMapping("/{userId}/profile/current")
@@ -80,6 +85,18 @@ public class UserController {
     ) {
         return ResponseEntity.ok(
             learnerKnowledgeGraphService.getGraph(AuthenticatedUserResolver.require(authentication), userId)
+        );
+    }
+
+    @GetMapping("/{userId}/knowledge-graph/{nodeKey}")
+    @Operation(summary = "Get an interactive learner knowledge node detail")
+    public ResponseEntity<KnowledgeNodeDetailResponse> getKnowledgeNodeDetail(
+        Authentication authentication,
+        @PathVariable UUID userId,
+        @PathVariable String nodeKey
+    ) {
+        return ResponseEntity.ok(
+            studyWorkbenchService.knowledgeNodeDetail(AuthenticatedUserResolver.require(authentication), userId, nodeKey)
         );
     }
 

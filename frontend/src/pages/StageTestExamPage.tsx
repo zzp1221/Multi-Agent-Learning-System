@@ -11,6 +11,7 @@ import {
 import { conversationApi } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
 import { smartEngineApi } from '../api/smartEngine';
+import { readStreamMessage, readStreamPayload } from '../api/sse';
 import {
   readPracticeJudgeResult,
 } from './LearningStudioDemoPage.utils';
@@ -92,7 +93,7 @@ export default function StageTestExamPage() {
         submitResp.taskId,
         {
           onEvent: (event) => {
-            const payload = parseTaskStreamPayload(event.data);
+            const payload = event.payload ?? readStreamPayload(event.data);
             if (event.event === 'judge_result') {
               const result = readPracticeJudgeResult(payload);
               if (result) {
@@ -101,7 +102,7 @@ export default function StageTestExamPage() {
               }
             }
             if (event.event === 'error') {
-              streamError = readPayloadMessage(payload) || '阶段测试批改失败';
+              streamError = readStreamMessage(payload) || '阶段测试批改失败';
             }
           },
           onDone: () => undefined,
@@ -441,26 +442,4 @@ function difficultyLabel(value?: string): string {
 
 function unansweredQuestions(batch: PracticeQuestionBatch, answers: Record<string, string>): PracticeQuestion[] {
   return batch.questions.filter((question) => !answers[question.questionId]?.trim());
-}
-
-function parseTaskStreamPayload(raw: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(raw) as { payload?: Record<string, unknown> };
-    return parsed.payload;
-  } catch {
-    return {
-      message: raw,
-    };
-  }
-}
-
-function readPayloadMessage(payload: Record<string, unknown> | undefined): string {
-  if (!payload) {
-    return '';
-  }
-  return readString(payload.message) || readString(payload.text) || readString(payload.summary);
-}
-
-function readString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
 }

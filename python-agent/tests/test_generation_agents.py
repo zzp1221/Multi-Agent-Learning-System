@@ -123,6 +123,32 @@ def test_structured_generator_uses_generation_timeout_setting(monkeypatch: pytes
     assert "240.0" in f"{generator.provider_name}:{generator.base_url}:{generator.timeout_seconds}"
 
 
+def test_structured_generator_builds_strict_json_schema_when_provider_supports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_settings = SimpleNamespace(
+        normalize_provider_name=lambda provider_name: provider_name,
+        resolve_component_provider=lambda component_name: "openai_compatible",
+        provider_endpoint_config=lambda provider_name: SimpleNamespace(
+            name=provider_name,
+            base_url="https://api.openai.com/v1",
+            structured_output_mode="json_schema",
+        ),
+        provider_api_key=lambda provider_name: "fake-openai-key",
+        resolve_component_model=lambda component_name, default_logical_model, provider_name: "gpt-4.1-mini",
+    )
+    monkeypatch.setattr("src.ai_modules.generation.content_chain.get_settings", lambda: fake_settings)
+
+    generator = OpenAICompatibleStructuredGenerator()
+    response_format = generator._structured_response_format(GeneratedSectionBundle)
+
+    assert response_format is not None
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["name"] == "GeneratedSectionBundle"
+    assert response_format["json_schema"]["strict"] is True
+    assert "sections" in response_format["json_schema"]["schema"]["properties"]
+
+
 def test_structured_generator_formats_empty_httpx_exception() -> None:
     assert OpenAICompatibleStructuredGenerator._format_exception(httpx.ReadTimeout("")) == "ReadTimeout"
 

@@ -9,6 +9,7 @@ import {
 import { conversationApi } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
 import { smartEngineApi } from '../api/smartEngine';
+import { readStreamMessage, readStreamPayload } from '../api/sse';
 import {
   readPracticeJudgeResult,
 } from '../pages/LearningStudioDemoPage.utils';
@@ -113,7 +114,7 @@ export default function FloatingPracticeAssistant(props: {
         submitResp.taskId,
         {
           onEvent: (event) => {
-            const payload = parseTaskStreamPayload(event.data);
+            const payload = event.payload ?? readStreamPayload(event.data);
             if (event.event === 'judge_result') {
               const result = readPracticeJudgeResult(payload);
               if (result) {
@@ -122,7 +123,7 @@ export default function FloatingPracticeAssistant(props: {
               }
             }
             if (event.event === 'error') {
-              setPracticeStatusForOwner(requestOwnerUserId, 'failed', readPayloadMessage(payload) || '判题失败，请稍后重试');
+              setPracticeStatusForOwner(requestOwnerUserId, 'failed', readStreamMessage(payload) || '判题失败，请稍后重试');
             }
           },
           onDone: () => undefined,
@@ -206,7 +207,7 @@ function PracticeFloatingPanel(props: {
       <button
         type="button"
         onClick={props.onOpen}
-        className="fixed bottom-24 right-5 z-[120] inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-amber-700 shadow-lg shadow-amber-100/60 backdrop-blur transition hover:bg-amber-50 dark:bg-slate-900/90 dark:text-amber-200 dark:shadow-none"
+        className="practice-assistant-trigger fixed bottom-24 right-5 z-[120] inline-flex items-center gap-2 rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-amber-700 shadow-lg shadow-amber-100/60 backdrop-blur transition hover:bg-amber-50 dark:bg-slate-900/90 dark:text-amber-200 dark:shadow-none"
       >
         <ClipboardList className="h-4 w-4" />
         练习题 {judgedCount}/{batch.questions.length}
@@ -215,8 +216,8 @@ function PracticeFloatingPanel(props: {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-[120] w-[min(calc(100vw-40px),440px)]">
-      <section className="flex max-h-[78vh] flex-col overflow-hidden rounded-[24px] bg-white/92 shadow-2xl shadow-amber-100/70 backdrop-blur dark:bg-slate-950/92 dark:shadow-slate-950/40">
+    <div className="practice-assistant-panel fixed bottom-5 right-5 z-[120] w-[min(calc(100vw-40px),440px)]">
+      <section className="practice-assistant-surface flex max-h-[78vh] flex-col overflow-hidden rounded-[24px] bg-white/92 shadow-2xl shadow-amber-100/70 backdrop-blur dark:bg-slate-950/92 dark:shadow-slate-950/40">
         <header className="bg-white/54 px-5 py-4 dark:bg-slate-950/24">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -372,28 +373,6 @@ function PracticeQuestionResultView({ result }: { result: JudgeItemResult }) {
       ) : null}
     </div>
   );
-}
-
-function parseTaskStreamPayload(raw: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(raw) as { payload?: Record<string, unknown> };
-    return parsed.payload;
-  } catch {
-    return {
-      message: raw,
-    };
-  }
-}
-
-function readPayloadMessage(payload: Record<string, unknown> | undefined): string {
-  if (!payload) {
-    return '';
-  }
-  return readString(payload.message) || readString(payload.text) || readString(payload.summary);
-}
-
-function readString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
 }
 
 function formatPracticeQuestionType(value: string | undefined): string {

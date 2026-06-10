@@ -23,6 +23,8 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,6 +62,7 @@ class ConversationAndProfileIntegrationTest {
 
     @Test
     void createConversationAndStreamMessage() throws Exception {
+        CountDownLatch pythonStreamCompleted = new CountDownLatch(1);
         doAnswer(invocation -> List.of()).when(pythonConversationMessageClient).listMessages(any(), any());
         doAnswer(invocation -> null).when(pythonConversationMessageClient).appendMessage(any(), any(), any(), any(), any());
         doAnswer(invocation -> {
@@ -92,6 +95,7 @@ class ConversationAndProfileIntegrationTest {
                 )
             ));
             consumer.accept(new PythonStreamEvent("done", "completed", Map.of("message", "讲解结束")));
+            pythonStreamCompleted.countDown();
             return null;
         }).when(pythonAgentClient).stream(any(), any());
 
@@ -127,7 +131,8 @@ class ConversationAndProfileIntegrationTest {
             .andExpect(request().asyncStarted())
             .andReturn();
 
-        streamResult.getAsyncResult(1000);
+        assertThat(pythonStreamCompleted.await(5, TimeUnit.SECONDS)).isTrue();
+        streamResult.getAsyncResult(5000);
         MvcResult asyncResult = mockMvc.perform(asyncDispatch(streamResult))
             .andExpect(status().isOk())
             .andReturn();

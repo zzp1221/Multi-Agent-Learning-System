@@ -1,6 +1,6 @@
 import { API_BASE_URL, getAuthHeaders, request } from './request';
 import type { AxiosRequestConfig } from 'axios';
-import { streamSse } from './sse';
+import { parseStreamEnvelope, streamSse, type StreamEventEnvelope } from './sse';
 
 export type SmartEngineServiceType =
   | 'PERSONALIZED_LEARNING'
@@ -56,6 +56,8 @@ export type SmartEngineStreamEventType =
 export interface SmartEngineStreamEvent {
   event: SmartEngineStreamEventType;
   data: string;
+  envelope: StreamEventEnvelope;
+  payload: Record<string, unknown> | undefined;
 }
 
 export interface UserProfileResponse {
@@ -227,9 +229,12 @@ export const smartEngineApi = {
       maxRetries: 2,
       defaultEvent: 'result_chunk',
       onEvent: (rawEvent) => {
+        const envelope = parseStreamEnvelope(rawEvent.data, 'message');
         const parsed: SmartEngineStreamEvent = {
           event: rawEvent.event as SmartEngineStreamEventType,
           data: rawEvent.data,
+          envelope,
+          payload: envelope.payload,
         };
         handlers.onEvent(parsed);
         if (parsed.event === 'done') {

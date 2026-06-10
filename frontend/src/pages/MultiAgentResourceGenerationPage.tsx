@@ -188,7 +188,7 @@ export default function MultiAgentResourceGenerationPage() {
   const remainingHint = estimateRemainingTime(session);
 
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className="resource-generation-page mx-auto max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
       <section className="overflow-hidden rounded-[28px] bg-white/76 shadow-[0_18px_56px_rgba(59,97,155,0.09)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20">
         <div className="grid gap-5 px-5 py-5 md:grid-cols-[minmax(0,1fr)_280px] md:px-7">
           <div className="min-w-0">

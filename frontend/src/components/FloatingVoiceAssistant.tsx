@@ -17,6 +17,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { conversationApi, type ConversationStreamEvent } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
+import { readConversationChunk } from '../api/sse';
 import { voiceApi, type VoicePageContext, type VoiceRealtimeEvent } from '../api/voice';
 import MarkdownRenderer from './MarkdownRenderer';
 import {
@@ -28,7 +29,6 @@ import {
   type PersistedQnaConversationCache,
   type SelectedConversationSnapshot,
 } from '../pages/LearningStudioDemoPage.model';
-import { readConversationChunk } from '../pages/LearningStudioDemoPage.utils';
 import { dispatchVoiceConversationStream } from '../utils/voiceConversationBridge';
 import { queueVoicePageAction } from '../utils/voicePageActions';
 

@@ -1,6 +1,13 @@
 import { API_BASE_URL, getAuthHeaders, request } from './request';
 import type { AxiosRequestConfig } from 'axios';
-import { streamSse } from './sse';
+import {
+  parseStreamEnvelope,
+  readStreamMessage,
+  streamSse,
+  type ConversationStreamEventEnvelope,
+} from './sse';
+
+export type { ConversationDialogState } from './sse';
 
 export interface CreateConversationResponse {
   conversationId: string;
@@ -63,13 +70,6 @@ export interface ConversationHistoryItem {
   updatedAt?: string;
 }
 
-export interface ConversationDialogState {
-  conversationId: string;
-  turnId: string;
-  pedagogyStrategy?: string;
-  nextAction?: string;
-}
-
 export interface ConversationMessageItem {
   messageId: string;
   role: 'user' | 'assistant';
@@ -85,16 +85,7 @@ export interface UploadedConversationImage {
   contentType: string;
 }
 
-export interface ConversationStreamEventPayload {
-  eventType?: string;
-  sequence?: number;
-  occurredAt?: string;
-  event?: string;
-  seq?: number;
-  timestamp?: string;
-  dialogState?: ConversationDialogState;
-  payload?: Record<string, unknown>;
-}
+export type ConversationStreamEventPayload = ConversationStreamEventEnvelope;
 
 export interface ConversationStreamEvent {
   event: string;
@@ -168,7 +159,7 @@ export const conversationApi = {
       onEvent: (rawEvent) => {
         const parsed: ConversationStreamEvent = {
           event: rawEvent.event,
-          data: parsePayload(rawEvent.data),
+          data: parseStreamEnvelope<ConversationStreamEventPayload>(rawEvent.data),
         };
         handlers.onEvent(parsed);
         if (parsed.event === 'done') {
@@ -176,7 +167,7 @@ export const conversationApi = {
           return true;
         }
         if (parsed.event === 'error') {
-          const message = readConversationMessage(parsed.data) || '会话流执行失败';
+          const message = readStreamMessage(parsed.data.payload) || '会话流执行失败';
           handlers.onError(new Error(message));
           return true;
         }
@@ -187,34 +178,3 @@ export const conversationApi = {
     });
   },
 };
-
-function parsePayload(rawData: string): ConversationStreamEventPayload {
-  try {
-    const parsed = JSON.parse(rawData) as ConversationStreamEventPayload;
-    return {
-      ...parsed,
-      eventType: parsed.eventType ?? parsed.event,
-      sequence: parsed.sequence ?? parsed.seq,
-      occurredAt: parsed.occurredAt ?? parsed.timestamp,
-    };
-  } catch {
-    return {
-      payload: {
-        text: rawData,
-      },
-    };
-  }
-}
-
-function readConversationMessage(data: ConversationStreamEventPayload): string {
-  const payload = data.payload;
-  const text = payload?.text;
-  if (typeof text === 'string' && text.trim()) {
-    return text.trim();
-  }
-  const message = payload?.message;
-  if (typeof message === 'string' && message.trim()) {
-    return message.trim();
-  }
-  return '';
-}

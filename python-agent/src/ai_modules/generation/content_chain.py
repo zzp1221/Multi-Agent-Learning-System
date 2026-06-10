@@ -200,6 +200,7 @@ class OpenAICompatibleStructuredGenerator:
         provider_config = settings.provider_endpoint_config(self.provider_name)
         self.api_key = api_key or settings.provider_api_key(self.provider_name)
         self.base_url = provider_config.base_url.rstrip("/")
+        self.structured_output_mode = getattr(provider_config, "structured_output_mode", "json_object")
         self.model_name = model_name or settings.resolve_component_model(
             "generation_llm",
             default_logical_model="main_chat_model",
@@ -337,6 +338,22 @@ class OpenAICompatibleStructuredGenerator:
                 cached_tokens,
                 prompt_tokens,
             )
+
+    def _structured_response_format(self, model_type: type[BaseModel] | None = None) -> dict[str, Any] | None:
+        if self.structured_output_mode == "none":
+            return None
+        if self.structured_output_mode != "json_schema":
+            return {"type": "json_object"}
+        if model_type is None:
+            return {"type": "json_object"}
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": model_type.__name__,
+                "strict": True,
+                "schema": model_type.model_json_schema(),
+            },
+        }
 
     def generate_document_sections(
         self,
@@ -562,7 +579,7 @@ class OpenAICompatibleStructuredGenerator:
                         ],
                         temperature=0.0,
                         max_tokens=max_tokens,
-                        response_format={"type": "json_object"},
+                        response_format=self._structured_response_format(model_type),
                     )
             except (RuntimeError, ValueError, httpx.HTTPError) as exc:
                 LOGGER.warning(
@@ -639,7 +656,7 @@ class OpenAICompatibleStructuredGenerator:
                         ],
                         temperature=0.0,
                         max_tokens=max_tokens,
-                        response_format={"type": "json_object"},
+                        response_format=self._structured_response_format(model_type),
                     )
             except (RuntimeError, ValueError, httpx.HTTPError) as exc:
                 LOGGER.warning(
@@ -707,7 +724,7 @@ class OpenAICompatibleStructuredGenerator:
                 ],
                 temperature=0.0,
                 max_tokens=max_tokens,
-                response_format={"type": "json_object"},
+                response_format=self._structured_response_format(),
             )
         payload = self._extract_message_content(response)
         return self._extract_json(payload)
@@ -791,7 +808,7 @@ class OpenAICompatibleStructuredGenerator:
                         ],
                         temperature=0.0,
                         max_tokens=max_tokens,
-                        response_format={"type": "json_object"},
+                        response_format=self._structured_response_format(),
                     )
                 payload = self._extract_message_content(response)
                 return self._extract_json(payload)

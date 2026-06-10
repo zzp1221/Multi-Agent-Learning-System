@@ -18,6 +18,7 @@ import {
 import type { LayoutOutletContext } from '../components/Layout';
 import { conversationApi } from '../api/conversation';
 import { learningPathApi, smartEngineApi, type LearningPathCurrentResponse, type SmartEngineTaskResponse } from '../api/smartEngine';
+import { readStreamMessage, readStreamPayload } from '../api/sse';
 import { downloadAuthenticatedFile, isInternalArtifactDownloadUrl } from '../utils/authenticatedDownload';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
 import { openStageTestSession } from './stageTestSessionStore';
@@ -285,7 +286,7 @@ export default function PersonalizedLearningPathPage() {
       await smartEngineApi.streamTask(submitResp.taskId, {
         onEvent: (event) => {
           if (event.event === 'question_batch') {
-            const batch = readPracticeQuestionBatch(parseTaskStreamPayload(event.data));
+            const batch = readPracticeQuestionBatch(event.payload ?? readStreamPayload(event.data));
             if (batch) {
               receivedBatch = batch;
               openStageTestSession({
@@ -299,8 +300,8 @@ export default function PersonalizedLearningPathPage() {
             }
           }
           if (event.event === 'error') {
-            const payload = parseTaskStreamPayload(event.data);
-            streamError = readPayloadMessage(payload) || '阶段测试生成失败';
+            const payload = event.payload ?? readStreamPayload(event.data);
+            streamError = readStreamMessage(payload) || '阶段测试生成失败';
           }
         },
         onDone: () => undefined,
@@ -852,17 +853,6 @@ function buildStageTestParams(phase: LearningPhase): Record<string, unknown> {
   };
 }
 
-function parseTaskStreamPayload(raw: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(raw) as { payload?: Record<string, unknown> };
-    return parsed.payload;
-  } catch {
-    return {
-      message: raw,
-    };
-  }
-}
-
 function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined): PracticeQuestionBatch | null {
   const record = readRecord(payload);
   const source = readRecord(record?.practiceQuestionBatch)
@@ -902,13 +892,6 @@ function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined)
       }))
       .filter((question) => question.stem),
   };
-}
-
-function readPayloadMessage(payload: Record<string, unknown> | undefined): string {
-  if (!payload) {
-    return '';
-  }
-  return readString(payload.message) || readString(payload.text) || readString(payload.summary);
 }
 
 function getLocalErrorMessage(error: unknown, fallback: string): string {

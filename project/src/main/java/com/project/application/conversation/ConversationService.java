@@ -11,6 +11,7 @@ import com.project.application.artifact.ArtifactDownloadService;
 import com.project.application.smartengine.PythonAgentClient;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
+import com.project.application.streaming.SseStreamSender;
 import com.project.application.voice.VoiceMetricContext;
 import com.project.application.voice.VoiceMetricLogger;
 import com.project.application.voice.VoicePartialDraftService;
@@ -35,7 +36,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.math.BigDecimal;
@@ -176,6 +176,7 @@ public class ConversationService {
         emitter.onTimeout(() -> LOGGER.debug("Conversation SSE emitter timed out conversationId={}", conversationId));
         emitter.onError(ex -> LOGGER.debug("Conversation SSE emitter error conversationId={}", conversationId, ex));
         AtomicInteger sequence = new AtomicInteger(0);
+        SseStreamSender streamSender = new SseStreamSender(emitter, sequence);
         StringBuilder assistantReply = new StringBuilder();
         VoiceTurnRef voiceTurn = resolveVoiceTurn(request.voiceContextMap());
         if (voiceTurn.isPresent()) {
@@ -208,8 +209,7 @@ public class ConversationService {
                     history,
                     voiceTurn,
                     assistantReply,
-                    emitter,
-                    sequence,
+                    streamSender,
                     llmStartedAtNanos,
                     firstTokenLogged
                 );
@@ -245,7 +245,7 @@ public class ConversationService {
                     appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", List.of(), false);
                 }
                 LOGGER.warn("Conversation stream failed conversationId={}", conversationId, ex);
-                if (sendErrorEvent(emitter, conversationId, sequence, "会话流式调用失败，请稍后重试")) {
+                if (sendErrorEvent(streamSender, conversationId, "会话流式调用失败，请稍后重试")) {
                     safeComplete(emitter);
                 }
             }
@@ -277,8 +277,7 @@ public class ConversationService {
         List<ConversationMessageItemResponse> history,
         VoiceTurnRef voiceTurn,
         StringBuilder assistantReply,
-        SseEmitter emitter,
-        AtomicInteger sequence,
+        SseStreamSender streamSender,
         long llmStartedAtNanos,
         java.util.concurrent.atomic.AtomicBoolean firstTokenLogged
     ) {
@@ -296,7 +295,7 @@ public class ConversationService {
                     ""
                 );
             }
-            sendConversationEvent(emitter, conversationId, sequence, event);
+            sendConversationEvent(streamSender, conversationId, event);
         };
         VoicePartialDraftService.ReusableDraft reusableDraft = takeReusableDraft(voiceTurn, request.normalizedMessage());
         if (reusableDraft != null) {
@@ -534,63 +533,45 @@ public class ConversationService {
     }
 
     private void sendConversationEvent(
-        SseEmitter emitter,
+        SseStreamSender streamSender,
         UUID conversationId,
-        AtomicInteger sequence,
         PythonStreamEvent event
     ) {
-        int nextSeq = sequence.incrementAndGet();
         Map<String, Object> payload = new LinkedHashMap<>(event.safePayload());
         String eventStage = event.stage();
         if (eventStage != null && !eventStage.isBlank() && !payload.containsKey("stage")) {
             payload.put("stage", eventStage);
         }
-        try {
-            emitter.send(SseEmitter.event()
-                .name(event.eventType())
-                .id(String.valueOf(nextSeq))
-                .data(new ConversationStreamEventPayload(
-                    event.eventType(),
-                    nextSeq,
-                    OffsetDateTime.now(),
-                    new ConversationDialogState(
-                        conversationId,
-                        "turn_" + nextSeq,
-                        String.valueOf(payload.getOrDefault("pedagogyStrategy", "EXPLAIN")),
-                        String.valueOf(payload.getOrDefault("nextAction", "WAIT_USER"))
-                    ),
-                    payload
-                )));
-        } catch (IOException ex) {
-            throw new ConversationClientDisconnectedException(ex);
-        } catch (IllegalStateException ex) {
-            throw new ConversationClientDisconnectedException(ex);
-        }
+        streamSender.send(event.eventType(), nextSeq -> new ConversationStreamEventPayload(
+            event.eventType(),
+            nextSeq,
+            OffsetDateTime.now(),
+            new ConversationDialogState(
+                conversationId,
+                "turn_" + nextSeq,
+                String.valueOf(payload.getOrDefault("pedagogyStrategy", "EXPLAIN")),
+                String.valueOf(payload.getOrDefault("nextAction", "WAIT_USER"))
+            ),
+            payload
+        ));
     }
 
     private boolean sendErrorEvent(
-        SseEmitter emitter,
+        SseStreamSender streamSender,
         UUID conversationId,
-        AtomicInteger sequence,
         String message
     ) {
-        int nextSeq = sequence.incrementAndGet();
-        try {
-            emitter.send(SseEmitter.event()
-                .name("error")
-                .id(String.valueOf(nextSeq))
-                .data(new ConversationStreamEventPayload(
-                    "error",
-                    nextSeq,
-                    OffsetDateTime.now(),
-                    new ConversationDialogState(conversationId, "turn_" + nextSeq, "CORRECT", "END_SESSION"),
-                    Map.of("message", message == null ? "会话流式调用失败" : message)
-                )));
-            return true;
-        } catch (IOException | IllegalStateException ex) {
-            LOGGER.debug("Skip sending conversation error because client is unavailable conversationId={}", conversationId, ex);
-            return false;
+        boolean sent = streamSender.sendError(nextSeq -> new ConversationStreamEventPayload(
+            "error",
+            nextSeq,
+            OffsetDateTime.now(),
+            new ConversationDialogState(conversationId, "turn_" + nextSeq, "CORRECT", "END_SESSION"),
+            SseStreamSender.errorPayload(message, "会话流式调用失败")
+        ));
+        if (!sent) {
+            LOGGER.debug("Skip sending conversation error because client is unavailable conversationId={}", conversationId);
         }
+        return sent;
     }
 
     private void safeComplete(SseEmitter emitter) {
@@ -598,12 +579,6 @@ public class ConversationService {
             emitter.complete();
         } catch (IllegalStateException ex) {
             LOGGER.debug("Conversation SSE emitter already completed", ex);
-        }
-    }
-
-    private static final class ConversationClientDisconnectedException extends RuntimeException {
-        private ConversationClientDisconnectedException(Throwable cause) {
-            super(cause);
         }
     }
 

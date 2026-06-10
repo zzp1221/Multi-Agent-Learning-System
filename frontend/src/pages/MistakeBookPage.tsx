@@ -4,8 +4,10 @@ import {
   BookOpenCheck,
   CheckCircle2,
   Clock3,
+  ClipboardList,
   Filter,
   LoaderCircle,
+  Play,
   RotateCcw,
   Save,
   Search,
@@ -15,15 +17,24 @@ import {
   XCircle,
 } from 'lucide-react';
 import { getErrorMessage } from '../api/request';
+import { conversationApi } from '../api/conversation';
+import { smartEngineApi } from '../api/smartEngine';
+import { readStreamMessage, readStreamPayload } from '../api/sse';
 import {
   mistakesApi,
+  type MistakeCampGroup,
   type MistakeListResponse,
   type MistakeRecordResponse,
   type MistakeReviewSessionResponse,
   type MistakeStatus,
+  type MistakeTrainingCampResponse,
+  type TrainingMicroPractice,
   type MistakeUpdateRequest,
 } from '../api/mistakes';
 import type { LayoutOutletContext } from '../components/Layout';
+import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
+import { readPracticeQuestionBatch } from './LearningStudioDemoPage.utils';
+import { openPracticeSession } from './practiceSessionStore';
 import {
   VOICE_PAGE_ACTION_EVENT,
   consumeQueuedVoicePageAction,
@@ -62,7 +73,7 @@ const QUALITY_OPTIONS = [
 const PAGE_SIZE = 12;
 
 export default function MistakeBookPage() {
-  const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
+  const { isAuthenticated, currentUser, openAuthModal } = useOutletContext<LayoutOutletContext>();
   const [status, setStatus] = useState<MistakeStatus>('due');
   const [difficulty, setDifficulty] = useState('');
   const [tagInput, setTagInput] = useState('');
@@ -80,7 +91,14 @@ export default function MistakeBookPage() {
   const [reviewQualities, setReviewQualities] = useState<Record<string, number>>({});
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewMessage, setReviewMessage] = useState('');
+  const [trainingCamps, setTrainingCamps] = useState<MistakeTrainingCampResponse | null>(null);
+  const [trainingLoading, setTrainingLoading] = useState(false);
+  const [trainingError, setTrainingError] = useState('');
+  const [selectedCampId, setSelectedCampId] = useState('');
+  const [microPracticeGeneratingId, setMicroPracticeGeneratingId] = useState('');
   const loadRequestIdRef = useRef(0);
+  const trainingLoadRequestIdRef = useRef(0);
+  const microPracticeAbortRef = useRef<AbortController | null>(null);
 
   const loadMistakes = useCallback(async (options?: { pageOverride?: number; replace?: boolean }) => {
     if (!isAuthenticated) {
@@ -93,6 +111,9 @@ export default function MistakeBookPage() {
       setReviewSession(null);
       setReviewQualities({});
       setReviewMessage('');
+      setTrainingCamps(null);
+      setTrainingError('');
+      setSelectedCampId('');
       setError('');
       return;
     }
@@ -159,6 +180,50 @@ export default function MistakeBookPage() {
   useEffect(() => {
     void loadMistakes();
   }, [loadMistakes]);
+
+  const loadTrainingCamps = useCallback(async () => {
+    if (!isAuthenticated) {
+      trainingLoadRequestIdRef.current += 1;
+      setTrainingLoading(false);
+      setTrainingCamps(null);
+      setTrainingError('');
+      setSelectedCampId('');
+      return;
+    }
+    const requestId = trainingLoadRequestIdRef.current + 1;
+    trainingLoadRequestIdRef.current = requestId;
+    setTrainingLoading(true);
+    setTrainingError('');
+    try {
+      const nextCamps = await mistakesApi.trainingCamps();
+      if (trainingLoadRequestIdRef.current !== requestId) {
+        return;
+      }
+      setTrainingCamps(nextCamps);
+      setSelectedCampId((current) => {
+        if (current && nextCamps.camps.some((camp) => camp.campId === current)) {
+          return current;
+        }
+        return nextCamps.camps[0]?.campId ?? '';
+      });
+    } catch (loadError) {
+      if (trainingLoadRequestIdRef.current === requestId) {
+        setTrainingError(getErrorMessage(loadError));
+      }
+    } finally {
+      if (trainingLoadRequestIdRef.current === requestId) {
+        setTrainingLoading(false);
+      }
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    void loadTrainingCamps();
+  }, [loadTrainingCamps]);
+
+  useEffect(() => () => {
+    microPracticeAbortRef.current?.abort();
+  }, []);
 
   const stats = data?.stats ?? { dueCount: 0, activeCount: 0, masteredCount: 0 };
   const hasDueMistakes = stats.dueCount > 0;
@@ -230,6 +295,7 @@ export default function MistakeBookPage() {
       setMistakes([]);
       setData(null);
       await loadMistakes({ pageOverride: 0, replace: true });
+      await loadTrainingCamps();
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     } finally {
@@ -246,6 +312,7 @@ export default function MistakeBookPage() {
       setMistakes([]);
       setData(null);
       await loadMistakes({ pageOverride: 0, replace: true });
+      await loadTrainingCamps();
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     } finally {
@@ -319,10 +386,97 @@ export default function MistakeBookPage() {
       setMistakes([]);
       setData(null);
       await loadMistakes({ pageOverride: 0, replace: true });
+      await loadTrainingCamps();
     } catch (reviewError) {
       setReviewMessage(getErrorMessage(reviewError));
     } finally {
       setReviewBusy(false);
+    }
+  };
+
+  const handleStartMicroPractice = async (camp: MistakeCampGroup, practice: TrainingMicroPractice) => {
+    if (!currentUser || microPracticeGeneratingId) {
+      return;
+    }
+    microPracticeAbortRef.current?.abort();
+    const abortController = new AbortController();
+    microPracticeAbortRef.current = abortController;
+    const practiceId = `${camp.campId}:${practice.id}`;
+    setMicroPracticeGeneratingId(practiceId);
+    setTrainingError('');
+    let receivedBatch: PracticeQuestionBatch | null = null;
+    try {
+      const conversation = await conversationApi.createConversation();
+      const response = await smartEngineApi.submit({
+        conversationId: conversation.conversationId,
+        serviceType: 'PRACTICE_JUDGE',
+        params: {
+          purpose: 'MISTAKE_CAUSE_TRAINING',
+          topic: camp.knowledgeTag,
+          query: practice.prompt,
+          count: 5,
+          questionCount: 5,
+          difficulty: practice.difficulty,
+          learningContext: {
+            ...camp.practiceContext,
+            chapter: camp.knowledgeTag,
+            mistakeCampId: camp.campId,
+            mistakeType: camp.mistakeType,
+            knowledgeTags: practice.knowledgeTags,
+            representativeMistakeIds: camp.representativeMistakes.map((item) => item.id),
+            questionCount: 5,
+          },
+        },
+      });
+      let streamError = '';
+      await smartEngineApi.streamTask(response.taskId, {
+        onEvent: (event) => {
+          const payload = event.payload ?? readStreamPayload(event.data);
+          if (event.event === 'question_batch') {
+            const batch = readPracticeQuestionBatch(payload);
+            if (batch) {
+              receivedBatch = batch;
+            }
+          }
+          if (event.event === 'error') {
+            streamError = readStreamMessage(payload) || '微练习生成失败';
+          }
+        },
+        onDone: () => undefined,
+        onError: (streamFailure) => {
+          streamError = getErrorMessage(streamFailure);
+        },
+      }, abortController.signal);
+      if (abortController.signal.aborted) {
+        return;
+      }
+      if (streamError) {
+        throw new Error(streamError);
+      }
+      if (!receivedBatch) {
+        const task = await smartEngineApi.getTask(response.taskId, { dedupe: false, retry: 2 });
+        receivedBatch = readPracticeQuestionBatch(task.responseSummary);
+      }
+      if (!receivedBatch) {
+        throw new Error('未收到完整微练习题目');
+      }
+      openPracticeSession({
+        batch: receivedBatch,
+        source: 'engine',
+        ownerUserId: currentUser.userId ?? currentUser.id,
+        phaseId: camp.campId,
+        phaseTitle: camp.title,
+        conversationId: conversation.conversationId,
+      });
+    } catch (practiceError) {
+      if (!abortController.signal.aborted) {
+        setTrainingError(getErrorMessage(practiceError));
+      }
+    } finally {
+      if (microPracticeAbortRef.current === abortController) {
+        microPracticeAbortRef.current = null;
+      }
+      setMicroPracticeGeneratingId('');
     }
   };
 
@@ -335,7 +489,7 @@ export default function MistakeBookPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="mx-auto max-w-[980px] px-1 pb-10 md:px-0">
+      <div className="mistake-page mx-auto max-w-[980px] px-1 pb-10 md:px-0">
         <div className="rounded-[24px] bg-white/76 p-8 text-center shadow-[0_14px_42px_rgba(54,86,140,0.08)] backdrop-blur dark:bg-slate-900/70 dark:shadow-slate-950/20">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
             <BookOpenCheck className="h-6 w-6" />
@@ -355,7 +509,7 @@ export default function MistakeBookPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1180px] space-y-5 px-1 pb-10 md:px-0">
+    <div className="mistake-page mx-auto max-w-[1180px] space-y-5 px-1 pb-10 md:px-0">
       <section className="overflow-hidden rounded-[28px] bg-white/74 shadow-[0_18px_50px_rgba(37,99,235,0.10)] backdrop-blur dark:bg-slate-900/66 dark:shadow-slate-950/20">
         <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_280px] md:items-center md:p-6">
           <div>
@@ -472,6 +626,7 @@ export default function MistakeBookPage() {
 
       {error ? <Notice tone="error" message={error} /> : null}
       {reviewMessage ? <Notice tone={reviewSession?.status === 'DONE' ? 'success' : 'warning'} message={reviewMessage} /> : null}
+      {trainingError ? <Notice tone="error" message={trainingError} /> : null}
 
       {reviewSession ? (
         <ReviewPanel
@@ -486,6 +641,16 @@ export default function MistakeBookPage() {
           }}
         />
       ) : null}
+
+      <TrainingCampPanel
+        data={trainingCamps}
+        loading={trainingLoading}
+        selectedCampId={selectedCampId}
+        generatingId={microPracticeGeneratingId}
+        onSelectCamp={setSelectedCampId}
+        onRetry={() => void loadTrainingCamps()}
+        onStartMicroPractice={(camp, practice) => void handleStartMicroPractice(camp, practice)}
+      />
 
       <div className="space-y-3">
         {loading && mistakes.length === 0 ? (
@@ -757,6 +922,179 @@ function ReviewPanel(props: {
   );
 }
 
+function TrainingCampPanel(props: {
+  data: MistakeTrainingCampResponse | null;
+  loading: boolean;
+  selectedCampId: string;
+  generatingId: string;
+  onSelectCamp: (campId: string) => void;
+  onRetry: () => void;
+  onStartMicroPractice: (camp: MistakeCampGroup, practice: TrainingMicroPractice) => void;
+}) {
+  const camps = props.data?.camps ?? [];
+  const selectedCamp = camps.find((camp) => camp.campId === props.selectedCampId) ?? camps[0] ?? null;
+
+  return (
+    <section className="overflow-hidden rounded-[24px] bg-white/76 shadow-[0_16px_44px_rgba(37,99,235,0.09)] backdrop-blur dark:bg-slate-900/66 dark:shadow-slate-950/20">
+      <div className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-5">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+            <ClipboardList className="h-3.5 w-3.5" />
+            错因训练营
+          </div>
+          <h2 className="mt-2 text-lg font-semibold text-slate-800 dark:text-slate-100">按错因和知识点集中修正</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            训练营来自后端错题记录聚类，复习和标记掌握后会同步更新错因解释、复习计划和掌握度变化。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={props.onRetry}
+          disabled={props.loading}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/72 px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-primary-50/80 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950/55 dark:text-slate-300 dark:hover:text-primary-300"
+        >
+          {props.loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+          刷新训练营
+        </button>
+      </div>
+
+      {props.loading && camps.length === 0 ? (
+        <div className="flex items-center justify-center gap-2 px-5 py-8 text-sm text-slate-500 dark:text-slate-400">
+          <LoaderCircle className="h-4 w-4 animate-spin text-primary-500" />
+          正在生成错因训练营
+        </div>
+      ) : camps.length === 0 ? (
+        <div className="px-5 pb-5">
+          <EmptyState title="暂无错因训练营" description="完成练习并产生错题后，系统会按错因和知识点自动聚类。" />
+        </div>
+      ) : (
+        <div className="grid gap-4 px-4 pb-5 md:grid-cols-[300px_minmax(0,1fr)] md:px-5">
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <CampSummaryPill label="训练营" value={props.data?.summary.campCount ?? camps.length} />
+              <CampSummaryPill label="待修正" value={props.data?.summary.activeMistakeCount ?? 0} />
+              <CampSummaryPill label="今日到期" value={props.data?.summary.dueMistakeCount ?? 0} />
+              <CampSummaryPill label="已掌握" value={props.data?.summary.masteredMistakeCount ?? 0} />
+            </div>
+            {camps.map((camp) => {
+              const active = selectedCamp?.campId === camp.campId;
+              return (
+                <button
+                  key={camp.campId}
+                  type="button"
+                  onClick={() => props.onSelectCamp(camp.campId)}
+                  className={`w-full rounded-2xl px-3.5 py-3 text-left transition ${
+                    active
+                      ? 'bg-primary-600 text-white shadow-lg shadow-primary-500/16'
+                      : 'bg-slate-50/78 text-slate-600 hover:bg-primary-50/72 hover:text-primary-700 dark:bg-slate-950/40 dark:text-slate-300 dark:hover:text-primary-300'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{camp.title}</div>
+                      <div className={`mt-1 text-xs ${active ? 'text-primary-50/90' : 'text-slate-400 dark:text-slate-500'}`}>
+                        {camp.mistakeCount} 题 · 到期 {camp.dueCount} · {formatMasteryChange(camp.masteryChange)}
+                      </div>
+                    </div>
+                    {camp.dueCount > 0 ? (
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/18 text-white' : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200'}`}>
+                        due
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedCamp ? (
+            <div className="space-y-4 rounded-2xl bg-slate-50/70 p-4 dark:bg-slate-950/38">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">{selectedCamp.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{selectedCamp.explanation}</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center text-xs lg:w-[260px]">
+                  <CampMetric label="错题" value={selectedCamp.mistakeCount} />
+                  <CampMetric label="复习" value={selectedCamp.totalReviewCount} />
+                  <CampMetric label="变化" value={formatMasteryChange(selectedCamp.masteryChange)} />
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-xl bg-white/78 p-3 dark:bg-slate-900/62">
+                  <div className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">代表题</div>
+                  <div className="space-y-2">
+                    {selectedCamp.representativeMistakes.length > 0 ? selectedCamp.representativeMistakes.map((item) => (
+                      <div key={item.id} className="rounded-lg bg-slate-50/86 px-3 py-2 dark:bg-slate-950/45">
+                        <div className="line-clamp-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{item.stem}</div>
+                        <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                          错 {item.wrongCount} 次 · 复习 {item.reviewCount} 次 · 下次 {formatDate(item.nextReviewAt)}
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="rounded-lg bg-slate-50/86 px-3 py-2 text-sm text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
+                        暂无代表题，先完成一次练习或补充错因分类。
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-white/78 p-3 dark:bg-slate-900/62">
+                  <div className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">复习计划</div>
+                  <div className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    <div className="rounded-lg bg-slate-50/86 px-3 py-2 dark:bg-slate-950/45">
+                      下一次复习：{formatDate(selectedCamp.nextReviewAt || undefined)}
+                    </div>
+                    <div className="rounded-lg bg-slate-50/86 px-3 py-2 dark:bg-slate-950/45">
+                      优先顺序：{selectedCamp.dueCount > 0 ? '先处理今日到期错题，再做迁移题。' : '先做错因定位，再安排下一次间隔复习。'}
+                    </div>
+                    <div className="rounded-lg bg-slate-50/86 px-3 py-2 dark:bg-slate-950/45">
+                      复测标准：微练习连续答对后，再把代表题标记为掌握。
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-white/78 p-3 dark:bg-slate-900/62">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">针对性微练习</div>
+                  <span className="text-xs text-slate-400 dark:text-slate-500">生成后在浮动练习助手中作答</span>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {selectedCamp.microPractices.map((practice) => {
+                    const generating = props.generatingId === `${selectedCamp.campId}:${practice.id}`;
+                    return (
+                      <button
+                        key={practice.id}
+                        type="button"
+                        onClick={() => props.onStartMicroPractice(selectedCamp, practice)}
+                        disabled={Boolean(props.generatingId)}
+                        className="flex min-h-24 items-start gap-3 rounded-xl bg-slate-50/86 px-3 py-3 text-left transition hover:bg-primary-50/76 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-950/45 dark:hover:bg-primary-500/10"
+                      >
+                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-200">
+                          {generating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">{practice.title}</span>
+                          <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">{practice.description}</span>
+                          <span className="mt-2 inline-flex rounded-full bg-white/80 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-900/70 dark:text-slate-400">
+                            {difficultyLabel(practice.difficulty)}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function OptionList(props: { itemId: string; options: string[]; className?: string }) {
   if (props.options.length === 0) {
     return null;
@@ -788,6 +1126,24 @@ function FocusStat(props: { icon: typeof Clock3; label: string; value: number; t
         <div className="text-2xl font-semibold text-slate-800 dark:text-white">{props.value}</div>
         <div className="text-xs text-slate-500 dark:text-slate-400">{props.label}</div>
       </div>
+    </div>
+  );
+}
+
+function CampSummaryPill(props: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-slate-50/78 px-3 py-2 dark:bg-slate-950/40">
+      <div className="text-base font-semibold text-slate-800 dark:text-white">{props.value}</div>
+      <div className="text-xs text-slate-500 dark:text-slate-400">{props.label}</div>
+    </div>
+  );
+}
+
+function CampMetric(props: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-xl bg-white/76 px-2.5 py-2 dark:bg-slate-900/62">
+      <div className="text-sm font-semibold text-slate-800 dark:text-white">{props.value}</div>
+      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{props.label}</div>
     </div>
   );
 }
@@ -869,6 +1225,13 @@ function asText(value: unknown): string {
 
 function difficultyLabel(value: string): string {
   return DIFFICULTY_OPTIONS.find((item) => item.value === value)?.label ?? value;
+}
+
+function formatMasteryChange(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0%';
+  }
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 }
 
 function statusLabel(value: MistakeStatus): string {

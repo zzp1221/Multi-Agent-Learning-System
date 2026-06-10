@@ -6,7 +6,9 @@ import com.project.api.mistake.dto.MistakeRecordResponse;
 import com.project.api.mistake.dto.MistakeReviewSessionResponse;
 import com.project.api.mistake.dto.MistakeUpdateRequest;
 import com.project.api.mistake.dto.SubmitReviewSessionRequest;
+import com.project.api.study.dto.MistakeTrainingCampResponse;
 import com.project.application.mistake.MistakeBookService;
+import com.project.application.study.StudyWorkbenchService;
 import com.project.security.AuthenticatedUserResolver;
 import com.project.security.JwtAuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,9 +35,14 @@ import java.util.UUID;
 public class MistakeBookController {
 
     private final MistakeBookService mistakeBookService;
+    private final StudyWorkbenchService studyWorkbenchService;
 
-    public MistakeBookController(MistakeBookService mistakeBookService) {
+    public MistakeBookController(
+        MistakeBookService mistakeBookService,
+        StudyWorkbenchService studyWorkbenchService
+    ) {
         this.mistakeBookService = mistakeBookService;
+        this.studyWorkbenchService = studyWorkbenchService;
     }
 
     @GetMapping
@@ -59,6 +66,13 @@ public class MistakeBookController {
                 size
             )
         );
+    }
+
+    @GetMapping("/training-camps")
+    @Operation(summary = "Get mistake cause training camps for the current learner")
+    public ResponseEntity<MistakeTrainingCampResponse> trainingCamps(Authentication authentication) {
+        JwtAuthenticatedUser principal = AuthenticatedUserResolver.require(authentication);
+        return ResponseEntity.ok(studyWorkbenchService.mistakeTrainingCamps(principal));
     }
 
     @PatchMapping("/{id}")
