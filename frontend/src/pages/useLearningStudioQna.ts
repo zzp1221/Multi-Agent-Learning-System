@@ -5,6 +5,7 @@ import { learningPathApi, type LearningPathCurrentResponse } from '../api/smartE
 import type { LayoutOutletContext } from '../components/Layout';
 import {
   QNA_GREETING,
+  QNA_STREAM_STOPPED_MESSAGE,
   type ChatMessage,
   type PendingChatImage,
   type SlideOutlineConfirmation,
@@ -90,6 +91,12 @@ export function useLearningStudioQna({
   const qnaSnapshotHydratedRef = useRef(false);
   const loadingConversationIdRef = useRef('');
   const qnaDraftsRef = useRef<QnaDrafts>({});
+  const activeQnaStreamRef = useRef<{
+    conversationId: string;
+    assistantMessageId: string;
+    abortController: AbortController;
+    streamToken?: string;
+  } | null>(null);
   const qnaConversationCacheRef = useRef<PersistedQnaConversationCache>({});
   const qnaStreamTokensRef = useRef<Record<string, string>>({});
   const qnaHistorySyncTokensRef = useRef<Record<string, number>>({});
@@ -763,6 +770,7 @@ export function useLearningStudioQna({
     const abortController = new AbortController();
     const originConversationId = conversationIdRef.current.trim();
     let streamConversationId = originConversationId;
+    activeQnaStreamRef.current = { conversationId: originConversationId, assistantMessageId, abortController };
 
     try {
       const currentConversationId = conversationId || (await conversationApi.createConversation()).conversationId;
@@ -786,6 +794,12 @@ export function useLearningStudioQna({
       qnaStreamControllersRef.current[currentConversationId]?.abort();
       qnaStreamControllersRef.current[currentConversationId] = abortController;
       qnaStreamTokensRef.current[currentConversationId] = streamToken;
+      activeQnaStreamRef.current = {
+        conversationId: currentConversationId,
+        assistantMessageId,
+        abortController,
+        streamToken,
+      };
       confirmedSlideOutlineStreamsRef.current[streamToken] = Boolean(override?.confirmedSlideOutlineText);
 
       await conversationApi.streamMessage(
@@ -857,6 +871,9 @@ export function useLearningStudioQna({
             if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
               delete qnaStreamControllersRef.current[currentConversationId];
             }
+            if (activeQnaStreamRef.current?.abortController === abortController) {
+              activeQnaStreamRef.current = null;
+            }
             updateQnaConversationMessages(
               currentConversationId,
               removePendingAssistantPlaceholder,
@@ -872,6 +889,9 @@ export function useLearningStudioQna({
             delete confirmedSlideOutlineStreamsRef.current[streamToken];
             if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
               delete qnaStreamControllersRef.current[currentConversationId];
+            }
+            if (activeQnaStreamRef.current?.abortController === abortController) {
+              activeQnaStreamRef.current = null;
             }
             const message = getErrorMessage(error);
             updateQnaConversationMessages(
@@ -906,6 +926,19 @@ export function useLearningStudioQna({
       );
       return true;
     } catch (error) {
+      if (abortController.signal.aborted) {
+        const stoppedConversationId = streamConversationId || originConversationId;
+        delete qnaStreamTokensRef.current[stoppedConversationId];
+        delete confirmedSlideOutlineStreamsRef.current[`${stoppedConversationId}:${assistantMessageId}`];
+        if (qnaStreamControllersRef.current[stoppedConversationId] === abortController) {
+          delete qnaStreamControllersRef.current[stoppedConversationId];
+        }
+        if (activeQnaStreamRef.current?.abortController === abortController) {
+          activeQnaStreamRef.current = null;
+        }
+        markQnaStreamStopped(stoppedConversationId, assistantMessageId);
+        return false;
+      }
       const message = getErrorMessage(error);
       const targetConversationId = streamConversationId || (
         conversationIdRef.current === originConversationId
@@ -940,6 +973,27 @@ export function useLearningStudioQna({
       return false;
     }
   };
+
+  const handleQnaStop = useCallback(() => {
+    const activeStream = activeQnaStreamRef.current;
+    if (!activeStream) {
+      return;
+    }
+    activeStream.abortController.abort();
+    const targetConversationId = activeStream.conversationId.trim();
+    if (targetConversationId) {
+      delete qnaStreamTokensRef.current[targetConversationId];
+      if (qnaStreamControllersRef.current[targetConversationId] === activeStream.abortController) {
+        delete qnaStreamControllersRef.current[targetConversationId];
+      }
+    }
+    if (activeStream.streamToken) {
+      delete confirmedSlideOutlineStreamsRef.current[activeStream.streamToken];
+    }
+    activeQnaStreamRef.current = null;
+    markQnaStreamStopped(targetConversationId, activeStream.assistantMessageId);
+    window.dispatchEvent(new Event('app:conversation-updated'));
+  }, []);
 
   async function buildQnaLearningContext(override?: QnaSendOverride): Promise<QnaLearningContext> {
     const explicitUserTopic = cleanupConfirmedSlideTopic(override?.confirmedSlideTopic ?? '');
@@ -1066,6 +1120,7 @@ export function useLearningStudioQna({
       webSearchEnabled: qnaWebSearchEnabled,
       onChange: setQnaInput,
       onSend: handleQnaSend,
+      onStop: handleQnaStop,
       onToggleDeepReasoning: () => setDeepReasoningEnabled((prev) => !prev),
       onToggleWebSearch: () => setQnaWebSearchEnabled((prev) => !prev),
       onPickImages: handlePickQnaImages,
@@ -1121,6 +1176,41 @@ export function useLearningStudioQna({
     const existingMessage = qnaMessagesRef.current.find((item) => item.slideConfirmation?.id === confirmation.id);
     revealSlideOutlineMessage(targetConversationId, existingMessage?.id ?? messageId, confirmation);
     return true;
+  }
+
+  function markQnaStreamStopped(targetConversationId: string, assistantMessageId: string): void {
+    const applyStoppedState = (messages: ChatMessage[]) => {
+      let updatedAssistant = false;
+      const nextMessages = messages.map((item) => {
+        if (item.id !== assistantMessageId) {
+          return item;
+        }
+        updatedAssistant = true;
+        return { ...item, content: stoppedAssistantContent(item.content) };
+      });
+      if (updatedAssistant) {
+        return nextMessages;
+      }
+      return [
+        ...removePendingAssistantPlaceholder(messages),
+        { id: assistantMessageId, role: 'assistant' as const, content: QNA_STREAM_STOPPED_MESSAGE },
+      ];
+    };
+
+    const normalizedConversationId = targetConversationId.trim();
+    if (normalizedConversationId) {
+      updateQnaConversationMessages(normalizedConversationId, applyStoppedState, { qnaState: 'QNA_IDLE' });
+      return;
+    }
+    const nextMessages = applyStoppedState(qnaMessagesRef.current);
+    qnaMessagesRef.current = nextMessages;
+    setQnaMessages(nextMessages);
+    setQnaStateView('QNA_IDLE');
+    cacheConversationView('', {
+      qnaInput: qnaInputRef.current,
+      qnaMessages: nextMessages,
+      qnaState: 'QNA_IDLE',
+    });
   }
 
   function submitSlideOutlineConfirmation(message: ChatMessage, userText: string): Promise<boolean> {
@@ -1299,6 +1389,17 @@ function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage
     return messages;
   }
   return messages.filter((_, index) => index !== lastIndex);
+}
+
+function stoppedAssistantContent(content: string): string {
+  const value = content ?? '';
+  if (!value.trim()) {
+    return QNA_STREAM_STOPPED_MESSAGE;
+  }
+  if (value.includes(QNA_STREAM_STOPPED_MESSAGE)) {
+    return value;
+  }
+  return `${value.trimEnd()}\n\n${QNA_STREAM_STOPPED_MESSAGE}`;
 }
 
 function restorePendingSlideOutlineMessages(conversationId: string, messages: ChatMessage[]): ChatMessage[] {

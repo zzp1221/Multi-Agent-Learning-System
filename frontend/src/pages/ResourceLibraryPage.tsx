@@ -204,7 +204,7 @@ export default function ResourceLibraryPage() {
   const handleOpenDetail = async (resource: ResourceItem) => {
     const noteId = readMetadataString(resource.metadata, 'noteId');
     if (resource.displayType === 'NOTE' && noteId) {
-      navigate(`/notes?noteId=${encodeURIComponent(noteId)}`);
+      navigate(`/notes?noteId=${encodeURIComponent(noteId)}`, { state: { returnTo: '/resources' } });
       return;
     }
     setDetailLoading(true);

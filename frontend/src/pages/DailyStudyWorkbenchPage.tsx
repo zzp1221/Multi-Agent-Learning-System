@@ -4,6 +4,7 @@ import {
   BookOpenCheck,
   CheckCircle2,
   ClipboardCheck,
+  Clock3,
   Compass,
   ExternalLink,
   FileText,
@@ -21,7 +22,14 @@ import { conversationApi } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
 import { smartEngineApi } from '../api/smartEngine';
 import { resourcesApi, type ResourceItem } from '../api/resources';
-import { studyWorkbenchApi, type DailyStudyWorkbenchResponse, type DailyTaskItem } from '../api/studyWorkbench';
+import {
+  studyWorkbenchApi,
+  type DailyExecutionPlan,
+  type DailyStudyWorkbenchResponse,
+  type DailyTaskItem,
+  type LearningSessionStep,
+  type PlanSupportItem,
+} from '../api/studyWorkbench';
 import { readStreamMessage, readStreamPayload } from '../api/sse';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
 import { readPracticeQuestionBatch } from './LearningStudioDemoPage.utils';
@@ -64,15 +72,16 @@ export default function DailyStudyWorkbenchPage() {
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  const executionPlan = useMemo(() => data ? data.executionPlan ?? buildFallbackExecutionPlan(data) : null, [data]);
   const activeStep = data?.activeStep ?? null;
   const stageTitle = readString(activeStep?.title) || '当前学习阶段';
   const targetPoints = readStringArray(activeStep?.targetKnowledgePoints);
-  const stageProgress = clampPercent(readNumber(activeStep?.progress));
   const currentResource = data?.recommendedResources.find((item) => !item.completed) ?? data?.recommendedResources[0] ?? null;
   const weakNodes = useMemo(() => {
     return data?.knowledgeGraph.nodes
       .filter((node) => node.status === 'WEAK' || node.status === 'IN_PROGRESS')
-      .slice(0, 5) ?? [];
+      .sort((left, right) => left.mastery - right.mastery)
+      .slice(0, 3) ?? [];
   }, [data]);
 
   const refresh = async () => {
@@ -206,15 +215,42 @@ export default function DailyStudyWorkbenchPage() {
     }
   };
 
+  const runTaskAction = (task?: DailyTaskItem | null) => {
+    if (!task) {
+      return;
+    }
+    if (task.type === 'STAGE_TEST' && task.status === 'READY') {
+      void startStageTest();
+      return;
+    }
+    navigateFromWorkbench(task.actionRoute || '/');
+  };
+
+  const runStepAction = (step: LearningSessionStep) => {
+    if (step.sourceTaskType === 'STAGE_TEST' && step.status === 'READY') {
+      void startStageTest();
+      return;
+    }
+    navigateFromWorkbench(step.actionRoute || '/');
+  };
+
+  const navigateFromWorkbench = (route: string) => {
+    if (route.startsWith('/notes')) {
+      navigate(route, { state: { returnTo: '/dashboard' } });
+      return;
+    }
+    navigate(route);
+  };
+
   if (!isAuthenticated) {
     return (
       <WorkbenchShell>
         <AccessState
           icon={<Compass className="h-6 w-6" />}
-          title="登录后进入每日学习工作台"
-          description="工作台会把当前阶段、到期错题、推荐资源、画像摘要和阶段检测集中到一个学习闭环。"
+          title="登录后进入今日学习执行台"
+          description="这里会把错题复习、资源补强、阶段检测和反思记录排成一轮今天能完成的学习行动。"
           actionLabel="登录查看"
-          onAction={() => openAuthModal('login', '登录后查看每日学习工作台')}
+          onAction={() => openAuthModal('login', '登录后查看今日学习执行台')}
         />
       </WorkbenchShell>
     );
@@ -223,7 +259,7 @@ export default function DailyStudyWorkbenchPage() {
   if (loading && !data) {
     return (
       <WorkbenchShell>
-        <LoadingPanel text="正在整理今日学习任务" />
+        <LoadingPanel text="正在整理今日学习主线" />
       </WorkbenchShell>
     );
   }
@@ -233,7 +269,7 @@ export default function DailyStudyWorkbenchPage() {
       <WorkbenchShell>
         <AccessState
           icon={<TriangleAlert className="h-6 w-6" />}
-          title="每日工作台读取失败"
+          title="今日执行台读取失败"
           description={error}
           actionLabel="重新加载"
           onAction={() => void loadDaily()}
@@ -245,48 +281,86 @@ export default function DailyStudyWorkbenchPage() {
   return (
     <WorkbenchShell>
       <div className="space-y-5">
-        <section className="overflow-hidden rounded-[28px] bg-white/76 shadow-[0_18px_56px_rgba(59,97,155,0.10)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20">
-          <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_300px] md:p-6">
+        <section className="overflow-hidden rounded-[28px] bg-white/78 shadow-[0_20px_60px_rgba(59,97,155,0.11)] backdrop-blur-xl dark:bg-slate-900/70 dark:shadow-slate-950/24">
+          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_330px] lg:p-6">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
                 <Compass className="h-3.5 w-3.5" />
-                今日学习闭环
+                今日学习执行台
               </div>
-              <h1 className="mt-4 text-2xl font-semibold tracking-normal text-slate-950 dark:text-white md:text-3xl">
-                {data?.summary.nextAction || '今天从一个可完成的任务开始'}
+              <h1 className="mt-4 max-w-3xl text-2xl font-semibold tracking-normal text-slate-950 dark:text-white md:text-4xl">
+                {executionPlan?.title || '今天从一个可完成的任务开始'}
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                工作台会随阶段测试、错题复习和资源学习记录自动刷新；页面刷新后从后端重新聚合当前状态。
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                {executionPlan?.subtitle || '系统会把今天最该做的一件事放到前面，其余内容只作为依据和辅助入口。'}
               </p>
-              {error ? (
-                <InlineError text={error} />
-              ) : null}
-            </div>
-            <div className="rounded-2xl bg-slate-50/82 p-4 dark:bg-slate-950/36">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs text-slate-400 dark:text-slate-500">今日完成度</div>
-                  <div className="mt-1 text-3xl font-semibold text-slate-950 dark:text-white">
-                    {data?.summary.progressPercent ?? 0}%
-                  </div>
+              {executionPlan?.focusReason ? (
+                <div className="mt-5 rounded-2xl bg-slate-50/82 p-4 text-sm leading-6 text-slate-600 dark:bg-slate-950/34 dark:text-slate-300">
+                  <span className="font-semibold text-slate-900 dark:text-white">为什么先做它：</span>
+                  {executionPlan.focusReason}
                 </div>
+              ) : null}
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <HeroFact
+                  icon={<Clock3 className="h-4 w-4" />}
+                  label="预计用时"
+                  value={`${executionPlan?.estimatedMinutes ?? 15} 分钟`}
+                />
+                <HeroFact
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  label="完成标准"
+                  value={executionPlan?.successCriteria || '完成一次可回流的学习动作'}
+                />
+              </div>
+              {error ? <InlineError text={error} /> : null}
+              {stageStatus === 'failed' && stageError ? <InlineError text={stageError} /> : null}
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => runTaskAction(executionPlan?.primaryTask)}
+                  disabled={canGenerateStageTest(executionPlan?.primaryTask) && stageStatus === 'generating'}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {stageStatus === 'generating' && canGenerateStageTest(executionPlan?.primaryTask) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  {executionPlan?.primaryTask.actionLabel || '开始'}
+                </button>
                 <button
                   type="button"
                   onClick={() => void refresh()}
                   disabled={refreshing}
-                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-sm font-medium text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-950/38 dark:text-slate-300 dark:shadow-none"
                 >
                   {refreshing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  刷新
+                  刷新计划
                 </button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50/82 p-4 dark:bg-slate-950/36">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-medium text-slate-400 dark:text-slate-500">本轮完成度</div>
+                  <div className="mt-1 text-3xl font-semibold text-slate-950 dark:text-white">
+                    {data?.summary.progressPercent ?? 0}%
+                  </div>
+                </div>
+                <span className="rounded-xl bg-white px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-slate-900 dark:text-primary-300">
+                  {executionPlan?.steps.length ?? 4} 步
+                </span>
               </div>
               <div className="mt-4 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-800">
                 <div className="h-full rounded-full bg-primary-500" style={{ width: `${data?.summary.progressPercent ?? 0}%` }} />
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-                <MiniStat label="到期错题" value={data?.summary.dueMistakeCount ?? 0} />
-                <MiniStat label="推荐资源" value={data?.summary.recommendedResourceCount ?? 0} />
-                <MiniStat label="薄弱点" value={data?.summary.weakKnowledgeCount ?? 0} />
+              <div className="mt-4 space-y-2">
+                {(executionPlan?.steps ?? []).map((step, index) => (
+                  <div key={step.id} className="flex items-center gap-3 rounded-xl bg-white/76 px-3 py-2 text-sm dark:bg-slate-900/68">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-xs font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-slate-100">{step.phase}</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">{statusLabel(step.status)}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -296,140 +370,106 @@ export default function DailyStudyWorkbenchPage() {
           <Panel>
             <EmptyState
               title="还没有足够的学习记录"
-              description="先完成一次问答、练习或画像初始化，系统会把路径、错题、资源和知识点串成每日任务。"
+              description="先完成一次问答、练习或画像初始化，系统会把今天最该做的一件事排出来。"
               action={<LinkButton to="/" label="开始学习对话" />}
             />
           </Panel>
         ) : null}
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.14fr)_minmax(320px,0.86fr)]">
           <Panel>
-            <SectionHeader icon={<Route className="h-5 w-5" />} title="当前阶段" subtitle="阶段进度会由资源学习、阶段检测和错题回流共同推动。" />
-            {activeStep ? (
-              <div className="mt-5 space-y-4">
-                <div className="rounded-2xl bg-slate-50/78 p-4 dark:bg-slate-950/32">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <h2 className="text-lg font-semibold text-slate-950 dark:text-white">{stageTitle}</h2>
-                      <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                        {readString(activeStep.checkpoint) || '完成本阶段学习资源后进行阶段检测，检测通过会推进到下一阶段。'}
-                      </p>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-primary-700 shadow-sm shadow-slate-200/60 dark:bg-slate-900 dark:text-primary-300 dark:shadow-none">
-                      {stageProgress}%
-                    </span>
-                  </div>
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-800">
-                    <div className="h-full rounded-full bg-primary-500" style={{ width: `${stageProgress}%` }} />
-                  </div>
-                </div>
-                {targetPoints.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {targetPoints.map((point) => (
-                      <span key={point} className="rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
-                        {point}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={startStageTest}
-                    disabled={stageStatus === 'generating'}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {stageStatus === 'generating' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-                    开始阶段检测
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/engine')}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 dark:bg-slate-950/40 dark:text-slate-300 dark:shadow-none"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    查看完整路径
-                  </button>
-                </div>
-                {stageStatus === 'failed' && stageError ? <InlineError text={stageError} /> : null}
-              </div>
-            ) : (
-              <EmptyState title="暂无活动阶段" description="生成个性化学习路径后，这里会展示当前阶段和检测入口。" action={<LinkButton to="/engine" label="生成学习路径" />} />
-            )}
-          </Panel>
-
-          <Panel>
-            <SectionHeader icon={<Target className="h-5 w-5" />} title="今日任务" subtitle="任务状态来自后端聚合，不依赖前端假数据。" />
+            <SectionHeader
+              icon={<Target className="h-5 w-5" />}
+              title="今天按这一轮做"
+              subtitle="热身先唤回记忆，补强只处理一个重点，检测负责验收，反思把结果写回学习记录。"
+            />
             <div className="mt-5 space-y-3">
-              {data?.tasks.length ? data.tasks.map((task) => (
-                <TaskCard key={task.id} task={task} onNavigate={navigate} onStartStageTest={startStageTest} stageBusy={stageStatus === 'generating'} />
-              )) : (
-                <EmptyState title="今日没有待办任务" description="当前学习记录较少，完成一次问答、资源学习或错题复习后会自动出现。" />
-              )}
-            </div>
-          </Panel>
-        </div>
-
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-          <Panel>
-            <SectionHeader icon={<BookOpenCheck className="h-5 w-5" />} title="到期错题" subtitle="来自错题本的间隔复习调度。" />
-            <div className="mt-5 space-y-3">
-              {data?.dueMistakes.length ? data.dueMistakes.slice(0, 4).map((item) => (
-                <MistakeMiniCard key={item.id} mistake={item} />
-              )) : (
-                <EmptyState title="今天没有到期错题" description="新的错题会按复习计划自动进入这里。" />
-              )}
-            </div>
-            <div className="mt-4">
-              <LinkButton to="/mistakes" label="进入错题训练营" />
-            </div>
-          </Panel>
-
-          <Panel>
-            <SectionHeader icon={<Layers3 className="h-5 w-5" />} title="推荐资源" subtitle="资源学习进度会写回后端，刷新后仍可恢复。" />
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              {data?.recommendedResources.length ? data.recommendedResources.slice(0, 4).map((resource) => (
-                <ResourceMiniCard
-                  key={resource.id}
-                  resource={resource}
-                  saving={savingResourceId === resource.id}
-                  primary={currentResource?.id === resource.id}
-                  onStart={() => void markResourceProgress(resource, false)}
-                  onComplete={() => void markResourceProgress(resource, true)}
+              {(executionPlan?.steps ?? []).map((step, index) => (
+                <SessionStepCard
+                  key={step.id}
+                  step={step}
+                  index={index}
+                  busy={canGenerateStageTest(step) && stageStatus === 'generating'}
+                  onAction={runStepAction}
                 />
-              )) : (
-                <div className="md:col-span-2">
-                  <EmptyState title="暂无推荐资源" description="生成学习路径或刷新资源推荐后，这里会显示当前阶段资源。" />
-                </div>
-              )}
+              ))}
             </div>
           </Panel>
+
+          <div className="space-y-5">
+            <Panel>
+              <SectionHeader
+                icon={<Layers3 className="h-5 w-5" />}
+                title="推荐依据"
+                subtitle="这些内容只解释为什么这样排，不再和主任务抢位置。"
+              />
+              <div className="mt-5 space-y-3">
+                {executionPlan?.supportItems.length ? executionPlan.supportItems.map((item) => (
+                  <SupportItemCard key={item.id} item={item} onNavigate={navigate} />
+                )) : (
+                  <EmptyState title="暂无明确依据" description="完成更多练习或资源学习后，系统会给出更具体的排序依据。" />
+                )}
+              </div>
+            </Panel>
+
+            <Panel>
+              <SectionHeader
+                icon={<Route className="h-5 w-5" />}
+                title="辅助入口"
+                subtitle="需要展开更多信息时再进入对应页面。"
+              />
+              <div className="mt-5 grid gap-3">
+                <AuxiliaryLink icon={<BookOpenCheck className="h-4 w-4" />} label="错题训练营" value={`${data?.summary.dueMistakeCount ?? 0} 道到期`} to="/mistakes" />
+                <AuxiliaryLink icon={<FileText className="h-4 w-4" />} label="资源库" value={`${data?.summary.recommendedResourceCount ?? 0} 个推荐`} to="/resources" />
+                <AuxiliaryLink icon={<GitBranch className="h-4 w-4" />} label="学习画像" value={`${data?.summary.weakKnowledgeCount ?? 0} 个薄弱点`} to="/profile" />
+              </div>
+            </Panel>
+          </div>
         </div>
 
         <Panel>
-          <SectionHeader icon={<GitBranch className="h-5 w-5" />} title="薄弱知识点" subtitle="点击知识点进入画像页查看前置知识、相关错题、资源和立即练习入口。" />
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {weakNodes.length ? weakNodes.map((node) => (
-              <button
-                key={node.key}
-                type="button"
-                onClick={() => navigate(`/profile?node=${encodeURIComponent(node.key)}`)}
-                className="rounded-2xl bg-slate-50/78 p-4 text-left transition hover:bg-primary-50/80 dark:bg-slate-950/32 dark:hover:bg-primary-500/10"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="min-w-0 truncate text-sm font-semibold text-slate-950 dark:text-white">{node.topic}</h3>
-                  <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{Math.round(node.mastery * 100)}%</span>
+          <SectionHeader
+            icon={<ClipboardCheck className="h-5 w-5" />}
+            title="主任务材料"
+            subtitle="只展示能直接帮助完成今天主任务的少量材料。"
+          />
+          <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="space-y-3">
+              {data?.dueMistakes.length ? data.dueMistakes.slice(0, 2).map((item) => (
+                <MistakeMiniCard key={item.id} mistake={item} />
+              )) : (
+                <EmptyState title="今天没有到期错题" description="新的错题会按复习计划自动进入热身环节。" />
+              )}
+            </div>
+            <div className="space-y-3">
+              {currentResource ? (
+                <ResourceFocusCard
+                  resource={currentResource}
+                  saving={savingResourceId === currentResource.id}
+                  onStart={() => void markResourceProgress(currentResource, false)}
+                  onComplete={() => void markResourceProgress(currentResource, true)}
+                />
+              ) : (
+                <EmptyState title="暂无推荐资源" description="生成学习路径或刷新资源推荐后，这里会放一个最适合今天补强的资源。" />
+              )}
+              {weakNodes.length ? (
+                <div className="rounded-2xl bg-slate-50/78 p-4 dark:bg-slate-950/32">
+                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">薄弱点参考</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {weakNodes.map((node) => (
+                      <button
+                        key={node.key}
+                        type="button"
+                        onClick={() => navigate(`/profile?node=${encodeURIComponent(node.key)}`)}
+                        className="rounded-xl bg-white px-3 py-2 text-left text-xs font-medium text-slate-600 transition hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-primary-500/10"
+                      >
+                        {node.topic} · {Math.round(node.mastery * 100)}%
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-800">
-                  <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.round(node.mastery * 100)}%` }} />
-                </div>
-                <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">{statusLabel(node.status)}</p>
-              </button>
-            )) : (
-              <div className="md:col-span-2 xl:col-span-3">
-                <EmptyState title="暂无明显薄弱知识点" description="完成练习和阶段测试后，图谱会自动沉淀薄弱点。" />
-              </div>
-            )}
+              ) : null}
+            </div>
           </div>
         </Panel>
       </div>
@@ -467,47 +507,85 @@ function SectionHeader({ icon, title, subtitle }: { icon: ReactNode; title: stri
   );
 }
 
-function TaskCard(props: {
-  task: DailyTaskItem;
-  onNavigate: (path: string) => void;
-  onStartStageTest: () => void;
-  stageBusy: boolean;
-}) {
-  const progress = props.task.progress === null || props.task.progress === undefined ? null : clampPercent(props.task.progress);
-  const isStageTest = props.task.type === 'STAGE_TEST';
+function HeroFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <article className="rounded-2xl bg-slate-50/78 p-4 dark:bg-slate-950/32">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold text-primary-600 dark:text-primary-300">{taskTypeLabel(props.task.type)}</div>
-          <h3 className="mt-1 text-base font-semibold text-slate-950 dark:text-white">{props.task.title}</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{props.task.description}</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-500 dark:bg-slate-900 dark:text-slate-300">
-          {statusLabel(props.task.status)}
-        </span>
+    <div className="rounded-2xl bg-slate-50/78 p-4 dark:bg-slate-950/32">
+      <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+        {icon}
+        {label}
       </div>
-      {progress !== null ? (
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-800">
-          <div className="h-full rounded-full bg-primary-500" style={{ width: `${progress}%` }} />
+      <p className="mt-2 text-sm leading-6 text-slate-800 dark:text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function SessionStepCard(props: {
+  step: LearningSessionStep;
+  index: number;
+  busy: boolean;
+  onAction: (step: LearningSessionStep) => void;
+}) {
+  const isCompleted = props.step.status === 'COMPLETED';
+  return (
+    <article className={`grid gap-4 rounded-2xl p-4 transition sm:grid-cols-[44px_minmax(0,1fr)_auto] ${isCompleted ? 'bg-emerald-50/72 dark:bg-emerald-500/10' : 'bg-slate-50/78 dark:bg-slate-950/32'}`}>
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-sm font-semibold text-primary-700 shadow-sm shadow-slate-200/60 dark:bg-slate-900 dark:text-primary-300 dark:shadow-none">
+        {props.index + 1}
+      </div>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-primary-600 dark:text-primary-300">{props.step.phase}</span>
+          <span className="rounded-lg bg-white px-2 py-0.5 text-xs text-slate-400 dark:bg-slate-900 dark:text-slate-500">
+            {statusLabel(props.step.status)}
+          </span>
+          {props.step.minutes ? (
+            <span className="text-xs text-slate-400 dark:text-slate-500">{props.step.minutes} 分钟</span>
+          ) : null}
         </div>
-      ) : null}
+        <h3 className="mt-1 text-base font-semibold text-slate-950 dark:text-white">{props.step.title}</h3>
+        <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{props.step.description}</p>
+      </div>
       <button
         type="button"
-        onClick={() => {
-          if (isStageTest) {
-            props.onStartStageTest();
-            return;
-          }
-          props.onNavigate(props.task.actionRoute || '/');
-        }}
-        disabled={isStageTest && props.stageBusy}
-        className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-sm font-medium text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none"
+        onClick={() => props.onAction(props.step)}
+        disabled={props.busy}
+        className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-xl bg-white px-3 text-sm font-medium text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none"
       >
-        {isStageTest && props.stageBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-        {props.task.actionLabel}
+        {props.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+        {props.step.actionLabel}
       </button>
     </article>
+  );
+}
+
+function SupportItemCard({ item, onNavigate }: { item: PlanSupportItem; onNavigate: (path: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate(item.actionRoute || '/')}
+      className="w-full rounded-2xl bg-slate-50/78 p-4 text-left transition hover:bg-primary-50/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 dark:bg-slate-950/32 dark:hover:bg-primary-500/10"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold text-primary-600 dark:text-primary-300">{taskTypeLabel(item.type)}</span>
+        <ExternalLink className="h-3.5 w-3.5 text-slate-300 dark:text-slate-600" />
+      </div>
+      <h3 className="mt-2 text-sm font-semibold leading-6 text-slate-950 dark:text-white">{item.title}</h3>
+      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.description}</p>
+    </button>
+  );
+}
+
+function AuxiliaryLink({ icon, label, value, to }: { icon: ReactNode; label: string; value: string; to: string }) {
+  return (
+    <Link
+      to={to}
+      className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50/78 px-4 py-3 text-sm transition hover:bg-primary-50/80 hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 dark:bg-slate-950/32 dark:hover:bg-primary-500/10"
+    >
+      <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-800 dark:text-slate-100">
+        {icon}
+        {label}
+      </span>
+      <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{value}</span>
+    </Link>
   );
 }
 
@@ -524,21 +602,21 @@ function MistakeMiniCard({ mistake }: { mistake: import('../api/mistakes').Mista
   );
 }
 
-function ResourceMiniCard(props: {
+function ResourceFocusCard(props: {
   resource: ResourceItem;
   saving: boolean;
-  primary: boolean;
   onStart: () => void;
   onComplete: () => void;
 }) {
   const progress = clampPercent(props.resource.progress ?? 0);
   return (
-    <article className={`rounded-2xl p-4 transition ${props.primary ? 'bg-primary-50/70 dark:bg-primary-500/10' : 'bg-slate-50/78 dark:bg-slate-950/32'}`}>
-      <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+    <article className="rounded-2xl bg-primary-50/70 p-4 dark:bg-primary-500/10">
+      <div className="flex items-center gap-2 text-xs text-primary-700 dark:text-primary-300">
         <FileText className="h-3.5 w-3.5" />
         <span>{resourceTypeLabel(props.resource.displayType || props.resource.resourceType)}</span>
       </div>
-      <h3 className="mt-2 line-clamp-2 min-h-[48px] text-sm font-semibold leading-6 text-slate-950 dark:text-white">{props.resource.title}</h3>
+      <h3 className="mt-2 text-base font-semibold leading-6 text-slate-950 dark:text-white">{props.resource.title}</h3>
+      <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{props.resource.summaryText || '适合作为今天补强环节的输入材料。'}</p>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-800">
         <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} />
       </div>
@@ -547,7 +625,7 @@ function ResourceMiniCard(props: {
           type="button"
           onClick={props.onStart}
           disabled={props.saving}
-          className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none"
+          className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-900 dark:text-slate-300 dark:shadow-none"
         >
           {props.saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
           开始
@@ -556,7 +634,7 @@ function ResourceMiniCard(props: {
           type="button"
           onClick={props.onComplete}
           disabled={props.saving || props.resource.completed}
-          className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
           完成
@@ -578,7 +656,7 @@ function AccessState(props: { icon: ReactNode; title: string; description: strin
         <button
           type="button"
           onClick={props.onAction}
-          className="mt-5 inline-flex h-10 items-center justify-center rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700"
+          className="mt-5 inline-flex h-10 items-center justify-center rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
         >
           {props.actionLabel}
         </button>
@@ -610,19 +688,10 @@ function LinkButton({ to, label }: { to: string; label: string }) {
   return (
     <Link
       to={to}
-      className="inline-flex h-10 items-center justify-center rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700"
+      className="inline-flex h-10 items-center justify-center rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
     >
       {label}
     </Link>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl bg-white px-2 py-2 dark:bg-slate-900">
-      <div className="font-semibold text-slate-950 dark:text-white">{value}</div>
-      <div className="mt-0.5 text-slate-400 dark:text-slate-500">{label}</div>
-    </div>
   );
 }
 
@@ -634,12 +703,172 @@ function InlineError({ text }: { text: string }) {
   );
 }
 
-function readString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
+function buildFallbackExecutionPlan(data: DailyStudyWorkbenchResponse): DailyExecutionPlan {
+  const primaryTask = choosePrimaryTask(data.tasks);
+  const weakNode = data.knowledgeGraph.nodes
+    .filter((node) => node.status === 'WEAK' || node.status === 'IN_PROGRESS')
+    .sort((left, right) => left.mastery - right.mastery)[0];
+  const resourceTask = data.tasks.find((task) => task.type === 'RESOURCE');
+  const stageTestTask = data.tasks.find((task) => task.type === 'STAGE_TEST' && task.status === 'READY');
+  const mistakeTask = data.tasks.find((task) => task.type === 'MISTAKE_REVIEW');
+  const steps: LearningSessionStep[] = [
+    fallbackStep('warmup', '热身', mistakeTask, '先复习到期错题', '用主动回忆清掉遗忘风险最高的内容。', '开始复习', '/mistakes', 6),
+    fallbackStep('strengthen', '补强', resourceTask, '完成一个推荐资源', '只处理一个最贴近当前阶段的输入材料。', '查看资源', '/resources', 12),
+    fallbackStep('check', '检测', stageTestTask, '准备阶段检测', '先完成补强材料，进度达标后再开始阶段检测。', '继续补强', '/engine', 10),
+    {
+      id: 'reflect',
+      phase: '反思',
+      title: '记录今天的变化',
+      description: '把错因、掌握度变化和下一次复习点沉淀到笔记或画像里。',
+      status: 'PENDING',
+      minutes: 4,
+      actionLabel: '写复盘',
+      actionRoute: '/notes',
+      sourceTaskId: null,
+      sourceTaskType: null,
+    },
+  ];
+  const supportItems: PlanSupportItem[] = [];
+  if (data.activeStep) {
+    supportItems.push({
+      id: 'active-step',
+      type: 'STAGE',
+      title: `当前阶段：${readString(data.activeStep.title) || '未命名阶段'}`,
+      description: readString(data.activeStep.checkpoint) || '阶段进度会由资源学习、检测和错题回流共同推动。',
+      actionRoute: '/engine',
+    });
+  }
+  if (data.dueMistakes.length) {
+    supportItems.push({
+      id: 'due-mistakes',
+      type: 'MISTAKE_REVIEW',
+      title: `到期错题 ${data.dueMistakes.length} 道`,
+      description: '先用提取练习处理今天最容易遗忘的内容。',
+      actionRoute: '/mistakes',
+    });
+  }
+  if (data.recommendedResources.length) {
+    supportItems.push({
+      id: `resource:${data.recommendedResources[0].id}`,
+      type: 'RESOURCE',
+      title: `推荐资源：${data.recommendedResources[0].title}`,
+      description: '可作为今天补强环节的输入材料。',
+      actionRoute: '/resources',
+    });
+  }
+  if (weakNode) {
+    supportItems.push({
+      id: `knowledge:${weakNode.key}`,
+      type: 'KNOWLEDGE',
+      title: `薄弱点：${weakNode.topic}`,
+      description: `当前掌握度约 ${Math.round(weakNode.mastery * 100)}%，适合作为补强依据。`,
+      actionRoute: `/profile?node=${weakNode.key}`,
+    });
+  }
+  return {
+    title: primaryTask.title,
+    subtitle: primarySubtitle(primaryTask.type),
+    focusReason: focusReason(primaryTask, data),
+    successCriteria: successCriteria(primaryTask.type),
+    estimatedMinutes: estimateMinutes(primaryTask.type),
+    primaryTask,
+    steps,
+    supportItems,
+  };
 }
 
-function readNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+function choosePrimaryTask(tasks: DailyTaskItem[]): DailyTaskItem {
+  return tasks.find((task) => task.type === 'MISTAKE_REVIEW' && task.status === 'READY')
+    ?? tasks.find((task) => task.type === 'STAGE_TEST' && task.status === 'READY')
+    ?? tasks.find((task) => task.type === 'RESOURCE' && task.status === 'READY')
+    ?? tasks.find((task) => task.type === 'STAGE' && task.status === 'IN_PROGRESS')
+    ?? tasks.find((task) => task.type === 'KNOWLEDGE' && task.status === 'READY')
+    ?? tasks.find((task) => task.status !== 'COMPLETED')
+    ?? tasks[0]
+    ?? {
+      id: 'onboarding',
+      type: 'ONBOARDING',
+      title: '先完成一次学习对话',
+      description: '用一次问答、练习或画像初始化建立今日学习记录。',
+      status: 'READY',
+      progress: null,
+      actionLabel: '开始学习',
+      actionRoute: '/',
+      actionPayload: {},
+      dueAt: null,
+    };
+}
+
+function fallbackStep(
+  id: string,
+  phase: string,
+  task: DailyTaskItem | undefined,
+  fallbackTitle: string,
+  fallbackDescription: string,
+  fallbackActionLabel: string,
+  fallbackActionRoute: string,
+  minutes: number,
+): LearningSessionStep {
+  return {
+    id,
+    phase,
+    title: task?.title ?? fallbackTitle,
+    description: task?.description ?? fallbackDescription,
+    status: task?.status ?? 'PENDING',
+    minutes,
+    actionLabel: task?.actionLabel ?? fallbackActionLabel,
+    actionRoute: task?.actionRoute ?? fallbackActionRoute,
+    sourceTaskId: task?.id ?? null,
+    sourceTaskType: task?.type ?? null,
+  };
+}
+
+function canGenerateStageTest(item?: { sourceTaskType?: string | null; type?: string | null; status?: string | null } | null): boolean {
+  return (item?.sourceTaskType === 'STAGE_TEST' || item?.type === 'STAGE_TEST') && item.status === 'READY';
+}
+
+function primarySubtitle(type: string): string {
+  return {
+    MISTAKE_REVIEW: '先做提取练习，再决定今天补什么。',
+    STAGE_TEST: '当前阶段已到检测点，先验证能否进入下一阶段。',
+    RESOURCE: '先补齐输入材料，再用练习检查是否真的会用。',
+    STAGE: '把当前学习路径推进成一轮可完成的行动。',
+    KNOWLEDGE: '围绕薄弱点做一次定向补强。',
+  }[type] ?? '从一个可完成的小任务开始建立学习记录。';
+}
+
+function focusReason(task: DailyTaskItem, data: DailyStudyWorkbenchResponse): string {
+  if (task.type === 'MISTAKE_REVIEW') {
+    return `有 ${data.dueMistakes.length} 道错题进入复习窗口，先清掉遗忘风险最高的内容。`;
+  }
+  if (task.type === 'RESOURCE') {
+    return `有 ${data.recommendedResources.length} 个资源匹配当前阶段，优先完成一个未学资源。`;
+  }
+  return task.description;
+}
+
+function successCriteria(type: string): string {
+  return {
+    MISTAKE_REVIEW: '完成到期错题复习，并记录至少一个错因。',
+    STAGE_TEST: '完成 10 题阶段检测，结果能回流到画像或路径。',
+    RESOURCE: '学习一个推荐资源并把进度标记为完成。',
+    STAGE: '推进当前阶段，并明确下一次检测条件。',
+    KNOWLEDGE: '完成薄弱点查看和一次针对练习。',
+  }[type] ?? '完成一次问答、练习或资源学习，生成可追踪记录。';
+}
+
+function estimateMinutes(type: string): number {
+  return {
+    MISTAKE_REVIEW: 18,
+    STAGE_TEST: 16,
+    RESOURCE: 22,
+    STAGE: 25,
+    KNOWLEDGE: 20,
+  }[type] ?? 12;
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function readStringArray(value: unknown): string[] {
@@ -660,6 +889,7 @@ function taskTypeLabel(type: string): string {
     MISTAKE_REVIEW: '错题复习',
     RESOURCE: '资源学习',
     KNOWLEDGE: '知识补强',
+    ONBOARDING: '学习记录',
   }[type] ?? type;
 }
 

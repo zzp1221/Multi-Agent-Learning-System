@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import {
   Bold,
   BookOpen,
@@ -50,6 +50,7 @@ import type { ResourceSemanticSearchResponse } from '../api/resources';
 
 const PAGE_SIZE = 30;
 const AUTOSAVE_DELAY_MS = 1200;
+const NOTE_EXIT_FALLBACK_ROUTE = '/dashboard';
 const NEW_NOTE_TEMPLATE = '# 未命名笔记\n\n记录一个概念、例题、疑问或复盘结论。';
 
 type EditorPaneMode = 'write' | 'preview' | 'split';
@@ -72,6 +73,7 @@ interface NoteDraftSnapshot {
 export default function NotebookPage() {
   const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [folders, setFolders] = useState<NoteFolder[]>([]);
   const [tags, setTags] = useState<NoteTag[]>([]);
@@ -695,7 +697,7 @@ export default function NotebookPage() {
     if (saveStatus === 'dirty') {
       void saveDraft();
     }
-    navigate('/');
+    navigate(resolveNotebookReturnPath(location.state));
   };
 
   if (!isAuthenticated) {
@@ -1671,4 +1673,19 @@ function escapeHtml(value: string): string {
 
 function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ');
+}
+
+function resolveNotebookReturnPath(state: unknown): string {
+  if (!state || typeof state !== 'object') {
+    return NOTE_EXIT_FALLBACK_ROUTE;
+  }
+  const value = (state as { returnTo?: unknown }).returnTo;
+  if (typeof value !== 'string') {
+    return NOTE_EXIT_FALLBACK_ROUTE;
+  }
+  const trimmed = value.trim();
+  if (!trimmed || !trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/notes')) {
+    return NOTE_EXIT_FALLBACK_ROUTE;
+  }
+  return trimmed;
 }

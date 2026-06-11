@@ -12,6 +12,9 @@ import com.project.api.profile.dto.UserProfileResponse;
 import com.project.api.resource.dto.ResourceItemResponse;
 import com.project.api.study.dto.DailyStudyWorkbenchResponse;
 import com.project.api.study.dto.DailyStudyWorkbenchResponse.DailyTaskItem;
+import com.project.api.study.dto.DailyStudyWorkbenchResponse.DailyExecutionPlan;
+import com.project.api.study.dto.DailyStudyWorkbenchResponse.LearningSessionStep;
+import com.project.api.study.dto.DailyStudyWorkbenchResponse.PlanSupportItem;
 import com.project.api.study.dto.DailyStudyWorkbenchResponse.WorkbenchSummary;
 import com.project.api.study.dto.KnowledgeNodeDetailResponse;
 import com.project.api.study.dto.MistakeTrainingCampResponse;
@@ -57,6 +60,9 @@ public class StudyWorkbenchService {
     private static final int RELATED_RESOURCE_LIMIT = 6;
     private static final int CAMP_LIMIT = 12;
     private static final int CAMP_REPRESENTATIVE_LIMIT = 3;
+    private static final Set<String> GENERIC_CJK_RESOURCE_TOKENS = Set.of(
+        "知识", "基础", "概念", "原理", "应用", "学习", "方法", "技能", "专题", "系统"
+    );
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
     private static final TypeReference<Map<String, Object>> STRING_OBJECT_MAP = new TypeReference<>() {};
 
@@ -210,6 +216,7 @@ public class StudyWorkbenchService {
         UserProfileResponse profile = userProfileQueryService.getCurrentProfile(currentUser, userId);
 
         List<DailyTaskItem> tasks = buildDailyTasks(activeStep, dueMistakes, resources, graph);
+        DailyExecutionPlan executionPlan = buildExecutionPlan(tasks, activeStep, dueMistakes, resources, graph);
         int completedTasks = (int) tasks.stream().filter(task -> "COMPLETED".equals(task.status())).count();
         int totalTasks = tasks.size();
         int weakKnowledgeCount = (int) graph.nodes().stream()
@@ -234,6 +241,7 @@ public class StudyWorkbenchService {
             summary,
             learningPath,
             activeStep,
+            executionPlan,
             tasks,
             dueMistakes,
             resources,
@@ -284,8 +292,8 @@ public class StudyWorkbenchService {
             .semanticSearch(requestedUserId, node.topic(), RELATED_RESOURCE_LIMIT)
             .results()
             .stream()
+            .filter(result -> isKnowledgeResourceRelevant(node, result.resource(), result.score()))
             .map(result -> result.resource())
-            .filter(Objects::nonNull)
             .limit(RELATED_RESOURCE_LIMIT)
             .toList();
         return new KnowledgeNodeDetailResponse(
@@ -494,6 +502,372 @@ public class StudyWorkbenchService {
                 null
             )));
         return tasks;
+    }
+
+    private DailyExecutionPlan buildExecutionPlan(
+        List<DailyTaskItem> tasks,
+        Map<String, Object> activeStep,
+        List<MistakeRecordResponse> dueMistakes,
+        List<ResourceItemResponse> resources,
+        KnowledgeGraphResponse graph
+    ) {
+        DailyTaskItem primaryTask = choosePrimaryTask(tasks);
+        List<LearningSessionStep> steps = buildSessionSteps(tasks, activeStep, graph);
+        return new DailyExecutionPlan(
+            primaryTask.title(),
+            primarySubtitle(primaryTask),
+            focusReason(primaryTask, dueMistakes, resources, graph),
+            successCriteria(primaryTask),
+            estimateMinutes(primaryTask),
+            primaryTask,
+            steps,
+            buildSupportItems(activeStep, dueMistakes, resources, graph)
+        );
+    }
+
+    private DailyTaskItem choosePrimaryTask(List<DailyTaskItem> tasks) {
+        return firstTask(tasks, "MISTAKE_REVIEW", "READY")
+            .or(() -> firstTask(tasks, "STAGE_TEST", "READY"))
+            .or(() -> firstTask(tasks, "RESOURCE", "READY"))
+            .or(() -> firstTask(tasks, "STAGE", "IN_PROGRESS"))
+            .or(() -> firstTask(tasks, "KNOWLEDGE", "READY"))
+            .or(() -> tasks.stream().filter(task -> !"COMPLETED".equals(task.status())).findFirst())
+            .or(() -> tasks.stream().findFirst())
+            .orElseGet(() -> new DailyTaskItem(
+                "onboarding",
+                "ONBOARDING",
+                "先完成一次学习对话",
+                "用一次问答、练习或画像初始化建立今日学习记录。",
+                "READY",
+                null,
+                "开始学习",
+                "/",
+                Map.of("source", "DAILY_EXECUTION_PLAN"),
+                null
+            ));
+    }
+
+    private java.util.Optional<DailyTaskItem> firstTask(List<DailyTaskItem> tasks, String type, String status) {
+        return tasks.stream()
+            .filter(task -> type.equals(task.type()))
+            .filter(task -> status.equals(task.status()))
+            .findFirst();
+    }
+
+    private List<LearningSessionStep> buildSessionSteps(
+        List<DailyTaskItem> tasks,
+        Map<String, Object> activeStep,
+        KnowledgeGraphResponse graph
+    ) {
+        DailyTaskItem mistakeTask = firstTask(tasks, "MISTAKE_REVIEW", "READY").orElse(null);
+        DailyTaskItem resourceTask = firstTask(tasks, "RESOURCE", "READY").orElse(null);
+        DailyTaskItem stageTask = firstTask(tasks, "STAGE", "IN_PROGRESS").orElse(null);
+        DailyTaskItem stageTestTask = firstTask(tasks, "STAGE_TEST", "READY").orElse(null);
+        DailyTaskItem knowledgeTask = firstTask(tasks, "KNOWLEDGE", "READY").orElse(null);
+        String weakTopic = graph.nodes().stream()
+            .filter(node -> "WEAK".equals(node.status()) || "IN_PROGRESS".equals(node.status()))
+            .min(Comparator.comparingDouble(KnowledgeNodeDto::mastery))
+            .map(KnowledgeNodeDto::topic)
+            .orElse("上次薄弱点");
+        String stageTitle = firstNonBlank(safeString(activeStep == null ? null : activeStep.get("title")), "当前阶段");
+        DailyTaskItem strengthenTask = resourceTask != null ? resourceTask : stageTask != null ? stageTask : knowledgeTask;
+        return List.of(
+            stepFromTask(
+                "warmup",
+                "热身",
+                mistakeTask,
+                mistakeTask == null ? "回忆上次卡住的知识点" : "先复习到期错题",
+                mistakeTask == null ? "用 3-5 分钟主动回忆「" + weakTopic + "」，不要先看答案。" : "先做提取练习，把遗忘风险最高的题清掉。",
+                "READY",
+                6,
+                mistakeTask == null ? "查看画像" : null,
+                mistakeTask == null ? "/profile" : null
+            ),
+            stepFromTask(
+                "strengthen",
+                "补强",
+                strengthenTask,
+                strengthenTask == null ? "补齐当前阶段输入" : strengthenTask.title(),
+                strengthenTask == null ? "围绕「" + stageTitle + "」选择一个资源或让 AI 生成讲解。" : strengthenTask.description(),
+                "PENDING",
+                12,
+                strengthenTask == null ? "打开学习引擎" : null,
+                strengthenTask == null ? "/engine" : null
+            ),
+            stepFromTask(
+                "check",
+                "检测",
+                stageTestTask,
+                stageTestTask == null ? "准备阶段检测" : stageTestTask.title(),
+                stageTestTask == null ? "先完成补强材料，进度达标后再开始阶段检测。" : stageTestTask.description(),
+                stageTestTask == null ? "PENDING" : stageTestTask.status(),
+                10,
+                stageTestTask == null ? "继续补强" : null,
+                stageTestTask == null ? "/engine" : null
+            ),
+            new LearningSessionStep(
+                "reflect",
+                "反思",
+                "记录今天的变化",
+                "把错因、掌握度变化和下一次复习点沉淀到笔记或画像里。",
+                "PENDING",
+                4,
+                "写复盘",
+                "/notes",
+                null,
+                null
+            )
+        );
+    }
+
+    private LearningSessionStep stepFromTask(
+        String id,
+        String phase,
+        DailyTaskItem task,
+        String fallbackTitle,
+        String fallbackDescription,
+        String fallbackStatus,
+        int minutes,
+        String fallbackActionLabel,
+        String fallbackActionRoute
+    ) {
+        return new LearningSessionStep(
+            id,
+            phase,
+            task == null ? fallbackTitle : task.title(),
+            task == null ? fallbackDescription : task.description(),
+            task == null ? fallbackStatus : task.status(),
+            minutes,
+            task == null ? fallbackActionLabel : task.actionLabel(),
+            task == null ? fallbackActionRoute : task.actionRoute(),
+            task == null ? null : task.id(),
+            task == null ? null : task.type()
+        );
+    }
+
+    private List<PlanSupportItem> buildSupportItems(
+        Map<String, Object> activeStep,
+        List<MistakeRecordResponse> dueMistakes,
+        List<ResourceItemResponse> resources,
+        KnowledgeGraphResponse graph
+    ) {
+        List<PlanSupportItem> items = new ArrayList<>();
+        if (activeStep != null && !activeStep.isEmpty()) {
+            items.add(new PlanSupportItem(
+                "active-step",
+                "STAGE",
+                "当前阶段：" + firstNonBlank(safeString(activeStep.get("title")), "未命名阶段"),
+                firstNonBlank(safeString(activeStep.get("checkpoint")), "阶段进度会由资源学习、检测和错题回流共同推动。"),
+                "/engine"
+            ));
+        }
+        if (!dueMistakes.isEmpty()) {
+            items.add(new PlanSupportItem(
+                "due-mistakes",
+                "MISTAKE_REVIEW",
+                "到期错题 " + dueMistakes.size() + " 道",
+                "最早一题复习时间：" + formatSupportTime(dueMistakes.getFirst().nextReviewAt()),
+                "/mistakes"
+            ));
+        }
+        if (!resources.isEmpty()) {
+            ResourceItemResponse resource = resources.stream()
+                .filter(item -> !Boolean.TRUE.equals(item.completed()))
+                .findFirst()
+                .orElse(resources.getFirst());
+            items.add(new PlanSupportItem(
+                "resource:" + resource.id(),
+                "RESOURCE",
+                "推荐资源：" + resource.title(),
+                "匹配当前阶段，可作为今天的主要输入材料。",
+                "/resources"
+            ));
+        }
+        graph.nodes().stream()
+            .filter(node -> "WEAK".equals(node.status()) || "IN_PROGRESS".equals(node.status()))
+            .sorted(Comparator.comparingDouble(KnowledgeNodeDto::mastery))
+            .limit(3)
+            .forEach(node -> items.add(new PlanSupportItem(
+                "knowledge:" + node.key(),
+                "KNOWLEDGE",
+                "薄弱点：" + node.topic(),
+                "当前掌握度约 " + Math.round(node.mastery() * 100) + "%，适合作为补强依据。",
+                "/profile?node=" + node.key()
+            )));
+        return items;
+    }
+
+    private String primarySubtitle(DailyTaskItem task) {
+        return switch (task.type()) {
+            case "MISTAKE_REVIEW" -> "先做提取练习，再决定今天补什么。";
+            case "STAGE_TEST" -> "当前阶段已到检测点，先验证能否进入下一阶段。";
+            case "RESOURCE" -> "先补齐输入材料，再用练习检查是否真的会用。";
+            case "STAGE" -> "把当前学习路径推进成一轮可完成的行动。";
+            case "KNOWLEDGE" -> "围绕薄弱点做一次定向补强。";
+            default -> "从一个可完成的小任务开始建立学习记录。";
+        };
+    }
+
+    private String focusReason(
+        DailyTaskItem task,
+        List<MistakeRecordResponse> dueMistakes,
+        List<ResourceItemResponse> resources,
+        KnowledgeGraphResponse graph
+    ) {
+        return switch (task.type()) {
+            case "MISTAKE_REVIEW" -> "有 " + dueMistakes.size() + " 道错题进入复习窗口，先清掉遗忘风险最高的内容。";
+            case "STAGE_TEST" -> "当前阶段已具备检测条件，检测结果会直接决定是否推进学习路径。";
+            case "RESOURCE" -> "有 " + resources.size() + " 个资源匹配当前阶段，优先完成一个未学资源。";
+            case "KNOWLEDGE" -> graph.nodes().stream()
+                .filter(node -> "WEAK".equals(node.status()) || "IN_PROGRESS".equals(node.status()))
+                .min(Comparator.comparingDouble(KnowledgeNodeDto::mastery))
+                .map(node -> "知识图谱显示「" + node.topic() + "」掌握度约 " + Math.round(node.mastery() * 100) + "%。")
+                .orElse("知识图谱提示需要做一次定向补强。");
+            default -> "当前学习记录还少，先完成一次可回流的学习动作。";
+        };
+    }
+
+    private String successCriteria(DailyTaskItem task) {
+        return switch (task.type()) {
+            case "MISTAKE_REVIEW" -> "完成到期错题复习，并记录至少一个错因。";
+            case "STAGE_TEST" -> "完成 10 题阶段检测，结果能回流到画像或路径。";
+            case "RESOURCE" -> "学习一个推荐资源并把进度标记为完成。";
+            case "STAGE" -> "推进当前阶段，并明确下一次检测条件。";
+            case "KNOWLEDGE" -> "完成薄弱点查看和一次针对练习。";
+            default -> "完成一次问答、练习或资源学习，生成可追踪记录。";
+        };
+    }
+
+    private int estimateMinutes(DailyTaskItem task) {
+        return switch (task.type()) {
+            case "MISTAKE_REVIEW" -> 18;
+            case "STAGE_TEST" -> 16;
+            case "RESOURCE" -> 22;
+            case "STAGE" -> 25;
+            case "KNOWLEDGE" -> 20;
+            default -> 12;
+        };
+    }
+
+    private String formatSupportTime(OffsetDateTime value) {
+        if (value == null) {
+            return "今天";
+        }
+        return value.toLocalDate().toString();
+    }
+
+    private boolean isKnowledgeResourceRelevant(KnowledgeNodeDto node, ResourceItemResponse resource, double score) {
+        if (resource == null) {
+            return false;
+        }
+        Set<String> topicTokens = resourceMatchTokens(node.topic());
+        if (topicTokens.isEmpty()) {
+            return score >= 0.85;
+        }
+        String searchableText = resourceSearchableText(resource);
+        Set<String> matchedTokens = topicTokens.stream()
+            .filter(searchableText::contains)
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        boolean hasStrongMatch = matchedTokens.stream().anyMatch(this::isStrongResourceToken);
+        if (hasStrongMatch) {
+            return true;
+        }
+        return score >= 0.9 && matchedTokens.size() >= 2;
+    }
+
+    private Set<String> resourceMatchTokens(String topic) {
+        String normalized = safeString(topic).toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return Set.of();
+        }
+        Set<String> tokens = new LinkedHashSet<>();
+        collectWordTokens(tokens, normalized);
+        collectCjkFragments(tokens, normalized);
+        return tokens;
+    }
+
+    private void collectWordTokens(Set<String> tokens, String text) {
+        StringBuilder current = new StringBuilder();
+        for (int index = 0; index < text.length(); index += 1) {
+            char ch = text.charAt(index);
+            if (Character.isLetterOrDigit(ch)) {
+                current.append(ch);
+            } else {
+                addWordToken(tokens, current);
+            }
+        }
+        addWordToken(tokens, current);
+    }
+
+    private void addWordToken(Set<String> tokens, StringBuilder current) {
+        if (current.length() >= 3) {
+            tokens.add(current.toString());
+        }
+        current.setLength(0);
+    }
+
+    private void collectCjkFragments(Set<String> tokens, String text) {
+        StringBuilder current = new StringBuilder();
+        for (int index = 0; index < text.length(); index += 1) {
+            char ch = text.charAt(index);
+            if (isCjk(ch)) {
+                current.append(ch);
+            } else {
+                addCjkFragments(tokens, current);
+            }
+        }
+        addCjkFragments(tokens, current);
+    }
+
+    private void addCjkFragments(Set<String> tokens, StringBuilder current) {
+        if (current.length() >= 2) {
+            tokens.add(current.toString());
+            for (int width = 2; width <= Math.min(4, current.length()); width += 1) {
+                for (int index = 0; index <= current.length() - width; index += 1) {
+                    String token = current.substring(index, index + width);
+                    if (!GENERIC_CJK_RESOURCE_TOKENS.contains(token)) {
+                        tokens.add(token);
+                    }
+                }
+            }
+        }
+        current.setLength(0);
+    }
+
+    private boolean isStrongResourceToken(String token) {
+        return token.length() >= 3 || !GENERIC_CJK_RESOURCE_TOKENS.contains(token);
+    }
+
+    private boolean isCjk(char ch) {
+        Character.UnicodeScript script = Character.UnicodeScript.of(ch);
+        return script == Character.UnicodeScript.HAN;
+    }
+
+    private String resourceSearchableText(ResourceItemResponse resource) {
+        StringBuilder text = new StringBuilder();
+        appendSearchable(text, resource.title());
+        appendSearchable(text, resource.summaryText());
+        appendSearchable(text, resource.domain());
+        appendSearchable(text, resource.resourceType());
+        appendSearchable(text, resource.displayType());
+        appendSearchable(text, resource.csCategory());
+        appendSearchable(text, resource.csSubcategory());
+        return text.toString().toLowerCase(Locale.ROOT);
+    }
+
+    private void appendSearchable(StringBuilder text, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Iterable<?> iterable) {
+            iterable.forEach(item -> appendSearchable(text, item));
+            return;
+        }
+        if (value instanceof Map<?, ?> map) {
+            map.values().forEach(item -> appendSearchable(text, item));
+            return;
+        }
+        text.append(' ').append(value);
     }
 
     private String nextAction(List<DailyTaskItem> tasks) {

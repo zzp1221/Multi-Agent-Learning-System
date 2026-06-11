@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { BrainCircuit, Send, Square, TrendingUp } from 'lucide-react';
+import { BookOpenCheck, BrainCircuit, FileText, RefreshCw, Route, Send, Square, TrendingUp, UserRoundSearch } from 'lucide-react';
 
 export function EngineSectionHeader(props: {
   icon: ReactNode;
@@ -20,32 +20,39 @@ export function EngineSectionHeader(props: {
 }
 
 export function ServiceHeroVisual() {
+  const loopNodes = [
+    { label: '画像', icon: UserRoundSearch, className: 'left-[12%] top-[18%]' },
+    { label: '路径', icon: Route, className: 'right-[12%] top-[20%]' },
+    { label: '资源', icon: FileText, className: 'right-[8%] bottom-[26%]' },
+    { label: '练习', icon: BookOpenCheck, className: 'left-[12%] bottom-[24%]' },
+  ];
+
   return (
-    <div className="relative hidden min-h-[420px] overflow-hidden lg:block">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_52%_43%,rgba(59,130,246,0.24),transparent_32%),radial-gradient(circle_at_35%_22%,rgba(125,211,252,0.24),transparent_17%)]" />
-      <div className="absolute left-1/2 top-[61%] h-20 w-[330px] -translate-x-1/2 rounded-[50%] bg-blue-100/42 shadow-[0_24px_56px_rgba(61,116,239,0.2)]" />
-      <div className="absolute left-1/2 top-[58%] h-12 w-[260px] -translate-x-1/2 rounded-[50%] bg-white/48 shadow-[0_18px_42px_rgba(14,165,233,0.15)]" />
-      <div className="absolute left-1/2 top-[45%] h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-[34px] bg-white/35 shadow-[0_36px_90px_rgba(64,111,214,0.18)] backdrop-blur-md" />
-      <div className="absolute left-1/2 top-[42%] flex h-[136px] w-[136px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[30px] bg-gradient-to-br from-blue-400 via-blue-600 to-cyan-400 text-5xl font-black text-white shadow-[0_28px_70px_rgba(37,99,235,0.36)]">
-        AI
+    <div className="relative hidden min-h-[420px] overflow-hidden lg:block" aria-hidden="true">
+      <div className="absolute inset-8 rounded-[38px] border border-[color:var(--ring-soft)] bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--accent-action)_13%,transparent),transparent_34%),linear-gradient(180deg,var(--surface-control-strong),var(--surface-control))]" />
+      <div className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-[color:var(--ring-soft)]" />
+      <div className="absolute left-1/2 top-1/2 h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[color:var(--ring-hairline)] bg-[color:var(--surface-panel-strong)] shadow-[var(--shadow-soft)]" />
+      <div className="absolute left-1/2 top-1/2 flex h-28 w-28 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-[30px] bg-[color:var(--accent-action)] text-white shadow-[var(--shadow-button)] dark:text-[#08201d]">
+        <BrainCircuit className="h-8 w-8" />
+        <span className="mt-2 text-sm font-semibold">学习调度</span>
       </div>
-      <div className="absolute left-[17%] top-[30%] h-3 w-3 rounded-full bg-cyan-300 shadow-[0_0_22px_rgba(34,211,238,0.9)]" />
-      <div className="absolute right-[20%] top-[34%] h-3 w-3 rounded-full bg-blue-400 shadow-[0_0_22px_rgba(59,130,246,0.75)]" />
-      <div className="absolute left-[34%] top-[18%] h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)]" />
-      <div className="absolute right-[23%] bottom-[25%] h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.8)]" />
-      <div className="absolute left-[19%] top-[31%] h-px w-[62%] rotate-[28deg] bg-gradient-to-r from-transparent via-blue-300/80 to-transparent" />
-      <div className="absolute left-[23%] top-[57%] h-px w-[58%] -rotate-[20deg] bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
-      <div className="absolute left-[25%] top-[22%] h-64 w-64 rounded-full bg-blue-100/10" />
-      <div className="absolute left-[22%] top-[28%] h-52 w-72 rotate-12 rounded-[50%] bg-cyan-100/10" />
-      <span className="absolute right-9 top-20 rounded-xl bg-blue-50/90 px-3 py-1.5 text-sm font-semibold text-primary-600 shadow-sm shadow-blue-100/80">
-        智能分析
-      </span>
-      <span className="absolute left-14 top-36 rounded-xl bg-cyan-50/90 px-3 py-1.5 text-sm font-semibold text-cyan-600 shadow-sm shadow-cyan-100/80">
-        精准推荐
-      </span>
-      <span className="absolute bottom-28 right-5 rounded-xl bg-emerald-50/90 px-3 py-1.5 text-sm font-semibold text-emerald-600 shadow-sm shadow-emerald-100/80">
-        学习进化
-      </span>
+      <div className="absolute left-[20%] top-[50%] h-px w-[60%] bg-[color:var(--ring-hairline)]" />
+      <div className="absolute left-[50%] top-[18%] h-[64%] w-px bg-[color:var(--ring-hairline)]" />
+      <div className="absolute left-[24%] top-[25%] h-px w-[52%] rotate-[31deg] bg-[color:var(--ring-hairline)]" />
+      <div className="absolute left-[24%] top-[73%] h-px w-[52%] -rotate-[31deg] bg-[color:var(--ring-hairline)]" />
+      {loopNodes.map((node) => (
+        <div
+          key={node.label}
+          className={`absolute ${node.className} flex h-[88px] w-[108px] flex-col items-center justify-center rounded-[24px] border border-[color:var(--ring-soft)] bg-[color:var(--surface-panel-strong)] text-[color:var(--ink-body)] shadow-[var(--shadow-soft)]`}
+        >
+          <node.icon className="h-5 w-5 text-[color:var(--accent-action)]" />
+          <span className="mt-2 text-sm font-semibold text-[color:var(--ink-strong)]">{node.label}</span>
+        </div>
+      ))}
+      <div className="absolute bottom-12 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[color:var(--ring-soft)] bg-[color:var(--surface-panel-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--ink-body)] shadow-[var(--shadow-soft)]">
+        <RefreshCw className="h-4 w-4 text-[color:var(--accent-action)]" />
+        复盘后进入下一轮路径
+      </div>
     </div>
   );
 }
@@ -123,7 +130,7 @@ export function AssistantActionBar(props: {
   onStop: () => void;
 }) {
   return (
-    <section className="rounded-[24px] bg-white/78 p-4 shadow-[0_14px_36px_rgba(43,83,145,0.08)] backdrop-blur dark:bg-slate-900/72 dark:shadow-slate-950/20 sm:p-5">
+    <section className="assistant-action-bar rounded-[24px] p-4 sm:p-5">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.68fr)_168px] lg:items-center">
         <div className="flex items-start gap-3 sm:items-center sm:gap-4">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300 sm:h-12 sm:w-12">
@@ -143,7 +150,7 @@ export function AssistantActionBar(props: {
           type="button"
           onClick={props.onSubmit}
           disabled={props.disabled}
-          className="inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-600 to-primary-500 px-5 text-base font-semibold text-white shadow-lg shadow-blue-500/24 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/28 disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:hover:translate-y-0 sm:h-16 sm:px-6 sm:text-lg"
+          className="inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-[color:var(--accent-action)] px-5 text-base font-semibold text-white shadow-[var(--shadow-button)] transition-all hover:-translate-y-0.5 hover:bg-[color:var(--accent-action-hover)] disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none disabled:hover:translate-y-0 dark:text-[#08201d] sm:h-16 sm:px-6 sm:text-lg"
         >
           <Send className="h-6 w-6" />
           {props.busy ? '正在启动...' : '开始生成'}
@@ -153,7 +160,7 @@ export function AssistantActionBar(props: {
           type="button"
           onClick={props.onStop}
           disabled={!props.canStop}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm shadow-blue-100/35 transition-all hover:bg-blue-50/60 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-900 sm:h-14"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-[color:var(--ring-hairline)] bg-[color:var(--surface-control)] px-5 text-sm font-semibold text-[color:var(--ink-body)] transition-all hover:bg-[color:var(--surface-control-strong)] hover:text-[color:var(--accent-action)] disabled:cursor-not-allowed disabled:opacity-45 sm:h-14"
         >
           <Square className="h-4 w-4" />
           停止生成

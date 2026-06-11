@@ -27,6 +27,7 @@ interface QnaChatViewProps {
   webSearchEnabled: boolean;
   onChange: (value: string) => void;
   onSend: () => void;
+  onStop?: () => void;
   onToggleDeepReasoning?: () => void;
   onToggleWebSearch: () => void;
   onPickImages?: (files: File[]) => void;
@@ -100,7 +101,7 @@ export default function QnaChatView(props: QnaChatViewProps) {
               transition={{ duration: 0.55, ease: [0.32, 0.72, 0, 1] }}
               className="qna-hero-panel"
             >
-              <div className="qna-eyebrow">Learning workflow</div>
+              <div className="qna-eyebrow">学习闭环</div>
               <h1 className="qna-hero-title">
                 智学引擎
                 <span>从一个问题走到一次掌握</span>
@@ -121,6 +122,7 @@ export default function QnaChatView(props: QnaChatViewProps) {
                 webSearchEnabled={props.webSearchEnabled}
                 onChange={props.onChange}
                 onSend={props.onSend}
+                onStop={props.onStop}
                 onToggleDeepReasoning={props.onToggleDeepReasoning}
                 onToggleWebSearch={props.onToggleWebSearch}
                 onPickImages={props.onPickImages ?? (() => undefined)}
@@ -206,6 +208,7 @@ export default function QnaChatView(props: QnaChatViewProps) {
         webSearchEnabled={props.webSearchEnabled}
         onChange={props.onChange}
         onSend={props.onSend}
+        onStop={props.onStop}
         onToggleDeepReasoning={props.onToggleDeepReasoning}
         onToggleWebSearch={props.onToggleWebSearch}
         onPickImages={props.onPickImages ?? (() => undefined)}

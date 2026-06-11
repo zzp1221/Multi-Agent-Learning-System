@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, BrainCircuit, FileImage, Globe2, LoaderCircle, Paperclip, SendHorizontal, X, XCircle } from 'lucide-react';
+import { ArrowDown, BrainCircuit, FileImage, Globe2, Paperclip, SendHorizontal, Square, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
@@ -219,6 +219,7 @@ export function InputPanel(props: {
   errorMessage?: string;
   onChange: (value: string) => void;
   onSend: () => void;
+  onStop?: () => void;
   onPickImages: (files: File[]) => void;
   onRemoveImage: (id: string) => void;
   deepReasoningEnabled?: boolean;
@@ -360,14 +361,29 @@ export function InputPanel(props: {
                   支持图片
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={props.onSend}
-                disabled={props.busy || (!props.value.trim() && props.pendingImages.every((item) => !item.uploadedUrl))}
-                className="qna-send-button"
-              >
-                {props.busy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <SendHorizontal className="h-5 w-5" />}
-              </button>
+              {props.busy ? (
+                <button
+                  type="button"
+                  onClick={props.onStop}
+                  className="qna-stop-button"
+                  title="停止生成"
+                  aria-label="停止生成"
+                >
+                  <Square className="h-4 w-4" />
+                  <span>停止</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={props.onSend}
+                  disabled={!props.value.trim() && props.pendingImages.every((item) => !item.uploadedUrl)}
+                  className="qna-send-button"
+                  title="发送"
+                  aria-label="发送"
+                >
+                  <SendHorizontal className="h-5 w-5" />
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -414,6 +414,8 @@ class OpenAICompatibleResourceIntentExtractor:
                 "可生成资源类型只能是 DOCUMENT、SLIDES、MINDMAP、QUIZ、VIDEO、CODE。"
                 "如果用户只是索要已有链接、下载链接、打开结果、询问某个视频链接、继续聊天、表达确认或信息不足，"
                 "shouldGenerate 必须为 false。"
+                "如果用户要求在一段长回答/解释/比较/分析中包含小节、学习路径、自测题或练习，"
+                "这是普通辅导回答，shouldGenerate 必须为 false。"
                 "只有用户明确表达生成、制作、创建、整理、设计、编写、出题等新资源请求时才为 true。"
                 "当用户说“一套学习资源/资源包”时，resourceTypes 返回全部六类。"
                 "topic 必须是真实学习主题；不能把“链接、视频、文档、PPT、一份、资源”等资源词或占位词当主题。"

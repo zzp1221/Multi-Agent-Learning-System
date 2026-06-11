@@ -319,8 +319,8 @@ export default function Layout() {
       openAuthModal('login', '登录后使用 AI 笔记本');
       return;
     }
-    navigate('/notes');
-  }, [isAuthenticated, navigate]);
+    navigate('/notes', { state: { returnTo: location.pathname + location.search } });
+  }, [isAuthenticated, location.pathname, location.search, navigate]);
 
   const handleOpenDashboard = useCallback(() => {
     setMoreMenuOpen(false);

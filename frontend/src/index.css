@@ -1,7 +1,7 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-/* 启用深色模式 - class 策略 */
+/* 鍚敤娣辫壊妯″紡 - class 绛栫暐 */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
@@ -557,26 +557,49 @@
     font-size: 12px;
   }
 
-  .qna-send-button {
+  .qna-send-button,
+  .qna-stop-button {
     display: flex;
     height: 54px;
-    width: 54px;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    background: #2563eb;
     color: white;
-    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25);
     transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
   }
 
-  .qna-send-button:hover {
+  .qna-send-button {
+    width: 54px;
+    background: #2563eb;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25);
+  }
+
+  .qna-stop-button {
+    gap: 8px;
+    min-width: 88px;
+    padding: 0 18px;
+    background: #dc2626;
+    box-shadow: 0 10px 22px rgba(220, 38, 38, 0.2);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .qna-send-button:hover,
+  .qna-stop-button:hover {
     transform: translateY(-1px);
+  }
+
+  .qna-send-button:hover {
     box-shadow: 0 12px 26px rgba(37, 99, 235, 0.3);
   }
 
-  .qna-send-button:active {
+  .qna-stop-button:hover {
+    box-shadow: 0 12px 26px rgba(220, 38, 38, 0.26);
+  }
+
+  .qna-send-button:active,
+  .qna-stop-button:active {
     transform: translateY(0) scale(0.98);
   }
 
@@ -587,8 +610,12 @@
     box-shadow: none;
   }
 
-  .qna-composer-chat .qna-send-button {
+  .qna-composer-chat .qna-send-button,
+  .qna-composer-chat .qna-stop-button {
     height: 48px;
+  }
+
+  .qna-composer-chat .qna-send-button {
     width: 48px;
   }
 
@@ -1682,6 +1709,7 @@
 
   .qna-icon-button,
   .qna-mode-button,
+  .qna-stop-button,
   .qna-send-button,
   .qna-message-action-button,
   .qna-scroll-bottom-button {
@@ -1691,6 +1719,11 @@
   .qna-send-button {
     background: #1f766f;
     box-shadow: 0 16px 36px rgba(31, 118, 111, 0.2);
+  }
+
+  .qna-stop-button {
+    background: var(--semantic-danger, #dc2626);
+    box-shadow: 0 16px 36px rgba(220, 38, 38, 0.16);
   }
 
   .qna-send-button:hover {
@@ -1998,14 +2031,16 @@
     padding: 0 12px;
   }
 
-  .qna-send-button {
+  .qna-send-button,
+  .qna-stop-button {
     box-sizing: border-box;
     height: 48px;
     max-width: 100%;
     width: 100%;
   }
 
-  .qna-composer-chat .qna-send-button {
+  .qna-composer-chat .qna-send-button,
+  .qna-composer-chat .qna-stop-button {
     width: 100%;
   }
 
@@ -2727,555 +2762,306 @@
   }
 }
 
-/* Premium visual pass: calm surfaces, softer contrast, unified spring motion. */
-:where(
-  .app-main,
-  .app-sidebar,
-  .app-topbar,
-  .qna-landing-shell,
-  .qna-chat-shell,
-  .learning-service-page,
-  .learning-path-gate,
-  .resource-page,
-  .profile-page,
-  .settings-page,
-  .mistake-page,
-  .resource-generation-page,
-  .voice-assistant-panel,
-  .practice-assistant-panel,
-  .auth-modal-shell
-) {
-  --ui-ease: var(--ease-spring);
-  --ui-panel: var(--surface-panel);
-  --ui-panel-strong: var(--surface-panel-strong);
-  --ui-control: var(--surface-control);
-  --ui-control-strong: var(--surface-control-strong);
-  --ui-recessed: var(--surface-recessed);
-  --ui-ink: var(--ink-strong);
-  --ui-body: var(--ink-body);
-  --ui-muted: var(--ink-muted);
-  --ui-accent: var(--accent-action);
-  --ui-accent-hover: var(--accent-action-hover);
-}
-
-.app-main {
-  background:
-    radial-gradient(circle at 18% 4%, rgba(31, 118, 111, 0.105), transparent 28rem),
-    radial-gradient(circle at 88% 10%, rgba(126, 149, 158, 0.105), transparent 30rem),
-    linear-gradient(180deg, var(--surface-cream) 0%, var(--surface-mist) 58%, var(--surface-cream) 100%);
-}
-
-.dark .app-main {
-  background:
-    radial-gradient(circle at 18% 4%, rgba(110, 214, 203, 0.13), transparent 28rem),
-    radial-gradient(circle at 88% 10%, rgba(106, 132, 145, 0.13), transparent 30rem),
-    linear-gradient(180deg, var(--surface-cream) 0%, var(--surface-mist) 58%, #091016 100%);
-}
-
-.app-sidebar,
-.app-topbar {
-  backdrop-filter: blur(22px) saturate(1.05);
-  -webkit-backdrop-filter: blur(22px) saturate(1.05);
-}
-
-.app-sidebar {
-  border-radius: 32px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(246, 249, 247, 0.78)),
-    radial-gradient(circle at 18% 0%, rgba(31, 118, 111, 0.11), transparent 38%);
-  box-shadow: 0 30px 90px rgba(45, 62, 73, 0.09);
-  outline: 1px solid rgba(255, 255, 255, 0.82);
-}
-
-.dark .app-sidebar {
-  background:
-    linear-gradient(180deg, rgba(17, 25, 33, 0.92), rgba(10, 17, 24, 0.84)),
-    radial-gradient(circle at 18% 0%, rgba(110, 214, 203, 0.11), transparent 38%);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.38);
-  outline-color: rgba(255, 255, 255, 0.08);
-}
-
-.app-topbar {
-  min-height: 62px;
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 20px 60px rgba(45, 62, 73, 0.065);
-}
-
-.dark .app-topbar {
-  background: rgba(12, 19, 27, 0.72);
-  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.3);
-}
-
-.app-brand-mark,
-.auth-brand-mark,
-.learning-path-gate-icon {
-  background: linear-gradient(135deg, #1f766f 0%, #477980 58%, #9baea2 100%);
-  box-shadow: 0 18px 42px rgba(31, 118, 111, 0.18);
-}
-
-.app-sidebar-nav-item,
-.app-more-menu > button,
-.app-theme-toggle,
-.app-primary-action,
-.auth-submit-button,
-.auth-tab-button,
-.learning-path-gate-button,
-.qna-send-button,
-.qna-icon-button,
-.qna-mode-button,
-.qna-message-action-button,
-.qna-scroll-bottom-button,
-.voice-assistant-primary,
-.voice-assistant-secondary,
-.voice-assistant-icon,
-.voice-assistant-history-item,
-.voice-assistant-fab,
-.practice-assistant-trigger,
-.practice-assistant-panel button,
-.resource-page button,
-.profile-page button,
-.settings-page button,
-.mistake-page button,
-.resource-generation-page button,
-.error-boundary-page button {
-  transition:
-    transform 0.58s var(--ui-ease, var(--ease-spring)),
-    background-color 0.58s var(--ui-ease, var(--ease-spring)),
-    color 0.58s var(--ui-ease, var(--ease-spring)),
-    box-shadow 0.58s var(--ui-ease, var(--ease-spring)),
-    opacity 0.58s var(--ui-ease, var(--ease-spring));
-}
-
-.app-sidebar-nav-item:active,
-.app-primary-action:active,
-.auth-submit-button:active,
-.qna-send-button:active,
-.learning-path-gate-button:active,
-.voice-assistant-primary:active,
-.voice-assistant-secondary:active,
-.practice-assistant-panel button:active,
-.resource-page button:active,
-.profile-page button:active,
-.mistake-page button:active,
-.resource-generation-page button:active,
-.error-boundary-page button:active {
-  transform: scale(0.985);
-}
-
-.app-primary-action,
-.auth-submit-button,
-.qna-send-button,
-.learning-path-gate-button,
-.voice-assistant-primary,
-.resource-page button[class*="bg-primary-600"],
-.resource-page a[class*="bg-primary-600"],
-.resource-page button[class*="bg-slate-950"],
-.profile-page button[class*="bg-primary-600"],
-.mistake-page button[class*="bg-primary-600"],
-.resource-generation-page button[class*="bg-primary-600"],
-.resource-generation-page button[class*="bg-amber-500"],
-.error-boundary-primary {
-  border-radius: 999px;
-  background: var(--accent-action);
-  color: #fff;
-  box-shadow: var(--shadow-button);
-}
-
-.app-primary-action:hover,
-.auth-submit-button:hover,
-.qna-send-button:hover,
-.learning-path-gate-button:hover,
-.voice-assistant-primary:hover,
-.resource-page button[class*="bg-primary-600"]:hover,
-.resource-page a[class*="bg-primary-600"]:hover,
-.resource-page button[class*="bg-slate-950"]:hover,
-.profile-page button[class*="bg-primary-600"]:hover,
-.mistake-page button[class*="bg-primary-600"]:hover,
-.resource-generation-page button[class*="bg-primary-600"]:hover,
-.resource-generation-page button[class*="bg-amber-500"]:hover,
-.error-boundary-primary:hover {
-  background: var(--accent-action-hover);
-  box-shadow: 0 22px 54px rgba(31, 118, 111, 0.22);
-  transform: translateY(-1px);
-}
-
-:where(.resource-page, .profile-page, .mistake-page, .resource-generation-page) :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select),
-.settings-page :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select),
-.auth-field,
-.voice-assistant-field textarea {
-  border-radius: 18px;
-  background: var(--surface-control);
-  color: var(--ink-strong);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  transition:
-    transform 0.58s var(--ease-spring),
-    background-color 0.58s var(--ease-spring),
-    box-shadow 0.58s var(--ease-spring);
-}
-
-:where(.resource-page, .profile-page, .mistake-page, .resource-generation-page) :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus,
-.settings-page :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus,
-.auth-field:focus,
-.voice-assistant-field textarea:focus {
-  background: var(--surface-control-strong);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 18px 40px rgba(48, 65, 78, 0.08);
-  transform: translateY(-1px);
-}
-
-.dark :where(.resource-page, .profile-page, .mistake-page, .resource-generation-page) :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select),
-.dark .settings-page :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select),
-.dark .auth-field,
-.dark .voice-assistant-field textarea {
-  background: var(--surface-control);
-  color: var(--ink-strong);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.resource-page > div > main > section,
-.resource-page aside > section,
-.resource-page article,
-.profile-page header,
-.settings-page header,
-.settings-page section,
-.profile-page section,
-.mistake-page > section,
-.mistake-page article,
-.resource-generation-page > section:first-of-type,
-.resource-generation-page article,
-.error-boundary-card {
-  border-radius: 30px;
-  background: var(--surface-panel);
-  box-shadow: var(--shadow-soft);
-  outline: 1px solid var(--ring-soft);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.resource-page > div > main > section,
-.profile-page header,
-.settings-page header,
-.mistake-page > section:first-of-type,
-.resource-generation-page > section:first-of-type {
-  padding: clamp(1.25rem, 2vw, 1.9rem);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(248, 250, 248, 0.74)),
-    radial-gradient(circle at 8% 0%, rgba(31, 118, 111, 0.09), transparent 34%);
-}
-
-.dark .resource-page > div > main > section,
-.dark .profile-page header,
-.dark .settings-page header,
-.dark .mistake-page > section:first-of-type,
-.dark .resource-generation-page > section:first-of-type {
-  background:
-    linear-gradient(180deg, rgba(19, 29, 38, 0.84), rgba(12, 20, 28, 0.74)),
-    radial-gradient(circle at 8% 0%, rgba(110, 214, 203, 0.09), transparent 34%);
-}
-
-.resource-page aside > section,
-.profile-page section,
-.settings-page section,
-.mistake-page > section:not(:first-of-type),
-.mistake-page article,
-.resource-generation-page article {
-  box-shadow: 0 18px 52px rgba(48, 65, 78, 0.065);
-}
-
-.resource-page article:hover,
-.profile-page section:hover,
-.settings-page section:hover,
-.mistake-page article:hover,
-.resource-generation-page article:hover {
-  background: var(--surface-panel-strong);
-  box-shadow: var(--shadow-lift);
-  transform: translateY(-2px);
-}
-
-.resource-page :where([class*="bg-blue-50"], [class*="bg-primary-50"], [class*="bg-slate-50"]),
-.profile-page :where([class*="bg-blue-50"], [class*="bg-primary-50"], [class*="bg-slate-50"]),
-.settings-page :where([class*="bg-blue-50"], [class*="bg-primary-50"], [class*="bg-slate-50"]),
-.mistake-page :where([class*="bg-blue-50"], [class*="bg-primary-50"], [class*="bg-slate-50"]),
-.resource-generation-page :where([class*="bg-blue-50"], [class*="bg-primary-50"], [class*="bg-slate-50"]),
-.voice-assistant-body :where([class*="bg-blue-50"], [class*="bg-slate-50"]),
-.practice-assistant-panel :where([class*="bg-amber-50"], [class*="bg-slate-50"]) {
-  background: var(--surface-recessed);
-}
-
-.resource-page :where([class*="shadow-blue"], [class*="shadow-primary"], [class*="shadow-slate"]),
-.profile-page :where([class*="shadow-blue"], [class*="shadow-primary"], [class*="shadow-slate"]),
-.settings-page :where([class*="shadow-blue"], [class*="shadow-primary"], [class*="shadow-slate"]),
-.mistake-page :where([class*="shadow-blue"], [class*="shadow-primary"], [class*="shadow-slate"]),
-.resource-generation-page :where([class*="shadow-blue"], [class*="shadow-primary"], [class*="shadow-slate"]) {
-  box-shadow: none;
-}
-
-.resource-page :where([class*="text-primary"], [class*="text-blue"]),
-.profile-page :where([class*="text-primary"], [class*="text-blue"]),
-.settings-page :where([class*="text-primary"], [class*="text-blue"]),
-.mistake-page :where([class*="text-primary"], [class*="text-blue"]),
-.resource-generation-page :where([class*="text-primary"], [class*="text-blue"]) {
-  color: var(--accent-action);
-}
-
-.resource-page :where([class*="bg-primary-600"], [class*="bg-blue-600"]),
-.profile-page :where([class*="bg-primary-600"], [class*="bg-blue-600"]),
-.settings-page :where([class*="bg-primary-600"], [class*="bg-blue-600"]),
-.mistake-page :where([class*="bg-primary-600"], [class*="bg-blue-600"]),
-.resource-generation-page :where([class*="bg-primary-600"], [class*="bg-blue-600"]) {
-  background: var(--accent-action);
-}
-
-.resource-page :where([class*="rounded-xl"], [class*="rounded-2xl"]),
-.profile-page :where([class*="rounded-xl"], [class*="rounded-2xl"]),
-.settings-page :where([class*="rounded-xl"], [class*="rounded-2xl"]),
-.mistake-page :where([class*="rounded-xl"], [class*="rounded-2xl"]),
-.resource-generation-page :where([class*="rounded-xl"], [class*="rounded-2xl"]) {
-  border-radius: 18px;
-}
-
-.resource-page :where([class*="rounded-full"]),
-.profile-page :where([class*="rounded-full"]),
-.settings-page :where([class*="rounded-full"]),
-.mistake-page :where([class*="rounded-full"]),
-.resource-generation-page :where([class*="rounded-full"]) {
-  border-radius: 999px;
-}
-
-.resource-page h1,
-.profile-page h1,
-.settings-page h1,
-.mistake-page h1,
-.resource-generation-page h1,
-.qna-hero-title,
-.learning-service-copy h1,
-.learning-path-gate-copy h1 {
-  color: var(--ink-strong);
-  font-weight: 760;
-  line-height: 1.06;
-}
-
-.resource-page p,
-.profile-page p,
-.settings-page p,
-.mistake-page p,
-.resource-generation-page p,
-.qna-hero-subtitle,
-.learning-service-copy p,
-.learning-path-gate-copy p {
-  color: var(--ink-body);
-}
-
-.resource-page :where(.line-clamp-2, .line-clamp-3),
-.profile-page :where(.line-clamp-2, .line-clamp-3),
-.settings-page :where(.line-clamp-2, .line-clamp-3),
-.mistake-page :where(.line-clamp-2, .line-clamp-3),
-.resource-generation-page :where(.line-clamp-2, .line-clamp-3) {
-  text-wrap: pretty;
-}
-
-.resource-page :where(span[class*="rounded"], button[class*="rounded"]:not([class*="bg-primary-600"]):not([class*="bg-slate-950"])),
-.profile-page :where(span[class*="rounded"], button[class*="rounded"]:not([class*="bg-primary-600"])),
-.settings-page :where(span[class*="rounded"], button[class*="rounded"]:not([class*="bg-primary-600"])),
-.mistake-page :where(span[class*="rounded"], button[class*="rounded"]:not([class*="bg-primary-600"])),
-.resource-generation-page :where(span[class*="rounded"], button[class*="rounded"]:not([class*="bg-primary-600"]):not([class*="bg-amber-500"])) {
-  box-shadow: none;
-}
-
-.resource-page :where(button[class*="bg-white"], a[class*="bg-white"], button[class*="bg-slate-100"]),
-.profile-page :where(button[class*="bg-white"], button[class*="bg-slate-100"]),
-.settings-page :where(button[class*="bg-white"], button[class*="bg-slate-100"]),
-.mistake-page :where(button[class*="bg-white"], button[class*="bg-slate-100"]),
-.resource-generation-page :where(button[class*="bg-white"], button[class*="bg-slate-100"]) {
-  background: var(--surface-control);
-  color: var(--ink-body);
-}
-
-.resource-page :where(button[class*="bg-white"], a[class*="bg-white"], button[class*="bg-slate-100"]):hover,
-.profile-page :where(button[class*="bg-white"], button[class*="bg-slate-100"]):hover,
-.settings-page :where(button[class*="bg-white"], button[class*="bg-slate-100"]):hover,
-.mistake-page :where(button[class*="bg-white"], button[class*="bg-slate-100"]):hover,
-.resource-generation-page :where(button[class*="bg-white"], button[class*="bg-slate-100"]):hover {
-  background: var(--surface-control-strong);
-  color: var(--accent-action);
-  transform: translateY(-1px);
-}
-
-.resource-page [class*="grid"][class*="md:grid-cols-2"],
-.resource-generation-page [class*="grid"][class*="lg:grid-cols-2"] {
-  gap: 1.15rem;
-}
-
-.resource-page img {
-  filter: saturate(0.92) contrast(0.98);
-}
-
-.resource-page .fixed.inset-0 > aside {
-  border-radius: 30px 0 0 30px;
-  background: var(--surface-panel-strong);
-  box-shadow: -34px 0 100px rgba(15, 23, 42, 0.18);
-}
-
-.resource-page .fixed.inset-0,
-.auth-modal-shell + *,
-.practice-assistant-panel {
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-.voice-assistant-panel,
-.practice-assistant-surface,
-.auth-modal-shell,
-.error-boundary-card {
-  border-radius: 30px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: var(--shadow-lift);
-  outline: 1px solid var(--ring-soft);
-}
-
-.dark .voice-assistant-panel,
-.dark .practice-assistant-surface,
-.dark .auth-modal-shell,
-.dark .error-boundary-card {
-  background: rgba(17, 25, 33, 0.88);
-  outline-color: rgba(255, 255, 255, 0.08);
-}
-
-.voice-assistant-header,
-.voice-assistant-actions,
-.practice-assistant-surface header,
-.practice-assistant-surface footer {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.18));
-}
-
-.dark .voice-assistant-header,
-.dark .voice-assistant-actions,
-.dark .practice-assistant-surface header,
-.dark .practice-assistant-surface footer {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
-}
-
-.voice-assistant-icon,
-.voice-assistant-secondary,
-.voice-assistant-history-item,
-.practice-assistant-trigger,
-.practice-assistant-surface button:not([class*="bg-primary-600"]),
-.error-boundary-secondary {
-  background: var(--surface-control);
-  color: var(--ink-body);
-  box-shadow: none;
-}
-
-.voice-assistant-icon:hover,
-.voice-assistant-icon.is-active,
-.voice-assistant-secondary:hover,
-.voice-assistant-history-item:hover,
-.practice-assistant-trigger:hover,
-.practice-assistant-surface button:not([class*="bg-primary-600"]):hover,
-.error-boundary-secondary:hover {
-  background: var(--surface-control-strong);
-  color: var(--accent-action);
-  box-shadow: 0 16px 34px rgba(48, 65, 78, 0.08);
-  transform: translateY(-1px);
-}
-
-.voice-assistant-fab {
-  background:
-    radial-gradient(circle at 35% 22%, rgba(255, 255, 255, 0.38), transparent 31%),
-    var(--accent-action);
-  box-shadow: 0 24px 54px rgba(31, 118, 111, 0.24);
-  transition:
-    transform 0.58s var(--ease-spring),
-    box-shadow 0.58s var(--ease-spring),
-    background-color 0.58s var(--ease-spring);
-}
-
-.voice-assistant-fab:hover {
-  background:
-    radial-gradient(circle at 35% 22%, rgba(255, 255, 255, 0.42), transparent 31%),
-    var(--accent-action-hover);
-  box-shadow: 0 28px 64px rgba(31, 118, 111, 0.28);
-}
-
-.voice-assistant-fab.is-recording {
-  background: #b64c5a;
-  animation: voice-pulse-premium 1.35s var(--ease-spring) infinite;
-}
-
-.qna-cycle-shell,
-.qna-composer,
-.learning-service-hero,
-.learning-service-workbench,
-.learning-path-gate-panel {
-  box-shadow: var(--shadow-soft);
-  outline: 1px solid var(--ring-soft);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.qna-cycle-step,
-.learning-service-card,
-.learning-path-gate-step,
-.qna-suggestion-chip {
-  background: var(--surface-control);
-  box-shadow: none;
-}
-
-.qna-cycle-step:hover,
-.learning-service-card:hover,
-.learning-path-gate-step:hover,
-.qna-suggestion-chip:hover {
-  background: var(--surface-control-strong);
-  transform: translateY(-2px);
-  box-shadow: 0 18px 44px rgba(48, 65, 78, 0.08);
-}
-
-.qna-user-bubble {
-  background: var(--accent-action);
-  box-shadow: var(--shadow-button);
-}
-
-.qna-assistant-message {
-  background: rgba(255, 255, 255, 0.52);
-  outline: 1px solid var(--ring-hairline);
-}
-
-.dark .qna-assistant-message {
-  background: rgba(255, 255, 255, 0.055);
-}
-
-.modern-card {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-@keyframes voice-pulse-premium {
-  0%, 100% { box-shadow: 0 24px 54px rgba(182, 76, 90, 0.24); }
-  50% { box-shadow: 0 24px 70px rgba(182, 76, 90, 0.34); }
-}
-
-@media (max-width: 768px) {
-  .resource-page,
-  .profile-page,
-  .settings-page,
-  .mistake-page,
-  .resource-generation-page {
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
+/* Qwen-inspired light redesign: flatter surfaces, fewer frames, softer cream whites. */
+@layer base {
+  :root {
+    --surface-cream: #fbfaf4;
+    --surface-mist: #f7f6ee;
+    --surface-panel: rgba(255, 255, 250, 0.72);
+    --surface-panel-strong: rgba(255, 255, 252, 0.94);
+    --surface-control: rgba(247, 246, 238, 0.78);
+    --surface-control-strong: rgba(255, 255, 252, 0.98);
+    --surface-recessed: rgba(239, 238, 229, 0.62);
+    --ink-strong: #172126;
+    --ink-body: #59646a;
+    --ink-muted: #8d9697;
+    --accent-calm: #1f7a72;
+    --accent-action: #1f7a72;
+    --accent-action-hover: #16665f;
+    --accent-soft: rgba(31, 122, 114, 0.09);
+    --ring-soft: transparent;
+    --ring-hairline: transparent;
+    --shadow-soft: 0 18px 50px rgba(41, 55, 48, 0.055);
+    --shadow-lift: 0 24px 70px rgba(41, 55, 48, 0.085);
+    --shadow-button: 0 16px 34px rgba(31, 122, 114, 0.18);
   }
 
-  .resource-page > div > main > section,
-  .profile-page header,
-  .settings-page header,
-  .settings-page section,
-  .mistake-page > section:first-of-type,
-  .resource-generation-page > section:first-of-type,
-  .voice-assistant-panel,
-  .practice-assistant-surface,
-  .auth-modal-shell {
-    border-radius: 24px;
+  body {
+    background:
+      radial-gradient(circle at 70% 12%, rgba(31, 122, 114, 0.045), transparent 24rem),
+      linear-gradient(180deg, #fffefa 0%, var(--surface-cream) 54%, var(--surface-mist) 100%);
+  }
+}
+
+@layer components {
+  .app-main {
+    background:
+      radial-gradient(circle at 74% 8%, rgba(31, 122, 114, 0.045), transparent 28rem),
+      linear-gradient(180deg, #fffefa 0%, var(--surface-cream) 54%, var(--surface-mist) 100%);
   }
 
   .app-sidebar {
-    border-radius: 26px;
+    background: rgba(250, 249, 244, 0.74);
+    border: 0;
+    box-shadow: none;
+    outline: 0;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
+
+  .app-topbar {
+    background: rgba(255, 255, 252, 0.74);
+    border: 0;
+    box-shadow: none;
+    outline: 0;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+
+  .app-sidebar-nav-item,
+  .app-conversation-item,
+  .app-more-menu > button {
+    border: 0;
+    box-shadow: none;
+  }
+
+  .app-sidebar-nav-item:hover,
+  .app-sidebar-nav-item.is-active,
+  .app-conversation-item:hover,
+  .app-more-menu > button:hover {
+    background: rgba(255, 255, 252, 0.7);
+    color: var(--accent-action);
+    box-shadow: none;
+  }
+
+  .app-more-menu,
+  .app-user-card,
+  .app-sync-card,
+  .app-sidebar-search {
+    background: rgba(255, 255, 252, 0.62);
+    border: 0;
+    box-shadow: none;
+    outline: 0;
+  }
+
+  .qna-landing-shell {
+    padding-top: 70px;
+  }
+
+  .qna-landing-shell::before {
+    background:
+      linear-gradient(90deg, rgba(31, 122, 114, 0.026) 1px, transparent 1px),
+      linear-gradient(180deg, rgba(31, 122, 114, 0.022) 1px, transparent 1px),
+      radial-gradient(circle at 75% 8%, rgba(31, 122, 114, 0.05), transparent 28rem),
+      linear-gradient(180deg, #fffefa 0%, var(--surface-cream) 60%, var(--surface-mist) 100%);
+    background-size: 88px 88px, 88px 88px, auto, auto;
+  }
+
+  .qna-landing-grid {
+    gap: clamp(2.5rem, 5vw, 5.5rem);
+  }
+
+  .qna-eyebrow,
+  .learning-service-badge,
+  .learning-service-map span,
+  .qna-cycle-head span {
+    background: rgba(255, 255, 252, 0.58);
+    border: 0;
+    box-shadow: none;
+  }
+
+  .qna-hero-title {
+    color: #162026;
+    font-weight: 790;
+  }
+
+  .qna-hero-title span {
+    color: #5f6b70;
+  }
+
+  .qna-hero-subtitle,
+  .learning-service-copy p {
+    color: #5f6b70;
+  }
+
+  .qna-composer {
+    background: rgba(255, 255, 252, 0.92);
+    border: 0;
+    outline: 0;
+    box-shadow: 0 18px 52px rgba(45, 55, 48, 0.08);
+  }
+
+  .qna-composer:focus-within {
+    box-shadow: 0 22px 64px rgba(31, 122, 114, 0.13);
+  }
+
+  .qna-icon-button,
+  .qna-mode-button,
+  .qna-suggestion-chip,
+  .qna-cycle-step,
+  .learning-service-card,
+  .qna-message-action-button,
+  .qna-scroll-bottom-button {
+    background: rgba(247, 246, 238, 0.78);
+    border: 0;
+    box-shadow: none;
+  }
+
+  .qna-icon-button:hover,
+  .qna-mode-button:hover,
+  .qna-mode-button.is-active,
+  .qna-suggestion-chip:hover,
+  .qna-cycle-step:hover,
+  .learning-service-card:hover,
+  .learning-service-card.is-active,
+  .qna-message-action-button:hover,
+  .qna-scroll-bottom-button:hover {
+    background: rgba(255, 255, 252, 0.94);
+    color: var(--accent-action);
+    box-shadow: none;
+  }
+
+  .qna-cycle-shell,
+  .qna-cycle-core,
+  .learning-service-hero,
+  .learning-service-hero::before,
+  .learning-service-workbench,
+  .learning-service-form-panel,
+  .assistant-action-bar {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    outline: 0;
+  }
+
+  .qna-cycle-core,
+  .learning-service-form-panel {
+    padding: 0;
+  }
+
+  .qna-cycle-step,
+  .learning-service-card {
+    background: rgba(247, 246, 238, 0.68);
+  }
+
+  .qna-cycle-step-icon,
+  .learning-service-card-icon {
+    background: rgba(31, 122, 114, 0.08);
+    box-shadow: none;
+  }
+
+  .learning-service-hero {
+    padding: clamp(1rem, 2vw, 1.5rem) 0;
+  }
+
+  .learning-service-hero::before {
+    display: none;
+  }
+
+  .learning-service-workbench {
+    gap: 1.25rem;
+  }
+
+  .qna-assistant-message {
+    background: rgba(255, 255, 252, 0.72);
+    border: 0;
+    outline: 0;
+    box-shadow: none;
+  }
+
+  .learning-service-action-bar,
+  .assistant-action-bar {
+    background: rgba(255, 255, 252, 0.5);
+    border: 0;
+    box-shadow: none;
+  }
+
+  :where(.resource-page, .profile-page, .settings-page, .mistake-page, .resource-generation-page, .learning-path-page, .notebook-page) :where(section, article, aside, header):not(.no-theme-surface) {
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  :where(.resource-page, .profile-page, .settings-page, .mistake-page, .resource-generation-page, .auth-modal-shell, .voice-assistant-panel, .practice-assistant-panel) :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select, .auth-field) {
+    border: 0;
+    background: rgba(247, 246, 238, 0.78);
+  }
+}
+
+@media (max-width: 768px) {
+  .app-sidebar {
+    background: rgba(250, 249, 244, 0.94);
+    box-shadow: 0 20px 64px rgba(41, 55, 48, 0.14);
+  }
+
+  .qna-landing-shell {
+    padding-top: 42px;
+  }
+}
+
+.app-sidebar,
+.app-topbar,
+.app-more-menu,
+.app-user-card,
+.app-sync-card,
+.app-sidebar-search,
+.qna-composer,
+.qna-cycle-shell,
+.qna-cycle-shell *,
+.learning-service-hero,
+.learning-service-hero *,
+.learning-service-workbench,
+.learning-service-form-panel,
+.assistant-action-bar,
+.qna-assistant-message,
+.qna-icon-button,
+.qna-mode-button,
+.qna-suggestion-chip,
+.qna-message-action-button,
+.qna-scroll-bottom-button {
+  border-color: transparent !important;
+  outline-color: transparent;
+}
+
+.app-sidebar,
+.app-topbar,
+.app-more-menu,
+.app-user-card,
+.app-sync-card,
+.app-sidebar-search,
+.qna-cycle-shell,
+.qna-cycle-core,
+.learning-service-hero,
+.learning-service-workbench,
+.learning-service-form-panel,
+.assistant-action-bar,
+.qna-assistant-message,
+.qna-icon-button,
+.qna-mode-button,
+.qna-suggestion-chip,
+.qna-cycle-step,
+.learning-service-card,
+.qna-message-action-button,
+.qna-scroll-bottom-button {
+  box-shadow: none !important;
+}
+
+.qna-composer {
+  box-shadow: 0 18px 52px rgba(45, 55, 48, 0.08) !important;
+}
+
+.qna-composer:focus-within {
+  box-shadow: 0 22px 64px rgba(31, 122, 114, 0.13) !important;
+}
+
+.qna-send-button,
+.qna-stop-button,
+.app-primary-action,
+.auth-submit-button,
+.voice-assistant-primary,
+.error-boundary-primary {
+  box-shadow: var(--shadow-button) !important;
+}
+
+.app-main :focus-visible {
+  outline-color: color-mix(in srgb, var(--accent-action) 58%, transparent);
 }

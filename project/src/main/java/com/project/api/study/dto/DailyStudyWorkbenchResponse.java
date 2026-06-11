@@ -19,6 +19,7 @@ public record DailyStudyWorkbenchResponse(
     WorkbenchSummary summary,
     LearningPathCurrentResponse learningPath,
     Map<String, Object> activeStep,
+    DailyExecutionPlan executionPlan,
     List<DailyTaskItem> tasks,
     List<MistakeRecordResponse> dueMistakes,
     List<ResourceItemResponse> recommendedResources,
@@ -48,5 +49,37 @@ public record DailyStudyWorkbenchResponse(
         String actionRoute,
         Map<String, Object> actionPayload,
         OffsetDateTime dueAt
+    ) {}
+
+    public record DailyExecutionPlan(
+        String title,
+        String subtitle,
+        String focusReason,
+        String successCriteria,
+        int estimatedMinutes,
+        DailyTaskItem primaryTask,
+        List<LearningSessionStep> steps,
+        List<PlanSupportItem> supportItems
+    ) {}
+
+    public record LearningSessionStep(
+        String id,
+        String phase,
+        String title,
+        String description,
+        String status,
+        Integer minutes,
+        String actionLabel,
+        String actionRoute,
+        String sourceTaskId,
+        String sourceTaskType
+    ) {}
+
+    public record PlanSupportItem(
+        String id,
+        String type,
+        String title,
+        String description,
+        String actionRoute
     ) {}
 }

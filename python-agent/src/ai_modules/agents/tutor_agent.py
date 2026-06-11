@@ -449,6 +449,8 @@ class TutorAgent(PlaceholderAgent):
         text = str(user_query or "").strip()
         if not text or self.resource_intent_extractor is None:
             return None
+        if self._looks_like_inline_tutoring_answer_request(text):
+            return None
         try:
             payload = await self.resource_intent_extractor.extract(
                 user_query=text,
@@ -491,6 +493,49 @@ class TutorAgent(PlaceholderAgent):
             confidence=confidence,
             rationale=str(getattr(payload, "rationale", "") or ""),
         )
+
+    @staticmethod
+    def _looks_like_inline_tutoring_answer_request(text: str) -> bool:
+        normalized = re.sub(r"\s+", "", str(text or "").lower())
+        if not normalized:
+            return False
+        artifact_terms = (
+            "学习资源",
+            "资源包",
+            "资料包",
+            "ppt",
+            "slides",
+            "幻灯片",
+            "演示文稿",
+            "课件",
+            "思维导图",
+            "脑图",
+            "短视频",
+            "微课",
+            "视频",
+            "代码案例",
+            "代码示例",
+            "示例程序",
+            "下载",
+            "文件",
+        )
+        answer_markers = ("较长回答", "长回答", "回答", "解释", "讲解", "比较", "分析", "说明")
+        embedded_learning_markers = ("最后给", "最后提供", "附上", "包含", "包括")
+        if any(marker in normalized for marker in answer_markers) and not any(term in normalized for term in artifact_terms):
+            return True
+        if (
+            any(marker in normalized for marker in answer_markers)
+            and any(marker in normalized for marker in embedded_learning_markers)
+            and ("自测题" in normalized or "学习路径" in normalized or "练习" in normalized)
+        ):
+            return True
+        if (
+            re.search(r"不少于\d{3,5}(?:字|个字|字符)", normalized)
+            and ("讲义" in normalized or "文章" in normalized or "报告" in normalized)
+            and not any(term in normalized for term in ("资源包", "学习资源", "ppt", "下载", "文件"))
+        ):
+            return True
+        return False
 
     def _resolve_llm_resource_topic(self, raw_topic: str, *, params: dict[str, Any]) -> str:
         topic = str(raw_topic or "").strip()

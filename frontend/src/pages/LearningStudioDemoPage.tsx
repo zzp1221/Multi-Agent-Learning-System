@@ -238,7 +238,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
 
           <div className="learning-service-grid">
             <div className="learning-service-copy">
-              <div className="qna-eyebrow">Study loop</div>
+              <div className="qna-eyebrow">学习调度</div>
               <h1>把学习过程拆成可执行的下一步</h1>
               <p>
                 从画像和薄弱点出发，先生成阶段路径，再补齐资源、安排练习，最终回到错题和笔记复盘。

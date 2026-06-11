@@ -42,7 +42,7 @@ class StudyWorkbenchServiceTest {
         MistakeRecordResponse dueMistake = mistake("循环边界题", "conceptual", "循环");
         ResourceItemResponse resource = resource("循环讲解", false);
         KnowledgeGraphResponse graph = graph();
-        LearningPathCurrentResponse learningPath = learningPath(userId);
+        LearningPathCurrentResponse learningPath = learningPath(userId, 40);
         UserProfileResponse profile = new UserProfileResponse(
             userId,
             Map.of("goal", "补齐 Java 基础"),
@@ -74,6 +74,52 @@ class StudyWorkbenchServiceTest {
         assertThat(response.summary().weakKnowledgeCount()).isEqualTo(1);
         assertThat(response.tasks()).extracting("type")
             .contains("STAGE", "STAGE_TEST", "MISTAKE_REVIEW", "RESOURCE", "KNOWLEDGE");
+        assertThat(response.executionPlan().primaryTask().type()).isEqualTo("MISTAKE_REVIEW");
+        assertThat(response.executionPlan().title()).isEqualTo("复习到期错题");
+        assertThat(response.executionPlan().steps())
+            .extracting("phase")
+            .containsExactly("热身", "补强", "检测", "反思");
+        assertThat(response.executionPlan().steps())
+            .extracting("sourceTaskType")
+            .contains("MISTAKE_REVIEW", "RESOURCE")
+            .doesNotContain("STAGE_TEST");
+        assertThat(response.executionPlan().supportItems())
+            .extracting("type")
+            .contains("STAGE", "MISTAKE_REVIEW", "RESOURCE", "KNOWLEDGE");
+        assertThat(response.executionPlan().focusReason()).contains("1 道错题");
+        assertThat(response.executionPlan().successCriteria()).contains("错因");
+    }
+
+    @Test
+    void dailyAllowsStageTestStepOnlyAfterStageProgressIsComplete() {
+        UUID userId = UUID.fromString("61000000-0000-0000-0000-000000000006");
+        JwtAuthenticatedUser currentUser = new JwtAuthenticatedUser(userId, "learner@example.com", "USER");
+        LearningPathCurrentResponse learningPath = learningPath(userId, 100);
+        KnowledgeGraphResponse graph = graph();
+        UserProfileResponse profile = new UserProfileResponse(userId, Map.of(), "", OffsetDateTime.now(), List.of());
+
+        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+        LearningPathQueryService pathService = mock(LearningPathQueryService.class);
+        ResourceLibraryService resourceService = mock(ResourceLibraryService.class);
+        LearnerKnowledgeGraphService graphService = mock(LearnerKnowledgeGraphService.class);
+        UserProfileQueryService profileService = mock(UserProfileQueryService.class);
+        when(pathService.getCurrent(userId)).thenReturn(learningPath);
+        when(resourceService.recommendations(userId, 6)).thenReturn(List.of());
+        when(graphService.getGraph(currentUser, userId)).thenReturn(graph);
+        when(profileService.getCurrentProfile(currentUser, userId)).thenReturn(profile);
+        when(jdbc.query(anyString(), any(MapSqlParameterSource.class), anyMistakeMapper()))
+            .thenReturn(List.of());
+
+        var response = service(jdbc, pathService, resourceService, graphService, profileService).daily(currentUser);
+
+        assertThat(response.tasks())
+            .filteredOn(task -> "STAGE_TEST".equals(task.type()))
+            .extracting("status")
+            .containsExactly("READY");
+        assertThat(response.executionPlan().primaryTask().type()).isEqualTo("STAGE_TEST");
+        assertThat(response.executionPlan().steps())
+            .extracting("sourceTaskType")
+            .contains("STAGE_TEST");
     }
 
     @Test
@@ -125,6 +171,60 @@ class StudyWorkbenchServiceTest {
         assertThat(detail.relatedResources()).containsExactly(relatedResource);
         assertThat(detail.recommendedNextActions()).isNotEmpty();
         assertThat(detail.practiceContext()).containsEntry("source", "KNOWLEDGE_GRAPH_DETAIL");
+    }
+
+    @Test
+    void knowledgeNodeDetailFiltersUnrelatedSemanticResourceFallbacks() {
+        UUID userId = UUID.fromString("61000000-0000-0000-0000-000000000007");
+        JwtAuthenticatedUser currentUser = new JwtAuthenticatedUser(userId, "learner@example.com", "USER");
+        KnowledgeGraphResponse graph = new KnowledgeGraphResponse(
+            List.of(new KnowledgeGraphResponse.KnowledgeNodeDto("deadlock", "操作系统死锁知识", 0.28, "WEAK", "PROFILE")),
+            List.of(),
+            List.of("deadlock")
+        );
+        ResourceItemResponse relevantResource = resource(
+            "操作系统死锁与银行家算法",
+            false,
+            "讲解死锁产生条件、进程同步和避免策略。",
+            List.of("操作系统", "死锁", "银行家算法"),
+            Map.of()
+        );
+        ResourceItemResponse unrelatedResource = resource(
+            "Barcode Detection API",
+            false,
+            "Detect barcodes from images in the browser.",
+            List.of("web api", "browser", "死锁", "操作系统"),
+            Map.of()
+        );
+
+        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+        ResourceLibraryService resourceService = mock(ResourceLibraryService.class);
+        LearnerKnowledgeGraphService graphService = mock(LearnerKnowledgeGraphService.class);
+        when(graphService.getGraph(currentUser, userId)).thenReturn(graph);
+        when(jdbc.query(anyString(), any(MapSqlParameterSource.class), anyMistakeMapper()))
+            .thenReturn(List.of());
+        when(resourceService.semanticSearch(userId, "操作系统死锁知识", 6)).thenReturn(new ResourceSemanticSearchResponse(
+            "操作系统死锁知识",
+            true,
+            "ok",
+            List.of(
+                new ResourceSemanticResultResponse(unrelatedResource.id(), unrelatedResource, 0.92, "fallback", List.of()),
+                new ResourceSemanticResultResponse(relevantResource.id(), relevantResource, 0.84, "match", List.of())
+            )
+        ));
+
+        var detail = service(
+            jdbc,
+            mock(LearningPathQueryService.class),
+            resourceService,
+            graphService,
+            mock(UserProfileQueryService.class)
+        ).knowledgeNodeDetail(currentUser, userId, "deadlock");
+
+        assertThat(detail.relatedResources()).containsExactly(relevantResource);
+        assertThat(detail.recommendedNextActions())
+            .anyMatch(action -> action.contains("操作系统死锁与银行家算法"))
+            .noneMatch(action -> action.contains("Barcode Detection API"));
     }
 
     @Test
@@ -193,7 +293,7 @@ class StudyWorkbenchServiceTest {
         );
     }
 
-    private static LearningPathCurrentResponse learningPath(UUID userId) {
+    private static LearningPathCurrentResponse learningPath(UUID userId, int progress) {
         return new LearningPathCurrentResponse(
             UUID.fromString("62000000-0000-0000-0000-000000000001"),
             userId,
@@ -203,7 +303,7 @@ class StudyWorkbenchServiceTest {
             Map.of(
                 "stepId", "stage-1",
                 "title", "Java 控制流",
-                "progress", 40,
+                "progress", progress,
                 "checkpoint", "完成循环练习",
                 "targetKnowledgePoints", List.of("循环")
             ),
@@ -265,6 +365,16 @@ class StudyWorkbenchServiceTest {
     }
 
     private static ResourceItemResponse resource(String title, boolean completed) {
+        return resource(title, completed, "summary", List.of("循环"), Map.of());
+    }
+
+    private static ResourceItemResponse resource(
+        String title,
+        boolean completed,
+        String summary,
+        List<String> tags,
+        Map<String, Object> metadata
+    ) {
         return new ResourceItemResponse(
             UUID.randomUUID(),
             title,
@@ -273,8 +383,8 @@ class StudyWorkbenchServiceTest {
             "DOCUMENT",
             "BASIC",
             "WEB",
-            "summary",
-            List.of("循环"),
+            summary,
+            tags,
             "https://example.com/resource",
             "example.com",
             "",
@@ -298,7 +408,7 @@ class StudyWorkbenchServiceTest {
             null,
             "GENERAL_CS",
             "",
-            Map.of()
+            metadata
         );
     }
 

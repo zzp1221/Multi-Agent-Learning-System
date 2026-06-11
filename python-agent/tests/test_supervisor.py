@@ -147,6 +147,22 @@ def test_tutoring_route_does_not_treat_video_link_request_as_resource_generation
     )
 
 
+def test_tutoring_route_keeps_long_answer_with_embedded_path_on_tutor() -> None:
+    supervisor = PythonAgentSupervisor()
+
+    route = supervisor.resolve_route(
+        "TUTORING",
+        {
+            "query": (
+                "请用较长回答系统比较数据库中的 B 树、B+ 树、哈希索引和 LSM-tree。"
+                "最后给我一个 3 天学习路径和 5 道自测题。"
+            )
+        },
+    )
+
+    assert route.agent_names == ["query_rewrite", "retrieval", "tutor"]
+
+
 def test_supervisor_route_templates_reference_registered_or_virtual_agents() -> None:
     supervisor = PythonAgentSupervisor()
     virtual_agents = {"resource_bundle"}

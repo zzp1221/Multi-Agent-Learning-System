@@ -8,6 +8,7 @@ export type EngineService = 'resource' | 'personalized' | 'path' | 'push';
 export type ResourceType = 'EXPLANATION' | 'CODE_CASE' | 'QUIZ' | 'MINDMAP' | 'SLIDES' | 'VIDEO';
 export type PushResourceType = 'EXPLANATION' | 'CODE_CASE' | 'PRACTICAL_CASE' | 'READING' | 'VIDEO';
 export type QnaState = 'QNA_IDLE' | 'QNA_STREAMING';
+export const QNA_STREAM_STOPPED_MESSAGE = '已停止生成。';
 export type EngineState =
   | 'ENGINE_IDLE'
   | 'ENGINE_SERVICE_SELECTED'

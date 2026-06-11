@@ -288,6 +288,33 @@ async def test_tutor_resource_intent_accepts_llm_specific_types() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tutor_resource_intent_rejects_long_answer_with_embedded_path_and_quiz() -> None:
+    extractor = _FakeResourceIntentExtractor(
+        should_generate=True,
+        resource_types=["DOCUMENT", "QUIZ"],
+        topic="数据库索引结构比较",
+    )
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+        resource_intent_extractor=extractor,
+    )
+
+    intent = await tutor._detect_resource_generation_intent(
+        user_query=(
+            "请用较长回答系统比较数据库中的 B 树、B+ 树、哈希索引和 LSM-tree。"
+            "要求分 6 个小节：核心结构、等值查询、范围查询、写入放大、缓存友好性、崩溃恢复。"
+            "请结合 PostgreSQL、MySQL InnoDB、Redis 或 RocksDB 举例，最后给我一个 3 天学习路径和 5 道自测题。"
+        ),
+        conversation=[],
+        params={},
+    )
+
+    assert intent is None
+    assert extractor.calls == []
+
+
+@pytest.mark.asyncio
 async def test_tutor_resource_intent_rejects_video_link_request() -> None:
     extractor = _FakeResourceIntentExtractor(should_generate=False)
     tutor = TutorAgent(

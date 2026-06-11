@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
 import {
   BookOpenCheck,
   CheckCircle2,
@@ -965,7 +965,26 @@ function TrainingCampPanel(props: {
         </div>
       ) : camps.length === 0 ? (
         <div className="px-5 pb-5">
-          <EmptyState title="暂无错因训练营" description="完成练习并产生错题后，系统会按错因和知识点自动聚类。" />
+          <EmptyState
+            title="暂无错因训练营"
+            description="完成练习并产生错题后，系统会按错因和知识点自动聚类。"
+            actions={
+              <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
+                <Link
+                  to="/profile"
+                  className="inline-flex h-10 items-center justify-center rounded-xl bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700"
+                >
+                  去画像找薄弱点
+                </Link>
+                <Link
+                  to="/resources"
+                  className="inline-flex h-10 items-center justify-center rounded-xl bg-slate-100 px-4 text-sm font-semibold text-slate-600 transition hover:bg-primary-50 hover:text-primary-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-primary-500/10"
+                >
+                  打开资源库
+                </Link>
+              </div>
+            }
+          />
         </div>
       ) : (
         <div className="grid gap-4 px-4 pb-5 md:grid-cols-[300px_minmax(0,1fr)] md:px-5">
@@ -1148,7 +1167,7 @@ function CampMetric(props: { label: string; value: number | string }) {
   );
 }
 
-function EmptyState(props: { title: string; description: string }) {
+function EmptyState(props: { title: string; description: string; actions?: ReactNode }) {
   return (
     <div className="rounded-[22px] bg-white/74 p-8 text-center shadow-[0_12px_34px_rgba(54,86,140,0.07)] backdrop-blur dark:bg-slate-900/64 dark:shadow-slate-950/20">
       <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800">
@@ -1156,6 +1175,7 @@ function EmptyState(props: { title: string; description: string }) {
       </div>
       <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">{props.title}</div>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{props.description}</p>
+      {props.actions}
     </div>
   );
 }

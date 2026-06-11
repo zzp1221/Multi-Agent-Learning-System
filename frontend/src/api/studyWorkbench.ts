@@ -33,6 +33,38 @@ export interface WorkbenchSummary {
   stageTestReady: boolean;
 }
 
+export interface LearningSessionStep {
+  id: string;
+  phase: string;
+  title: string;
+  description: string;
+  status: 'READY' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | string;
+  minutes?: number | null;
+  actionLabel: string;
+  actionRoute: string;
+  sourceTaskId?: string | null;
+  sourceTaskType?: string | null;
+}
+
+export interface PlanSupportItem {
+  id: string;
+  type: 'STAGE' | 'MISTAKE_REVIEW' | 'RESOURCE' | 'KNOWLEDGE' | string;
+  title: string;
+  description: string;
+  actionRoute: string;
+}
+
+export interface DailyExecutionPlan {
+  title: string;
+  subtitle: string;
+  focusReason: string;
+  successCriteria: string;
+  estimatedMinutes: number;
+  primaryTask: DailyTaskItem;
+  steps: LearningSessionStep[];
+  supportItems: PlanSupportItem[];
+}
+
 export interface DailyStudyWorkbenchResponse {
   userId: string;
   workDate: string;
@@ -40,6 +72,7 @@ export interface DailyStudyWorkbenchResponse {
   summary: WorkbenchSummary;
   learningPath: LearningPathCurrentResponse;
   activeStep?: Record<string, unknown> | null;
+  executionPlan?: DailyExecutionPlan | null;
   tasks: DailyTaskItem[];
   dueMistakes: MistakeRecordResponse[];
   recommendedResources: ResourceItem[];
