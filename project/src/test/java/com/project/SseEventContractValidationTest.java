@@ -102,7 +102,7 @@ class SseEventContractValidationTest {
 
     @Test
     void eventTypeCountMatchesContract() {
-        // The shared contract defines exactly 13 event types
-        assertThat(StreamEventType.values()).hasSize(13);
+        // The shared contract defines exactly 14 event types
+        assertThat(StreamEventType.values()).hasSize(14);
     }
 }

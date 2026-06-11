@@ -111,7 +111,10 @@ def create_compatible_client(
     resolved_provider = (provider_name or _provider_name()).strip().lower()
     if resolved_provider == "spark":
         return SparkCompatibleClient(model_name=model_name or _primary_model_name())
-    return OpenAICompatibleClient(model_name=model_name or _primary_model_name())
+    return OpenAICompatibleClient(
+        model_name=model_name or _primary_model_name(),
+        provider_name=resolved_provider,
+    )
 
 
 def create_tool_calling_llm(
@@ -124,7 +127,10 @@ def create_tool_calling_llm(
     resolved_provider = (provider_name or _provider_name()).strip().lower()
     if resolved_provider == "spark":
         return SparkCompatibleToolCallingLLM(model_name=model_name or _primary_model_name())
-    return OpenAICompatibleTutorLLM(model_name=model_name or _primary_model_name())
+    return OpenAICompatibleTutorLLM(
+        model_name=model_name or _primary_model_name(),
+        provider_name=resolved_provider,
+    )
 
 
 class OpenAICompatibleJSONGenerator:

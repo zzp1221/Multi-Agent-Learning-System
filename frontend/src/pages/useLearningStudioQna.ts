@@ -840,6 +840,18 @@ export function useLearningStudioQna({
             if (event.event === 'question_batch') {
               handleConversationQuestionBatch(event.data.payload);
             }
+            if (event.event === 'reasoning_chunk') {
+              const reasoningChunk = readReasoningChunk(event.data.payload);
+              if (!reasoningChunk) {
+                return;
+              }
+              updateQnaConversationMessages(
+                currentConversationId,
+                (messages) => appendReasoningChunk(messages, assistantMessageId, reasoningChunk),
+                { qnaState: 'QNA_STREAMING' },
+              );
+              return;
+            }
             const chunk = readConversationChunk(event.data, event.event);
             if (!chunk) {
               return;
@@ -876,7 +888,7 @@ export function useLearningStudioQna({
             }
             updateQnaConversationMessages(
               currentConversationId,
-              removePendingAssistantPlaceholder,
+              (messages) => markReasoningDone(removePendingAssistantPlaceholder(messages), assistantMessageId),
               { qnaState: hasActiveSlideOutlineReveal() ? 'QNA_STREAMING' : 'QNA_IDLE' },
             );
             window.dispatchEvent(new Event('app:conversation-updated'));
@@ -1186,7 +1198,11 @@ export function useLearningStudioQna({
           return item;
         }
         updatedAssistant = true;
-        return { ...item, content: stoppedAssistantContent(item.content) };
+        return {
+          ...item,
+          content: stoppedAssistantContent(item.content),
+          reasoningState: item.reasoningContent?.trim() ? 'stopped' as const : item.reasoningState,
+        };
       });
       if (updatedAssistant) {
         return nextMessages;
@@ -1400,6 +1416,50 @@ function stoppedAssistantContent(content: string): string {
     return value;
   }
   return `${value.trimEnd()}\n\n${QNA_STREAM_STOPPED_MESSAGE}`;
+}
+
+function appendReasoningChunk(messages: ChatMessage[], assistantMessageId: string, chunk: string): ChatMessage[] {
+  let updatedAssistant = false;
+  const nextMessages = messages.map((item) => {
+    if (item.id !== assistantMessageId) {
+      return item;
+    }
+    updatedAssistant = true;
+    return {
+      ...item,
+      reasoningContent: `${item.reasoningContent ?? ''}${chunk}`,
+      reasoningState: 'streaming' as const,
+    };
+  });
+  return updatedAssistant
+    ? nextMessages
+    : [
+      ...messages,
+      {
+        id: assistantMessageId,
+        role: 'assistant' as const,
+        content: '',
+        reasoningContent: chunk,
+        reasoningState: 'streaming' as const,
+      },
+    ];
+}
+
+function markReasoningDone(messages: ChatMessage[], assistantMessageId: string): ChatMessage[] {
+  return messages.map((item) => {
+    if (item.id !== assistantMessageId || !item.reasoningContent?.trim()) {
+      return item;
+    }
+    return { ...item, reasoningState: 'done' as const };
+  });
+}
+
+function readReasoningChunk(payload: Record<string, unknown> | undefined): string {
+  if (!payload) {
+    return '';
+  }
+  const text = payload.text;
+  return typeof text === 'string' ? text : '';
 }
 
 function restorePendingSlideOutlineMessages(conversationId: string, messages: ChatMessage[]): ChatMessage[] {

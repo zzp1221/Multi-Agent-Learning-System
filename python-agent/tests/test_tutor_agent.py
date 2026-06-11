@@ -22,6 +22,14 @@ from src.ai_modules.models import (
 )
 
 
+class _StreamChunk:
+    def __init__(self, kind: str, text: str, provider: str = "secondary", model: str = "secondary-model") -> None:
+        self.kind = kind
+        self.text = text
+        self.provider = provider
+        self.model = model
+
+
 def _build_snapshot() -> SystemSnapshot:
     return SystemSnapshot(
         current_course="数据库原理",
@@ -87,6 +95,25 @@ class _StreamingTutorClient:
 class _StreamingTutorLLM:
     def __init__(self) -> None:
         self.client = _StreamingTutorClient()
+
+
+class _ReasoningStreamingTutorClient(_StreamingTutorClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.include_reasoning_calls: list[bool] = []
+
+    async def chat_completion_stream_events(self, **kwargs):
+        self.stream_calls += 1
+        self.include_reasoning_calls.append(bool(kwargs.get("include_reasoning")))
+        yield _StreamChunk("reasoning", "先分析问题")
+        yield _StreamChunk("answer", "最终")
+        yield _StreamChunk("reasoning", "再检查")
+        yield _StreamChunk("answer", "答案")
+
+
+class _ReasoningStreamingTutorLLM:
+    def __init__(self) -> None:
+        self.client = _ReasoningStreamingTutorClient()
 
 
 class _LengthAwareTutorClient:
@@ -704,6 +731,46 @@ async def test_tutor_agent_plain_question_does_not_trigger_resource_bundle() -> 
     assert runner.calls == []
     assert [event.event for event in events] == ["progress", "result_chunk"]
     assert "".join(event.payload.text for event in events if event.event == "result_chunk") == "LLM generated answer"
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_streams_raw_reasoning_separately_in_deep_mode() -> None:
+    llm = _ReasoningStreamingTutorLLM()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=llm,
+        resource_intent_extractor=_FakeResourceIntentExtractor(should_generate=False),
+    )
+    params = {
+        "query": "联合索引为什么遵循最左前缀",
+        "messages": [{"role": "user", "content": "联合索引为什么遵循最左前缀"}],
+        "reasoningMode": "DEEP",
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-plain-reasoning",
+            trace_id="trace-plain-reasoning",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=tutor.system_prompt(_build_snapshot()),
+        )
+    ]
+
+    assert [event.event for event in events] == [
+        "progress",
+        "reasoning_chunk",
+        "result_chunk",
+        "reasoning_chunk",
+        "result_chunk",
+    ]
+    assert "".join(event.payload.text for event in events if event.event == "reasoning_chunk") == "先分析问题再检查"
+    assert "".join(event.payload.text for event in events if event.event == "result_chunk") == "最终答案"
+    assert llm.client.include_reasoning_calls == [True]
 
 
 def test_tutor_agent_system_prompt_loads_skill_and_context() -> None:

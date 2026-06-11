@@ -299,6 +299,7 @@ class TutorLLMClientFactory:
             api_key=settings.provider_api_key(provider_name),
             base_url=endpoint.base_url,
             model_name=model_name,
+            provider_name=provider_name,
         )
 
     @staticmethod

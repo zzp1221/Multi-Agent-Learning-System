@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from src.ai_modules.models import ModelRoutingConfig, ProviderEndpointConfig
+from src.ai_modules.models import ModelRoutingConfig, ProviderEndpointConfig, ReasoningStreamConfig
 
 PYTHON_AGENT_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = PYTHON_AGENT_ROOT.parent
@@ -368,6 +368,7 @@ class Settings(BaseSettings):
                         "rerank_model": self.rerank_model_name,
                         "safety_model": self.safety_model_name,
                     },
+                    reasoningModels=self._default_openai_compatible_reasoning_models(),
                 ),
                 "mimo": ProviderEndpointConfig(
                     name="mimo",
@@ -387,6 +388,9 @@ class Settings(BaseSettings):
                         "rerank_model": "qwen3-rerank",
                         "safety_model": "mimo-v2-flash",
                     },
+                    reasoningModels=self._default_openai_compatible_reasoning_models(
+                        model_names=("mimo-v2-omni", "mimo-v2.5-pro", self.reasoning_model_name),
+                    ),
                 ),
                 "spark": ProviderEndpointConfig(
                     name="spark",
@@ -411,6 +415,20 @@ class Settings(BaseSettings):
                 ),
             },
         )
+
+    def _default_openai_compatible_reasoning_models(
+        self,
+        model_names: tuple[str, ...] | None = None,
+    ) -> dict[str, ReasoningStreamConfig]:
+        """Return conservative raw-reasoning settings for compatible chat APIs."""
+
+        names = model_names or (self.reasoning_model_name,)
+        config = ReasoningStreamConfig(
+            request={"thinking": {"type": "enabled"}},
+            streamFields=["reasoning_content", "reasoning", "reasoningContent"],
+            messageFields=["reasoning_content", "reasoning", "reasoningContent"],
+        )
+        return {name: config for name in names if name.strip()}
 
     def model_routing_config(self) -> ModelRoutingConfig:
         """可用时从 YAML 加载提供商路由配置，否则使用默认值。"""
@@ -470,6 +488,20 @@ class Settings(BaseSettings):
 
         routing = self.model_routing_config()
         return routing.providers[self.normalize_provider_name(provider_name or self.runtime_provider_name())]
+
+    def reasoning_stream_config(
+        self,
+        *,
+        provider_name: str | None = None,
+        model_name: str,
+    ) -> ReasoningStreamConfig | None:
+        """Return raw-reasoning stream config for the actual provider/model if enabled."""
+
+        provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
+        routing = self.model_routing_config()
+        if provider not in routing.providers:
+            return None
+        return routing.resolve_reasoning_config(model_name, provider)
 
     def provider_api_key(self, provider_name: str | None = None) -> str:
         """返回提供商配置的 API 密钥字符串。"""

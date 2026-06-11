@@ -114,6 +114,15 @@ class ResultChunkPayload(BaseModel):
     stage: str | None = None
 
 
+class ReasoningChunkPayload(BaseModel):
+    """Raw model reasoning token payload."""
+
+    text: str
+    stage: str | None = "reasoning"
+    provider: str | None = None
+    model: str | None = None
+
+
 class ResourceFilePayload(BaseModel):
     """Generated asset metadata payload."""
 
@@ -208,6 +217,13 @@ class ResultChunkSSEEvent(SSEEvent):
 
     event: Literal["result_chunk"] = "result_chunk"
     payload: ResultChunkPayload
+
+
+class ReasoningChunkSSEEvent(SSEEvent):
+    """Typed raw reasoning text event."""
+
+    event: Literal["reasoning_chunk"] = "reasoning_chunk"
+    payload: ReasoningChunkPayload
 
 
 class ResourceFileSSEEvent(SSEEvent):

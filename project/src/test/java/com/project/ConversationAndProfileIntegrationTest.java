@@ -9,6 +9,7 @@ import com.project.application.conversation.PythonConversationMessageClient;
 import com.project.domain.profile.UserProfileCurrent;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,7 +30,9 @@ import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -86,8 +89,17 @@ class ConversationAndProfileIntegrationTest {
             @SuppressWarnings("unchecked")
             Consumer<PythonStreamEvent> consumer = invocation.getArgument(1, Consumer.class);
             consumer.accept(new PythonStreamEvent(
+                "reasoning_chunk",
+                "reasoning",
+                Map.of(
+                    "text", "raw reasoning",
+                    "provider", "test-provider",
+                    "model", "test-model"
+                )
+            ));
+            consumer.accept(new PythonStreamEvent(
                 "result_chunk",
-                "explaining",
+                "tutoring",
                 Map.of(
                     "text", "先理解联合索引的最左前缀原则",
                     "pedagogyStrategy", "EXPLAIN",
@@ -138,9 +150,20 @@ class ConversationAndProfileIntegrationTest {
             .andReturn();
 
         String responseBody = asyncResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(responseBody).contains("event:reasoning_chunk");
         assertThat(responseBody).contains("event:result_chunk");
         assertThat(responseBody).contains("event:done");
         assertThat(responseBody).contains(conversationId);
+        ArgumentCaptor<String> assistantContent = ArgumentCaptor.forClass(String.class);
+        verify(pythonConversationMessageClient).appendMessage(
+            eq(UUID.fromString(conversationId)),
+            eq(UUID.fromString(authContext.userId())),
+            eq("assistant"),
+            assistantContent.capture(),
+            eq(List.of())
+        );
+        assertThat(assistantContent.getValue()).isNotBlank();
+        assertThat(assistantContent.getValue()).doesNotContain("raw reasoning");
         assertThat(responseBody).contains("联合索引");
     }
 

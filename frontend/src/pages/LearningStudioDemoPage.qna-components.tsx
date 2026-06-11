@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, BrainCircuit, FileImage, Globe2, Paperclip, SendHorizontal, Square, X, XCircle } from 'lucide-react';
+import { ArrowDown, BrainCircuit, ChevronDown, FileImage, Globe2, Paperclip, SendHorizontal, Square, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { normalizeCopyText } from './LearningStudioDemoPage.utils';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
@@ -56,6 +56,11 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
           </div>
         ) : (
           <div className={`qna-assistant-message ${assistantIsPending ? 'is-pending' : ''}`}>
+            <ReasoningPanel
+              content={message.reasoningContent ?? ''}
+              state={message.reasoningState}
+              isStreaming={isStreaming}
+            />
             {message.content ? (
               <MarkdownRenderer content={message.content} isStreaming={isStreaming} />
             ) : (
@@ -76,6 +81,57 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
         ) : null}
       </div>
     </motion.div>
+  );
+});
+
+const ReasoningPanel = memo(function ReasoningPanel({
+  content,
+  state,
+  isStreaming,
+}: {
+  content: string;
+  state?: ChatMessage['reasoningState'];
+  isStreaming: boolean;
+}) {
+  const hasContent = Boolean(content.trim());
+  const [expanded, setExpanded] = useState(isStreaming);
+
+  useEffect(() => {
+    if (isStreaming && hasContent) {
+      setExpanded(true);
+      return;
+    }
+    if (!isStreaming && state && hasContent) {
+      setExpanded(false);
+    }
+  }, [hasContent, isStreaming, state]);
+
+  if (!hasContent) {
+    return null;
+  }
+
+  const title = state === 'stopped'
+    ? '深度思考已停止'
+    : isStreaming || state === 'streaming'
+      ? '深度思考中'
+      : '深度思考已完成';
+
+  return (
+    <div className={`qna-reasoning-panel ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
+      <button
+        type="button"
+        className="qna-reasoning-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((prev) => !prev)}
+      >
+        <BrainCircuit className="h-4 w-4" />
+        <span>{title}</span>
+        <ChevronDown className="qna-reasoning-chevron h-4 w-4" />
+      </button>
+      {expanded ? (
+        <pre className="qna-reasoning-content">{content}</pre>
+      ) : null}
+    </div>
   );
 });
 

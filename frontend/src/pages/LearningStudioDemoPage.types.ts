@@ -22,6 +22,8 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  reasoningContent?: string;
+  reasoningState?: 'streaming' | 'done' | 'stopped';
   imageUrls?: string[];
   localImagePreviews?: string[];
   webSearchEnabled?: boolean;

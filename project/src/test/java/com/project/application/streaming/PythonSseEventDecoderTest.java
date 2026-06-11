@@ -44,6 +44,19 @@ class PythonSseEventDecoderTest {
     }
 
     @Test
+    void preservesReasoningChunkEventType() throws Exception {
+        Optional<PythonStreamEvent> event = decoder.decode(
+            "reasoning_chunk",
+            "{\"payload\":{\"stage\":\"reasoning\",\"text\":\"raw reasoning\"}}"
+        );
+
+        assertThat(event).isPresent();
+        assertThat(event.orElseThrow().eventType()).isEqualTo("reasoning_chunk");
+        assertThat(event.orElseThrow().stage()).isEqualTo("reasoning");
+        assertThat(event.orElseThrow().safePayload()).containsEntry("text", "raw reasoning");
+    }
+
+    @Test
     void ignoresEmptyFrame() throws Exception {
         assertThat(decoder.decode(null, "")).isEmpty();
     }

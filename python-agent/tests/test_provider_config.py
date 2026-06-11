@@ -51,6 +51,8 @@ def test_settings_build_default_model_routing_config() -> None:
     assert routing.resolve_model("fast_model", "spark") == "Spark X2-Flash"
     assert routing.providers["openai_compatible"].structured_output_mode == "json_object"
     assert routing.providers["spark"].structured_output_mode == "json_object"
+    assert routing.resolve_reasoning_config("qwen3.6-max-preview", "openai_compatible") is not None
+    assert routing.resolve_reasoning_config("qwen3.6-plus", "openai_compatible") is None
 
 
 def test_settings_accepts_ai_openai_compatible_base_url_alias() -> None:
@@ -106,6 +108,16 @@ def test_settings_loads_model_routing_config_from_yaml(tmp_path: Path) -> None:
                 "    apiKeyEnv: OPENAI_COMPATIBLE_API_KEY",
                 "    models:",
                 "      main_chat_model: qwen3.6-plus",
+                "      reasoning_model: qwen3.6-max-preview",
+                "    reasoningModels:",
+                "      qwen3.6-max-preview:",
+                "        request:",
+                "          thinking:",
+                "            type: enabled",
+                "        streamFields:",
+                "          - reasoning_content",
+                "        messageFields:",
+                "          - reasoning_content",
             ]
         ),
         encoding="utf-8",
@@ -124,6 +136,10 @@ def test_settings_loads_model_routing_config_from_yaml(tmp_path: Path) -> None:
     assert routing.active_provider == "spark"
     assert routing.fallback_provider == "openai_compatible"
     assert settings.resolve_logical_model("main_chat_model") == "Spark Ultra"
+    reasoning_config = routing.resolve_reasoning_config("qwen3.6-max-preview", "openai_compatible")
+    assert reasoning_config is not None
+    assert reasoning_config.request == {"thinking": {"type": "enabled"}}
+    assert reasoning_config.stream_fields == ["reasoning_content"]
 
 
 def test_settings_provider_ready_for_spark_requires_api_key() -> None:

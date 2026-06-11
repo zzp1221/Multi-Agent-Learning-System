@@ -25,9 +25,9 @@ class SparkCompatibleClient(OpenAICompatibleClient):
             api_key=api_key or settings.spark_api_key,
             base_url=base_url or settings.spark_base_url,
             model_name=model_name or settings.spark_model_name,
+            provider_name="spark",
             timeout_seconds=timeout_seconds,
         )
-        self.provider_name = "spark"
 
 
 class SparkCompatibleToolCallingLLM(OpenAICompatibleToolCallingLLM):

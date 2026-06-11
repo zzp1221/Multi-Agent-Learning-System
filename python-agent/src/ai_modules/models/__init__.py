@@ -13,6 +13,8 @@ from src.ai_modules.models.events import (
     QuestionBatchSSEEvent,
     ResourceFilePayload,
     ResourceFileSSEEvent,
+    ReasoningChunkPayload,
+    ReasoningChunkSSEEvent,
     ResultChunkPayload,
     ResultChunkSSEEvent,
     SSEEvent,
@@ -41,6 +43,7 @@ from src.ai_modules.models.planning import (
 from src.ai_modules.models.provider_config import (
     ModelRoutingConfig,
     ProviderEndpointConfig,
+    ReasoningStreamConfig,
 )
 from src.ai_modules.models.profile import (
     LearnerProfileDimensions,
@@ -86,11 +89,14 @@ __all__ = [
     "ProgressPayload",
     "ProgressSSEEvent",
     "ProviderEndpointConfig",
+    "ReasoningStreamConfig",
     "QuestionBatchPayload",
     "QuestionBatchSSEEvent",
     "QueryRewriteResult",
     "ResourceFilePayload",
     "ResourceFileSSEEvent",
+    "ReasoningChunkPayload",
+    "ReasoningChunkSSEEvent",
     "RetrievalDocument",
     "RetrievalResponse",
     "ResultChunkPayload",

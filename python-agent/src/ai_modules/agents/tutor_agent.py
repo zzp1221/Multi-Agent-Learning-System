@@ -17,6 +17,8 @@ from src.ai_modules.models import (
     DialogState,
     ProgressPayload,
     ProgressSSEEvent,
+    ReasoningChunkPayload,
+    ReasoningChunkSSEEvent,
     ResultChunkPayload,
     ResultChunkSSEEvent,
     SSEEvent,
@@ -267,22 +269,38 @@ class TutorAgent(PlaceholderAgent):
         last_error: Exception | None = None
         for llm_client in self.llm_clients:
             streamed = False
+            emitted_stream_event = False
             if not response_constraints:
                 try:
-                    async for token in self._try_direct_chat_stream(
+                    async for stream_event in self._try_direct_chat_stream(
                         llm_client=llm_client,
                         system_prompt=system_prompt,
                         params=params,
                         persisted_summary=persisted_summary,
                     ):
-                        streamed = True
-                        yield ResultChunkSSEEvent(
-                            taskId=task_id,
-                            traceId=trace_id,
-                            seq=current_seq,
-                            payload=ResultChunkPayload(text=token, stage="tutoring"),
-                            dialogState=dialog_state,
-                        )
+                        emitted_stream_event = True
+                        if stream_event["kind"] == "reasoning":
+                            yield ReasoningChunkSSEEvent(
+                                taskId=task_id,
+                                traceId=trace_id,
+                                seq=current_seq,
+                                payload=ReasoningChunkPayload(
+                                    text=stream_event["text"],
+                                    stage="reasoning",
+                                    provider=stream_event.get("provider"),
+                                    model=stream_event.get("model"),
+                                ),
+                                dialogState=dialog_state,
+                            )
+                        else:
+                            streamed = True
+                            yield ResultChunkSSEEvent(
+                                taskId=task_id,
+                                traceId=trace_id,
+                                seq=current_seq,
+                                payload=ResultChunkPayload(text=stream_event["text"], stage="tutoring"),
+                                dialogState=dialog_state,
+                            )
                         current_seq += 1
                     if streamed:
                         self._log_llm_success("direct_stream", llm_client)
@@ -298,7 +316,7 @@ class TutorAgent(PlaceholderAgent):
                 except Exception as exc:
                     last_error = exc
                     self._log_llm_failure("direct_stream", exc, llm_client)
-                    if streamed:
+                    if emitted_stream_event:
                         raise
 
             try:
@@ -825,17 +843,38 @@ class TutorAgent(PlaceholderAgent):
             user_query=user_query,
         )
 
-        # 每累积 3 个 token 批量输出，使 UI 更新更平滑
+        # Answer tokens are batched for smoother UI updates; reasoning stays raw.
         batch: list[str] = []
-        async for token in client.chat_completion_stream(
-            messages=llm_messages,
-        ):
-            batch.append(token)
+        stream_method = getattr(client, "chat_completion_stream_events", None)
+        if callable(stream_method):
+            stream = stream_method(
+                messages=llm_messages,
+                include_reasoning=self._is_deep_quality_mode(params),
+            )
+        else:
+            stream = client.chat_completion_stream(messages=llm_messages)
+
+        async for chunk in stream:
+            if isinstance(chunk, str):
+                batch.append(chunk)
+            elif getattr(chunk, "kind", "") == "reasoning":
+                if batch:
+                    yield {"kind": "answer", "text": "".join(batch)}
+                    batch.clear()
+                yield {
+                    "kind": "reasoning",
+                    "text": getattr(chunk, "text", ""),
+                    "provider": getattr(chunk, "provider", None),
+                    "model": getattr(chunk, "model", None),
+                }
+                continue
+            else:
+                batch.append(str(getattr(chunk, "text", "") or ""))
             if len(batch) >= 3:
-                yield "".join(batch)
+                yield {"kind": "answer", "text": "".join(batch)}
                 batch.clear()
         if batch:
-            yield "".join(batch)
+            yield {"kind": "answer", "text": "".join(batch)}
 
     def _build_enriched_message(
         self,

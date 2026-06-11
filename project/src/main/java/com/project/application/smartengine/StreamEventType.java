@@ -9,6 +9,7 @@ public enum StreamEventType {
     MESSAGE("message"),
     PROGRESS("progress"),
     RESULT_CHUNK("result_chunk"),
+    REASONING_CHUNK("reasoning_chunk"),
     RESOURCE_FILE("resource_file"),
     QUESTION_BATCH("question_batch"),
     JUDGE_RESULT("judge_result"),
