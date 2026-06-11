@@ -301,6 +301,10 @@
     white-space: nowrap;
   }
 
+  .app-breadcrumb.is-settings-breadcrumb > span:not(.settings-breadcrumb-label) {
+    display: none;
+  }
+
   .qna-landing-shell {
     position: relative;
     display: grid;

@@ -69,6 +69,8 @@ class ProfileAgent(PlaceholderAgent):
             skill_name="profile",
             snapshot=snapshot,
             fallback_prompt=build_profile_system_prompt(snapshot),
+            component_name="profile_llm",
+            ability_key="ability:assessment",
         )
 
     async def run(

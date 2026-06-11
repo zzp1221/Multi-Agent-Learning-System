@@ -92,6 +92,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       APP_JWT_SECRET: ${APP_JWT_SECRET:?APP_JWT_SECRET must be configured}
+      APP_USER_LLM_ENCRYPTION_KEY: ${APP_USER_LLM_ENCRYPTION_KEY:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:80,http://localhost:5173,http://localhost:5174}
       AI_OPENAI_COMPATIBLE_API_KEY: ${AI_OPENAI_COMPATIBLE_API_KEY:-}
       SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/${MONGO_DB:-zhixue}

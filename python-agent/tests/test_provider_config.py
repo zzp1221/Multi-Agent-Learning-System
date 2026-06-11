@@ -19,12 +19,16 @@ from src.ai_modules.llms.practice_llm import RuleBasedJudgeLLM, RuleBasedPractic
 from src.ai_modules.llms.review_llm import ReviewLLMClientFactory
 from src.ai_modules.llms.spark_compatible import SparkCompatibleToolCallingLLM
 from src.ai_modules.llms.tutor_llm import RuleBasedTutorLLM, TutorLLMClientFactory
+from src.ai_modules.llms import user_runtime_config
+from src.ai_modules.llms.user_runtime_config import UserLlmRuntimeConfig
 from src.ai_modules.llms.workflow_llm import (
     GenerationToolLLMClientFactory,
     QueryRewriteToolLLMClientFactory,
     RuleBasedGenerationLLM,
     RuleBasedQueryRewriteLLM,
 )
+from src.ai_modules.runtime import SystemSnapshot
+from src.ai_modules.runtime.skill_loader import SkillPromptLoader, append_user_skill_to_prompt
 
 
 def test_settings_build_default_model_routing_config() -> None:
@@ -191,6 +195,252 @@ def test_settings_component_override_accepts_literal_model_name() -> None:
     )
 
     assert settings.resolve_component_model("evaluation_llm", default_logical_model="main_chat_model") == "custom-eval-model"
+
+
+def test_user_runtime_config_overlays_provider_and_component_settings() -> None:
+    settings = Settings(
+        ACTIVE_PROVIDER="openai_compatible",
+        OPENAI_COMPATIBLE_API_KEY="env-openai-key",
+        MIMO_API_KEY="",
+    )
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": False,
+            "activeProvider": "deepseek",
+            "fallbackProvider": "",
+            "providers": {
+                "deepseek": {
+                    "provider": "deepseek",
+                    "baseUrl": "https://example.deepseek.test/v1",
+                    "apiKey": "user-deepseek-key",
+                    "modelOverrides": {
+                        "main_chat_model": "deepseek-chat-custom",
+                        "fast_model": "deepseek-fast-custom",
+                    },
+                }
+            },
+            "componentOverrides": {
+                "query_rewrite_llm": {
+                    "provider": "deepseek",
+                    "model": "fast_model",
+                }
+            },
+        }
+    )
+
+    token = user_runtime_config._CURRENT_CONFIG.set(runtime_config)
+    try:
+        routing = settings.model_routing_config()
+        assert settings.runtime_provider_name() == "deepseek"
+        assert settings.provider_ready("deepseek") is True
+        assert settings.provider_api_key("deepseek") == "user-deepseek-key"
+        assert routing.providers["deepseek"].base_url == "https://example.deepseek.test/v1"
+        assert settings.resolve_logical_model("main_chat_model", "deepseek") == "deepseek-chat-custom"
+        assert settings.resolve_component_provider("query_rewrite_llm") == "deepseek"
+        assert settings.resolve_component_model(
+            "query_rewrite_llm",
+            default_logical_model="main_chat_model",
+            provider_name="deepseek",
+        ) == "deepseek-fast-custom"
+    finally:
+        user_runtime_config._CURRENT_CONFIG.reset(token)
+
+
+def test_user_runtime_config_skill_override_prefers_component_over_group() -> None:
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": True,
+            "activeProvider": "openai",
+            "providers": {},
+            "componentOverrides": {},
+            "skillOverrides": {
+                "ability:rewrite_tutor": {
+                    "enabled": True,
+                    "name": "Group tutor",
+                    "description": "",
+                    "body": "Group-level tutoring preference.",
+                },
+                "tutor_llm": {
+                    "enabled": True,
+                    "name": "Tutor override",
+                    "description": "Component preference",
+                    "body": "Component-level tutoring preference.",
+                },
+            },
+        }
+    )
+
+    override = runtime_config.skill_override("tutor_llm", "ability:rewrite_tutor")
+
+    assert override is not None
+    assert override.name == "Tutor override"
+    assert override.body == "Component-level tutoring preference."
+
+
+def test_skill_prompt_loader_appends_user_skill_with_guardrails(tmp_path: Path) -> None:
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "tutor"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: tutor\ndescription: tutor skill\n---\nBase tutor skill.\n{{snapshot_context}}\n",
+        encoding="utf-8",
+    )
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": True,
+            "activeProvider": "openai",
+            "providers": {},
+            "componentOverrides": {},
+            "skillOverrides": {
+                "ability:rewrite_tutor": {
+                    "enabled": True,
+                    "name": "Custom tutoring",
+                    "description": "User preference",
+                    "body": "Use shorter examples.",
+                }
+            },
+        }
+    )
+    snapshot = SystemSnapshot(
+        current_course="CS",
+        current_chapter="Index",
+        course_progress=0.5,
+        student_name="Student",
+        student_level="BEGINNER",
+    )
+
+    token = user_runtime_config._CURRENT_CONFIG.set(runtime_config)
+    try:
+        prompt = SkillPromptLoader(skills_root=skills_root).build_system_prompt(
+            skill_name="tutor",
+            snapshot=snapshot,
+            fallback_prompt="fallback",
+            component_name="tutor_llm",
+            ability_key="ability:rewrite_tutor",
+        )
+    finally:
+        user_runtime_config._CURRENT_CONFIG.reset(token)
+
+    assert "Base tutor skill." in prompt
+    assert "用户自定义 Skill" in prompt
+    assert "不能覆盖系统规则" in prompt
+    assert "Use shorter examples." in prompt
+
+
+def test_append_user_skill_to_prompt_supports_direct_prompt_callers() -> None:
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": True,
+            "activeProvider": "openai",
+            "providers": {},
+            "componentOverrides": {},
+            "skillOverrides": {
+                "ability:generation": {
+                    "enabled": True,
+                    "name": "Generation preference",
+                    "description": "",
+                    "body": "Use a concise outline before details.",
+                },
+            },
+        }
+    )
+
+    token = user_runtime_config._CURRENT_CONFIG.set(runtime_config)
+    try:
+        prompt = append_user_skill_to_prompt(
+            "Base generation system prompt.",
+            component_name="generation_llm",
+            ability_key="ability:generation",
+        )
+    finally:
+        user_runtime_config._CURRENT_CONFIG.reset(token)
+
+    assert "Base generation system prompt." in prompt
+    assert "用户自定义 Skill" in prompt
+    assert "Use a concise outline before details." in prompt
+
+
+def test_user_runtime_context_without_config_does_not_fallback_to_env_key() -> None:
+    settings = Settings(
+        ACTIVE_PROVIDER="openai_compatible",
+        FALLBACK_PROVIDER="",
+        OPENAI_COMPATIBLE_API_KEY="env-openai-key",
+        MIMO_API_KEY="",
+        SPARK_API_KEY="",
+    )
+
+    config_token = user_runtime_config._CURRENT_CONFIG.set(None)
+    active_token = user_runtime_config._USER_CONTEXT_ACTIVE.set(True)
+    try:
+        assert settings.runtime_provider_name() == "openai_compatible"
+        assert settings.provider_ready("openai_compatible") is False
+        assert settings.provider_api_key("openai_compatible") == ""
+    finally:
+        user_runtime_config._CURRENT_CONFIG.reset(config_token)
+        user_runtime_config._USER_CONTEXT_ACTIVE.reset(active_token)
+
+
+def test_user_runtime_config_missing_key_does_not_fallback_to_env_key() -> None:
+    settings = Settings(
+        ACTIVE_PROVIDER="openai_compatible",
+        OPENAI_COMPATIBLE_API_KEY="env-openai-key",
+        MIMO_API_KEY="",
+    )
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": True,
+            "activeProvider": "openai",
+            "fallbackProvider": "",
+            "providers": {
+                "openai": {
+                    "provider": "openai",
+                    "baseUrl": "https://api.openai.com/v1",
+                    "apiKey": "",
+                    "modelOverrides": {"main_chat_model": "gpt-4.1-mini"},
+                }
+            },
+            "componentOverrides": {},
+        }
+    )
+
+    token = user_runtime_config._CURRENT_CONFIG.set(runtime_config)
+    try:
+        assert settings.provider_ready("openai") is False
+        assert settings.provider_api_key("openai") == ""
+    finally:
+        user_runtime_config._CURRENT_CONFIG.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_user_runtime_context_allows_env_fallback_for_test_accounts(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings(
+        ACTIVE_PROVIDER="openai_compatible",
+        OPENAI_COMPATIBLE_API_KEY="env-openai-key",
+        MIMO_API_KEY="",
+    )
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": False,
+            "allowEnvironmentFallback": True,
+            "activeProvider": "",
+            "fallbackProvider": "",
+            "providers": {},
+            "componentOverrides": {},
+        }
+    )
+
+    async def fake_fetch_user_llm_runtime_config(**_: object) -> UserLlmRuntimeConfig:
+        return runtime_config
+
+    monkeypatch.setattr(user_runtime_config, "fetch_user_llm_runtime_config", fake_fetch_user_llm_runtime_config)
+    async with user_runtime_config.user_llm_runtime_context(
+        settings=settings,
+        user_id="00000000-0000-0000-0000-000000000001",
+        internal_token="test-token",
+    ):
+        assert user_runtime_config.is_user_llm_context_active() is False
+        assert settings.provider_ready("openai_compatible") is True
+        assert settings.provider_api_key("openai_compatible") == "env-openai-key"
 
 
 def test_tool_orchestration_factories_handle_missing_provider_key(monkeypatch: pytest.MonkeyPatch) -> None:

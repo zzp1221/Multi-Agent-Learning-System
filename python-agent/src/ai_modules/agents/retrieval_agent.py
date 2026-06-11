@@ -17,6 +17,7 @@ from src.ai_modules.runtime import (
     RecoveryFailureType,
     SystemSnapshot,
 )
+from src.ai_modules.runtime.skill_loader import append_user_skill_to_prompt
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +36,11 @@ class RetrievalAgent(PlaceholderAgent):
         self.recovery_engine = RecoveryEngine()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_retrieval_summary_prompt(snapshot)
+        return append_user_skill_to_prompt(
+            build_retrieval_summary_prompt(snapshot),
+            component_name="retrieval_llm",
+            ability_key="ability:path",
+        )
 
     async def run(
         self,

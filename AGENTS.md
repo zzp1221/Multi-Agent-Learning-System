@@ -48,6 +48,7 @@ AI agent 自主优化"智学引擎"全栈项目的运行指令。人类写这份
 - **资源清理**：文件写入带 finally 删除；SSE emitter 三回调都 remove；cache 必须 TTL
 - **禁止** `except: pass`
 - **热更新边界**：当前联调/演示环境只允许 `docker cp` 热更新，禁止 `docker compose build`、`docker compose up --build`、`--force-recreate` 和重建容器；全新部署文档中的 build 命令只用于空环境。
+- **LLM Key 边界**：正式用户/演示任务必须使用用户在设置页保存的 API Key 和模型，不得 fallback 到系统/环境 LLM Key；自动化测试、创建测试账号、测试联调可继续使用系统/环境 Key 和默认模型，方便测试。
 
 ## 5. 全链路检查清单
 

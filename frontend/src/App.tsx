@@ -11,6 +11,7 @@ const MultiAgentResourceGenerationPage = lazy(() => import('./pages/MultiAgentRe
 const MistakeBookPage = lazy(() => import('./pages/MistakeBookPage'));
 const NotebookPage = lazy(() => import('./pages/NotebookPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 function PageLoader() {
   return (
@@ -35,6 +36,7 @@ function App() {
               <Route path="mistakes" element={<MistakeBookPage />} />
               <Route path="notes" element={<NotebookPage />} />
               <Route path="profile" element={<ProfilePage />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

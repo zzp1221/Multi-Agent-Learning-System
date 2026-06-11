@@ -19,6 +19,7 @@ from src.ai_modules.models import (
 )
 from src.ai_modules.prompts import build_critic_system_prompt, build_safety_system_prompt
 from src.ai_modules.runtime import SystemSnapshot
+from src.ai_modules.runtime.skill_loader import append_user_skill_to_prompt
 
 
 ACADEMIC_MISCONDUCT_KEYWORDS = ("作弊", "代写", "替考", "考试答案", "绕过检测")
@@ -40,7 +41,11 @@ class CriticAgent(PlaceholderAgent):
         self.reviewer = reviewer
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_critic_system_prompt(snapshot)
+        return append_user_skill_to_prompt(
+            build_critic_system_prompt(snapshot),
+            component_name="review_llm",
+            ability_key="ability:generation",
+        )
 
     async def run(
         self,
@@ -451,7 +456,11 @@ class SafetyAgent(PlaceholderAgent):
         self.reviewer = reviewer
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
-        return build_safety_system_prompt(snapshot)
+        return append_user_skill_to_prompt(
+            build_safety_system_prompt(snapshot),
+            component_name="safety_llm",
+            ability_key="ability:path",
+        )
 
     async def run(
         self,

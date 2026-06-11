@@ -80,6 +80,9 @@ app:
     enabled: ${APP_RATE_LIMIT_ENABLED:true}
     user-requests-per-minute: ${APP_RATE_LIMIT_USER_PER_MINUTE:240}
     ip-requests-per-minute: ${APP_RATE_LIMIT_IP_PER_MINUTE:600}
+  user-llm:
+    enabled: ${APP_USER_LLM_ENABLED:true}
+    encryption-key: ${APP_USER_LLM_ENCRYPTION_KEY:${APP_JWT_SECRET:}}
   download:
     artifact-ttl-seconds: ${APP_DOWNLOAD_ARTIFACT_TTL_SECONDS:1800}
   upload:

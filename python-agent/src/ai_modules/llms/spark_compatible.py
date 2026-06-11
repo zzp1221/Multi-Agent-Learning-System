@@ -21,10 +21,11 @@ class SparkCompatibleClient(OpenAICompatibleClient):
         timeout_seconds: float = 60.0,
     ) -> None:
         settings = get_settings()
+        provider_config = settings.provider_endpoint_config("spark")
         super().__init__(
-            api_key=api_key or settings.spark_api_key,
-            base_url=base_url or settings.spark_base_url,
-            model_name=model_name or settings.spark_model_name,
+            api_key=api_key or settings.provider_api_key("spark"),
+            base_url=base_url or provider_config.base_url,
+            model_name=model_name or settings.resolve_logical_model("main_chat_model", "spark"),
             provider_name="spark",
             timeout_seconds=timeout_seconds,
         )

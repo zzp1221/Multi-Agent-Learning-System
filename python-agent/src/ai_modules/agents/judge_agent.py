@@ -52,6 +52,8 @@ class JudgeAgent(PlaceholderAgent):
             skill_name="judge",
             snapshot=snapshot,
             fallback_prompt=build_judge_system_prompt(snapshot),
+            component_name="judge_llm",
+            ability_key="ability:assessment",
         )
 
     async def run(

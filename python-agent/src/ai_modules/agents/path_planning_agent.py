@@ -54,6 +54,8 @@ class PathPlanningAgent(PlaceholderAgent):
             skill_name="path_planning",
             snapshot=snapshot,
             fallback_prompt=build_path_planning_system_prompt(snapshot),
+            component_name="path_planning_llm",
+            ability_key="ability:path",
         )
 
     async def run(

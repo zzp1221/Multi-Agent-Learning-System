@@ -49,6 +49,8 @@ class QueryRewriteAgent(PlaceholderAgent):
             skill_name="query_rewrite",
             snapshot=snapshot,
             fallback_prompt=build_query_rewrite_prompt(snapshot),
+            component_name="query_rewrite_llm",
+            ability_key="ability:rewrite_tutor",
         )
 
     async def run(

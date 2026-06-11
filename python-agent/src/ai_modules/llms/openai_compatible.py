@@ -87,11 +87,18 @@ class OpenAICompatibleClient:
         timeout_seconds: float = 60.0,
     ) -> None:
         settings = get_settings()
-        self.api_key = api_key or settings.openai_compatible_api_key
-        self.base_url = (base_url or settings.openai_compatible_base_url).rstrip("/")
-        self.model_name = model_name or settings.model_name
+        self.provider_name = settings.normalize_provider_name(provider_name or "openai_compatible")
+        try:
+            provider_config = settings.provider_endpoint_config(self.provider_name)
+            resolved_base_url = provider_config.base_url
+            resolved_model_name = settings.resolve_logical_model("main_chat_model", self.provider_name)
+        except KeyError:
+            resolved_base_url = settings.openai_compatible_base_url
+            resolved_model_name = settings.model_name
+        self.api_key = api_key or settings.provider_api_key(self.provider_name)
+        self.base_url = (base_url or resolved_base_url).rstrip("/")
+        self.model_name = model_name or resolved_model_name
         self.timeout_seconds = timeout_seconds
-        self.provider_name = provider_name or "openai_compatible"
 
     async def _get_client(self) -> httpx.AsyncClient:
         client_key = f"{self.provider_name}:{self.base_url}:{self.timeout_seconds}"

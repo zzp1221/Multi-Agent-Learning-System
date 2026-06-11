@@ -294,6 +294,12 @@ class Settings(BaseSettings):
         normalized = (provider_name or "").strip().lower()
         if normalized == "bailian":
             return "openai_compatible"
+        if normalized in {"dashscope", "aliyun", "dashscope_bailian"}:
+            return "dashscope"
+        if normalized in {"custom", "custom_openai"}:
+            return "custom_openai_compatible"
+        if normalized in {"glm", "bigmodel"}:
+            return "zhipu"
         return normalized
 
     @property
@@ -327,6 +333,12 @@ class Settings(BaseSettings):
 
     def runtime_provider_name(self) -> str:
         """返回运行时实际应使用的提供商。"""
+
+        user_config = self._current_user_llm_config()
+        if user_config is not None:
+            return user_config.runtime_provider_name("")
+        if self._user_llm_context_active():
+            return self.selected_provider_name()
 
         selected = self.selected_provider_name()
         fallback = self.selected_fallback_provider_name()
@@ -433,21 +445,28 @@ class Settings(BaseSettings):
     def model_routing_config(self) -> ModelRoutingConfig:
         """可用时从 YAML 加载提供商路由配置，否则使用默认值。"""
 
+        def with_user_runtime_config(base: ModelRoutingConfig) -> ModelRoutingConfig:
+            user_config = self._current_user_llm_config()
+            if user_config is None:
+                return base
+            return user_config.routing_config(base)
+
         config_path = self.model_routing_config_path.strip()
         if not config_path:
-            return self.build_default_model_routing_config()
+            return with_user_runtime_config(self.build_default_model_routing_config())
 
         path = Path(config_path)
         if not path.exists():
-            return self.build_default_model_routing_config()
+            return with_user_runtime_config(self.build_default_model_routing_config())
 
         try:
             import yaml
         except ModuleNotFoundError:
-            return self.build_default_model_routing_config()
+            return with_user_runtime_config(self.build_default_model_routing_config())
 
         raw_payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        return ModelRoutingConfig.model_validate(self._normalize_model_routing_payload(raw_payload))
+        base = ModelRoutingConfig.model_validate(self._normalize_model_routing_payload(raw_payload))
+        return with_user_runtime_config(base)
 
     def _normalize_model_routing_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized_payload = dict(payload)
@@ -507,6 +526,11 @@ class Settings(BaseSettings):
         """返回提供商配置的 API 密钥字符串。"""
 
         provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
+        user_config = self._current_user_llm_config()
+        if user_config is not None:
+            return user_config.provider_api_key(provider)
+        if self._user_llm_context_active():
+            return ""
         if provider == "spark":
             return self.spark_api_key
         if provider == "mimo":
@@ -517,6 +541,11 @@ class Settings(BaseSettings):
         """检查提供商所需的凭证是否存在。"""
 
         provider = self.normalize_provider_name(provider_name or self.runtime_provider_name())
+        user_config = self._current_user_llm_config()
+        if user_config is not None:
+            return user_config.provider_ready(provider)
+        if self._user_llm_context_active():
+            return False
         if provider == "spark":
             return bool(self.spark_api_key)
         if provider == "mimo":
@@ -526,10 +555,25 @@ class Settings(BaseSettings):
     def llm_component_override(self, component_name: str) -> LLMComponentOverride:
         """返回指定 LLM 组件的覆盖配置块。"""
 
+        user_config = self._current_user_llm_config()
+        if user_config is not None:
+            user_override = user_config.component_override(component_name)
+            if user_override is not None:
+                return LLMComponentOverride(provider=user_override.provider, model=user_override.model)
         override = getattr(self, component_name, None)
         if isinstance(override, LLMComponentOverride):
             return override
         return LLMComponentOverride()
+
+    def _current_user_llm_config(self) -> Any | None:
+        from src.ai_modules.llms.user_runtime_config import current_user_llm_config
+
+        return current_user_llm_config()
+
+    def _user_llm_context_active(self) -> bool:
+        from src.ai_modules.llms.user_runtime_config import is_user_llm_context_active
+
+        return is_user_llm_context_active()
 
     def resolve_component_provider(self, component_name: str) -> str:
         """解析特定 LLM 组件应使用的提供商。"""

@@ -25,6 +25,7 @@ from src.ai_modules.models import (
     QuestionBatchPayload,
     RetrievalResponse,
 )
+from src.ai_modules.runtime.skill_loader import append_user_skill_to_prompt
 from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
 
 
@@ -93,6 +94,14 @@ def _resolve_component_binding(
 def _component_provider_ready(component_name: str) -> bool:
     settings = get_settings()
     return settings.provider_ready(settings.resolve_component_provider(component_name))
+
+
+def _with_user_skill(system_prompt: str, component_name: str, ability_key: str | None) -> str:
+    return append_user_skill_to_prompt(
+        system_prompt,
+        component_name=component_name,
+        ability_key=ability_key,
+    )
 
 
 def _require_component_provider_ready(component_name: str) -> tuple[str, str]:
@@ -353,8 +362,8 @@ class OpenAICompatibleConversationSummaryRefiner:
             for message in messages
             if str(message.get("role", "")).lower() == "user"
         ][-12:]
-        payload = await self.generator.generate(
-            system_prompt=(
+        system_prompt = _with_user_skill(
+            (
                 "你是学习对话记忆压缩器。请从学生原话中提取结构化学习记忆，"
                 "尤其识别非标准表达和指代，不要编造未出现的薄弱点。"
                 "只返回 JSON，字段为 "
@@ -363,6 +372,11 @@ class OpenAICompatibleConversationSummaryRefiner:
                 '"preferredHelpStyle":"step_by_step|example_first|concept_then_question|visual_first",'
                 '"confidence":0.0,"summaryText":"..."}。'
             ),
+            "conversation_summary_llm",
+            "ability:rewrite_tutor",
+        )
+        payload = await self.generator.generate(
+            system_prompt=system_prompt,
             user_prompt=dumps_json(
                 {
                     "ruleSummary": rule_summary,
@@ -682,6 +696,7 @@ class OpenAICompatiblePracticeQuestionGenerator:
             '"options":["..."],"answer":"...","knowledgeTags":["..."],'
             '"difficultyLevel":"...","explanation":"..."}]}。'
         )
+        system_prompt = _with_user_skill(system_prompt, "practice_llm", "ability:assessment")
         user_prompt = "\n".join(
             [
                 f"主题: {topic}",
@@ -844,13 +859,18 @@ class OpenAICompatibleJudgeFeedbackGenerator:
         items: list[JudgeItemResult],
         topic: str,
     ) -> dict[str, Any]:
-        payload = await self.generator.generate(
-            system_prompt=(
+        system_prompt = _with_user_skill(
+            (
                 "你是教学系统中的 Judge Agent。"
                 "请基于逐题判题结果汇总整体反馈，只返回 JSON。"
                 '结构为 {"summary":"...","totalScore":0.0,"accuracy":0.0,"items":[...],"weakKnowledgeTags":["..."]}。'
                 "accuracy 取值 0 到 1。summary 要用中文完整表述。"
             ),
+            "judge_llm",
+            "ability:assessment",
+        )
+        payload = await self.generator.generate(
+            system_prompt=system_prompt,
             user_prompt=dumps_json(
                 {
                     "topic": topic,
@@ -881,8 +901,8 @@ class OpenAICompatibleProfileAnalyzer:
         *,
         context_payload: dict[str, Any],
     ) -> LearnerProfileDimensions:
-        payload = await self.generator.generate(
-            system_prompt=(
+        system_prompt = _with_user_skill(
+            (
                 "你是教学系统中的 Profile Agent。"
                 "请根据对话、结构化摘要、练习题、判题结果和已有画像，抽取可落地的学习画像。"
                 "你必须覆盖至少 7 个教育画像维度：知识基础、技能掌握、薄弱知识点、学习习惯、"
@@ -913,6 +933,11 @@ class OpenAICompatibleProfileAnalyzer:
                 '"summaryText":"..."}。'
                 "所有分值范围必须在 0 到 1 之间；summaryText 需要明确说明该学生当前水平、薄弱点、偏好和下一步建议。"
             ),
+            "profile_llm",
+            "ability:assessment",
+        )
+        payload = await self.generator.generate(
+            system_prompt=system_prompt,
             user_prompt=dumps_json(context_payload, ensure_ascii=False),
             max_tokens=1400,
         )
@@ -964,8 +989,8 @@ class OpenAICompatibleResourcePushReranker:
         profile_context: dict[str, Any],
         candidates: list[dict[str, Any]],
     ) -> ResourcePushRerankPayload:
-        payload = await self.generator.generate(
-            system_prompt=(
+        system_prompt = _with_user_skill(
+            (
                 "你是学习资源推送系统中的重排器。"
                 "请结合用户查询、学习画像和候选资源，选出最适合当前学生的资源排序。"
                 "排序原则：先匹配薄弱点与学习目标，再匹配学生水平和资源类型偏好，最后考虑摘要与标题相关性。"
@@ -974,6 +999,11 @@ class OpenAICompatibleResourcePushReranker:
                 '{"rankedItems":[{"index":0,"score":0.0,"reason":"..."}],"summaryText":"..."}。'
                 "score 范围为 0 到 1，rankedItems 按优先级从高到低排序，最多返回 5 个。"
             ),
+            "resource_push_llm",
+            "ability:generation",
+        )
+        payload = await self.generator.generate(
+            system_prompt=system_prompt,
             user_prompt=dumps_json(
                 {
                     "query": query,

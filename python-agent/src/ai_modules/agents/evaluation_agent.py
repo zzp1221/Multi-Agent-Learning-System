@@ -50,6 +50,8 @@ class EvaluationAgent(PlaceholderAgent):
             skill_name="evaluation",
             snapshot=snapshot,
             fallback_prompt=build_evaluation_system_prompt(snapshot),
+            component_name="evaluation_llm",
+            ability_key="ability:assessment",
         )
 
     async def run(

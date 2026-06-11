@@ -22,5 +22,7 @@ class AppPropertiesTest {
         assertThat(properties.getSmartEngineQueue().getCancelTtl()).isEqualTo(Duration.ofHours(24));
         assertThat(properties.getUpload().getImageTokenTtlSeconds()).isEqualTo(1_800);
         assertThat(properties.getUpload().getImageStorageDir()).isEqualTo("sandbox-temp/chat-images");
+        assertThat(properties.getUserLlm().isEnabled()).isTrue();
+        assertThat(properties.getUserLlm().getEncryptionKey()).isEmpty();
     }
 }

@@ -26,6 +26,7 @@ import psycopg2.extras
 from src.ai_modules.config import get_settings
 from src.ai_modules.generation.content_chain import OpenAICompatibleStructuredGenerator
 from src.ai_modules.llms.openai_compatible import OpenAICompatibleClient
+from src.ai_modules.llms.user_runtime_config import user_llm_runtime_context
 from src.ai_modules.memory import ConversationMessageDocument, MongoConversationMessageStore
 from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, ErrorPayload, ErrorSSEEvent
 from src.ai_modules.observability import configure_observability
@@ -1065,9 +1066,14 @@ async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> Async
             # `seq` is advanced here so the outer cancellation/error branch can emit the next SSE id.
             nonlocal seq
             try:
-                async for event in SUPERVISOR.stream(engine_request, cancelled=CANCELLED_TASKS):
-                    seq = event.seq + 1
-                    await queue.put(event.to_sse())
+                async with user_llm_runtime_context(
+                    settings=SETTINGS,
+                    user_id=engine_request.user_id,
+                    internal_token=internal_token(),
+                ):
+                    async for event in SUPERVISOR.stream(engine_request, cancelled=CANCELLED_TASKS):
+                        seq = event.seq + 1
+                        await queue.put(event.to_sse())
             except asyncio.CancelledError:
                 LOGGER.info("Supervisor task cancelled: task_id=%s", engine_request.task_id)
                 await queue.put(

@@ -130,6 +130,19 @@ CREATE TABLE IF NOT EXISTS app.user_course_enrollments (
 );
 
 -- =========================================================
+CREATE TABLE IF NOT EXISTS app.user_llm_config (
+  user_id                   UUID PRIMARY KEY REFERENCES app.users(id) ON DELETE CASCADE,
+  enabled                   BOOLEAN NOT NULL DEFAULT FALSE,
+  active_provider           TEXT NOT NULL DEFAULT '',
+  fallback_provider         TEXT NOT NULL DEFAULT '',
+  provider_config_json      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  component_overrides_json  JSONB NOT NULL DEFAULT '{}'::jsonb,
+  encrypted_secrets_json    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  secret_meta_json          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- RustFS 对象元数据
 -- =========================================================
 CREATE TABLE IF NOT EXISTS storage.resource_object (
@@ -972,6 +985,7 @@ END;
 $$;
 
 ALTER TABLE app.learning_resource ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.user_llm_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.qna_session ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.qna_message_ref ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.smart_engine_session ENABLE ROW LEVEL SECURITY;
@@ -1078,6 +1092,11 @@ WITH CHECK (user_id = app.current_user_uuid());
 
 DROP POLICY IF EXISTS p_user_profile_current_rw ON app.user_profile_current;
 CREATE POLICY p_user_profile_current_rw ON app.user_profile_current
+FOR ALL USING (user_id = app.current_user_uuid())
+WITH CHECK (user_id = app.current_user_uuid());
+
+DROP POLICY IF EXISTS p_user_llm_config_rw ON app.user_llm_config;
+CREATE POLICY p_user_llm_config_rw ON app.user_llm_config
 FOR ALL USING (user_id = app.current_user_uuid())
 WITH CHECK (user_id = app.current_user_uuid());
 
@@ -1320,6 +1339,11 @@ CREATE TRIGGER trg_user_profile_current_touch_updated_at
 BEFORE UPDATE ON app.user_profile_current
 FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
 
+DROP TRIGGER IF EXISTS trg_user_llm_config_touch_updated_at ON app.user_llm_config;
+CREATE TRIGGER trg_user_llm_config_touch_updated_at
+BEFORE UPDATE ON app.user_llm_config
+FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
+
 DROP TRIGGER IF EXISTS trg_learning_plan_touch_updated_at ON app.learning_plan;
 CREATE TRIGGER trg_learning_plan_touch_updated_at
 BEFORE UPDATE ON app.learning_plan
@@ -1484,6 +1508,7 @@ ANALYZE app.generated_artifact;
 ANALYZE app.user_resource_state;
 ANALYZE app.user_profile_snapshot;
 ANALYZE app.user_profile_current;
+ANALYZE app.user_llm_config;
 ANALYZE app.learning_plan;
 ANALYZE app.learning_plan_snapshot;
 ANALYZE app.practice_set;

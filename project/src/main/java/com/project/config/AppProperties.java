@@ -26,6 +26,7 @@ public class AppProperties {
     private final Upload upload = new Upload();
     private final SmartEngineQueue smartEngineQueue = new SmartEngineQueue();
     private final Voice voice = new Voice();
+    private final UserLlm userLlm = new UserLlm();
 
     public PythonAgent getPythonAgent() {
         return pythonAgent;
@@ -61,6 +62,10 @@ public class AppProperties {
 
     public Voice getVoice() {
         return voice;
+    }
+
+    public UserLlm getUserLlm() {
+        return userLlm;
     }
 
     public static class PythonAgent {
@@ -313,6 +318,27 @@ public class AppProperties {
 
         public void setCancelTtl(Duration cancelTtl) {
             this.cancelTtl = cancelTtl;
+        }
+    }
+
+    public static class UserLlm {
+        private boolean enabled = true;
+        private String encryptionKey = "";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getEncryptionKey() {
+            return encryptionKey;
+        }
+
+        public void setEncryptionKey(String encryptionKey) {
+            this.encryptionKey = encryptionKey;
         }
     }
 

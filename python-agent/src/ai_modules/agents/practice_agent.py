@@ -48,6 +48,8 @@ class PracticeAgent(PlaceholderAgent):
             skill_name="practice",
             snapshot=snapshot,
             fallback_prompt=build_practice_system_prompt(snapshot),
+            component_name="practice_llm",
+            ability_key="ability:assessment",
         )
 
     async def run(

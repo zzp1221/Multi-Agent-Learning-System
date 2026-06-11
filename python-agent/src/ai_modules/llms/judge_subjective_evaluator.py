@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import create_compatible_client
 from src.ai_modules.models import PracticeQuestion, SubjectiveJudgeEvaluation
+from src.ai_modules.runtime.skill_loader import append_user_skill_to_prompt
 
 LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
@@ -123,6 +124,11 @@ class OpenAICompatibleSubjectiveJudgeEvaluator:
             "你是教育系统中的判题器，负责根据标准答案和评分要求评估主观题。"
             "请只返回 JSON 对象，字段必须为：score, isCorrect, reason, feedback, confidenceLevel。"
             "score 范围 0-20，confidenceLevel 只能是 LOW 或 MEDIUM。"
+        )
+        system_prompt = append_user_skill_to_prompt(
+            system_prompt,
+            component_name="judge_llm",
+            ability_key="ability:assessment",
         )
         user_prompt = "\n".join(
             [

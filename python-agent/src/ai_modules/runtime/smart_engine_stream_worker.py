@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from src.ai_modules.config import Settings
 from src.ai_modules.generation.content_chain import GenerationOutputInvalidError
+from src.ai_modules.llms.user_runtime_config import user_llm_runtime_context
 from src.ai_modules.models import EngineStreamRequest, SSEEvent
 from src.ai_modules.supervisor import PythonAgentSupervisor
 
@@ -631,10 +632,15 @@ class SmartEngineStreamWorker:
 
     async def _execute_request(self, request: EngineStreamRequest) -> None:
         cancelled = self._cancelled_tasks()
-        async for event in self.supervisor.stream(request, cancelled=cancelled):
-            await self._post_event(request.task_id, event)
-            if request.task_id in cancelled:
-                LOGGER.info("Cancellation marker detected during SmartEngine task task_id=%s", request.task_id)
+        async with user_llm_runtime_context(
+            settings=self.settings,
+            user_id=request.user_id,
+            internal_token=self.internal_token_provider(),
+        ):
+            async for event in self.supervisor.stream(request, cancelled=cancelled):
+                await self._post_event(request.task_id, event)
+                if request.task_id in cancelled:
+                    LOGGER.info("Cancellation marker detected during SmartEngine task task_id=%s", request.task_id)
 
     def _cancelled_tasks(self) -> RedisCancelledTasks:
         return RedisCancelledTasks(self._sync_redis, self.settings.smart_engine_cancel_key_prefix)

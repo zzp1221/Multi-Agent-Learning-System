@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpenCheck, Clock3, Compass, History, Layers3, LayoutGrid, LoaderCircle, Menu, MessageCirclePlus, NotebookPen, Search, Sparkles, UserRoundSearch } from 'lucide-react';
+import { BookOpenCheck, Clock3, Compass, History, Layers3, LayoutGrid, LoaderCircle, Menu, MessageCirclePlus, NotebookPen, Search, Settings, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import FloatingVoiceAssistant from './FloatingVoiceAssistant';
 import FloatingPracticeAssistant from './FloatingPracticeAssistant';
@@ -91,6 +91,7 @@ export default function Layout() {
   const inMistakes = location.pathname.startsWith('/mistakes');
   const inNotes = location.pathname.startsWith('/notes');
   const inProfile = location.pathname.startsWith('/profile');
+  const inSettings = location.pathname.startsWith('/settings');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [defaultTab, setDefaultTab] = useState<AuthTab>('login');
@@ -322,6 +323,16 @@ export default function Layout() {
     navigate('/notes', { state: { returnTo: location.pathname + location.search } });
   }, [isAuthenticated, location.pathname, location.search, navigate]);
 
+  const handleOpenSettings = useCallback(() => {
+    setMoreMenuOpen(false);
+    closeSidebar();
+    if (!isAuthenticated) {
+      openAuthModal('login', '登录后才能配置个人 LLM');
+      return;
+    }
+    navigate('/settings');
+  }, [isAuthenticated, navigate]);
+
   const handleOpenDashboard = useCallback(() => {
     setMoreMenuOpen(false);
     closeSidebar();
@@ -374,6 +385,45 @@ export default function Layout() {
       return title.includes(keyword) || preview.includes(keyword);
     });
   }, [conversationHistory, historySearch]);
+
+  const breadcrumbTitle = inSettings
+    ? 'LLM 设置'
+    : inProfile
+      ? '个人画像'
+      : inMistakes
+        ? '错题本'
+        : inResources
+          ? '资源库'
+          : inEngine
+            ? '个性化学习路径'
+            : '新对话';
+  const breadcrumbSubtitle = inSettings
+    ? '用户 API Key 与模型路由'
+    : inProfile
+      ? '学习节奏与能力概览'
+      : inMistakes
+        ? '自动错题复习'
+        : inResources
+          ? '搜索、收藏与学习进度'
+          : inEngine
+            ? '阶段路径与资源推送'
+            : '智能学习与解题助手';
+  const pageShellClass = inNotes ? '' : inDashboard || inEngine || inResources || inMistakes || inProfile || inSettings ? 'app-page-shell' : '';
+  const pageMotionKey = inDashboard
+    ? 'dashboard-shell'
+    : inSettings
+      ? 'settings-shell'
+      : inProfile
+        ? 'profile-shell'
+        : inNotes
+          ? 'notes-shell'
+          : inMistakes
+            ? 'mistake-shell'
+            : inResources
+              ? 'resource-shell'
+              : inEngine
+                ? 'engine-shell'
+                : 'qna-shell';
 
   const handleCreateNewChat = () => {
     if (!isAuthenticated) {
@@ -468,7 +518,7 @@ export default function Layout() {
           <button
             type="button"
             onClick={() => setMoreMenuOpen((prev) => !prev)}
-            className={`app-sidebar-nav-item ${moreMenuOpen || inDashboard || inEngine || inResources || inMistakes || inNotes || inProfile ? 'is-active' : ''}`}
+            className={`app-sidebar-nav-item ${moreMenuOpen || inDashboard || inEngine || inResources || inMistakes || inNotes || inProfile || inSettings ? 'is-active' : ''}`}
           >
             <LayoutGrid className="h-4 w-4" />
             更多功能
@@ -537,6 +587,14 @@ export default function Layout() {
                 >
                   <NotebookPen className="h-4 w-4" />
                   AI 笔记本
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenSettings}
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
+                >
+                  <Settings className="h-4 w-4" />
+                  LLM 设置
                 </button>
               </motion.div>
             ) : null}
@@ -687,8 +745,16 @@ export default function Layout() {
               >
                 <Menu className="h-5 w-5" />
               </button>
-              <div className="app-breadcrumb min-w-0">
+              <div className={`app-breadcrumb min-w-0 ${inSettings ? 'is-settings-breadcrumb' : ''}`}>
                 <Compass className="h-4 w-4 text-primary-500" />
+                {inSettings ? (
+                  <>
+                    <span className="settings-breadcrumb-label hidden sm:inline">{breadcrumbTitle}</span>
+                    <span className="settings-breadcrumb-label hidden text-slate-300 sm:inline">/</span>
+                    <span className="settings-breadcrumb-label hidden sm:inline">{breadcrumbSubtitle}</span>
+                    <span className="settings-breadcrumb-label sm:hidden">{breadcrumbTitle}</span>
+                  </>
+                ) : null}
                 <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源库' : inEngine ? '个性化学习路径' : '新对话'}</span>
                 <span className="hidden text-slate-300 sm:inline">/</span>
                 <span className="hidden sm:inline">{inProfile ? '学习节奏与能力概览' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏与学习进度' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
@@ -711,9 +777,9 @@ export default function Layout() {
         ) : null}
 
         {/* Page Content */}
-        <div className={inNotes ? '' : inDashboard || inEngine || inResources || inMistakes || inProfile ? 'app-page-shell' : ''}>
+        <div className={pageShellClass}>
           <motion.div
-            key={inDashboard ? 'dashboard-shell' : inProfile ? 'profile-shell' : inNotes ? 'notes-shell' : inMistakes ? 'mistake-shell' : inResources ? 'resource-shell' : inEngine ? 'engine-shell' : 'qna-shell'}
+            key={pageMotionKey}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}

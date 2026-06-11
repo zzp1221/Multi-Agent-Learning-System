@@ -211,7 +211,8 @@
       "Bash(mvn.cmd -q -DskipTests package)",
       "Bash(npx.cmd vite *)",
       "Bash(docker restart *)",
-      "Bash(npx.cmd tsc *)"
+      "Bash(npx.cmd tsc *)",
+      "Bash(awk '{print $NF}')"
     ]
   }
 }

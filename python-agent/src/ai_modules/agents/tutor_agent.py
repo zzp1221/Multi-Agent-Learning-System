@@ -139,6 +139,8 @@ class TutorAgent(PlaceholderAgent):
             skill_name="tutor",
             snapshot=snapshot,
             fallback_prompt=build_tutor_system_prompt(snapshot),
+            component_name="tutor_llm",
+            ability_key="ability:rewrite_tutor",
         )
 
     async def run(

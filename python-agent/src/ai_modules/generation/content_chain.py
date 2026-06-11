@@ -28,6 +28,7 @@ from src.ai_modules.generation.prompts import (
 )
 from src.ai_modules.models.video import VideoScriptPayload
 from src.ai_modules.llms.openai_compatible import extract_json_object_from_text
+from src.ai_modules.runtime.skill_loader import append_user_skill_to_prompt
 
 LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
@@ -232,6 +233,13 @@ class OpenAICompatibleStructuredGenerator:
             self._shared_async_clients[client_key] = client
         return client
 
+    def _generation_system_prompt(self, base_prompt: str) -> str:
+        return append_user_skill_to_prompt(
+            base_prompt,
+            component_name="generation_llm",
+            ability_key="ability:generation",
+        )
+
     @classmethod
     async def close_async_clients(cls) -> None:
         """在应用关闭时关闭共享的异步 HTTP 客户端。"""
@@ -378,7 +386,7 @@ class OpenAICompatibleStructuredGenerator:
             )
         return self._call_and_validate_json_sync(
             span_name=f"{self.provider_name}.generate_document_sections",
-            system_prompt=build_document_system_prompt(),
+            system_prompt=self._generation_system_prompt(build_document_system_prompt()),
             user_prompt=build_document_user_prompt(
                 title=title,
                 topic=topic,
@@ -402,7 +410,7 @@ class OpenAICompatibleStructuredGenerator:
     ) -> GeneratedSectionBundle:
         return await self._call_and_validate_json(
             span_name=f"{self.provider_name}.generate_document_sections",
-            system_prompt=build_document_system_prompt(),
+            system_prompt=self._generation_system_prompt(build_document_system_prompt()),
             user_prompt=build_document_user_prompt(
                 title=title,
                 topic=topic,
@@ -425,7 +433,7 @@ class OpenAICompatibleStructuredGenerator:
     ) -> GeneratedTextAsset:
         return await self._call_and_validate_json(
             span_name=f"{self.provider_name}.generate_reading_asset",
-            system_prompt=build_reading_system_prompt(),
+            system_prompt=self._generation_system_prompt(build_reading_system_prompt()),
             user_prompt=build_reading_user_prompt(
                 title=title,
                 topic=topic,
@@ -448,7 +456,7 @@ class OpenAICompatibleStructuredGenerator:
         return GeneratedSlideDeck.model_validate(
             await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_slides_asset",
-                system_prompt=build_slides_system_prompt(),
+                system_prompt=self._generation_system_prompt(build_slides_system_prompt()),
                 user_prompt=build_slides_user_prompt(
                     title=title,
                     topic=topic,
@@ -469,7 +477,7 @@ class OpenAICompatibleStructuredGenerator:
     ) -> GeneratedMindMap:
         mermaid = await self._call_and_extract_text(
             span_name=f"{self.provider_name}.generate_mindmap_asset",
-            system_prompt=build_mindmap_system_prompt(),
+            system_prompt=self._generation_system_prompt(build_mindmap_system_prompt()),
             user_prompt=build_mindmap_user_prompt(
                 title=title,
                 topic=topic,
@@ -491,7 +499,7 @@ class OpenAICompatibleStructuredGenerator:
         return GeneratedCodeAsset.model_validate(
             await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_code_asset",
-                system_prompt=build_code_system_prompt(),
+                system_prompt=self._generation_system_prompt(build_code_system_prompt()),
                 user_prompt=build_code_user_prompt(
                     title=title,
                     topic=topic,
@@ -515,7 +523,7 @@ class OpenAICompatibleStructuredGenerator:
         return VideoScriptPayload.model_validate(
             await self._call_and_parse_json(
                 span_name=f"{self.provider_name}.generate_video_script",
-                system_prompt=build_video_script_system_prompt(),
+                system_prompt=self._generation_system_prompt(build_video_script_system_prompt()),
                 user_prompt=build_video_script_user_prompt(
                     title=title,
                     topic=topic,
@@ -541,7 +549,7 @@ class OpenAICompatibleStructuredGenerator:
         return VideoScriptPayload.model_validate(
             await self._call_and_parse_json_async(
                 span_name=f"{self.provider_name}.generate_video_script",
-                system_prompt=build_video_script_system_prompt(),
+                system_prompt=self._generation_system_prompt(build_video_script_system_prompt()),
                 user_prompt=build_video_script_user_prompt(
                     title=title,
                     topic=topic,

@@ -72,6 +72,7 @@ class ExecutionState:
     request: EngineStreamRequest
     params: dict[str, Any]
     snapshot: SystemSnapshot
+    agent_registry: dict[str, Any]
     seq: int = 1
 
 
@@ -104,7 +105,11 @@ class PythonAgentSupervisor:
     def __init__(self) -> None:
         self.snapshot_builder = SnapshotBuilder()
         self._background_tasks: set[asyncio.Task[None]] = set()
-        self.agent_registry = {
+        self.route_templates = self._load_route_templates()
+        self.query_classifier = QueryClassifier()
+
+    def _build_agent_registry(self) -> dict[str, Any]:
+        registry = {
             "query_rewrite": QueryRewriteAgent(),
             "retrieval": RetrievalAgent(),
             "document_generator": DocumentGeneratorAgent(),
@@ -113,7 +118,6 @@ class PythonAgentSupervisor:
             "mindmap_generator": MindMapGeneratorAgent(),
             "code_generator": CodeGeneratorAgent(),
             "video_generator": VideoGenerationAgent(),
-            "tutor": TutorAgent(resource_bundle_runner=self._run_tutoring_resource_bundle),
             "profile": ProfileAgent(),
             "practice": PracticeAgent(),
             "judge": JudgeAgent(),
@@ -123,8 +127,13 @@ class PythonAgentSupervisor:
             "resource_push": ResourcePushAgent(),
             "critic": CriticAgent(),
         }
-        self.route_templates = self._load_route_templates()
-        self.query_classifier = QueryClassifier()
+
+        async def run_resource_bundle(**kwargs: Any) -> AsyncIterator[SSEEvent]:
+            async for event in self._run_tutoring_resource_bundle(agent_registry=registry, **kwargs):
+                yield event
+
+        registry["tutor"] = TutorAgent(resource_bundle_runner=run_resource_bundle)
+        return registry
 
     def resolve_route(self, service_type: str, params: dict) -> RoutePlan:
         route_template = self.route_templates.get(service_type)
@@ -229,10 +238,11 @@ class PythonAgentSupervisor:
     def build_agent_system_prompt(
         self,
         *,
+        agent_registry: dict[str, Any],
         agent_name: str,
         snapshot: SystemSnapshot,
     ) -> str:
-        return self.agent_registry[agent_name].system_prompt(snapshot)
+        return agent_registry[agent_name].system_prompt(snapshot)
 
     async def stream(self, request: EngineStreamRequest, cancelled: Container[str] | None = None) -> AsyncIterator[SSEEvent]:
         route_plan = self.resolve_route(request.service_type, request.params)
@@ -244,7 +254,12 @@ class PythonAgentSupervisor:
             conversation_id=request.conversation_id,
             params=current_params,
         )
-        state = ExecutionState(request=request, params=current_params, snapshot=snapshot)
+        state = ExecutionState(
+            request=request,
+            params=current_params,
+            snapshot=snapshot,
+            agent_registry=self._build_agent_registry(),
+        )
 
         try:
             async for event in self._execute_service_route(
@@ -361,9 +376,10 @@ class PythonAgentSupervisor:
     ) -> AsyncIterator[SSEEvent]:
         workflow_request = state.request.model_copy(update={"service_type": route_plan.service_type})
         workflow = ResourceBundleWorkflow(
-            agent_registry=self.agent_registry,
+            agent_registry=state.agent_registry,
             snapshot_builder=self.snapshot_builder,
             system_prompt_builder=lambda agent_name, snapshot: self.build_agent_system_prompt(
+                agent_registry=state.agent_registry,
                 agent_name=agent_name,
                 snapshot=snapshot,
             ),
@@ -392,6 +408,7 @@ class PythonAgentSupervisor:
     async def _run_tutoring_resource_bundle(
         self,
         *,
+        agent_registry: dict[str, Any],
         task_id: str,
         trace_id: str,
         seq: int,
@@ -407,9 +424,10 @@ class PythonAgentSupervisor:
             conversationId=str(params.get("conversationId")) if params.get("conversationId") else None,
         )
         workflow = ResourceBundleWorkflow(
-            agent_registry=self.agent_registry,
+            agent_registry=agent_registry,
             snapshot_builder=self.snapshot_builder,
             system_prompt_builder=lambda agent_name, current_snapshot: self.build_agent_system_prompt(
+                agent_registry=agent_registry,
                 agent_name=agent_name,
                 snapshot=current_snapshot,
             ),
@@ -493,9 +511,13 @@ class PythonAgentSupervisor:
         agent_name: str,
         service_type: str,
     ) -> AsyncIterator[SSEEvent]:
-        agent = self.agent_registry[agent_name]
+        agent = state.agent_registry[agent_name]
         agent_params = copy.deepcopy(state.params)
-        system_prompt = self.build_agent_system_prompt(agent_name=agent_name, snapshot=state.snapshot)
+        system_prompt = self.build_agent_system_prompt(
+            agent_registry=state.agent_registry,
+            agent_name=agent_name,
+            snapshot=state.snapshot,
+        )
         async for event in agent.run(
             task_id=state.request.task_id,
             trace_id=state.request.trace_id,
@@ -521,8 +543,12 @@ class PythonAgentSupervisor:
         return event.model_copy(update={"payload": payload.model_copy(update={"stage": stage})})
 
     async def _run_critic_review(self, *, state: ExecutionState, service_type: str) -> AsyncIterator[SSEEvent]:
-        critic_agent = self.agent_registry["critic"]
-        critic_prompt = self.build_agent_system_prompt(agent_name="critic", snapshot=state.snapshot)
+        critic_agent = state.agent_registry["critic"]
+        critic_prompt = self.build_agent_system_prompt(
+            agent_registry=state.agent_registry,
+            agent_name="critic",
+            snapshot=state.snapshot,
+        )
         critic_params = copy.deepcopy(state.params)
         async for event in critic_agent.run(
             task_id=state.request.task_id,
@@ -817,8 +843,12 @@ class PythonAgentSupervisor:
         return value if isinstance(value, dict) else None
 
     def _schedule_background_profile(self, *, state: ExecutionState, service_type: str) -> None:
-        profile_agent = self.agent_registry["profile"]
-        profile_prompt = self.build_agent_system_prompt(agent_name="profile", snapshot=state.snapshot)
+        profile_agent = state.agent_registry["profile"]
+        profile_prompt = self.build_agent_system_prompt(
+            agent_registry=state.agent_registry,
+            agent_name="profile",
+            snapshot=state.snapshot,
+        )
         profile_params = copy.deepcopy(state.params)
         if service_type.strip().upper() in EVALUATION_PROFILE_SERVICE_TYPES and not profile_params.get("profileSource"):
             profile_params["profileSource"] = "EVALUATION"
