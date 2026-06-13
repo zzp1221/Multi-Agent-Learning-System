@@ -60,8 +60,9 @@ class _FailingTutorClient:
 
     async def chat_completion_stream(self, **kwargs):
         del kwargs
+        for chunk in ():
+            yield chunk
         raise RuntimeError("primary stream failed")
-        yield ""  # pragma: no cover
 
 
 class _FailingTutorLLM:
@@ -1014,6 +1015,8 @@ def test_tutor_runtime_context_allows_verified_external_links_when_web_search_en
 
     assert "联网搜索状态：已开启" in context
     assert "可以直接引用以下外部检索结果中的 URL" in context
+    assert "必须写成 Markdown 链接格式" in context
+    assert "[数据结构课程视频](https://example.edu/ds-video)" in context
     assert "https://example.edu/ds-video" in context
     assert "不得编造未提供的 URL" in context
 
@@ -1066,6 +1069,7 @@ async def test_tutor_web_search_video_link_request_returns_external_links_withou
     )
     assert runner.calls == []
     assert "https://example.edu/ds-video" in result_text
+    assert "[数据结构课程视频](https://example.edu/ds-video)" in result_text
     assert "外部资源链接" in result_text
     assert not any(event.event in {"resource_file", "video_gen:start"} for event in events)
 

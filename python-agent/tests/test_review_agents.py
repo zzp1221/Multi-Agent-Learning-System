@@ -225,24 +225,6 @@ async def test_safety_agent_fails_when_reviewer_fails() -> None:
             snapshot=_build_snapshot(),
             system_prompt="test",
         )
-    return
-
-    events = [
-        event
-        async for event in agent.run(
-            task_id="task-safety-fallback",
-            trace_id="trace-safety-fallback",
-            seq=1,
-            service_type="RESOURCE_GENERATION",
-            params=params,
-            snapshot=_build_snapshot(),
-            system_prompt="test",
-        )
-    ]
-
-    assert [event.event for event in events] == ["progress", "result_chunk"]
-    assert params["safetyReview"]["allowed"] is True
-    assert events[1].payload.text.startswith("Safety 复核完成：")
 
 
 @pytest.mark.asyncio
@@ -270,25 +252,6 @@ async def test_safety_agent_does_not_fallback_for_misconduct_content() -> None:
             snapshot=_build_snapshot(),
             system_prompt="test",
         )
-    return
-
-    events = [
-        event
-        async for event in agent.run(
-            task_id="task-safety-fallback-block",
-            trace_id="trace-safety-fallback-block",
-            seq=1,
-            service_type="RESOURCE_GENERATION",
-            params=params,
-            snapshot=_build_snapshot(),
-            system_prompt="test",
-        )
-    ]
-
-    assert [event.event for event in events] == ["progress", "result_chunk"]
-    assert params["safetyReview"]["allowed"] is False
-    assert params["safetyReview"]["riskLevel"] == "HIGH"
-    assert "allowed=false" in events[1].payload.text
 
 
 @pytest.mark.asyncio
@@ -352,26 +315,6 @@ async def test_document_generator_fails_when_reviewers_fail(tmp_path: Path) -> N
         ]
     assert "criticReview" not in params
     assert "safetyReview" not in params
-    return
-
-    events = [
-        event
-        async for event in agent.run(
-            task_id="task-document-review-fallback",
-            trace_id="trace-document-review-fallback",
-            seq=1,
-            service_type="RESOURCE_GENERATION",
-            params=params,
-            snapshot=_build_snapshot(),
-            system_prompt="test",
-        )
-    ]
-
-    assert [event.event for event in events] == ["result_chunk", "resource_file"]
-    assert params["criticReview"]["verdict"] == "REVISE"
-    assert params["safetyReview"]["allowed"] is True
-    assert "Critic 复核完成：" in events[0].payload.text
-    assert "Safety 复核完成：" in events[0].payload.text
 
 
 @pytest.mark.asyncio

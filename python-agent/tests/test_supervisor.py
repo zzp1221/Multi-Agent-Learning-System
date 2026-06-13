@@ -19,8 +19,18 @@ from src.ai_modules.models import (
     ResultChunkSSEEvent,
     VideoProgressSSEEvent,
 )
+from src.ai_modules.memory import InMemoryLearningLoopStore, ResilientLearningLoopStore
 from src.ai_modules.runtime import SystemSnapshot
+from src.ai_modules.runtime.autonomous_planning import LearningLoopOrchestrator, PlanningCheckpointManager
+from src.ai_modules.runtime.resource_bundle_workflow import RESOURCE_AGENT_BY_TYPE
 from src.ai_modules.supervisor import ExecutionState, PythonAgentSupervisor
+
+
+def _checkpoint_manager() -> PlanningCheckpointManager:
+    fallback = InMemoryLearningLoopStore()
+    return PlanningCheckpointManager(
+        store=ResilientLearningLoopStore(primary=fallback, fallback=fallback),
+    )
 
 
 def test_supervisor_resolves_resource_generation_route() -> None:
@@ -241,8 +251,8 @@ class _RecordingRewriteAgent(PlaceholderAgent):
     async def run(self, *, params, **kwargs):
         params["rewrittenQuery"] = "Java 程序设计 并发编程"
         params["keywords"] = ["Java", "程序设计", "并发编程"]
-        if False:
-            yield
+        for event in ():
+            yield event
 
 
 class _RecordingRetrievalAgent(PlaceholderAgent):
@@ -254,8 +264,8 @@ class _RecordingRetrievalAgent(PlaceholderAgent):
     async def run(self, *, params, **kwargs):
         self.seen_rewritten_query = params.get("rewrittenQuery")
         self.seen_keywords = list(params.get("keywords", []))
-        if False:
-            yield
+        for event in ():
+            yield event
 
 
 class _StubRewriteAgent(PlaceholderAgent):
@@ -299,6 +309,23 @@ class _StubRetrievalAgent(PlaceholderAgent):
             traceId=trace_id,
             seq=seq + 1,
             payload=ResultChunkPayload(text="来源摘要：优先参考联合索引导学。"),
+        )
+
+
+class _AlwaysWeakRetrievalAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("weak retrieval", "retrieval")
+        self.seen_strategies: list[str | None] = []
+
+    async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+        del kwargs
+        self.seen_strategies.append(params.get("retrievalStrategy"))
+        params["retrievalResult"] = {"documents": []}
+        yield ProgressSSEEvent(
+            taskId=task_id,
+            traceId=trace_id,
+            seq=seq,
+            payload=ProgressPayload(stage="retrieval", percent=35, message="检索证据不足"),
         )
 
 
@@ -369,8 +396,8 @@ class _StubCriticAgent(PlaceholderAgent):
             summaryText="Critic OK",
         )
         params["criticReview"] = review.model_dump(by_alias=True)
-        if False:
-            yield
+        for event in ():
+            yield event
 
 
 def _install_stub_critic(supervisor: PythonAgentSupervisor, *, fail: bool = False) -> None:
@@ -383,11 +410,11 @@ class _FailingBackgroundProfileAgent(PlaceholderAgent):
         self.started = asyncio.Event()
 
     async def run(self, *, params, **kwargs):
+        for event in ():
+            yield event
         del params, kwargs
         self.started.set()
         raise RuntimeError("画像构建失败")
-        if False:
-            yield
 
 
 class _RecordingBackgroundProfileAgent(PlaceholderAgent):
@@ -400,8 +427,8 @@ class _RecordingBackgroundProfileAgent(PlaceholderAgent):
         del kwargs
         self.seen_params = dict(params)
         self.started.set()
-        if False:
-            yield
+        for event in ():
+            yield event
 
 
 def _test_provenance(agent_name: str) -> dict:
@@ -454,6 +481,24 @@ class _StubDocumentGeneratorAgent(_StubResourceGeneratorAgent):
         super().__init__("DOCUMENT", "document_generation")
 
 
+class _SelectiveResourceAgent(_StubResourceGeneratorAgent):
+    def __init__(self, asset_type: str, stage_name: str, allowed_types: set[str]) -> None:
+        super().__init__(asset_type, stage_name)
+        self.allowed_types = allowed_types
+
+    async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+        if self.asset_type not in self.allowed_types:
+            raise RuntimeError(f"{self.asset_type} disabled for first pass")
+        async for event in super().run(
+            task_id=task_id,
+            trace_id=trace_id,
+            seq=seq,
+            params=params,
+            **kwargs,
+        ):
+            yield event
+
+
 class _StubResourcePushAgent(PlaceholderAgent):
     def __init__(self) -> None:
         super().__init__("stub resource push", "resource_push")
@@ -487,6 +532,40 @@ class _StubResourcePushAgent(PlaceholderAgent):
             traceId=trace_id,
             seq=seq,
             payload=ResultChunkPayload(text="资源推送完成"),
+        )
+
+
+class _RichResourcePushAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("rich resource push", "resource_push")
+
+    async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+        del kwargs
+        resources = [
+            {
+                "title": f"{resource_type} resource",
+                "resourceType": resource_type,
+                "source": "tavily",
+                "downloadUrl": f"https://example.com/{resource_type.lower()}",
+            }
+            for resource_type in list(RESOURCE_AGENT_BY_TYPE)[:5]
+        ]
+        params["resourcePushPlan"] = {
+            "stepResources": [
+                {
+                    "stepId": "step-1",
+                    "stepTitle": "多模态资源",
+                    "resources": resources,
+                }
+            ],
+            "coverageGaps": [],
+        }
+        params["pushedResources"] = resources
+        yield ResultChunkSSEEvent(
+            taskId=task_id,
+            traceId=trace_id,
+            seq=seq,
+            payload=ResultChunkPayload(text="多模态资源推送完成"),
         )
 
 
@@ -711,6 +790,19 @@ class _StubEvaluationAgent(PlaceholderAgent):
         )
 
 
+class _StrongEvaluationAgent(_StubEvaluationAgent):
+    async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+        async for event in super().run(
+            task_id=task_id,
+            trace_id=trace_id,
+            seq=seq,
+            params=params,
+            **kwargs,
+        ):
+            yield event
+        params["masteryDiagnosis"]["overallMasteryScore"] = 0.92
+
+
 class _StubPathPlanningAgent(PlaceholderAgent):
     def __init__(self) -> None:
         super().__init__("stub planning", "path_planning")
@@ -843,6 +935,77 @@ async def test_supervisor_streams_resource_generation_with_retrieval_chain() -> 
 
 
 @pytest.mark.asyncio
+async def test_resource_generation_checkpoint_supplements_missing_resource_types() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.checkpoint_manager = _checkpoint_manager()
+    allowed_types: set[str] = {"DOCUMENT"}
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["document_generator"] = _SelectiveResourceAgent(
+        "DOCUMENT",
+        "document_generation",
+        allowed_types,
+    )
+    supervisor.agent_registry["slide_generator"] = _SelectiveResourceAgent(
+        "SLIDES",
+        "slide_generation",
+        allowed_types,
+    )
+    supervisor.agent_registry["mindmap_generator"] = _SelectiveResourceAgent(
+        "MINDMAP",
+        "mindmap_generation",
+        allowed_types,
+    )
+    supervisor.agent_registry["code_generator"] = _SelectiveResourceAgent(
+        "CODE",
+        "code_generation",
+        allowed_types,
+    )
+    supervisor.agent_registry["practice"] = _StubPracticeAgent()
+    _install_stub_critic(supervisor)
+
+    original_check_resource_coverage = supervisor.checkpoint_manager.check_resource_coverage
+
+    async def allow_supplement_agents(*args, **kwargs):
+        result = await original_check_resource_coverage(*args, **kwargs)
+        allowed_types.update({"SLIDES", "MINDMAP", "CODE"})
+        return result
+
+    supervisor.checkpoint_manager.check_resource_coverage = allow_supplement_agents
+    request = EngineStreamRequest(
+        serviceType="RESOURCE_GENERATION",
+        params={
+            "query": "联合索引",
+        },
+        taskId="task-resource-supplement",
+        traceId="trace-resource-supplement",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+    done = events[-1]
+
+    assert done.event == "done"
+    assert done.payload.status == "SUCCESS"
+    asset_types = {
+        event.payload.asset_type
+        for event in events
+        if event.event == "resource_file"
+    }
+    question_batches = [event for event in events if event.event == "question_batch"]
+    assert {"DOCUMENT", "SLIDES", "MINDMAP", "CODE"}.issubset(asset_types)
+    assert question_batches
+    assert done.payload.planning is not None
+    assert done.payload.planning["preset"] == "RESOURCE_BUNDLE_WORKFLOW"
+    assert done.payload.planning["level"] == "checkpoint_replan"
+    checkpoint_types = {item["checkpointType"] for item in done.payload.checkpoint_actions}
+    assert "RESOURCE_COVERAGE" in checkpoint_types
+    assert any(
+        item.get("agentName") == "resource_bundle" and item.get("status") == "RETRY"
+        for item in done.payload.planning["trace"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_supervisor_streams_personalized_learning_multi_agent_route() -> None:
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["profile"] = _StubProfileAgent()
@@ -887,6 +1050,141 @@ async def test_supervisor_streams_personalized_learning_multi_agent_route() -> N
     resource_events = [event for event in events if event.event == "resource_file"]
     assert not resource_events
     assert done.payload.resource_push_plan["stepResources"][0]["resources"][0]["source"] == "tavily"
+
+
+@pytest.mark.asyncio
+async def test_personalized_learning_done_payload_exposes_level3_loop_and_checkpoints() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.checkpoint_manager = _checkpoint_manager()
+    supervisor.learning_loop_orchestrator = LearningLoopOrchestrator(store=supervisor.checkpoint_manager.store)
+    supervisor.agent_registry["profile"] = _StubProfileAgent()
+    supervisor.agent_registry["evaluation"] = _StubEvaluationAgent()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["path_planning"] = _StubPathPlanningAgent()
+    supervisor.agent_registry["resource_push"] = _StubResourcePushAgent()
+    _install_stub_critic(supervisor)
+
+    request = EngineStreamRequest(
+        serviceType="PERSONALIZED_LEARNING",
+        userId="00000000-0000-0000-0000-000000000001",
+        conversationId="conv-level3",
+        params={
+            "query": "帮我规划联合索引学习方案",
+            "resourceTypes": ["DOCUMENT"],
+            "profile": {"knowledgeFoundation": "BASIC"},
+        },
+        taskId="00000000-0000-0000-0000-000000000002",
+        traceId="trace-level3",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+    done = events[-1]
+
+    assert done.event == "done"
+    assert done.payload.planning is not None
+    assert done.payload.planning["preset"] == "PERSONALIZED_LEARNING_WORKFLOW"
+    assert done.payload.planning["level"] == "goal_loop"
+    assert any(item["agentName"] == "goal_planner" for item in done.payload.planning["trace"])
+    assert any(item["agentName"] == "goal_critic" for item in done.payload.planning["trace"])
+    assert not any(item["agentName"] in {"goal_planner", "planning_checkpoint"} for item in done.payload.agent_trace)
+    checkpoint_types = {item["checkpointType"] for item in done.payload.checkpoint_actions}
+    assert {
+        "PROFILE_COMPLETENESS",
+        "RETRIEVAL_EVIDENCE",
+        "RESOURCE_COVERAGE",
+    }.issubset(checkpoint_types)
+    loop = done.payload.learning_loop
+    assert loop is not None
+    assert loop["status"] == "PARTIAL_FAILED"
+    assert loop["goals"]
+    assert loop["verdicts"][0]["status"] == "NEEDS_REPLAN"
+    assert loop["replans"]
+    assert loop["goals"][0]["status"] == "NEEDS_REPLAN"
+    assert all(goal["status"] == "PENDING" for goal in loop["goals"][1:])
+    assert any(
+        "resourceCoverageMissing" in issue
+        for issue in loop["verdicts"][0]["issues"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_level2_retrieval_checkpoint_exhausts_configured_upgrade_order() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.checkpoint_manager = _checkpoint_manager()
+    supervisor.learning_loop_orchestrator = LearningLoopOrchestrator(store=supervisor.checkpoint_manager.store)
+    weak_retrieval = _AlwaysWeakRetrievalAgent()
+    supervisor.agent_registry["profile"] = _StubProfileAgent()
+    supervisor.agent_registry["evaluation"] = _StrongEvaluationAgent()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = weak_retrieval
+    supervisor.agent_registry["path_planning"] = _StubPathPlanningAgent()
+    supervisor.agent_registry["resource_push"] = _RichResourcePushAgent()
+    _install_stub_critic(supervisor)
+
+    request = EngineStreamRequest(
+        serviceType="PERSONALIZED_LEARNING",
+        userId="00000000-0000-0000-0000-000000000001",
+        params={"query": "帮我规划联合索引学习方案"},
+        taskId="00000000-0000-0000-0000-000000000004",
+        traceId="trace-level2-retrieval",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+    done = events[-1]
+
+    assert done.event == "done"
+    assert weak_retrieval.seen_strategies == [
+        "LOCAL_HYBRID",
+        "LOCAL_GREP_FIRST",
+        "DEEP_EVIDENCE",
+        "WEB_AUGMENTED",
+    ]
+    assert done.payload.planning is not None
+    assert sum(1 for item in done.payload.planning["trace"] if item.get("agentName") == "retrieval" and item.get("status") == "RETRY") == 3
+    retrieval_actions = [
+        item
+        for item in done.payload.checkpoint_actions
+        if item["checkpointType"] == "RETRIEVAL_EVIDENCE"
+    ]
+    assert [item["status"] for item in retrieval_actions] == ["APPLIED", "APPLIED", "APPLIED", "RECORDED"]
+
+
+@pytest.mark.asyncio
+async def test_personalized_learning_level3_completes_when_pushed_resources_cover_types() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.checkpoint_manager = _checkpoint_manager()
+    supervisor.learning_loop_orchestrator = LearningLoopOrchestrator(store=supervisor.checkpoint_manager.store)
+    supervisor.agent_registry["profile"] = _StubProfileAgent()
+    supervisor.agent_registry["evaluation"] = _StrongEvaluationAgent()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubRetrievalAgent()
+    supervisor.agent_registry["path_planning"] = _StubPathPlanningAgent()
+    supervisor.agent_registry["resource_push"] = _RichResourcePushAgent()
+    _install_stub_critic(supervisor)
+
+    request = EngineStreamRequest(
+        serviceType="PERSONALIZED_LEARNING",
+        userId="00000000-0000-0000-0000-000000000001",
+        conversationId="conv-level3-success",
+        params={
+            "query": "帮我规划联合索引学习方案",
+            "profile": {"knowledgeFoundation": "BASIC"},
+        },
+        taskId="00000000-0000-0000-0000-000000000003",
+        traceId="trace-level3-success",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+    done = events[-1]
+
+    assert done.event == "done"
+    assert done.payload.learning_loop is not None
+    assert done.payload.learning_loop["status"] == "COMPLETED"
+    assert done.payload.learning_loop["verdicts"][0]["status"] == "ACHIEVED"
+    checkpoint_types = {item["checkpointType"] for item in done.payload.checkpoint_actions}
+    assert "RESOURCE_COVERAGE" not in checkpoint_types
+    assert all(goal["status"] == "ACHIEVED" for goal in done.payload.learning_loop["goals"])
 
 
 def test_supervisor_resource_push_done_payload_keeps_empty_plan() -> None:
@@ -1122,8 +1420,8 @@ async def test_supervisor_injects_top_level_user_and_conversation_into_agent_par
         async def run(self, *, params, **kwargs):
             self.seen_user_id = params.get("userId")
             self.seen_conversation_id = params.get("conversationId")
-            if False:
-                yield
+            for event in ():
+                yield event
 
     supervisor = PythonAgentSupervisor()
     recording_agent = RecordingAgent()
@@ -1457,10 +1755,11 @@ async def test_supervisor_does_not_commit_partial_param_mutations_when_agent_fai
             super().__init__("Failing Agent", "failing")
 
         async def run(self, **kwargs):
+            for event in ():
+                yield event
             params = kwargs["params"]
             params["rewrittenQuery"] = "should-not-leak"
             raise RuntimeError("simulated failure")
-            yield  # pragma: no cover
 
     supervisor = PythonAgentSupervisor()
     supervisor.agent_registry["query_rewrite"] = MutatingFailingAgent()

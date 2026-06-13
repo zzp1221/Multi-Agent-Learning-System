@@ -246,6 +246,97 @@ def test_user_runtime_config_overlays_provider_and_component_settings() -> None:
         user_runtime_config._CURRENT_CONFIG.reset(token)
 
 
+def test_user_runtime_config_adds_reasoning_stream_config_for_user_reasoning_model() -> None:
+    settings = Settings(
+        ACTIVE_PROVIDER="openai_compatible",
+        OPENAI_COMPATIBLE_API_KEY="env-openai-key",
+        MIMO_API_KEY="",
+    )
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": True,
+            "activeProvider": "mimo",
+            "providers": {
+                "mimo": {
+                    "provider": "mimo",
+                    "baseUrl": "https://api.xiaomimimo.com/v1",
+                    "apiKey": "user-mimo-key",
+                    "modelOverrides": {
+                        "main_chat_model": "mimo-v2.5",
+                        "reasoning_model": "mimo-v2.5-pro",
+                    },
+                }
+            },
+            "componentOverrides": {
+                "tutor_llm": {
+                    "provider": "mimo",
+                    "model": "mimo-v2.5-pro",
+                }
+            },
+        }
+    )
+
+    token = user_runtime_config._CURRENT_CONFIG.set(runtime_config)
+    try:
+        routing = settings.model_routing_config()
+        assert settings.resolve_component_model(
+            "tutor_llm",
+            default_logical_model="main_chat_model",
+            provider_name="mimo",
+        ) == "mimo-v2.5-pro"
+        reasoning_config = routing.resolve_reasoning_config("mimo-v2.5-pro", "mimo")
+    finally:
+        user_runtime_config._CURRENT_CONFIG.reset(token)
+
+    assert reasoning_config is not None
+    assert reasoning_config.request == {"thinking": {"type": "enabled"}}
+    assert reasoning_config.stream_fields == ["reasoning_content", "reasoning", "reasoningContent"]
+
+
+def test_user_runtime_config_adds_reasoning_stream_config_for_deepseek_without_thinking_param() -> None:
+    settings = Settings(
+        ACTIVE_PROVIDER="openai_compatible",
+        OPENAI_COMPATIBLE_API_KEY="env-openai-key",
+        MIMO_API_KEY="",
+    )
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": True,
+            "activeProvider": "deepseek",
+            "providers": {
+                "deepseek": {
+                    "provider": "deepseek",
+                    "baseUrl": "https://api.deepseek.com",
+                    "apiKey": "user-deepseek-key",
+                    "modelOverrides": {
+                        "main_chat_model": "deepseek-chat",
+                        "reasoning_model": "deepseek-reasoner",
+                    },
+                }
+            },
+            "componentOverrides": {
+                "tutor_llm": {
+                    "provider": "deepseek",
+                    "model": "reasoning_model",
+                }
+            },
+        }
+    )
+
+    token = user_runtime_config._CURRENT_CONFIG.set(runtime_config)
+    try:
+        reasoning_config = settings.reasoning_stream_config(
+            provider_name="deepseek",
+            model_name="deepseek-reasoner",
+        )
+    finally:
+        user_runtime_config._CURRENT_CONFIG.reset(token)
+
+    assert reasoning_config is not None
+    assert reasoning_config.request == {}
+    assert reasoning_config.stream_fields == ["reasoning_content", "reasoning", "reasoningContent"]
+
+
 def test_user_runtime_config_skill_override_prefers_component_over_group() -> None:
     runtime_config = UserLlmRuntimeConfig.model_validate(
         {

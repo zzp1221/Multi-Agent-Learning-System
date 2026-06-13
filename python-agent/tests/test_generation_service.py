@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.generation import (

@@ -219,8 +219,9 @@ class CancelledProcessingWorker(CapturingWorker):
 class InvalidGenerationSupervisor:
     async def stream(self, request, cancelled=None):
         del request, cancelled
+        for event in ():
+            yield event
         raise GenerationOutputInvalidError("invalid generated asset")
-        yield
 
 
 class UnusedSupervisor:

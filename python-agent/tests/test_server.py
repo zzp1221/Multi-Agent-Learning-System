@@ -15,12 +15,13 @@ from src.ai_modules.models.events import (
     ResourceFileSSEEvent,
     ResultChunkPayload,
     ResultChunkSSEEvent,
+    VideoProgressSSEEvent,
 )
 
 INTERNAL_HEADERS = {"X-Zhixue-Internal-Token": "test-internal-token"}
 
 
-async def empty_tavily_fallback(*args, **kwargs):
+async def empty_tavily_fallback(*_args, **_kwargs):
     return []
 
 
@@ -70,7 +71,7 @@ def test_resource_semantic_search_requires_internal_token(client) -> None:
 
 
 def test_resource_semantic_search_returns_grouped_results(client, monkeypatch) -> None:
-    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *args, **kwargs: [])
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(server, "_search_resource_tavily_candidates", empty_tavily_fallback)
     monkeypatch.setattr(
         server,
@@ -264,7 +265,7 @@ def test_resource_semantic_search_degrades_when_embedding_unavailable(client, mo
     def fail_search(query, top_k, domain=None, user_id=None):
         raise RuntimeError("missing embedding key")
 
-    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *args, **kwargs: [])
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(server, "_search_resource_chunks", fail_search)
     monkeypatch.setattr(server, "_search_resource_tavily_candidates", empty_tavily_fallback)
 
@@ -301,7 +302,7 @@ def test_resource_semantic_search_uses_tavily_when_embedding_unavailable(client,
             )
         ]
 
-    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *args, **kwargs: [])
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(server, "_search_resource_chunks", fail_search)
     monkeypatch.setattr(server, "_search_resource_tavily_candidates", tavily_fallback)
 
@@ -344,7 +345,7 @@ async def test_resource_tavily_fallback_shortens_long_context_query(monkeypatch)
         async def __aenter__(self):
             return self
 
-        async def __aexit__(self, exc_type, exc, tb):
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return None
 
         async def post(self, url, json):
@@ -437,7 +438,7 @@ def test_resource_chunk_search_uses_domain_parameter(monkeypatch) -> None:
         def __enter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, _exc_type, _exc, _tb):
             return False
 
         def execute(self, sql, params):
@@ -451,7 +452,7 @@ def test_resource_chunk_search_uses_domain_parameter(monkeypatch) -> None:
         def __enter__(self):
             return self
 
-        def __exit__(self, exc_type, exc, tb):
+        def __exit__(self, _exc_type, _exc, _tb):
             return False
 
         def cursor(self, cursor_factory=None):
@@ -459,7 +460,7 @@ def test_resource_chunk_search_uses_domain_parameter(monkeypatch) -> None:
             return FakeCursor()
 
     monkeypatch.setattr(server, "_embed_resource_query", lambda query: [0.1] * server.SETTINGS.knowledge_embedding_dimension)
-    monkeypatch.setattr(server.psycopg2, "connect", lambda **kwargs: FakeConnection())
+    monkeypatch.setattr(server.psycopg2, "connect", lambda **_kwargs: FakeConnection())
 
     rows = server._search_resource_chunks(
         "dynamic programming",
@@ -490,7 +491,7 @@ def test_resource_semantic_search_passes_user_id_to_chunk_search(client, monkeyp
         captured.update({"query": query, "top_k": top_k, "domain": domain, "user_id": user_id})
         return []
 
-    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *args, **kwargs: [])
+    monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(server, "_search_resource_chunks", fake_search)
     monkeypatch.setattr(server, "_search_resource_tavily_candidates", empty_tavily_fallback)
 
@@ -621,7 +622,89 @@ def test_stream_endpoint_returns_expected_event_order(client, monkeypatch) -> No
     assert data_payloads[-1]["payload"]["status"] == "SUCCESS"
 
 
-def test_stream_endpoint_supports_video_generation_events(client) -> None:
+def test_stream_endpoint_supports_video_generation_events(client, monkeypatch) -> None:
+    class StubSupervisor:
+        def resolve_route(self, service_type, params):
+            assert service_type == "RESOURCE_GENERATION"
+            assert params["resourceType"] == "VIDEO"
+            return None
+
+        async def stream(self, request, cancelled=None):
+            del cancelled
+            yield ProgressSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=1,
+                payload=ProgressPayload(stage="accepted", percent=10, message="accepted"),
+            )
+            yield VideoProgressSSEEvent(
+                event="video_gen:start",
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=2,
+                payload=ProgressPayload(stage="video_started", percent=20, message="video started"),
+            )
+            yield ProgressSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=3,
+                payload=ProgressPayload(stage="video_generation", percent=60, message="video running"),
+            )
+            yield ProgressSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=4,
+                payload=ProgressPayload(stage="video_render", percent=70, message="video render"),
+            )
+            yield ProgressSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=5,
+                payload=ProgressPayload(stage="video_package", percent=75, message="video package"),
+            )
+            yield VideoProgressSSEEvent(
+                event="video_gen:speech",
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=6,
+                payload=ProgressPayload(
+                    stage="video_speech",
+                    percent=80,
+                    message="speech ready",
+                    audioBase64="dGVzdA==",
+                    avatarDataUrl="/dh_live/assets/combined_data.json.gz",
+                ),
+            )
+            yield ResourceFileSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=7,
+                payload=ResourceFilePayload(
+                    assetType="VIDEO",
+                    title="video",
+                    summary="video resource",
+                    displayMode="download",
+                    fileName="video.mp4",
+                    localPath="sandbox/video.mp4",
+                    mimeType="video/mp4",
+                    thumbnailPath="sandbox/video.svg",
+                ),
+            )
+            yield ResultChunkSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=8,
+                payload=ResultChunkPayload(text="视频生成完成"),
+            )
+            yield DoneSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=9,
+                payload=DonePayload(status="SUCCESS", summary="视频生成完成"),
+            )
+
+    monkeypatch.setattr(server, "SUPERVISOR", StubSupervisor())
+
     payload = {
         "serviceType": "RESOURCE_GENERATION",
         "params": {
@@ -778,8 +861,9 @@ def test_stream_endpoint_emits_error_and_failed_done_when_supervisor_raises(clie
 
         async def stream(self, request, cancelled=None):
             del request, cancelled
+            for event in ():
+                yield event
             raise RuntimeError("boom")
-            yield  # pragma: no cover
 
     monkeypatch.setattr(server, "SUPERVISOR", BrokenSupervisor())
 

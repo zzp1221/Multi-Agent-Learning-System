@@ -38,7 +38,7 @@ def test_vector_searcher_retries_transient_embedding_exception(monkeypatch: pyte
         )
 
     monkeypatch.setattr(vector_searcher.MultiModalEmbedding, "call", flaky_call)
-    monkeypatch.setattr(vector_searcher.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(vector_searcher.time, "sleep", lambda _: None)
     searcher = VectorSearcher(
         dimension=1024,
         model="qwen3-vl-embedding",

@@ -2,7 +2,7 @@
 RAG Quality & Recommendation Accuracy Test — 50 Random Questions
 Tests: vector retrieval hit rate, hybrid retrieval quality, resource recommendation relevance.
 """
-import sys, os, json, random
+import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import psycopg2
@@ -227,7 +227,6 @@ def test_resource_recommendation():
                 total = 0
 
                 for course in courses:
-                    query = f"{course}核心知识点总结"
                     cur.execute("""
                         SELECT rd.title, rd.metadata_json->>'course' as res_course,
                                ROUND((1 - (rc.embedding <=> (

@@ -50,8 +50,8 @@ class _StubRewriteAgent(PlaceholderAgent):
 
     async def run(self, *, params, **kwargs):
         params["rewrittenQuery"] = "数据库原理 联合索引"
-        if False:
-            yield
+        for event in ():
+            yield event
 
 
 class _StubRetrievalAgent(PlaceholderAgent):
@@ -63,8 +63,8 @@ class _StubRetrievalAgent(PlaceholderAgent):
             "documents": [{"id": "doc-1", "title": "联合索引导学", "channel": "wiki"}],
             "sourcesSummary": "联合索引导学",
         }
-        if False:
-            yield
+        for event in ():
+            yield event
 
 
 class _StubResourceAgent(PlaceholderAgent):
@@ -134,8 +134,8 @@ class _StubCriticAgent(PlaceholderAgent):
             summaryText="Critic OK",
         )
         params["criticReview"] = review.model_dump(by_alias=True)
-        if False:
-            yield
+        for event in ():
+            yield event
 
 
 class _FailingResourceAgent(PlaceholderAgent):
@@ -143,8 +143,9 @@ class _FailingResourceAgent(PlaceholderAgent):
         super().__init__("failing", "failing_generation")
 
     async def run(self, **kwargs):
+        for event in ():
+            yield event
         raise RuntimeError("llm unavailable")
-        yield  # pragma: no cover
 
 
 class _FailingPracticeResourceAgent(PlaceholderAgent):
@@ -152,8 +153,9 @@ class _FailingPracticeResourceAgent(PlaceholderAgent):
         super().__init__("failing practice", "practice")
 
     async def run(self, **kwargs):
+        for event in ():
+            yield event
         raise RuntimeError("Practice question LLM generation failed; template fallback is not allowed")
-        yield  # pragma: no cover
 
 
 class _QualityGateFailingResourceAgent(PlaceholderAgent):
@@ -161,8 +163,9 @@ class _QualityGateFailingResourceAgent(PlaceholderAgent):
         super().__init__("quality gate failing", "quality_gate_generation")
 
     async def run(self, **kwargs):
+        for event in ():
+            yield event
         raise RuntimeError("Critic review LLM failed; heuristic fallback is disabled")
-        yield  # pragma: no cover
 
 
 class _ResourceStartProbe:

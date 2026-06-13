@@ -5,6 +5,7 @@ from src.ai_modules.llms.openai_compatible import (
     extract_json_object_from_text,
 )
 from src.ai_modules.config import Settings
+from src.ai_modules.models import ReasoningStreamConfig
 
 
 def test_extract_json_object_from_text_prefers_fenced_final_object() -> None:
@@ -186,3 +187,53 @@ async def test_openai_compatible_client_does_not_enable_unconfigured_reasoning(m
 
     assert [(chunk.kind, chunk.text) for chunk in chunks] == [("answer", "answer")]
     assert fake_client.request_json["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_client_allows_reasoning_config_without_request_param(monkeypatch) -> None:
+    fake_client = _FakeAsyncClient(
+        [
+            'data: {"choices":[{"delta":{"reasoning_content":"think","content":"answer"}}]}',
+            'data: [DONE]',
+        ]
+    )
+    settings = Settings(
+        ACTIVE_PROVIDER="openai_compatible",
+        OPENAI_COMPATIBLE_API_KEY="test-key",
+    )
+    routing = settings.build_default_model_routing_config()
+    routing.providers["openai_compatible"].reasoning_models["deepseek-reasoner"] = ReasoningStreamConfig(
+        request={},
+        streamFields=["reasoning_content"],
+        messageFields=["reasoning_content"],
+    )
+    client = OpenAICompatibleClient(
+        api_key="test-key",
+        base_url="https://llm.example.test/v1",
+        model_name="deepseek-reasoner",
+        provider_name="openai_compatible",
+    )
+
+    async def fake_get_client():
+        return fake_client
+
+    class FakeSettings:
+        def reasoning_stream_config(self, *, provider_name, model_name):
+            return routing.resolve_reasoning_config(model_name, provider_name)
+
+    monkeypatch.setattr("src.ai_modules.llms.openai_compatible.get_settings", FakeSettings)
+    monkeypatch.setattr(client, "_get_client", fake_get_client)
+
+    chunks = [
+        chunk
+        async for chunk in client.chat_completion_stream_events(
+            messages=[{"role": "user", "content": "hello"}],
+            include_reasoning=True,
+        )
+    ]
+
+    assert [(chunk.kind, chunk.text) for chunk in chunks] == [
+        ("reasoning", "think"),
+        ("answer", "answer"),
+    ]
+    assert "thinking" not in fake_client.request_json

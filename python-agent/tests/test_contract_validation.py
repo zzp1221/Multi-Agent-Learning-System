@@ -11,8 +11,6 @@ from __future__ import annotations
 import json
 import re
 
-import pytest
-
 from src.ai_modules.models import (
     DonePayload,
     DoneSSEEvent,
@@ -125,6 +123,32 @@ class TestSseEventContracts:
         assert_common_fields(data, "done")
         assert data["payload"]["status"] == "SUCCESS"
         assert data["payload"]["summary"] == "文档生成完成"
+
+    def test_done_event_planning_metadata_keeps_sse_wire_format(self) -> None:
+        event = DoneSSEEvent(
+            event="done",
+            taskId=self.TASK_ID,
+            traceId=self.TRACE_ID,
+            seq=11,
+            payload=DonePayload(
+                status="SUCCESS",
+                summary="自主规划完成",
+                planning={"preset": "RAG_TUTOR", "level": "preset_router"},
+                checkpointActions=[{"checkpointType": "RETRIEVAL_EVIDENCE", "status": "APPLIED"}],
+                learningLoop={"status": "COMPLETED"},
+            ),
+        )
+
+        wire = event.to_sse()
+        evt_type, data = parse_sse_wire(wire)
+
+        assert wire.startswith("event: done\ndata: ")
+        assert wire.endswith("\n\n")
+        assert evt_type == "done"
+        assert_common_fields(data, "done")
+        assert data["payload"]["planning"]["preset"] == "RAG_TUTOR"
+        assert data["payload"]["checkpointActions"][0]["checkpointType"] == "RETRIEVAL_EVIDENCE"
+        assert data["payload"]["learningLoop"]["status"] == "COMPLETED"
 
     def test_error_event_wire_format(self) -> None:
         event = ErrorSSEEvent(
