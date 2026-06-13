@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "presetRoutes": {
+    "DIRECT_TUTOR": {
+      "agents": ["tutor"],
+      "retrievalStrategy": "NONE",
+      "planningLevel": "preset_router"
+    },
+    "CONTEXT_TUTOR": {
+      "agents": ["tutor"],
+      "retrievalStrategy": "CONTEXT_ONLY",
+      "planningLevel": "preset_router"
+    },
+    "RAG_TUTOR": {
+      "agents": ["query_rewrite", "retrieval", "tutor"],
+      "retrievalStrategy": "LOCAL_HYBRID",
+      "planningLevel": "preset_router"
+    },
+    "RAG_DEEP_TUTOR": {
+      "agents": ["query_rewrite", "retrieval", "tutor"],
+      "retrievalStrategy": "DEEP_EVIDENCE",
+      "planningLevel": "preset_router",
+      "paramUpdates": {"reasoningMode": "DEEP"}
+    },
+    "IMAGE_RAG_TUTOR": {
+      "agents": ["image_analysis", "query_rewrite", "retrieval", "tutor"],
+      "retrievalStrategy": "LOCAL_HYBRID",
+      "planningLevel": "preset_router"
+    },
+    "RAG_TUTOR_WITH_PRACTICE": {
+      "agents": ["query_rewrite", "retrieval", "tutor", "practice"],
+      "retrievalStrategy": "LOCAL_HYBRID",
+      "planningLevel": "preset_router"
+    },
+    "RESOURCE_BUNDLE_WORKFLOW": {
+      "agents": ["query_rewrite", "retrieval", "resource_bundle"],
+      "retrievalStrategy": "LOCAL_HYBRID",
+      "planningLevel": "checkpoint_replan"
+    },
+    "PERSONALIZED_LEARNING_WORKFLOW": {
+      "agents": ["profile", "evaluation", "query_rewrite", "retrieval", "path_planning", "resource_push", "critic"],
+      "retrievalStrategy": "LOCAL_HYBRID",
+      "planningLevel": "goal_loop"
+    }
+  },
+  "router": {
+    "minConfidence": 0.6
+  },
+  "profileCompleteness": {
+    "minDimensionCount": 6,
+    "excludedModelFields": ["confidence_score", "evidence", "source", "summary_text", "inferred_recommendations"],
+    "emptyStringValues": ["", "UNKNOWN", "unknown", "未提供", "待补充"]
+  },
+  "retrievalEvidence": {
+    "minDocumentCount": 2,
+    "minTopScore": 0.25,
+    "upgradeOrder": ["LOCAL_HYBRID", "LOCAL_GREP_FIRST", "DEEP_EVIDENCE", "WEB_AUGMENTED"]
+  },
+  "resourceCoverage": {
+    "minTypeCount": 5
+  },
+  "goalLoop": {
+    "subgoalTemplates": [
+      {
+        "title": "诊断画像与薄弱点",
+        "objectiveTemplate": "确认学习者当前基础与 {focus} 相关薄弱点",
+        "successCriteria": "形成不少于 {minProfileDimensions} 个维度的画像和可执行掌握度诊断",
+        "assignedPreset": "PROFILE_EVALUATION",
+        "resourceTypes": []
+      },
+      {
+        "title": "规划学习路径",
+        "objectiveTemplate": "围绕 {goal} 生成有顺序的学习步骤",
+        "successCriteria": "学习路径覆盖主要薄弱点，并给出每步检查点",
+        "assignedPreset": "PERSONALIZED_LEARNING_WORKFLOW",
+        "resourceTypes": []
+      },
+      {
+        "title": "推送多模态资源",
+        "objectiveTemplate": "为学习路径匹配多类型学习资源",
+        "successCriteria": "至少覆盖 {minResourceTypes} 类资源或明确记录资源缺口",
+        "assignedPreset": "RESOURCE_BUNDLE_WORKFLOW",
+        "resourceTypes": ["DOCUMENT", "SLIDES", "MINDMAP", "QUIZ", "VIDEO"]
+      },
+      {
+        "title": "验证学习闭环",
+        "objectiveTemplate": "用 critic 和练习/诊断信号检查目标是否达成",
+        "successCriteria": "critic 通过或产生局部重规划建议",
+        "assignedPreset": "GOAL_CRITIC",
+        "resourceTypes": ["QUIZ", "DOCUMENT"]
+      }
+    ]
+  }
+}
