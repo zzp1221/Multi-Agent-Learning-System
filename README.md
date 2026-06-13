@@ -1,261 +1,454 @@
 # 智学引擎 ZhiXue Engine
 
-> 最后更新：2026-06-04
+> **AI 驱动的个性化计算机学习系统** -- 多智能体协作、RAG 知识检索、学习画像闭环
+>
+> 最后更新：2026-06-13
 
-智学引擎是一个面向计算机学习场景的 AI 个性化学习系统。项目采用 React 前端、Java 控制平面、Python 多智能体运行时和 PostgreSQL/MongoDB/Redis 数据层，支持流式问答、资源生成、个性化学习方案、学习效果评估闭环、错题复习和学习画像。
+---
 
-## 当前运行态
+## 项目亮点
 
-当前仓库对应的标准 Docker Compose 栈包含 6 个服务：
+- **18 个专职智能体协作运行**：基于 LangGraph 构建多智能体运行时，由 `PythonAgentSupervisor` 统一编排，支持动态意图路由、fan-out 并行生成和链式任务组合。
+- **四路融合 RAG 检索**：短语优先 grep、向量语义、知识图谱扩展、联网搜索四路召回经 RRF 融合，基础 100 题 hit@3 达 98%，图谱型 100 题 hit@3 达 94%。
+- **完整学习闭环**：从诊断评估、路径规划、资源推送、练习批改到错题复习，形成"学-练-测-评-复"全链路闭环，学习画像与知识掌握图谱实时更新。
+- **上下文工程分层架构**：会话记忆、结构化摘要、学习画像、知识图谱、学习计划、练习结果六层记忆分层持久化，`SnapshotBuilder` 聚合为系统提示词，`ConversationCompactor` 智能压缩长对话。
+- **无伪生成边界保障**：可发布资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 等标识，Python/Java/前端三层共同校验。
+- **悬浮语音助手**：全局麦克风入口，AudioWorklet 16k PCM 采集，百炼 Qwen 实时 ASR/TTS，支持打断式 cancel、语音命令解析和页面上下文问答。
+- **长任务可靠执行**：Redis Streams 异步队列 + Java SSE 推送，Nginx 1800 秒读取超时，支撑 >5 分钟资源生成任务不截断。
 
-| 服务 | 容器 | 技术 | 端口 |
-|---|---|---|---|
-| 前端入口 | `zhixue-frontend` | Nginx + React SPA | 80 |
-| Java 控制平面 | `zhixue-app` | Java 21 + Spring Boot 3.3.12 | 8081 |
-| Python Agent | `zhixue-python-agent` | Python 3.11 + FastAPI + LangGraph | 8000 |
-| 向量/业务库 | `zhixue-postgres` | PostgreSQL 16 + pgvector | 5432 |
-| 会话文档库 | `zhixue-mongo` | MongoDB 7 | 27017 |
-| 队列/缓存 | `zhixue-redis` | Redis 7 Alpine + AOF | 6379 |
+---
 
-浏览器只应访问前端和 Java `/api/*`。Python Agent 的 `/internal/*` 接口只供 Java 控制平面通过 `X-Zhixue-Internal-Token` 调用；这条“Java 是唯一入口”的契约不能破坏。
+## 功能概览
+
+| 功能模块 | 说明 | 核心技术 |
+|---|---|---|
+| 智能问答 | 文字/图片/深度推理/联网搜索，多轮历史，SSE 逐字渲染 | 动态意图路由、多模态理解 |
+| 资源生成 | 文档、PPT、思维导图、代码、练习、视频等多类型并发生成 | LangGraph fan-out、18 Agent 并行 |
+| 个性化学习方案 | 自动聚合学生画像、进度、知识掌握、错题，输出学习路径与资源推荐 | 7-Stage Pipeline、Profile-driven |
+| 学习效果诊断 | 诊断薄弱知识点，输出掌握度矩阵与改进建议 | 评估 Agent、知识图谱分析 |
+| 练习与批改 | 智能出题、判题、反馈，自动更新知识掌握度 | Practice/Judge Agent |
+| 错题本与复习 | SM-2 间隔重复算法组织复习计划，按主题归并错题 | 间隔重复调度 |
+| 学习画像 | 多维度学习特征建模，知识掌握图谱可视化 | Profile Registry、Graph Store |
+| 悬浮语音助手 | 实时 ASR/TTS、语音命令解析、页面上下文问答、朗读控制 | AudioWorklet、百炼 Qwen |
+| 知识库检索 | 642 wiki + 499 资源文档向量化，四路融合 RAG | pgvector、RRF 融合 |
+
+---
+
+## 系统架构
 
 ```mermaid
-flowchart LR
-  Browser["浏览器<br/>React SPA"] --> Nginx["Nginx<br/>静态资源 + /api 代理"]
-  Nginx --> Java["Java 控制平面<br/>认证 / 任务 / SSE / 下载签名"]
-  Java --> Postgres["PostgreSQL + pgvector<br/>业务表 / RAG / 任务事件"]
-  Java --> Mongo["MongoDB<br/>会话消息 / 流事件"]
-  Java --> Redis["Redis<br/>限流 / 幂等 / Streams"]
-  Java --> Python["Python Agent<br/>内部流式端点"]
-  Redis --> Worker["Python SmartEngine Worker<br/>Redis Streams 消费"]
-  Worker --> Python
-  Worker --> JavaCallback["Java /internal 回调<br/>started / events / worker-failed"]
-  JavaCallback --> Java
+flowchart TB
+    subgraph 客户端
+        Browser["浏览器 React SPA"]
+    end
+
+    subgraph 接入层
+        Nginx["Nginx<br/>静态资源 + /api 反向代理<br/>SSE 关缓冲 / 1800s 超时"]
+    end
+
+    subgraph 控制平面
+        Java["Java 控制平面<br/>Spring Boot 3.3 / Java 21<br/>认证 / 任务编排 / SSE 推送 / 下载签名"]
+    end
+
+    subgraph 智能体运行时
+        Supervisor["PythonAgentSupervisor<br/>18 Agent / 意图路由 / 链式编排"]
+        Worker["SmartEngine Worker<br/>Redis Streams 消费"]
+        Agents["Agent Pool<br/>tutor / retrieval / resource_bundle<br/>evaluation / path_planning / critic ..."]
+    end
+
+    subgraph 数据层
+        PG["PostgreSQL 16 + pgvector<br/>业务表 / RAG 向量 / 知识图谱"]
+        Mongo["MongoDB 7<br/>会话消息 / 流事件 / 摘要"]
+        Redis["Redis 7<br/>幂等 / 限流 / Streams / DLQ"]
+    end
+
+    Browser -->|HTTP / SSE| Nginx
+    Nginx -->|/api/*| Java
+    Java -->|内部 token| Supervisor
+    Java --> PG
+    Java --> Mongo
+    Java --> Redis
+    Worker -->|消费| Redis
+    Worker --> Supervisor
+    Worker -->|回调 started/events/failed| Java
+    Supervisor --> Agents
+    Agents --> PG
+    Agents --> Mongo
 ```
 
-## 核心能力
+**核心契约**：浏览器只访问前端（端口 80）和 Java `/api/*`（端口 8081）。Python Agent 的 `/internal/*` 接口仅由 Java 通过 `X-Zhixue-Internal-Token` 调用，"Java 是唯一入口"的架构契约不可破坏。
 
-- **智能问答**：支持文字、图片、深度推理、联网搜索开关和多轮历史；前端通过 `fetch + ReadableStream` 解析 SSE，实现逐字渲染。
-- **长任务 SmartEngine**：资源生成、个性化学习方案、学习效果诊断、练习批改等任务由 Java 入队 Redis Streams，Python Worker 消费执行，再回调 Java 持久化事件，前端订阅 Java SSE。
-- **多智能体运行时**：Python `PythonAgentSupervisor` 当前注册 18 个 Agent，并通过 `supervisor_routes.json` 和 QueryClassifier 选择任务链路；`resource_bundle` 是资源生成的虚拟 Graph 节点。
-- **个性化学习方案**：`PERSONALIZED_LEARNING` 串联 `profile -> evaluation -> query_rewrite -> retrieval -> path_planning -> resource_push -> critic`，自动聚合学生专业、学习进度、知识掌握、练习测试、错题复习和资源反馈，输出有顺序的学习路径和文档、视频、题库、实操案例等资源推荐。
-- **RAG 检索**：短语优先 grep、向量语义、知识图谱扩展和可选 Tavily Web 检索，经 RRF 融合；当前报告中基础 100 题 hit@3 98%，图谱型 100 题 hit@3 94%。
-- **资源包生成**：`RESOURCE_GENERATION` 使用 LangGraph `ResourceBundleWorkflow`，按 `resourceTypes[]` 并发 fan-out 到文档、PPT、思维导图、代码、练习、视频等资源 Agent。
-- **悬浮智能语音助手**：全局右下角麦克风入口，前端通过 AudioWorklet 采集 16k PCM，Java `/api/voice/**` 作为唯一语音网关，支持百炼 Qwen 实时 ASR partial/final、流式 TTS、停止/暂停/继续朗读、最近语音文本历史、页面上下文问答、学习动作控制和打断式 cancel，并复用现有聊天 SSE。
-- **无伪生成边界**：可发布生成资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 和 `fromCache`，Python、Java、前端三层共同校验。
-- **记忆系统与上下文工程**：会话消息、结构化摘要、学习画像、知识掌握图谱、学习计划和练习结果分层持久化；每次 Agent 执行前由 `SnapshotBuilder` 聚合成系统提示词上下文，长对话由 `ConversationCompactor` 压缩为结构化摘要。
-- **学习画像与错题本**：画像维度规则集中在 `profile_feature_registry.py`，错题本用 SM-2 间隔重复算法组织复习；学习画像页提供按主题归并的知识掌握图谱，以“下一步优先关注”和紧凑概览帮助学生提取重点。
+---
 
-## 路由与服务类型
+## 技术栈
 
-Java `ServiceType` 与 Python `supervisor_routes.json` 对齐：
+| 层 | 技术 | 说明 |
+|---|---|---|
+| **前端** | React 18 + TypeScript + Vite + Tailwind CSS | SPA，fetch + ReadableStream 解析 SSE |
+| **接入** | Nginx | 静态资源托管、/api 反向代理、SSE 缓冲关闭 |
+| **控制平面** | Java 21 + Spring Boot 3.3 + Spring Security | JWT 鉴权、任务编排、SSE 推送、下载签名 |
+| **智能体** | Python 3.11 + FastAPI + LangGraph + LangChain | 18 Agent 运行时、Supervisor 编排、流式执行 |
+| **向量/业务库** | PostgreSQL 16 + pgvector | 三 schema（app/rag/storage）、1024 维向量 |
+| **文档库** | MongoDB 7 | 会话消息、流事件、结构化摘要 |
+| **缓存/队列** | Redis 7 Alpine (AOF) | 幂等、限流、Streams 消息队列、DLQ |
+| **语音** | 百炼 Qwen (ASR/TTS) | 实时语音识别与合成，AudioWorklet 采集 |
+| **部署** | Docker Compose | 6 服务一键部署，数据卷持久化 |
+
+---
+
+## 快速开始
+
+> **注意**：联调/演示环境只允许 `docker cp` 热更新，禁止 `docker compose build` 或 `--force-recreate`。以下命令仅用于全新空环境部署。
+
+### 第 1 步：配置环境变量
+
+```bash
+cp .env.example .env
+# 编辑 .env，必须配置以下变量：
+#   POSTGRES_PASSWORD      — 数据库密码
+#   APP_JWT_SECRET         — JWT 签名密钥（>=32 字节）
+#   PYTHON_AGENT_INTERNAL_TOKEN — Java ↔ Python 内部通信令牌
+#   AI_OPENAI_COMPATIBLE_API_KEY — LLM API 密钥
+#   EMBEDDING_API_KEY      — 向量嵌入 API 密钥
+# 可选：
+#   VOICE_API_KEY / BAILIAN_API_KEY — 语音助手密钥
+#   TAVILY_API_KEY         — 联网搜索密钥
+```
+
+### 第 2 步：启动服务
+
+```bash
+docker compose up -d --build
+```
+
+### 第 3 步：验证
+
+```bash
+docker compose ps                              # 全部 6 个服务 healthy
+curl -s http://localhost:8081/api/health       # Java 控制平面 → 200
+curl -s http://localhost:8000/health           # Python Agent → 200
+```
+
+浏览器访问 `http://localhost/` 即可使用。
+
+---
+
+## 本地开发
+
+仅启动数据层容器，各服务在宿主机运行：
+
+```bash
+docker compose up -d postgres mongo redis
+```
+
+### 前端
+
+```bash
+cd frontend
+pnpm install
+pnpm dev                       # Vite dev server → http://localhost:5173
+```
+
+### Java 控制平面
+
+```bash
+cd project
+mvn spring-boot:run            # → http://localhost:8081
+```
+
+### Python Agent
+
+```bash
+cd python-agent
+python -m venv .venv
+# Linux/macOS:
+source .venv/bin/activate
+# Windows PowerShell:
+# .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+```
+
+---
+
+## 项目结构
+
+```text
+zhixue-engine/
+├── contracts/                     # SSE 事件 JSON Schema 契约定义
+├── docs/                          # 架构文档、部署指南、专题设计、实验日志
+├── frontend/                      # React + Vite + Tailwind 前端
+│   └── src/
+│       ├── api/                   # API 客户端封装
+│       ├── components/            # 通用组件（Markdown 渲染、语音助手等）
+│       └── pages/                 # 页面（问答、引擎任务、错题本、画像）
+├── migrations/                    # 数据库迁移脚本
+├── project/                       # Java Spring Boot 控制平面
+│   └── src/main/java/com/project/
+│       ├── application/           # 业务逻辑（对话、任务、画像、错题本）
+│       ├── infrastructure/        # 基础设施（安全、配置、SSE）
+│       └── interfaces/            # REST 控制器
+├── python-agent/                  # Python FastAPI + 多智能体运行时
+│   └── src/ai_modules/
+│       ├── agents/                # 18 个专职 Agent 实现
+│       ├── generation/            # 资源生成器（文档/PPT/思维导图/视频等）
+│       ├── llms/                  # LLM 客户端封装
+│       ├── memory/                # 记忆系统（会话/画像/知识图谱/计划）
+│       └── runtime/               # Supervisor 编排与 SnapshotBuilder
+├── tests/                         # 端到端与系统测试
+├── wiki/                          # RAG 原始知识文档（642 wiki + 499 资源）
+├── docker-compose.yml             # 6 服务编排
+├── init.sql                       # PostgreSQL 初始化（三 schema + 枚举 + 表）
+├── mongo-init.js                  # MongoDB 初始化
+└── vector_data.dump               # 预置向量数据（自动恢复）
+```
+
+---
+
+## 核心能力详述
+
+### 多智能体运行时
+
+Python `PythonAgentSupervisor` 注册 18 个 Agent，通过 `supervisor_routes.json` 和 `QueryClassifier` 实现动态意图路由。每个 `serviceType` 对应一条或多条任务链路：
 
 | serviceType | 主要链路 | 说明 |
 |---|---|---|
-| `TUTORING` | 动态路由：`tutor` / `query_rewrite -> retrieval -> tutor` / 图片或深度推理链路 | QueryClassifier 根据寒暄、追问、图片题、深度推理等意图切换 |
-| `RESOURCE_GENERATION` | `query_rewrite -> retrieval -> resource_bundle` | LangGraph 资源包 Graph，按用户选择 fan-out |
-| `VIDEO_GENERATION` | `query_rewrite -> retrieval -> video_generator` | 视频脚本、语音、数字人素材和最终资源事件 |
-| `PRACTICE_JUDGE` | `practice -> judge -> profile` | 出题、判题、反馈和画像更新 |
-| `PERSONALIZED_LEARNING` | `profile -> evaluation -> query_rewrite -> retrieval -> path_planning -> resource_push -> critic` | 个性化学习主入口，生成动态学习路径和资源推送方案 |
-| `PATH_PLANNING` | `path_planning` | 保留为内部服务或高级调试入口 |
-| `EVALUATION` / `LEARNING_EVALUATION` | `evaluation` | 学习效果诊断，主链路中产出 `masteryDiagnosis` |
-| `PROFILE_BUILD` | `tutor -> profile` | 画像构建 |
-| `RESOURCE_PUSH` | `resource_push` | 保留为内部服务或高级调试入口 |
+| `TUTORING` | 动态路由：tutor / query_rewrite→retrieval→tutor / 图片/深度推理链路 | 意图分类器根据寒暄、追问、图片题等切换 |
+| `RESOURCE_GENERATION` | query_rewrite→retrieval→resource_bundle | LangGraph 资源包 Graph，按类型 fan-out 并发 |
+| `VIDEO_GENERATION` | query_rewrite→retrieval→video_generator | 脚本→语音→数字人→最终资源事件 |
+| `PRACTICE_JUDGE` | practice→judge→profile | 出题、判题、反馈和画像更新 |
+| `PERSONALIZED_LEARNING` | profile→evaluation→query_rewrite→retrieval→path_planning→resource_push→critic | 7-Stage 个性化学习主入口 |
+| `EVALUATION` | evaluation | 学习效果诊断，产出 masteryDiagnosis |
 
-当前注册 Agent 包括：`query_rewrite`、`retrieval`、`document_generator`、`slide_generator`、`reading_generator`、`mindmap_generator`、`code_generator`、`video_generator`、`deep_reasoning`、`tutor`、`profile`、`practice`、`judge`、`path_planning`、`evaluation`、`image_analysis`、`resource_push`、`critic`。
+### RAG 检索
 
-## 关键接口
+四路召回经 RRF（Reciprocal Rank Fusion）融合：
+
+1. **短语优先 grep**：精确匹配知识库中的术语和概念
+2. **向量语义检索**：基于 pgvector 的 1024 维嵌入相似度搜索
+3. **知识图谱扩展**：沿知识点依赖关系扩展检索范围
+4. **联网搜索**：可选 Tavily Web Search 补充最新信息
+
+预置向量数据随仓库提供（`vector_data.dump`），首次部署自动恢复。当前 RAG 指标：
+- 基础 100 题 hit@3：**98%**
+- 图谱型 100 题 hit@3：**94%**
+
+### 记忆系统与上下文工程
+
+系统将"长期记忆"与"本次任务上下文"分层处理：
+
+| 层 | 存储 | 用途 |
+|---|---|---|
+| 原始会话记忆 | MongoDB | 多轮问答、图片上下文、流式事件 |
+| 结构化会话摘要 | MongoDB | 长对话压缩为主题、目标、薄弱点、未解决问题 |
+| 学习画像记忆 | PostgreSQL | 专业方向、知识基础、学习偏好、薄弱点 |
+| 知识掌握记忆 | PostgreSQL | 知识点掌握度、依赖关系、学习状态 |
+| 学习计划记忆 | PostgreSQL | 当前学习路径、版本快照、计划演化 |
+| 练习与错题记忆 | PostgreSQL | 掌握度诊断、错题复习、间隔重复调度 |
+
+上下文工程链路：前端 `learningContext` → Java `PersonalizedLearningContextService` 聚合 30 天信号 → Python `SnapshotBuilder` 整理为 `SystemSnapshot` → Agent system prompt 注入 → 执行结果写回存储形成闭环。
+
+### 长任务 SmartEngine
+
+资源生成、个性化学习方案、学习效果诊断等长任务的执行流程：
+
+1. Java 入队 Redis Streams
+2. Python SmartEngine Worker 消费并执行
+3. 执行过程中回调 Java 持久化 `started`/`events`/`worker-failed` 事件
+4. 前端订阅 Java SSE 推送的 `progress`/`result_chunk`/`resource_file`/`done` 事件
+5. Nginx 对 SSE 端点关闭缓冲，1800 秒读取超时保证长任务不截断
+
+### 悬浮语音助手
+
+- 全局右下角麦克风入口，AudioWorklet 采集 16k PCM 音频
+- Java `/api/voice/**` 作为唯一语音网关
+- 百炼 Qwen 实时 ASR（支持 partial/final 分段识别）
+- 流式 TTS 合成朗读，支持停止/暂停/继续/打断式 cancel
+- 语音命令解析：停止朗读、打开错题本、开始今日复习、打开个人画像、生成学习计划等
+- 页面上下文问答：语音输入可感知当前页面内容
+
+---
+
+## API 概览
 
 ### 前端路由
 
-| 路由 | 页面 |
-|---|---|
-| `/` | 智能问答 |
-| `/engine` | 智能引擎任务 |
-| `/mistakes` | 错题本 |
-| `/profile` | 学习画像与知识掌握图谱 |
+| 路由 | 页面 | 功能 |
+|---|---|---|
+| `/` | 每日学习工作台 | 学习任务概览与进度追踪 |
+| `/chat` | 智能问答 | 多轮对话、图片识别、深度推理 |
+| `/engine` | 个性化学习路径 | 知识图谱、学习计划与效果诊断 |
+| `/resources` | 资源库 | 语义搜索、分类筛选、资源浏览 |
+| `/resources/generation` | 多智能体资源生成 | 文档/PPT/思维导图/视频等并发生成 |
+| `/mistakes` | 错题本 | 错题浏览与间隔重复复习 |
+| `/notes` | AI 笔记本 | Markdown/Mermaid 笔记与版本管理 |
+| `/profile` | 学习画像 | 知识掌握图谱与学习分析 |
+| `/settings` | 用户设置 | LLM API Key 与模型路由配置 |
 
 ### Java 对外 API
 
-| 模块 | API |
-|---|---|
-| 健康检查 | `GET /api/health` |
-| 认证 | `POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me` |
-| 对话 | `POST /api/conversations`、`GET /api/conversations`、`GET /api/conversations/{id}/messages`、`POST /api/conversations/{id}/messages/stream` |
-| 语音助手 | `POST /api/voice/sessions`、`POST /api/voice/transcribe`、`POST /api/voice/tts/stream`、`POST /api/voice/commands/parse`、`GET /api/voice/ws` |
-| 图片 | `POST /api/conversations/images/upload`、`GET /api/conversations/images/{token}` |
-| SmartEngine | `POST /api/smart-engine/submit`、`GET /api/smart-engine/tasks/{taskId}`、`GET /api/smart-engine/tasks/{taskId}/stream`、`POST /api/smart-engine/tasks/{taskId}/cancel` |
-| 下载 | `GET /api/assets/download/{token}` |
-| 错题本 | `GET /api/mistakes`、`PATCH /api/mistakes/{id}`、`POST /api/mistakes/review` |
-| 画像 | `GET /api/users/{userId}/profile/current`、`GET /api/users/{userId}/profile/analytics`、`GET /api/users/{userId}/knowledge-graph` |
+| 模块 | 端点 | 说明 |
+|---|---|---|
+| 健康检查 | `GET /api/health` | 服务状态 |
+| 认证 | `POST /api/auth/register` `POST /api/auth/login` `POST /api/auth/logout` `GET /api/auth/me` | JWT 认证全生命周期 |
+| 对话 | `POST /api/conversations` `GET /api/conversations` `GET /api/conversations/{id}/messages` `POST /api/conversations/{id}/messages/stream` | 会话管理与流式消息 |
+| 语音助手 | `POST /api/voice/sessions` `POST /api/voice/transcribe` `POST /api/voice/tts/stream` `POST /api/voice/commands/parse` `GET /api/voice/ws` | 语音会话、ASR、TTS、命令解析、WebSocket |
+| SmartEngine | `POST /api/smart-engine/submit` `GET /api/smart-engine/tasks/{taskId}` `GET /api/smart-engine/tasks/{taskId}/stream` `POST /api/smart-engine/tasks/{taskId}/cancel` | 长任务提交、查询、SSE 订阅、取消 |
+| 下载 | `GET /api/assets/download/{token}` | 生成资源下载（签名 token，30 分钟过期） |
+| 错题本 | `GET /api/mistakes` `PATCH /api/mistakes/{id}` `POST /api/mistakes/review` | 错题管理与复习 |
+| 画像 | `GET /api/users/{userId}/profile/current` `GET /api/users/{userId}/profile/analytics` `GET /api/users/{userId}/knowledge-graph` | 学习画像与知识图谱 |
 
-### Python 内部 API
+### Python 内部 API（仅供 Java 调用）
 
-| API | 用途 |
+| 端点 | 用途 |
 |---|---|
 | `GET /health` | 容器健康检查 |
-| `POST /internal/smart-engine/stream` | Java 对话流和兼容流式调用 |
-| `POST /internal/smart-engine/{taskId}/cancel` | 通知 Python 取消运行中任务 |
-| `POST /internal/conversations/{conversationId}/messages` | Java 写入会话消息 |
-| `GET /internal/conversations/{conversationId}/messages` | Java 读取会话历史 |
+| `POST /internal/smart-engine/stream` | 对话流和兼容流式调用 |
+| `POST /internal/smart-engine/{taskId}/cancel` | 取消运行中任务 |
+| `POST /internal/conversations/{conversationId}/messages` | 写入会话消息 |
+| `GET /internal/conversations/{conversationId}/messages` | 读取会话历史 |
 
-## SSE 事件契约
+### SSE 事件契约
 
 SSE wire format 固定为：
 
 ```text
 event: <eventType>
 data: <json>
-
 ```
 
-事件类型定义在 `contracts/sse-events.schema.json`，当前包括：
+事件类型定义在 `contracts/sse-events.schema.json`：
 
-`message`、`progress`、`result_chunk`、`resource_file`、`question_batch`、`judge_result`、`done`、`error`、`video_gen:start`、`video_gen:script`、`video_gen:speech`、`video_gen:avatar`、`video_gen:complete`。
+`message` | `progress` | `result_chunk` | `resource_file` | `question_batch` | `judge_result` | `done` | `error` | `video_gen:start` | `video_gen:script` | `video_gen:speech` | `video_gen:avatar` | `video_gen:complete`
 
-Nginx 对 `/api/smart-engine/tasks/{taskId}/stream` 和 `/api/conversations/{conversationId}/messages/stream` 关闭缓冲并设置 1800 秒读取超时，用于支撑长任务不断连。
+---
 
 ## 数据架构
 
-| 存储 | 主要内容 |
-|---|---|
-| PostgreSQL `app` schema | 用户、QNA session、SmartEngine task/event、generated_artifact、画像、练习、审计 |
-| PostgreSQL `rag` schema | wiki page/link、knowledge document/chunk、resource chunk、profile vector、video_generation_task |
-| PostgreSQL `storage` schema | resource_object |
-| MongoDB | `conversation_threads`、`conversation_messages`、`conversation_stream_events` |
-| Redis | idempotency key、rate limit、SmartEngine task stream、DLQ、cancel marker、运行时缓存 |
+| 存储 | Schema / 集合 | 主要内容 |
+|---|---|---|
+| PostgreSQL | `app` | 用户、QNA session、SmartEngine task/event、generated_artifact、画像、练习、审计 |
+| PostgreSQL | `rag` | wiki page/link、knowledge document/chunk、resource chunk、profile vector、video_generation_task |
+| PostgreSQL | `storage` | resource_object（生成资源元数据） |
+| MongoDB | `conversation_threads` / `conversation_messages` / `conversation_stream_events` / `conversation_summaries` | 会话全文、流事件、结构化摘要 |
+| Redis | — | 幂等 key、限流、SmartEngine task stream、DLQ、cancel marker、运行时缓存 |
 
-`vector_data.dump` 随仓库提供预置向量数据，首次部署由 `restore_vector_data.sh` 自动恢复。
-
-## 记忆系统与上下文工程
-
-系统把“长期记忆”和“本次任务上下文”拆开处理，避免把所有历史直接塞进 prompt。
-
-| 层 | 主要模块 | 存储/来源 | 用途 |
-|---|---|---|---|
-| 原始会话记忆 | `conversation_message_store.py`、Java `ConversationService` | MongoDB `conversation_messages` / `conversation_stream_events` | 保存多轮问答、图片上下文和流式事件，支持历史恢复与断线重放 |
-| 结构化会话摘要 | `ConversationCompactor`、`conversation_summary_store.py` | MongoDB `conversation_summaries` | 长对话超出 token 预算时保留主题、目标、薄弱点、未解决问题和最近进展 |
-| 学习画像记忆 | `profile_store.py`、`profile_feature_registry.py` | PostgreSQL `app.user_profile_current` / `app.user_profile_snapshot` | 维护专业方向、知识基础、学习偏好、薄弱点、资源偏好和置信度生命周期 |
-| 知识掌握记忆 | `knowledge_graph_store.py`、Java `LearnerKnowledgeGraphService` | PostgreSQL `app.learner_knowledge_node` / `app.learner_knowledge_edge` | 记录知识点掌握度、依赖关系和状态，前端按主题归并后展示重点 |
-| 学习计划记忆 | `learning_plan_store.py` | PostgreSQL `app.learning_plan` / `app.learning_plan_snapshot` | 保存当前学习路径和版本快照，记录触发来源和计划演化 |
-| 练习与错题记忆 | `practice_store.py`、Java `MistakeBookService` | PostgreSQL `practice_submission` / `mistake_record` / `mistake_review_result` | 形成掌握度诊断、错题复习和间隔重复调度信号 |
-
-上下文工程链路：
-
-1. 前端提交任务时携带当前页面、会话、语音命令或学习服务输入等轻量 `learningContext`。
-2. Java `PersonalizedLearningContextService` 在 `PERSONALIZED_LEARNING` 提交前读取近 30 天画像、知识掌握、练习、评估、错题和资源使用信号，合并进任务参数。
-3. Python `SnapshotBuilder` 将 `profile`、`profileAnalysis`、`learningContext`、最近活动和检索状态整理成 `SystemSnapshot`。
-4. 每个 Agent 的 system prompt 通过 `SystemSnapshot` 注入课程、章节、进度、学生水平、薄弱点、偏好、最近错误和会话元数据。
-5. 长对话进入 `ConversationCompactor`，只把早期历史压缩为结构化摘要，保留最近轮次原文，摘要可写入 MongoDB 并在后续对话复用。
-6. Agent 执行结果再写回画像、知识图谱、学习计划、练习或会话存储，形成下一次任务可读取的闭环。
-
-## 快速开始
-
-> 当前联调/演示环境只允许 `docker cp` 热更新，禁止 `docker compose build`、`docker compose up --build`、`--force-recreate` 和重建容器。下面的 build 命令仅用于全新空环境或明确维护窗口。
-
-```bash
-cp .env.example .env
-# 编辑 .env，至少配置 POSTGRES_PASSWORD、APP_JWT_SECRET、
-# PYTHON_AGENT_INTERNAL_TOKEN、AI_OPENAI_COMPATIBLE_API_KEY 和 EMBEDDING_API_KEY
-# 如需启用语音助手，再配置 VOICE_API_KEY 或 BAILIAN_API_KEY
-docker compose up -d --build
-docker compose ps
-curl -s http://localhost:8081/api/health
-curl -s http://localhost:8000/health
-```
-
-浏览器访问：
-
-```text
-http://localhost/
-```
-
-## 本地开发
-
-```bash
-# 只启动依赖
-docker compose up -d postgres mongo redis
-
-# 前端
-cd frontend
-pnpm install
-pnpm dev
-
-# Java
-cd project
-mvn spring-boot:run
-
-# Python Agent
-cd python-agent
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn server:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Windows PowerShell 激活 Python 虚拟环境：
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+---
 
 ## 验证命令
 
 ```bash
+# 服务状态
 docker compose ps
+
+# 健康检查
 curl -s http://localhost:8081/api/health
 curl -s http://localhost:8000/health
 
+# 前端构建验证
 cd frontend && npx tsc --noEmit && npx vite build
+
+# Java 测试
 cd project && mvn test
+
+# Python 测试
 cd python-agent && pytest tests/ -v
+
+# RAG 检索质量（hits@3 >= 90%）
 cd python-agent && pytest tests/ -k rag -v
 ```
 
-语音助手专项验收需要先登录获取 JWT，再检查：
+### 语音助手专项验收
 
 ```bash
-curl -s -X POST http://localhost:8081/api/voice/sessions -H "Authorization: Bearer <jwt>"
-curl -s -N -X POST http://localhost:8081/api/voice/tts/stream \
-  -H "Authorization: Bearer <jwt>" \
+# 登录获取 JWT
+TOKEN=$(curl -s -X POST http://localhost:8081/api/auth/login \
   -H "Content-Type: application/json" \
-  --data '{"text":"hello","voice":"Cherry"}'
+  -d '{"username":"test","password":"test"}' | jq -r '.token')
+
+# 创建语音会话
+curl -s -X POST http://localhost:8081/api/voice/sessions \
+  -H "Authorization: Bearer $TOKEN"
+
+# 测试 TTS 流式合成
+curl -s -N -X POST http://localhost:8081/api/voice/tts/stream \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"text":"你好","voice":"Cherry"}'
 ```
 
-期望 `/api/voice/sessions` 返回 `provider/asrModel/ttsModel`，TTS SSE 返回 `event: audio` 和 `event: done`。实时 ASR 中途 `asr_final` 只代表 provider 分段定稿，前端应继续录音，直到用户点停止后发送 `commit` 才进入可发送状态。`/api/voice/commands/parse` 应能解析停止/暂停/继续朗读、打开错题本、开始今日复习、打开个人画像、回到问答、生成学习计划等本地 intent。ASR/TTS 密钥只允许放在服务端环境变量或容器外置配置，不要提交到仓库。
+期望：`/api/voice/sessions` 返回 `provider/asrModel/ttsModel`，TTS SSE 返回 `event: audio` 和 `event: done`。
 
-实时语音 WebSocket 入口为 `/api/voice/ws?sessionId=<id>&token=<jwt>`。浏览器 WebSocket 无法稳定携带自定义 `Authorization` 头，因此该升级入口在 Spring Security 层放行，实际 JWT 和 voice session 归属由 Java WebSocket handler 校验。
-
-当前 RAG 报告文件：
-
-- `python-agent/reports/rag_100_after.json`：基础 100 题 hit@3 98%。
-- `python-agent/reports/graph_rag_100_current.json`：图谱型 100 题 hit@3 94%，completeEvidenceTop5 52%。
-
-## 项目结构
-
-```text
-.
-├── contracts/                     # SSE 事件 JSON Schema
-├── docs/                          # 架构、部署、专题设计和实验日志
-├── frontend/                      # React + Vite + Tailwind 前端
-├── migrations/                    # 数据库迁移脚本
-├── project/                       # Java Spring Boot 控制平面
-├── python-agent/                  # Python FastAPI + Agent 运行时
-├── tests/                         # 端到端与系统测试脚本
-├── wiki/                          # RAG 原始知识文档
-├── docker-compose.yml
-├── init.sql
-├── mongo-init.js
-└── vector_data.dump
-```
+---
 
 ## 安全与可靠性
 
-- `.env` 不提交真实密钥。
-- `APP_JWT_SECRET` 至少 32 字节，`PYTHON_AGENT_INTERNAL_TOKEN` 与 JWT secret 分离。
-- `VOICE_API_KEY`/`BAILIAN_API_KEY` 只在 Java 服务端读取，前端不得直连百炼或暴露 key。
-- Java 外部业务 API 默认 JWT 鉴权；内部回调接口由控制器校验 internal token。
-- Redis 幂等使用 `SETNX + TTL`，限流和任务取消标记也必须有 TTL。
-- 生成资源下载由 Java 签名 token 控制，默认 30 分钟过期。
-- 沙箱目录由 Python 周期清理，默认 2 小时 TTL。
-- 当前 Compose 文件的数据服务宿主机绑定目标是 `127.0.0.1`；若旧容器仍显示 `0.0.0.0`，需等待维护窗口重建对应容器以应用端口绑定。
+| 安全措施 | 说明 |
+|---|---|
+| 密钥管理 | `.env` 不提交真实密钥；ASR/TTS 密钥仅存于服务端环境变量 |
+| JWT 鉴权 | `APP_JWT_SECRET` >= 32 字节，外部业务 API 默认鉴权 |
+| 内部通信 | Java ↔ Python 通过 `PYTHON_AGENT_INTERNAL_TOKEN` 校验 |
+| 语音安全 | VOICE_API_KEY 仅 Java 服务端读取，前端不得直连云服务 |
+| 幂等与限流 | Redis `SETNX + TTL`，限流和取消标记均有 TTL |
+| 下载签名 | 生成资源下载由 Java 签名 token 控制，30 分钟过期 |
+| 沙箱清理 | Python 周期清理沙箱目录，默认 2 小时 TTL |
+| 端口绑定 | 数据服务宿主机绑定 `127.0.0.1`，不对外暴露 |
+
+---
+
+## 许可证与致谢
+
+本项目为 2026 年中国软件杯参赛作品。
+
+感谢以下开源项目与服务：
+
+### AI / 多智能体框架
+
+- [LangGraph](https://github.com/langchain-ai/langgraph) / [LangChain](https://github.com/langchain-ai/langchain) — 多智能体图编排与 LLM 应用框架
+- [DashScope](https://github.com/dashscope/dashscope-sdk-python) — 阿里云百炼 API SDK（Embedding/ASR/TTS）
+
+### 前端
+
+- [React](https://react.dev/) — UI 组件化框架
+- [Vite](https://vitejs.dev/) — 极速前端构建工具
+- [TypeScript](https://www.typescriptlang.org/) — 静态类型系统
+- [Tailwind CSS](https://tailwindcss.com/) — 原子化 CSS 框架
+- [React Router](https://reactrouter.com/) — 客户端路由
+- [Framer Motion](https://www.framer.com/motion/) — 声明式动画库
+- [Recharts](https://recharts.org/) — React 图表组件
+- [Mermaid](https://mermaid.js.org/) — 流程图与图表渲染引擎
+- [KaTeX](https://katex.org/) — 数学公式排版引擎
+- [react-markdown](https://github.com/remarkjs/react-markdown) / [remark-gfm](https://github.com/remarkjs/remark-gfm) — Markdown 与 GFM 渲染
+- [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter) — 代码语法高亮
+- [Lucide](https://lucide.dev/) — 开源图标库
+- [Axios](https://axios-http.com/) — HTTP 客户端
+- [react-virtuoso](https://virtuoso.dev/) — 高性能虚拟滚动
+- [DOMPurify](https://github.com/cure53/DOMPurify) — HTML/XSS 消毒过滤
+
+### 后端
+
+- [Spring Boot](https://spring.io/projects/spring-boot) — Java 控制平面框架（含 Spring Security、Spring Data JPA/MongoDB/Redis、Spring WebSocket）
+- [JJWT](https://github.com/jwtk/jjwt) — JWT 令牌生成与验证
+- [SpringDoc OpenAPI](https://springdoc.org/) — 自动 API 文档生成
+
+### Python Agent
+
+- [FastAPI](https://fastapi.tiangolo.com/) — 高性能异步 Web 框架
+- [Uvicorn](https://www.uvicorn.org/) — ASGI 服务器
+- [Pydantic](https://docs.pydantic.dev/) — 数据验证与序列化
+- [sse-starlette](https://github.com/sysid/sse-starlette) — Server-Sent Events 支持
+- [httpx](https://www.python-httpx.org/) — 异步 HTTP 客户端
+- [python-pptx](https://github.com/python-openxml/python-pptx) — PowerPoint 文件生成
+- [OpenTelemetry](https://opentelemetry.io/) — 可观测性框架
+
+### 数据层
+
+- [PostgreSQL](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector) — 关系数据库与向量检索扩展
+- [MongoDB](https://www.mongodb.com/) — 文档数据库
+- [Redis](https://redis.io/) — 缓存、限流与 Streams 消息队列
+
+### 基础设施
+
+- [Docker](https://www.docker.com/) / [Docker Compose](https://docs.docker.com/compose/) — 容器化部署
+- [Nginx](https://nginx.org/) — 反向代理与静态资源服务
+- [pytest](https://docs.pytest.org/) — Python 测试框架
