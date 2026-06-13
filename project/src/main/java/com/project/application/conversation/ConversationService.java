@@ -56,7 +56,6 @@ public class ConversationService {
     private static final Logger LOGGER = LoggerFactory.getLogger(ConversationService.class);
     private static final int DEFAULT_CONVERSATION_PAGE = 0;
     private static final int DEFAULT_CONVERSATION_SIZE = 12;
-    private static final int DEFAULT_MESSAGE_PAGE = 0;
     private static final int DEFAULT_MESSAGE_SIZE = 50;
 
     private final QnaSessionRepository qnaSessionRepository;
