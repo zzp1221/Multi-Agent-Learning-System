@@ -13,7 +13,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.ai_modules.config import Settings
-from src.ai_modules.models import ModelRoutingConfig, ProviderEndpointConfig
+from src.ai_modules.models import ModelRoutingConfig, ProviderEndpointConfig, ReasoningStreamConfig
 
 LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +24,8 @@ _CURRENT_CONFIG: ContextVar["UserLlmRuntimeConfig | None"] = ContextVar(
 _USER_CONTEXT_ACTIVE: ContextVar[bool] = ContextVar("user_llm_runtime_context_active", default=False)
 _CACHE: dict[str, tuple[float, "UserLlmRuntimeConfig"]] = {}
 _LOCK = asyncio.Lock()
+_REASONING_STREAM_FIELDS = ["reasoning_content", "reasoning", "reasoningContent"]
+_THINKING_ENABLED_REQUEST = {"thinking": {"type": "enabled"}}
 
 PROVIDER_DEFAULTS: dict[str, dict[str, Any]] = {
     "openai": {
@@ -165,6 +167,36 @@ class RuntimeSkillOverride(BaseModel):
     body: str = ""
 
 
+def _reasoning_stream_config_for_model(
+    *,
+    provider_name: str,
+    model_name: str,
+) -> ReasoningStreamConfig | None:
+    normalized_model = model_name.strip()
+    if not normalized_model:
+        return None
+    lowered_model = normalized_model.lower()
+    if provider_name == "deepseek" or "deepseek-reasoner" in lowered_model:
+        return ReasoningStreamConfig(
+            request={},
+            streamFields=_REASONING_STREAM_FIELDS,
+            messageFields=_REASONING_STREAM_FIELDS,
+        )
+    if (
+        provider_name == "mimo"
+        or lowered_model.startswith("mimo-v2-omni")
+        or lowered_model in {"mimo-v2.5-pro", "mimo-v2-pro"}
+        or "qwen3" in lowered_model
+        or "qwq" in lowered_model
+    ):
+        return ReasoningStreamConfig(
+            request=_THINKING_ENABLED_REQUEST,
+            streamFields=_REASONING_STREAM_FIELDS,
+            messageFields=_REASONING_STREAM_FIELDS,
+        )
+    return None
+
+
 class UserLlmRuntimeConfig(BaseModel):
     enabled: bool = False
     allow_environment_fallback: bool = Field(default=False, alias="allowEnvironmentFallback")
@@ -213,6 +245,10 @@ class UserLlmRuntimeConfig(BaseModel):
             base_url = runtime_provider.base_url.strip() or str(defaults.get("baseUrl") or "")
             models = dict(defaults.get("models") or {})
             models.update({key: value for key, value in runtime_provider.model_overrides.items() if value.strip()})
+            reasoning_models = self._build_reasoning_models(
+                provider_name=normalized_name,
+                models=models,
+            )
             providers[normalized_name] = ProviderEndpointConfig.model_validate(
                 {
                     "name": normalized_name,
@@ -224,6 +260,7 @@ class UserLlmRuntimeConfig(BaseModel):
                     "timeoutMs": 60000,
                     "structuredOutputMode": defaults.get("structuredOutputMode", "json_object"),
                     "models": models,
+                    "reasoningModels": reasoning_models,
                 }
             )
         active = self.normalized_provider(self.active_provider) or base.active_provider
@@ -235,6 +272,39 @@ class UserLlmRuntimeConfig(BaseModel):
             avatarProvider=base.avatar_provider,
             providers=providers,
         )
+
+    def _build_reasoning_models(
+        self,
+        *,
+        provider_name: str,
+        models: dict[str, str],
+    ) -> dict[str, ReasoningStreamConfig]:
+        reasoning_models: dict[str, ReasoningStreamConfig] = {}
+        for model_name in self._candidate_reasoning_model_names(models):
+            config = _reasoning_stream_config_for_model(
+                provider_name=provider_name,
+                model_name=model_name,
+            )
+            if config is not None:
+                reasoning_models[model_name] = config
+        return reasoning_models
+
+    def _candidate_reasoning_model_names(self, models: dict[str, str]) -> list[str]:
+        candidates: list[str] = []
+        for logical_name in ("reasoning_model", "main_chat_model"):
+            self._append_unique(candidates, models.get(logical_name))
+        for override in self.component_overrides.values():
+            model_name = override.model.strip()
+            if model_name in models:
+                model_name = models[model_name]
+            self._append_unique(candidates, model_name)
+        return candidates
+
+    @staticmethod
+    def _append_unique(candidates: list[str], value: str | None) -> None:
+        model_name = (value or "").strip()
+        if model_name and model_name not in candidates:
+            candidates.append(model_name)
 
     def component_override(self, component_name: str) -> RuntimeComponentOverride | None:
         override = self.component_overrides.get(component_name)

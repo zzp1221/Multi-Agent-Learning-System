@@ -113,9 +113,6 @@
     let bc;
     try { bc = new BroadcastChannel(CHANNEL_NAME); } catch(e) { bc = null; }
 
-    // Are we running inside the presenter popup? (legacy flag, now unused)
-    const isPresenterWindow = false;
-
     /* ===== progress bar ===== */
     let bar = document.querySelector('.progress-bar');
     if (!bar) {
@@ -235,7 +232,7 @@
 
       // hash
       const hashTarget = '#/'+(n+1);
-      if (location.hash !== hashTarget && !isPresenterWindow) {
+      if (location.hash !== hashTarget) {
         history.replaceState(null,'', hashTarget);
       }
 

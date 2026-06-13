@@ -55,6 +55,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
         self.critic_agent = critic_agent or CriticAgent()
         self.safety_agent = safety_agent or SafetyAgent()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self._progress_queue: asyncio.Queue[str] = asyncio.Queue()
 
     async def run(
         self,
@@ -87,6 +88,12 @@ class _BaseGenerationAgent(PlaceholderAgent):
                     )
                     break
                 except TimeoutError:
+                    msg = "资源生成仍在执行中，请稍候"
+                    while not self._progress_queue.empty():
+                        try:
+                            msg = self._progress_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
                     yield ProgressSSEEvent(
                         taskId=task_id,
                         traceId=trace_id,
@@ -94,7 +101,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
                         payload=ProgressPayload(
                             stage=self.stage_name,
                             percent=70,
-                            message="资源生成仍在执行中，请稍候",
+                            message=msg,
                         ),
                     )
                     next_seq += 1
@@ -180,11 +187,15 @@ class _BaseGenerationAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> dict[str, Any]:
+        self._progress_queue.put_nowait("正在分析主题结构，规划大纲…")
         outline = self._tool_generate_outline(tool_input={}, params=params, snapshot=snapshot)
+
+        self._progress_queue.put_nowait("正在逐段生成内容…")
         draft = await self._tool_expand_content(
             tool_input=outline, task_id=task_id, params=params, snapshot=snapshot,
         )
 
+        self._progress_queue.put_nowait("正在进行质量审核与安全审核…")
         import copy
         review_params = copy.deepcopy(params)
         safety_params = copy.deepcopy(params)
@@ -194,6 +205,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
             self._tool_format_output(tool_input=draft, params=safety_params, snapshot=snapshot),
         )
 
+        self._progress_queue.put_nowait("正在构建最终输出…")
         params["criticReview"] = review_params.get("criticReview", {})
         params["safetyReview"] = safety_params.get("safetyReview", {})
 

@@ -472,64 +472,49 @@ class ResourceGenerationService:
 
     async def _build_slides(self, *, params: dict, snapshot: SystemSnapshot) -> GeneratedAsset:
         display_topic = self._display_topic(params)
-        title = f"{display_topic}PPT大纲"
+        title = f"{display_topic}PPT课件"
         retrieval = params.get("retrievalResult", {})
         sources = retrieval.get("documents", [])
         topic = display_topic
-        generation_snapshot = self._build_generation_snapshot(params=params, snapshot=snapshot)
-        if self._requires_slide_outline_confirmation(params):
-            outline_content = await self._generate_slide_outline_markdown(
-                title=title,
-                topic=topic,
-                params=params,
-                snapshot=generation_snapshot,
-                sources=sources,
-            )
-            return GeneratedAsset(
-                assetType="SLIDES",
-                title=title,
-                summary="PPT 大纲已生成，等待用户确认后再生成演示文件",
-                displayMode="SLIDE_OUTLINE_CONFIRMATION",
-                fileName="",
-                localPath=None,
-                previewText=title,
-                mimeType="text/markdown; charset=UTF-8",
-                inlineContent=outline_content,
+
+        # Topic isolation: when user gave an explicit topic, override snapshot
+        # so learning-path context (course/chapter/gaps) does not leak into LLM prompt.
+        explicit_topic = params.get("explicitUserTopic")
+        if explicit_topic and str(explicit_topic).strip():
+            snapshot = SystemSnapshot(
+                current_course=str(explicit_topic).strip(),
+                current_chapter="",
+                course_progress=snapshot.course_progress,
+                student_name=snapshot.student_name,
+                student_level=snapshot.student_level,
+                knowledge_gaps=[],
+                preferred_style=snapshot.preferred_style,
+                recent_mistakes=[],
+                session_id=snapshot.session_id,
             )
 
-        deck_html, slide_count = self._generate_html_ppt_with_omni(
+        slides = self._generate_validated_slides_with_omni(
             title=title, topic=topic, snapshot=snapshot, sources=sources, params=params
         )
-        file_name = self._scoped_file_name("slides", "html", params)
-        path = self._write_text(file_name, deck_html)
+        from src.ai_modules.generation.pptist_builder import PPTistDeckBuilder
+
+        pptist_json = PPTistDeckBuilder().render(
+            title=title, topic=topic, course=str(snapshot.current_course), slides=slides
+        )
+        slide_count = len(slides)
+        file_name = self._scoped_file_name("slides", "json", params)
+        path = self._write_text(file_name, pptist_json)
         return GeneratedAsset(
             assetType="SLIDES",
             title=title,
-            summary=f"html-ppt 生成的可演示 HTML 课件 ({slide_count} 页)",
-            displayMode="DOWNLOAD_CARD",
+            summary=f"可编辑 PPT 课件 ({slide_count} 页)",
+            displayMode="PPTIST_EDITOR",
             fileName=file_name,
             localPath=str(path),
-            previewText=f"HTML PPT 课件 · {slide_count} 页 · {topic}",
-            mimeType="text/html; charset=UTF-8",
+            previewText=f"PPT 课件 · {slide_count} 页 · {topic}",
+            mimeType="application/json; charset=UTF-8",
+            inlineContent=pptist_json,
         )
-
-    def _requires_slide_outline_confirmation(self, params: dict[str, Any]) -> bool:
-        return not self._has_confirmed_slide_outline(params)
-
-    def _has_confirmed_slide_outline(self, params: dict[str, Any]) -> bool:
-        confirmed_outline = self._confirmed_slide_outline_text(params)
-        return self._truthy(self._confirmed_slide_outline_value(params)) and bool(confirmed_outline)
-
-    @staticmethod
-    def _confirmed_slide_outline_value(params: dict[str, Any] | None) -> Any:
-        if not isinstance(params, dict):
-            return None
-        if params.get("confirmedSlideOutline") is not None:
-            return params.get("confirmedSlideOutline")
-        learning_context = params.get("learningContext")
-        if isinstance(learning_context, dict):
-            return learning_context.get("confirmedSlideOutline")
-        return None
 
     @staticmethod
     def _confirmed_slide_outline_text(params: dict[str, Any] | None) -> str:
@@ -542,41 +527,6 @@ class ResourceGenerationService:
         if isinstance(learning_context, dict):
             return str(learning_context.get("confirmedSlideOutlineText") or "").strip()
         return ""
-
-    async def _generate_slide_outline_markdown(
-        self,
-        *,
-        title: str,
-        topic: str,
-        params: dict[str, Any],
-        snapshot: dict[str, Any],
-        sources: list[dict[str, Any]],
-    ) -> str:
-        generated_slides = await self.content_chain.generate_slides_asset(
-            title=title,
-            topic=topic,
-            snapshot=snapshot,
-            sources=sources,
-        )
-        lines = [f"# {generated_slides.title}", "", generated_slides.summary, ""]
-        for index, slide in enumerate(generated_slides.slides, start=1):
-            lines.extend(
-                [
-                    f"## {index}. {slide.title}",
-                    *[f"- {bullet}" for bullet in slide.bullets],
-                    "",
-                    f"讲解备注：{slide.speaker_notes}",
-                    "",
-                ]
-            )
-        confirmed_outline = self._confirmed_slide_outline_text(params)
-        if confirmed_outline:
-            lines.extend(["## 用户确认的大纲", confirmed_outline])
-        return "\n".join(lines).strip() + "\n"
-
-    @staticmethod
-    def _truthy(value: Any) -> bool:
-        return str(value).strip().lower() in {"1", "true", "yes", "y", "confirmed"}
 
     def _generate_html_ppt_with_omni(
         self,

@@ -22,6 +22,7 @@ from src.ai_modules.runtime.permission_policy import (
     PermissionPolicy,
     PermissionRule,
 )
+from src.ai_modules.runtime.planning_contract import PlanningParamKeys, profile_alias
 from src.ai_modules.runtime.recovery_engine import (
     LLMRateLimitError,
     RecoveryEngine,
@@ -52,6 +53,8 @@ __all__ = [
     "PermissionLevel",
     "PermissionPolicy",
     "PermissionRule",
+    "PlanningParamKeys",
+    "profile_alias",
     "LLMRateLimitError",
     "RecoveryEngine",
     "RecoveryFailureType",

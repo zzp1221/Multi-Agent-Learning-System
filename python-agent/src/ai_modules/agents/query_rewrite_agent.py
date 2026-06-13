@@ -105,8 +105,7 @@ class QueryRewriteAgent(PlaceholderAgent):
         system_prompt: str,
     ):
         # 步骤 1: 提取查询上下文（确定性操作）
-        context = self._tool_extract_query_context(tool_input={}, params=params)
-        original_query = context["originalQuery"]
+        self._tool_extract_query_context(tool_input={}, params=params)
 
         # 步骤 2: 通过 LLM 改写查询（1 次 LLM 调用）
         try:

@@ -173,6 +173,9 @@ class DonePayload(BaseModel):
     agent_trace: list[dict[str, Any]] = Field(default_factory=list, alias="agentTrace")
     critic_review: dict[str, Any] | None = Field(default=None, alias="criticReview")
     resource_failures: list[dict[str, Any]] = Field(default_factory=list, alias="resourceFailures")
+    planning: dict[str, Any] | None = None
+    checkpoint_actions: list[dict[str, Any]] = Field(default_factory=list, alias="checkpointActions")
+    learning_loop: dict[str, Any] | None = Field(default=None, alias="learningLoop")
 
     model_config = ConfigDict(populate_by_name=True)
 

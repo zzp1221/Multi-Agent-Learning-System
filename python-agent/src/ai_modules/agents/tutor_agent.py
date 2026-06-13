@@ -33,6 +33,7 @@ from src.ai_modules.runtime import (
     SystemSnapshot,
     ToolRegistry,
 )
+from src.ai_modules.runtime.planning_contract import PlanningParamKeys
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 LOGGER = logging.getLogger(__name__)
@@ -239,6 +240,30 @@ class TutorAgent(PlaceholderAgent):
                 dialogState=dialog_state,
             )
             current_seq += 1
+
+            # Emit reasoning chunks for PPT generation to show thinking process
+            if "SLIDES" in resource_intent.get("resourceTypes", []):
+                topic = params.get("topic") or params.get("explicitUserTopic") or "主题"
+                reasoning_messages = [
+                    f"正在分析「{topic}」的教学目标和知识点结构...",
+                    "构思 PPT 大纲：标题页、核心概念、实例演示、总结...",
+                    "规划每页内容的要点和讲解备注...",
+                ]
+                for msg in reasoning_messages:
+                    yield ReasoningChunkSSEEvent(
+                        taskId=task_id,
+                        traceId=trace_id,
+                        seq=current_seq,
+                        payload=ReasoningChunkPayload(
+                            text=msg + "\n",
+                            stage="resource_generation",
+                            provider="system",
+                            model="planning",
+                        ),
+                        dialogState=dialog_state,
+                    )
+                    current_seq += 1
+
             async for event in self.resource_bundle_runner(
                 task_id=task_id,
                 trace_id=trace_id,
@@ -248,7 +273,6 @@ class TutorAgent(PlaceholderAgent):
             ):
                 if event.event == "result_chunk":
                     continue
-                self._remember_pending_slide_outline(params=params, event=event)
                 yield event.model_copy(update={"dialog_state": event.dialog_state or dialog_state})
             return
 
@@ -469,6 +493,8 @@ class TutorAgent(PlaceholderAgent):
         text = str(user_query or "").strip()
         if not text or self.resource_intent_extractor is None:
             return None
+        if self._looks_like_decline_or_cancel(text):
+            return None
         if self._looks_like_inline_tutoring_answer_request(text):
             return None
         try:
@@ -478,7 +504,7 @@ class TutorAgent(PlaceholderAgent):
                 learning_context=params.get("learningContext") if isinstance(params.get("learningContext"), dict) else {},
                 structured_summary=params.get("structuredConversationSummary") if isinstance(params.get("structuredConversationSummary"), dict) else {},
             )
-        except Exception as exc:
+        except Exception:
             LOGGER.warning("Resource intent LLM extraction failed; continuing as normal tutoring", exc_info=True)
             return None
 
@@ -513,6 +539,19 @@ class TutorAgent(PlaceholderAgent):
             confidence=confidence,
             rationale=str(getattr(payload, "rationale", "") or ""),
         )
+
+    @staticmethod
+    def _looks_like_decline_or_cancel(text: str) -> bool:
+        """Short negative replies that reject a pending generation or cancel a request."""
+        normalized = re.sub(r"\s+", "", str(text or "").lower())
+        if not normalized:
+            return False
+        decline_phrases = (
+            "暂不生成", "不生成", "不用生成", "取消生成", "算了", "不需要",
+            "不用了", "暂时不", "先不", "不要生成", "停止生成", "取消",
+            "不要了", "暂不", "先不生成", "不做了",
+        )
+        return any(phrase in normalized for phrase in decline_phrases)
 
     @staticmethod
     def _looks_like_inline_tutoring_answer_request(text: str) -> bool:
@@ -626,6 +665,7 @@ class TutorAgent(PlaceholderAgent):
         params["originalTutorQuery"] = params.get("query") or params.get("message")
         params["query"] = intent.topic
         params["topic"] = intent.topic
+        params["explicitUserTopic"] = intent.topic
         params["keyPoints"] = params.get("keyPoints") or intent.topic
         params["resourceTypes"] = intent.resource_types
         if intent.question_count:
@@ -642,15 +682,9 @@ class TutorAgent(PlaceholderAgent):
                 params["questionTypePreference"] = learning_context.get("questionTypePreference")
             if learning_context.get("difficultyPreference") and not params.get("difficulty"):
                 params["difficulty"] = learning_context.get("difficultyPreference")
-            if learning_context.get("requiresSlideOutlineConfirmation"):
-                params["requiresSlideOutlineConfirmation"] = learning_context.get("requiresSlideOutlineConfirmation")
-            if learning_context.get("confirmedSlideOutline"):
-                params["confirmedSlideOutline"] = learning_context.get("confirmedSlideOutline")
-            if learning_context.get("confirmedSlideOutlineText"):
-                params["confirmedSlideOutlineText"] = learning_context.get("confirmedSlideOutlineText")
         if "QUIZ" in intent.resource_types and not params.get("count"):
             params["count"] = self._extract_question_count(str(params.get("originalTutorQuery") or ""))
-        params["conversationTriggeredResourceGeneration"] = True
+        params[PlanningParamKeys.CONVERSATION_TRIGGERED_RESOURCE_GENERATION] = True
         if self._is_deep_quality_mode(params):
             params["generationQualityMode"] = "deep"
 
@@ -676,23 +710,6 @@ class TutorAgent(PlaceholderAgent):
             return max(1, min(count, 20))
         except ValueError:
             return 5
-
-    def _remember_pending_slide_outline(self, *, params: dict[str, Any], event: SSEEvent) -> None:
-        payload = getattr(event, "payload", None)
-        asset_type = str(getattr(payload, "asset_type", "") or getattr(payload, "assetType", "") or "").upper()
-        display_mode = str(getattr(payload, "display_mode", "") or getattr(payload, "displayMode", "") or "").upper()
-        if asset_type != "SLIDES" or display_mode != "SLIDE_OUTLINE_CONFIRMATION":
-            return
-        outlines = params.get("pendingSlideOutlines")
-        if not isinstance(outlines, list):
-            outlines = []
-            params["pendingSlideOutlines"] = outlines
-        outlines.append(
-            {
-                "title": str(getattr(payload, "title", "") or "PPT 大纲"),
-                "inlineContent": str(getattr(payload, "inline_content", "") or getattr(payload, "inlineContent", "") or ""),
-            }
-        )
 
     def _resource_intent_acknowledgement(self, intent: ResourceGenerationIntent) -> str:
         labels = [self._resource_type_label(item) for item in intent.resource_types]
@@ -993,6 +1010,7 @@ class TutorAgent(PlaceholderAgent):
                 parts.append(
                     "联网搜索状态：已开启。用户请求外部资料、媒体或链接时，"
                     "可以直接引用以下外部检索结果中的 URL；不得编造未提供的 URL。"
+                    "输出给用户时必须写成 Markdown 链接格式：[标题](URL)，便于前端跳转。"
                 )
                 for i, resource in enumerate(external_resources[:5], 1):
                     if not isinstance(resource, dict):
@@ -1002,7 +1020,7 @@ class TutorAgent(PlaceholderAgent):
                     snippet = str(resource.get("snippet") or resource.get("evidence") or "").strip()[:160]
                     if title and url:
                         suffix = f": {snippet}" if snippet else ""
-                        parts.append(f"  {i}. {title} [{url}]{suffix}")
+                        parts.append(f"  {i}. [{title}]({url}){suffix}")
             else:
                 parts.append(
                     "联网搜索状态：已开启，但当前检索证据没有可验证外部 URL。"

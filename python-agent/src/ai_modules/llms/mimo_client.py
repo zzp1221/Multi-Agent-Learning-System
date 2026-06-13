@@ -205,3 +205,83 @@ class MiMoClient:
         if start != -1 and end != -1:
             return json.loads(content[start : end + 1])
         raise ValueError(f"no json found in omni response: {content[:200]}")
+
+    # ── Omni 聊天（流式） ────────────────────────────────────────
+
+    async def omni_chat_stream(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.3,
+        max_tokens: int = 8192,
+    ):
+        """流式调用 MiMo-V2-Omni，yield (chunk_type, chunk_data)。
+
+        chunk_type 可能是:
+        - "reasoning": 思考过程文本
+        - "content": 最终内容文本
+        - "done": 流结束，chunk_data 为完整响应 dict
+        """
+        if not self.api_key:
+            raise RuntimeError("missing mimo api key for omni stream")
+
+        payload: dict[str, Any] = {
+            "model": "mimo-v2-omni",
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+
+        with TRACER.start_as_current_span("mimo.omni.chat_stream"):
+            client = await self._get_client()
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers=self._headers(),
+                json=payload,
+                timeout=self.timeout_seconds,
+            ) as response:
+                response.raise_for_status()
+                accumulated_content = ""
+                async for line in response.aiter_lines():
+                    if not line.strip() or line.strip() == "data: [DONE]":
+                        continue
+                    if line.startswith("data: "):
+                        line = line[6:]
+                    try:
+                        chunk = json.loads(line)
+                        choices = chunk.get("choices", [])
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+
+                        # 检查是否有 reasoning 字段（深度思考）
+                        if "reasoning" in delta:
+                            reasoning_text = delta.get("reasoning", "")
+                            if reasoning_text:
+                                yield ("reasoning", reasoning_text)
+
+                        # 检查是否有 content 字段（最终内容）
+                        if "content" in delta:
+                            content_text = delta.get("content", "")
+                            if content_text:
+                                accumulated_content += content_text
+                                yield ("content", content_text)
+
+                        # 检查是否流结束
+                        finish_reason = choices[0].get("finish_reason")
+                        if finish_reason:
+                            # 构造完整响应格式
+                            full_response = {
+                                "choices": [{
+                                    "message": {"content": accumulated_content},
+                                    "finish_reason": finish_reason,
+                                }]
+                            }
+                            yield ("done", full_response)
+                            return
+                    except json.JSONDecodeError:
+                        LOGGER.warning(f"failed to parse SSE chunk: {line[:100]}")
+                        continue

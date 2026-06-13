@@ -95,7 +95,7 @@ class RuleBasedTutorLLM:
             snippet = str(resource.get("snippet") or "").strip()
             if not url:
                 continue
-            line = f"{index}. {title}: {url}"
+            line = f"{index}. [{title}]({url})"
             if snippet:
                 line += f"\n   {snippet[:120]}"
             lines.append(line)

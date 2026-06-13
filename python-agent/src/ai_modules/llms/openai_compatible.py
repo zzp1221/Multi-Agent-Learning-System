@@ -245,10 +245,11 @@ class OpenAICompatibleClient:
             "messages": messages,
             "temperature": temperature,
             "stream": True,
-            "thinking": {"type": "disabled"},
         }
         if reasoning_config is not None:
             payload.update(reasoning_config.request)
+        else:
+            payload["thinking"] = {"type": "disabled"}
         if response_format:
             payload["response_format"] = response_format
         if max_tokens is not None:

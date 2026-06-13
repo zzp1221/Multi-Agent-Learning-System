@@ -24,6 +24,7 @@ from src.ai_modules.prompts import build_practice_system_prompt
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
+from src.ai_modules.runtime.planning_contract import PlanningParamKeys
 from src.ai_modules.runtime.provenance import build_llm_provenance
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
@@ -105,7 +106,7 @@ class PracticeAgent(PlaceholderAgent):
         params["practiceQuestions"] = question_batch["questions"]
         persistence_task_id = (
             None
-            if params.get("conversationTriggeredResourceGeneration") is True
+            if params.get(PlanningParamKeys.CONVERSATION_TRIGGERED_RESOURCE_GENERATION) is True
             else task_id
         )
         params["practicePersistence"] = await self._safe_save_question_batch(

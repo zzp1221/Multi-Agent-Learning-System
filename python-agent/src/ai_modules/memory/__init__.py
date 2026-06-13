@@ -17,6 +17,13 @@ from src.ai_modules.memory.learning_plan_store import (
     LearningPlanStore,
     PostgresLearningPlanStore,
 )
+from src.ai_modules.memory.learning_loop_store import (
+    InMemoryLearningLoopStore,
+    LearningLoopPersistenceError,
+    LearningLoopStore,
+    PostgresLearningLoopStore,
+    ResilientLearningLoopStore,
+)
 from src.ai_modules.memory.profile_store import (
     InMemoryProfileStore,
     PostgresProfileStore,
@@ -37,15 +44,20 @@ __all__ = [
     "InMemoryConversationMessageStore",
     "InMemoryConversationSummaryStore",
     "InMemoryLearningPlanStore",
+    "InMemoryLearningLoopStore",
     "InMemoryProfileStore",
     "MongoConversationMessageStore",
     "MongoConversationSummaryStore",
     "PostgresLearningPlanStore",
+    "PostgresLearningLoopStore",
     "PostgresProfileStore",
     "PostgresPracticeStore",
     "LearningPlanStore",
+    "LearningLoopStore",
+    "LearningLoopPersistenceError",
     "ProfileStore",
     "PracticeStore",
     "InMemoryPracticeStore",
     "LearnerKnowledgeGraphStore",
+    "ResilientLearningLoopStore",
 ]
