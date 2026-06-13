@@ -8,7 +8,6 @@ import {
   QNA_STREAM_STOPPED_MESSAGE,
   type ChatMessage,
   type PendingChatImage,
-  type SlideOutlineConfirmation,
   type QnaState,
 } from './LearningStudioDemoPage.types';
 import {
@@ -19,14 +18,13 @@ import {
   VOICE_CONVERSATION_STREAM_EVENT,
   readVoiceConversationStreamDetail,
 } from '../utils/voiceConversationBridge';
-import { loadResourceGenerationSession, markSlideOutlineRejected, recordConversationResourceEvent } from './resourceGenerationStore';
+import { recordConversationResourceEvent } from './resourceGenerationStore';
 import { openPracticeSession } from './practiceSessionStore';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
   QNA_CONVERSATION_CACHE_STORAGE_KEY,
   QNA_SNAPSHOT_STORAGE_KEY,
   SELECTED_CONVERSATION_STORAGE_KEY,
-  buildSlideOutlineConfirmationContent,
   buildConversationSyncSignature,
   conversationCacheKey,
   hasPendingAssistantResponse,
@@ -48,8 +46,6 @@ type QnaVoiceContext = NonNullable<ConversationMessageStreamRequest['voiceContex
 
 interface QnaSendOverride {
   text: string;
-  confirmedSlideOutlineText?: string;
-  confirmedSlideTopic?: string;
 }
 
 interface QnaLearningContext {
@@ -100,8 +96,6 @@ export function useLearningStudioQna({
   const qnaConversationCacheRef = useRef<PersistedQnaConversationCache>({});
   const qnaStreamTokensRef = useRef<Record<string, string>>({});
   const qnaHistorySyncTokensRef = useRef<Record<string, number>>({});
-  const confirmedSlideOutlineStreamsRef = useRef<Record<string, boolean>>({});
-  const slideOutlineRevealTimersRef = useRef<Record<string, number>>({});
   const qnaRequestVersionRef = useRef(0);
   const previousModeRef = useRef(mode);
 
@@ -117,22 +111,12 @@ export function useLearningStudioQna({
     || qnaMessages.length > 1
     || qnaMessages.some((item) => item.role === 'user');
 
-  const clearSlideOutlineRevealTimers = useCallback(() => {
-    Object.values(slideOutlineRevealTimersRef.current).forEach((timerId) => {
-      window.clearTimeout(timerId);
-    });
-    slideOutlineRevealTimersRef.current = {};
-  }, []);
-
   const abortQnaStreams = useCallback(() => {
     Object.values(qnaStreamControllersRef.current).forEach((controller) => controller.abort());
     qnaStreamControllersRef.current = {};
     qnaStreamTokensRef.current = {};
     qnaHistorySyncTokensRef.current = {};
-    clearSlideOutlineRevealTimers();
-  }, [clearSlideOutlineRevealTimers]);
-
-  useEffect(() => clearSlideOutlineRevealTimers, [clearSlideOutlineRevealTimers]);
+  }, []);
 
   const clearPersistedQnaSnapshot = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -202,7 +186,6 @@ export function useLearningStudioQna({
 
   const resetQnaConversation = useCallback(() => {
     qnaRequestVersionRef.current += 1;
-    clearSlideOutlineRevealTimers();
     cacheConversationView(conversationIdRef.current, {
       qnaInput: qnaInputRef.current,
       qnaMessages: qnaMessagesRef.current,
@@ -223,7 +206,7 @@ export function useLearningStudioQna({
       window.sessionStorage.removeItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY);
     }
     window.dispatchEvent(new CustomEvent('app:active-conversation-changed', { detail: { conversationId: '' } }));
-  }, [cacheConversationView, clearPersistedQnaSnapshot, clearSlideOutlineRevealTimers, conversationIdRef, setConversationId, setQnaStateView]);
+  }, [cacheConversationView, clearPersistedQnaSnapshot, conversationIdRef, setConversationId, setQnaStateView]);
 
   useEffect(() => {
     qnaMessagesRef.current = qnaMessages;
@@ -324,20 +307,19 @@ export function useLearningStudioQna({
           shouldShowStreamingState && hasPendingAssistantResponse(preferredMessages) && !mappedHasResolvedAssistant
             ? 'QNA_STREAMING'
             : 'QNA_IDLE';
-        const restoredMessages = restorePendingSlideOutlineMessages(normalizedConversationId, preferredMessages);
-        latestMessages = restoredMessages;
-        qnaMessagesRef.current = restoredMessages;
-        setQnaMessages(restoredMessages);
+        latestMessages = preferredMessages;
+        qnaMessagesRef.current = preferredMessages;
+        setQnaMessages(preferredMessages);
         if (shouldPollStreaming) {
           setQnaStateView(nextState);
         }
         cacheConversationView(normalizedConversationId, {
           qnaInput: nextInput ?? qnaInputRef.current,
-          qnaMessages: restoredMessages,
+          qnaMessages: preferredMessages,
           qnaState: nextState,
         });
 
-        const currentSignature = buildConversationSyncSignature(restoredMessages);
+        const currentSignature = buildConversationSyncSignature(preferredMessages);
         if (currentSignature === previousSignature) {
           unchangedPolls += 1;
         } else {
@@ -349,9 +331,9 @@ export function useLearningStudioQna({
           if (
             shouldShowStreamingState
             && !mappedHasResolvedAssistant
-            && hasPendingAssistantResponse(restoredMessages)
+            && hasPendingAssistantResponse(preferredMessages)
           ) {
-            const cleanedMessages = removePendingAssistantPlaceholder(restoredMessages);
+            const cleanedMessages = removePendingAssistantPlaceholder(preferredMessages);
             latestMessages = cleanedMessages;
             qnaMessagesRef.current = cleanedMessages;
             setQnaMessages(cleanedMessages);
@@ -715,19 +697,6 @@ export function useLearningStudioQna({
     if ((!text && uploadedImageUrls.length === 0) || qnaBusy) {
       return false;
     }
-    if (!override && text && uploadedImageUrls.length === 0) {
-      const pendingSlideMessage = findLatestPendingSlideOutlineMessage(qnaMessagesRef.current);
-      if (pendingSlideMessage) {
-        const intent = readSlideOutlineReplyIntent(text);
-        if (intent === 'confirm') {
-          return submitSlideOutlineConfirmation(pendingSlideMessage, text);
-        }
-        if (intent === 'reject') {
-          rejectSlideOutlineInConversation(pendingSlideMessage, text);
-          return true;
-        }
-      }
-    }
     if (!isAuthenticated) {
       openAuthModal('login', '请先登录');
       return false;
@@ -738,7 +707,7 @@ export function useLearningStudioQna({
     const pendingPreviewUrls = override ? [] : pendingQnaImages.map((item) => item.previewUrl);
     const useWebSearch = override ? false : qnaWebSearchEnabled;
     const useDeepReasoning = override ? false : deepReasoningEnabled;
-    const qnaLearningContext = await buildQnaLearningContext(override);
+    const qnaLearningContext = await buildQnaLearningContext();
     const pendingMessages: ChatMessage[] = [
       ...qnaMessagesRef.current,
       {
@@ -800,8 +769,6 @@ export function useLearningStudioQna({
         abortController,
         streamToken,
       };
-      confirmedSlideOutlineStreamsRef.current[streamToken] = Boolean(override?.confirmedSlideOutlineText);
-
       await conversationApi.streamMessage(
         currentConversationId,
         {
@@ -825,17 +792,15 @@ export function useLearningStudioQna({
             }
             recordResourceStreamEvent(currentConversationId, event.event, event.data);
             if (event.event === 'resource_file') {
-              const handledSlideOutline = handleConversationSlideOutline(
-                currentConversationId,
-                event.data.payload,
-                {
-                  confirmedRequest: Boolean(confirmedSlideOutlineStreamsRef.current[streamToken]),
-                  assistantMessageId,
-                },
-              );
-              if (handledSlideOutline) {
-                return;
+              const externalLinkMarkdown = formatConversationResourceLink(event.data.payload);
+              if (externalLinkMarkdown) {
+                updateQnaConversationMessages(
+                  currentConversationId,
+                  (messages) => appendAssistantResourceLink(messages, assistantMessageId, externalLinkMarkdown),
+                  { qnaState: 'QNA_STREAMING' },
+                );
               }
+              return;
             }
             if (event.event === 'question_batch') {
               handleConversationQuestionBatch(event.data.payload);
@@ -879,7 +844,6 @@ export function useLearningStudioQna({
               return;
             }
             delete qnaStreamTokensRef.current[currentConversationId];
-            delete confirmedSlideOutlineStreamsRef.current[streamToken];
             if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
               delete qnaStreamControllersRef.current[currentConversationId];
             }
@@ -889,7 +853,7 @@ export function useLearningStudioQna({
             updateQnaConversationMessages(
               currentConversationId,
               (messages) => markReasoningDone(removePendingAssistantPlaceholder(messages), assistantMessageId),
-              { qnaState: hasActiveSlideOutlineReveal() ? 'QNA_STREAMING' : 'QNA_IDLE' },
+              { qnaState: 'QNA_IDLE' },
             );
             window.dispatchEvent(new Event('app:conversation-updated'));
           },
@@ -898,7 +862,6 @@ export function useLearningStudioQna({
               return;
             }
             delete qnaStreamTokensRef.current[currentConversationId];
-            delete confirmedSlideOutlineStreamsRef.current[streamToken];
             if (qnaStreamControllersRef.current[currentConversationId] === abortController) {
               delete qnaStreamControllersRef.current[currentConversationId];
             }
@@ -941,7 +904,6 @@ export function useLearningStudioQna({
       if (abortController.signal.aborted) {
         const stoppedConversationId = streamConversationId || originConversationId;
         delete qnaStreamTokensRef.current[stoppedConversationId];
-        delete confirmedSlideOutlineStreamsRef.current[`${stoppedConversationId}:${assistantMessageId}`];
         if (qnaStreamControllersRef.current[stoppedConversationId] === abortController) {
           delete qnaStreamControllersRef.current[stoppedConversationId];
         }
@@ -959,7 +921,6 @@ export function useLearningStudioQna({
       );
       if (targetConversationId) {
         delete qnaStreamTokensRef.current[targetConversationId];
-        delete confirmedSlideOutlineStreamsRef.current[`${targetConversationId}:${assistantMessageId}`];
         if (qnaStreamControllersRef.current[targetConversationId] === abortController) {
           delete qnaStreamControllersRef.current[targetConversationId];
         }
@@ -999,32 +960,23 @@ export function useLearningStudioQna({
         delete qnaStreamControllersRef.current[targetConversationId];
       }
     }
-    if (activeStream.streamToken) {
-      delete confirmedSlideOutlineStreamsRef.current[activeStream.streamToken];
-    }
     activeQnaStreamRef.current = null;
     markQnaStreamStopped(targetConversationId, activeStream.assistantMessageId);
     window.dispatchEvent(new Event('app:conversation-updated'));
   }, []);
 
-  async function buildQnaLearningContext(override?: QnaSendOverride): Promise<QnaLearningContext> {
-    const explicitUserTopic = cleanupConfirmedSlideTopic(override?.confirmedSlideTopic ?? '');
-    const activeStep = explicitUserTopic ? null : await loadActiveLearningStepContext();
-    if (!override?.confirmedSlideOutlineText && !activeStep) {
+  async function buildQnaLearningContext(): Promise<QnaLearningContext> {
+    const activeStep = await loadActiveLearningStepContext();
+    if (!activeStep) {
       return {};
     }
     const voiceContext: QnaVoiceContext = {
       pageType: 'learning_studio_qna',
       source: 'learning_studio_qna',
-      selectedService: override?.confirmedSlideOutlineText ? 'RESOURCE_GENERATION' : undefined,
-      commandIntent: override?.confirmedSlideOutlineText ? 'generate_slides' : undefined,
       activeLearningStepId: activeStep?.stepId,
       activeLearningStepTitle: activeStep?.title,
       activeLearningStepProgress: activeStep ? String(activeStep.progress) : undefined,
       activeLearningStepSummary: activeStep?.summary,
-      explicitUserTopic: explicitUserTopic || undefined,
-      confirmedSlideOutline: override?.confirmedSlideOutlineText ? 'true' : undefined,
-      confirmedSlideOutlineText: override?.confirmedSlideOutlineText,
     };
     return { voiceContext: pruneVoiceContext(voiceContext) };
   }
@@ -1140,56 +1092,6 @@ export function useLearningStudioQna({
     },
   };
 
-  function handleConversationSlideOutline(
-    targetConversationId: string,
-    payload: Record<string, unknown> | undefined,
-    options?: { confirmedRequest?: boolean; assistantMessageId?: string },
-  ): boolean {
-    if (!isSlideOutlineConfirmationPayload(payload)) {
-      return false;
-    }
-    if (options?.confirmedRequest) {
-      appendConfirmedSlideOutlineRepeatedMessage(targetConversationId, options.assistantMessageId);
-      return true;
-    }
-    const confirmation = readSlideOutlineConfirmation(payload);
-    if (!confirmation) {
-      appendSlideOutlineErrorMessage(targetConversationId);
-      return true;
-    }
-    const messageId = `qna-slide-outline-${Date.now()}`;
-    updateQnaConversationMessages(
-      targetConversationId,
-      (messages) => {
-        const existingIndex = messages.findIndex((item) => item.slideConfirmation?.id === confirmation.id);
-        if (existingIndex >= 0) {
-          return messages.map((item, index) =>
-            index === existingIndex
-              ? {
-                ...item,
-                content: item.content || '',
-                slideConfirmation: confirmation,
-              }
-              : item,
-          );
-        }
-        return [
-          ...removePendingAssistantPlaceholder(messages),
-          {
-            id: messageId,
-            role: 'assistant',
-            content: '',
-            slideConfirmation: confirmation,
-          },
-        ];
-      },
-      { qnaState: 'QNA_STREAMING' },
-    );
-    const existingMessage = qnaMessagesRef.current.find((item) => item.slideConfirmation?.id === confirmation.id);
-    revealSlideOutlineMessage(targetConversationId, existingMessage?.id ?? messageId, confirmation);
-    return true;
-  }
-
   function markQnaStreamStopped(targetConversationId: string, assistantMessageId: string): void {
     const applyStoppedState = (messages: ChatMessage[]) => {
       let updatedAssistant = false;
@@ -1229,156 +1131,6 @@ export function useLearningStudioQna({
     });
   }
 
-  function submitSlideOutlineConfirmation(message: ChatMessage, userText: string): Promise<boolean> {
-    const confirmation = message.slideConfirmation;
-    if (!confirmation || confirmation.status !== 'pending') {
-      return Promise.resolve(false);
-    }
-    const confirmedTopic = cleanupConfirmedSlideTopic(confirmation.topic || '');
-    return handleQnaSend({
-      text: userText || '确认生成 PPT',
-      confirmedSlideOutlineText: confirmation.outline,
-      confirmedSlideTopic: confirmedTopic || undefined,
-    }).then((accepted) => {
-      if (!accepted) {
-        return false;
-      }
-      updateQnaConversationMessages(
-        conversationIdRef.current,
-        (messages) => messages.map((item) =>
-          item.id === message.id
-            ? { ...item, slideConfirmation: { ...confirmation, status: 'confirmed' as const } }
-            : item,
-        ),
-      );
-      return true;
-    });
-  }
-
-  function rejectSlideOutlineInConversation(message: ChatMessage, userText: string): void {
-    const confirmation = message.slideConfirmation;
-    if (!confirmation || confirmation.status !== 'pending') {
-      return;
-    }
-    const now = Date.now();
-    updateQnaConversationMessages(
-      conversationIdRef.current,
-      (messages) => [
-        ...messages.map((item) =>
-          item.id === message.id
-            ? { ...item, slideConfirmation: { ...confirmation, status: 'rejected' as const } }
-            : item,
-        ),
-        {
-          id: `qna-user-slide-reject-${now}`,
-          role: 'user' as const,
-          content: userText || '暂不生成',
-        },
-        {
-          id: `qna-assistant-slide-reject-${now}`,
-          role: 'assistant' as const,
-          content: '已停止生成 PPT 文件。需要时你可以重新让我生成。',
-        },
-      ],
-      { qnaInput: '', qnaState: 'QNA_IDLE' },
-    );
-    markSlideOutlineRejected(conversationIdRef.current, confirmation.title);
-    window.dispatchEvent(new Event('app:conversation-updated'));
-  }
-
-  function revealSlideOutlineMessage(
-    targetConversationId: string,
-    messageId: string,
-    confirmation: SlideOutlineConfirmation,
-  ): void {
-    const fullContent = buildSlideOutlineConfirmationContent(confirmation);
-    const timerKey = `${conversationCacheKey(targetConversationId)}:${messageId}`;
-    const existingTimer = slideOutlineRevealTimersRef.current[timerKey];
-    if (existingTimer) {
-      window.clearTimeout(existingTimer);
-    }
-    const cacheKey = conversationCacheKey(targetConversationId);
-    const sourceMessages = conversationIdRef.current === targetConversationId.trim()
-      ? qnaMessagesRef.current
-      : qnaConversationCacheRef.current[cacheKey]?.qnaMessages ?? [];
-    const currentMessage = sourceMessages.find((item) => item.id === messageId);
-    let visibleLength = Math.min(currentMessage?.content.length ?? 0, fullContent.length);
-    if (visibleLength >= fullContent.length) {
-      return;
-    }
-
-    const revealNextChunk = () => {
-      const chunkSize = fullContent.length > 3000 ? 42 : 24;
-      visibleLength = Math.min(fullContent.length, visibleLength + chunkSize);
-      const done = visibleLength >= fullContent.length;
-      if (done) {
-        delete slideOutlineRevealTimersRef.current[timerKey];
-      }
-      updateQnaConversationMessages(
-        targetConversationId,
-        (messages) => messages.map((item) =>
-          item.id === messageId
-            ? { ...item, content: fullContent.slice(0, visibleLength), slideConfirmation: confirmation }
-            : item,
-        ),
-        { qnaState: done && !hasActiveConversationStream(targetConversationId) && !hasActiveSlideOutlineReveal() ? 'QNA_IDLE' : 'QNA_STREAMING' },
-      );
-      if (!done) {
-        slideOutlineRevealTimersRef.current[timerKey] = window.setTimeout(revealNextChunk, 24);
-      }
-    };
-
-    slideOutlineRevealTimersRef.current[timerKey] = window.setTimeout(revealNextChunk, 16);
-  }
-
-  function hasActiveConversationStream(targetConversationId: string): boolean {
-    return Boolean(qnaStreamTokensRef.current[targetConversationId.trim()]);
-  }
-
-  function hasActiveSlideOutlineReveal(): boolean {
-    return Object.keys(slideOutlineRevealTimersRef.current).length > 0;
-  }
-
-  function appendSlideOutlineErrorMessage(targetConversationId: string): void {
-    updateQnaConversationMessages(
-      targetConversationId,
-      (messages) => [
-        ...removePendingAssistantPlaceholder(messages),
-        {
-          id: `qna-slide-outline-error-${Date.now()}`,
-          role: 'assistant',
-          content: 'PPT 大纲暂未生成完整，请重新生成',
-        },
-      ],
-      { qnaState: 'QNA_STREAMING' },
-    );
-  }
-
-  function appendConfirmedSlideOutlineRepeatedMessage(targetConversationId: string, assistantMessageId?: string): void {
-    updateQnaConversationMessages(
-      targetConversationId,
-      (messages) => {
-        const message = '确认已提交，但仍需要重新确认 PPT 大纲。请重新生成或稍后重试。';
-        if (assistantMessageId && messages.some((item) => item.id === assistantMessageId)) {
-          return messages.map((item) =>
-            item.id === assistantMessageId
-              ? { ...item, content: message }
-              : item,
-          );
-        }
-        return [
-          ...removePendingAssistantPlaceholder(messages),
-          {
-            id: `qna-slide-outline-repeat-error-${Date.now()}`,
-            role: 'assistant',
-            content: message,
-          },
-        ];
-      },
-      { qnaState: 'QNA_STREAMING' },
-    );
-  }
-
   function handleConversationQuestionBatch(payload: Record<string, unknown> | undefined): void {
     if (!hasRealLlmProvenance(payload)) {
       return;
@@ -1401,9 +1153,6 @@ function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage
     return messages;
   }
   const lastIndex = messages.length - 1;
-  if (messages[lastIndex]?.slideConfirmation) {
-    return messages;
-  }
   return messages.filter((_, index) => index !== lastIndex);
 }
 
@@ -1462,75 +1211,51 @@ function readReasoningChunk(payload: Record<string, unknown> | undefined): strin
   return typeof text === 'string' ? text : '';
 }
 
-function restorePendingSlideOutlineMessages(conversationId: string, messages: ChatMessage[]): ChatMessage[] {
-  if (!conversationId.trim() || typeof window === 'undefined') {
-    return messages;
+function appendAssistantResourceLink(messages: ChatMessage[], assistantMessageId: string, linkMarkdown: string): ChatMessage[] {
+  const linkUrl = readFirstMarkdownLinkUrl(linkMarkdown);
+  let updatedAssistant = false;
+  const nextMessages = messages.map((item) => {
+    if (item.id !== assistantMessageId) {
+      return item;
+    }
+    updatedAssistant = true;
+    if (item.content.includes(linkMarkdown) || (linkUrl && item.content.includes(linkUrl))) {
+      return item;
+    }
+    const separator = item.content.trim() ? '\n\n' : '';
+    return { ...item, content: `${item.content.trimEnd()}${separator}${linkMarkdown}` };
+  });
+  return updatedAssistant
+    ? nextMessages
+    : [...messages, { id: assistantMessageId, role: 'assistant' as const, content: linkMarkdown }];
+}
+
+function formatConversationResourceLink(payload: Record<string, unknown> | undefined): string {
+  if (!payload) {
+    return '';
   }
-  const session = loadResourceGenerationSession(conversationId);
-  const pendingSlides = session.resources.filter(
-    (resource) => resource.type === 'SLIDES'
-      && resource.status === 'waiting_confirmation'
-      && resource.slideOutline?.trim(),
+  const rawUrl = readLooseString(payload.downloadUrl) || readLooseString(payload.resourceUrl) || readLooseString(payload.url);
+  if (!/^https?:\/\//i.test(rawUrl)) {
+    return '';
+  }
+  const title = escapeMarkdownLinkText(
+    readLooseString(payload.title) || readLooseString(payload.fileName) || readLooseString(payload.sourceName) || '外部资源',
   );
-  if (!pendingSlides.length) {
-    return messages;
-  }
-  let nextMessages = messages;
-  for (const resource of pendingSlides) {
-    const confirmation = {
-      id: `slides:${resource.title}`,
-      title: resource.title,
-      outline: resource.slideOutline?.trim() || '',
-      topic: session.topic || resource.title,
-      status: 'pending' as const,
-    };
-    if (!confirmation.outline || nextMessages.some((item) => item.slideConfirmation?.id === confirmation.id)) {
-      continue;
-    }
-    nextMessages = [
-      ...removePendingAssistantPlaceholder(nextMessages),
-      {
-        id: `qna-slide-outline-restored-${resource.id}`,
-        role: 'assistant',
-        content: buildSlideOutlineConfirmationContent(confirmation),
-        slideConfirmation: confirmation,
-      },
-    ];
-  }
-  return nextMessages;
+  const summary = readLooseString(payload.summary) || readLooseString(payload.summaryText);
+  const sourceName = readLooseString(payload.sourceName);
+  const details = [summary, sourceName].filter(Boolean).join(' · ');
+  return details
+    ? `- [${title}](${rawUrl})\n  ${details}`
+    : `- [${title}](${rawUrl})`;
 }
 
-function findLatestPendingSlideOutlineMessage(messages: ChatMessage[]): ChatMessage | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role === 'assistant' && message.slideConfirmation?.status === 'pending') {
-      return message;
-    }
-  }
-  return null;
+function escapeMarkdownLinkText(value: string): string {
+  return value.replace(/[\\[\]]/g, '\\$&').trim() || '外部资源';
 }
 
-function readSlideOutlineReplyIntent(input: string): 'confirm' | 'reject' | null {
-  const normalized = input.trim().toLowerCase().replace(/\s+/g, '');
-  if (!normalized) {
-    return null;
-  }
-  if (
-    /^(确认|确认生成|生成|继续|可以|可以生成|好的|好|ok|yes|y|go|继续生成|生成ppt|生成ppt文件|确认生成ppt|确认生成ppt文件)$/.test(normalized)
-    || (normalized.includes('确认') && normalized.includes('生成'))
-    || (normalized.includes('继续') && normalized.includes('生成'))
-  ) {
-    return 'confirm';
-  }
-  if (
-    /^(暂不生成|不生成|不要|不用|取消|停止|先不|先不要|no|n)$/.test(normalized)
-    || normalized.includes('不生成')
-    || normalized.includes('暂不')
-    || normalized.includes('取消')
-  ) {
-    return 'reject';
-  }
-  return null;
+function readFirstMarkdownLinkUrl(value: string): string {
+  const match = value.match(/\]\((https?:\/\/[^)\s]+)\)/i);
+  return match?.[1] ?? '';
 }
 
 function recordResourceStreamEvent(
@@ -1564,14 +1289,6 @@ function hasRealLlmProvenance(payload: Record<string, unknown> | undefined): boo
     && Array.isArray(evidenceIds)
     && payload.fallback === false
     && typeof payload.fromCache === 'boolean';
-}
-
-function cleanupConfirmedSlideTopic(value: string): string {
-  return value
-    .replace(/\.(?:pptx?|pdf|md|markdown)$/i, '')
-    .replace(/(?:PPT|ppt|课件|幻灯片|演示文稿|大纲)$/i, '')
-    .trim()
-    .slice(0, 80);
 }
 
 function resolveActiveLearningStep(data: LearningPathCurrentResponse | null): ActiveLearningStepContext | null {
@@ -1646,35 +1363,6 @@ function normalizeLearningPathStep(step: unknown, index: number): (ActiveLearnin
   };
 }
 
-function readSlideOutlineConfirmation(payload: Record<string, unknown> | undefined): SlideOutlineConfirmation | null {
-  if (!payload) {
-    return null;
-  }
-  const outline = readLoosePayloadString(payload, 'inlineContent', 'inline_content');
-  if (!isSlideOutlineConfirmationPayload(payload) || !outline) {
-    return null;
-  }
-  const title = readLoosePayloadString(payload, 'title')
-    || readLoosePayloadString(payload, 'fileName', 'file_name')
-    || 'PPT 大纲';
-  return {
-    id: `slides:${title}`,
-    title,
-    outline,
-    topic: readLoosePayloadString(payload, 'topic') || title,
-    status: 'pending',
-  };
-}
-
-function isSlideOutlineConfirmationPayload(payload: Record<string, unknown> | undefined): boolean {
-  if (!payload) {
-    return false;
-  }
-  const assetType = readLoosePayloadString(payload, 'assetType', 'asset_type').toUpperCase();
-  const displayMode = readLoosePayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
-  return (assetType === 'SLIDES' || assetType === 'PPT') && displayMode === 'SLIDE_OUTLINE_CONFIRMATION';
-}
-
 function pruneVoiceContext(context: QnaVoiceContext): QnaVoiceContext {
   return Object.fromEntries(
     Object.entries(context).filter(([, value]) => value !== undefined && value !== ''),
@@ -1683,16 +1371,6 @@ function pruneVoiceContext(context: QnaVoiceContext): QnaVoiceContext {
 
 function readLooseString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function readLoosePayloadString(payload: Record<string, unknown>, ...keys: string[]): string {
-  for (const key of keys) {
-    const value = readLooseString(payload[key]);
-    if (value) {
-      return value;
-    }
-  }
-  return '';
 }
 
 function readLooseStringArray(value: unknown): string[] {

@@ -2,12 +2,6 @@ import { request } from './request';
 
 export type ResourceDisplayType = 'COURSE' | 'DOCUMENT' | 'VIDEO' | 'CASE' | 'NOTE';
 
-export interface ResourceCategoryCount {
-  key: string;
-  label: string;
-  count: number;
-}
-
 export interface ResourceItem {
   id: string;
   title: string;

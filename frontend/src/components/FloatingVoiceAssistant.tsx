@@ -1340,7 +1340,7 @@ export default function FloatingVoiceAssistant({ isAuthenticated, voiceUserId, o
       return true;
     }
     if (intent === 'OPEN_QNA') {
-      navigate('/');
+      navigate('/chat');
       setOpen(true);
       setNoticeMessage('已回到智能问答');
       setVoiceState('idle');

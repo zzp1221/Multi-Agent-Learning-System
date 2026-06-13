@@ -14,7 +14,6 @@ import {
   type MasteryDiagnosisView,
   type QnaState,
   type ResourcePushPlanView,
-  type SlideOutlineConfirmation,
 } from './LearningStudioDemoPage.types';
 import { formatUserFacingTaskMessage, sanitizeConversationMessageContent } from './LearningStudioDemoPage.utils';
 
@@ -561,34 +560,11 @@ export function buildPersistedEngineSnapshots(
   return next;
 }
 
-export function buildSlideOutlineConfirmationContent(confirmation: SlideOutlineConfirmation): string {
-  const outline = confirmation.outline.trim();
-  const title = confirmation.title.trim();
-  const intro = title && !outline.includes(title)
-    ? `这是「${title}」的 PPT 大纲：\n\n`
-    : '';
-  return `${intro}${outline}\n\n大纲输出完了，要继续生成 PPT 文件吗？回复“确认生成”即可生成，回复“暂不生成”则停止。`;
-}
-
 export function normalizeRestoredQnaMessages(snapshot: PersistedQnaSnapshot): ChatMessage[] {
   if (!Array.isArray(snapshot.qnaMessages) || snapshot.qnaMessages.length === 0) {
     return [{ id: 'qna-greeting', role: 'assistant', content: QNA_GREETING }];
   }
-  const normalizedMessages = snapshot.qnaMessages.map((item) => {
-    if (!item.slideConfirmation || item.slideConfirmation.status !== 'pending') {
-      return item;
-    }
-    const outline = item.slideConfirmation.outline.trim();
-    if (!outline) {
-      return item;
-    }
-    const fullContent = buildSlideOutlineConfirmationContent(item.slideConfirmation);
-    return {
-      ...item,
-      content: fullContent,
-    };
-  });
-  return normalizedMessages.filter((item, index) => {
+  return snapshot.qnaMessages.filter((item, index) => {
     const isLastMessage = index === snapshot.qnaMessages.length - 1;
     if (item.role !== 'assistant') {
       return true;

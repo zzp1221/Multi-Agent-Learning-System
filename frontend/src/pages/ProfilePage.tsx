@@ -14,6 +14,7 @@ import {
   UserRoundSearch,
 } from 'lucide-react';
 import RadarChart from '../components/RadarChart';
+import MermaidDiagram from '../components/MermaidDiagram';
 import { getErrorMessage } from '../api/request';
 import {
   smartEngineApi,
@@ -424,7 +425,45 @@ function KnowledgeGraphInteractionPanel(props: {
   onStartPractice: (detail: KnowledgeNodeDetailResponse) => void;
 }) {
   const nodes = props.graph?.nodes ?? [];
+  const edges = props.graph?.edges ?? [];
   const selectedNode = nodes.find((node) => node.key === props.selectedNodeKey) ?? nodes[0] ?? null;
+  const [viewMode, setViewMode] = useState<'graph' | 'list'>('graph');
+
+  // 生成 Mermaid 图谱语法
+  const mermaidChart = useMemo(() => {
+    if (nodes.length === 0) return '';
+
+    let chart = 'graph TD\n';
+
+    // 添加节点定义
+    nodes.forEach((node) => {
+      const statusSymbol = node.status === 'MASTERED' ? '✓' : node.status === 'WEAK' ? '!' : '○';
+      const masteryPercent = Math.round(node.mastery * 100);
+      chart += `  ${node.key}["${statusSymbol} ${node.topic} ${masteryPercent}%"]\n`;
+
+      // 根据状态设置样式
+      if (node.status === 'MASTERED') {
+        chart += `  class ${node.key} mastered\n`;
+      } else if (node.status === 'WEAK') {
+        chart += `  class ${node.key} weak\n`;
+      } else if (node.status === 'IN_PROGRESS') {
+        chart += `  class ${node.key} inProgress\n`;
+      }
+    });
+
+    // 添加边
+    edges.forEach((edge) => {
+      const arrowStyle = edge.type === 'PREREQUISITE' ? '==>' : edge.type === 'PART_OF' ? '-->' : '-.->';
+      chart += `  ${edge.from} ${arrowStyle} ${edge.to}\n`;
+    });
+
+    // 添加样式定义
+    chart += `  classDef mastered fill:#10b981,stroke:#059669,color:#fff\n`;
+    chart += `  classDef weak fill:#f59e0b,stroke:#d97706,color:#fff\n`;
+    chart += `  classDef inProgress fill:#3b82f6,stroke:#2563eb,color:#fff\n`;
+
+    return chart;
+  }, [nodes, edges]);
 
   return (
     <PanelShell id="knowledge-graph">
@@ -434,15 +473,24 @@ function KnowledgeGraphInteractionPanel(props: {
           title="知识图谱交互"
           subtitle="点击知识点查看前置/后续关系、相关错题、资源和针对性练习。"
         />
-        <button
-          type="button"
-          onClick={props.onRetry}
-          disabled={props.loading}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-medium text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-950/50 dark:text-slate-300 dark:shadow-none"
-        >
-          {props.loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          刷新图谱
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setViewMode(viewMode === 'graph' ? 'list' : 'graph')}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-medium text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 dark:bg-slate-950/50 dark:text-slate-300 dark:shadow-none"
+          >
+            {viewMode === 'graph' ? '列表视图' : '图谱视图'}
+          </button>
+          <button
+            type="button"
+            onClick={props.onRetry}
+            disabled={props.loading}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-medium text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-950/50 dark:text-slate-300 dark:shadow-none"
+          >
+            {props.loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            刷新图谱
+          </button>
+        </div>
       </div>
 
       <div className="mt-6 min-h-[300px]">
@@ -454,7 +502,12 @@ function KnowledgeGraphInteractionPanel(props: {
           </div>
         ) : nodes.length ? (
           <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(360px,1.05fr)]">
-            <div className="grid max-h-[520px] gap-3 overflow-auto pr-1 md:grid-cols-2 xl:grid-cols-1">
+            {viewMode === 'graph' && edges.length > 0 ? (
+              <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-950/30">
+                <MermaidDiagram chart={mermaidChart} />
+              </div>
+            ) : (
+              <div className="grid max-h-[520px] gap-3 overflow-auto pr-1 md:grid-cols-2 xl:grid-cols-1">
               {nodes.map((node) => (
                 <button
                   key={node.key}
@@ -482,6 +535,8 @@ function KnowledgeGraphInteractionPanel(props: {
                 </button>
               ))}
             </div>
+            )
+            }
             <KnowledgeNodeDetailCard
               detail={props.detail}
               loading={props.detailLoading}

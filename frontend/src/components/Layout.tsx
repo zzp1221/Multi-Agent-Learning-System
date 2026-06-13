@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpenCheck, Clock3, Compass, History, Layers3, LayoutGrid, LoaderCircle, Menu, MessageCirclePlus, NotebookPen, Search, Settings, Sparkles, UserRoundSearch } from 'lucide-react';
+import { BookOpenCheck, Clock3, Compass, History, Layers3, LoaderCircle, Menu, MessageCirclePlus, NotebookPen, Search, Settings, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import FloatingVoiceAssistant from './FloatingVoiceAssistant';
 import FloatingPracticeAssistant from './FloatingPracticeAssistant';
@@ -85,7 +85,7 @@ function clearUserScopedFrontendState(): void {
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const inDashboard = location.pathname.startsWith('/dashboard');
+  const inChat = location.pathname.startsWith('/chat');
   const inEngine = location.pathname.startsWith('/engine');
   const inResources = location.pathname.startsWith('/resources');
   const inMistakes = location.pathname.startsWith('/mistakes');
@@ -101,10 +101,8 @@ export default function Layout() {
   const [activeConversationId, setActiveConversationId] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
   const [profileOnboardingNeeded, setProfileOnboardingNeeded] = useState(false);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
   const currentUserIdRef = useRef('');
 
   const isAuthenticated = Boolean(currentUser);
@@ -225,10 +223,10 @@ export default function Layout() {
       setProfileOnboardingOpen(false);
       return;
     }
-    if (profileOnboardingNeeded && (inProfile || inEngine)) {
+    if (profileOnboardingNeeded) {
       setProfileOnboardingOpen(true);
     }
-  }, [inEngine, inProfile, isAuthenticated, profileOnboardingNeeded]);
+  }, [isAuthenticated, profileOnboardingNeeded]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -261,22 +259,7 @@ export default function Layout() {
     };
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
-        setMoreMenuOpen(false);
-      }
-    };
-    if (moreMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [moreMenuOpen]);
-
   const handleOpenProfilePage = useCallback(() => {
-    setMoreMenuOpen(false);
     closeSidebar();
     if (!isAuthenticated) {
       openAuthModal('login', '登录后查看个人画像');
@@ -286,25 +269,21 @@ export default function Layout() {
   }, [isAuthenticated, navigate]);
 
   const handleOpenServicePage = useCallback(() => {
-    setMoreMenuOpen(false);
     closeSidebar();
     navigate('/engine');
   }, [navigate]);
 
   const handleOpenResourceGenerationPage = useCallback(() => {
-    setMoreMenuOpen(false);
     closeSidebar();
     navigate('/resources');
   }, [navigate]);
 
   const handleOpenResourceGenerationTool = useCallback(() => {
-    setMoreMenuOpen(false);
     closeSidebar();
     navigate('/resources/generation');
   }, [navigate]);
 
   const handleOpenMistakeBook = useCallback(() => {
-    setMoreMenuOpen(false);
     closeSidebar();
     if (!isAuthenticated) {
       openAuthModal('login', '登录后查看错题本');
@@ -314,7 +293,6 @@ export default function Layout() {
   }, [isAuthenticated, navigate]);
 
   const handleOpenNotebook = useCallback(() => {
-    setMoreMenuOpen(false);
     closeSidebar();
     if (!isAuthenticated) {
       openAuthModal('login', '登录后使用 AI 笔记本');
@@ -324,7 +302,6 @@ export default function Layout() {
   }, [isAuthenticated, location.pathname, location.search, navigate]);
 
   const handleOpenSettings = useCallback(() => {
-    setMoreMenuOpen(false);
     closeSidebar();
     if (!isAuthenticated) {
       openAuthModal('login', '登录后才能配置个人 LLM');
@@ -334,13 +311,12 @@ export default function Layout() {
   }, [isAuthenticated, navigate]);
 
   const handleOpenDashboard = useCallback(() => {
-    setMoreMenuOpen(false);
     closeSidebar();
     if (!isAuthenticated) {
       openAuthModal('login', '登录后查看每日学习工作台');
       return;
     }
-    navigate('/dashboard');
+    navigate('/');
   }, [isAuthenticated, navigate]);
 
   function openAuthModal(tab: AuthTab = 'login', hint = '请先登录') {
@@ -396,7 +372,9 @@ export default function Layout() {
           ? '资源库'
           : inEngine
             ? '个性化学习路径'
-            : '新对话';
+            : inChat
+              ? '问答辅导'
+              : '今日工作台';
   const breadcrumbSubtitle = inSettings
     ? '用户 API Key 与模型路由'
     : inProfile
@@ -407,11 +385,12 @@ export default function Layout() {
           ? '搜索、收藏与学习进度'
           : inEngine
             ? '阶段路径与资源推送'
-            : '智能学习与解题助手';
-  const pageShellClass = inNotes ? '' : inDashboard || inEngine || inResources || inMistakes || inProfile || inSettings ? 'app-page-shell' : '';
-  const pageMotionKey = inDashboard
-    ? 'dashboard-shell'
-    : inSettings
+            : inChat
+              ? '智能学习与解题助手'
+              : '从今天最该做的一件事开始';
+  const pageShellClass = inNotes ? '' : !inChat ? 'app-page-shell' : '';
+  const pageMotionKey = !inChat
+    ? inSettings
       ? 'settings-shell'
       : inProfile
         ? 'profile-shell'
@@ -423,7 +402,8 @@ export default function Layout() {
               ? 'resource-shell'
               : inEngine
                 ? 'engine-shell'
-                : 'qna-shell';
+                : 'workbench-shell'
+    : 'qna-shell';
 
   const handleCreateNewChat = () => {
     if (!isAuthenticated) {
@@ -440,10 +420,11 @@ export default function Layout() {
     window.dispatchEvent(new CustomEvent('app:active-conversation-changed', { detail: { conversationId: '' } }));
     window.dispatchEvent(new Event('app:new-chat'));
     setSidebarOpen(false);
+    navigate('/chat');
   };
 
   const handleOpenConversation = (item: ConversationHistoryItem) => {
-    if (item.conversationId === activeConversationId && location.pathname === '/') {
+    if (item.conversationId === activeConversationId && location.pathname === '/chat') {
       setSidebarOpen(false);
       return;
     }
@@ -459,7 +440,7 @@ export default function Layout() {
       window.sessionStorage.setItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY, item.conversationId);
     }
     setActiveConversationId(item.conversationId);
-    navigate('/');
+    navigate('/chat');
     window.dispatchEvent(
       new CustomEvent('app:open-conversation', {
         detail: {
@@ -498,8 +479,16 @@ export default function Layout() {
 
       {/* Navigation */}
       <div className="app-sidebar-nav">
+        <button
+          type="button"
+          onClick={handleOpenDashboard}
+          className={`app-sidebar-nav-item ${!inChat && !inEngine && !inResources && !inMistakes && !inNotes && !inProfile && !inSettings ? 'is-active' : ''}`}
+        >
+          <Compass className="h-4 w-4" />
+          今日工作台
+        </button>
         <NavLink
-          to="/"
+          to="/chat"
           onClick={() => {
             handleCreateNewChat();
           }}
@@ -512,94 +501,15 @@ export default function Layout() {
           }
         >
           <MessageCirclePlus className="h-4 w-4" />
-          新对话
+          问答辅导
         </NavLink>
-        <div className="relative" ref={moreMenuRef}>
-          <button
-            type="button"
-            onClick={() => setMoreMenuOpen((prev) => !prev)}
-            className={`app-sidebar-nav-item ${moreMenuOpen || inDashboard || inEngine || inResources || inMistakes || inNotes || inProfile || inSettings ? 'is-active' : ''}`}
-          >
-            <LayoutGrid className="h-4 w-4" />
-            更多功能
-          </button>
-          <AnimatePresence>
-            {moreMenuOpen ? (
-              <motion.div
-                initial={{ opacity: 0, y: 10, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.96 }}
-                transition={{ duration: 0.42, ease: [0.32, 0.72, 0, 1] }}
-                className="app-more-menu"
-              >
-                <button
-                  type="button"
-                  onClick={handleOpenDashboard}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
-                >
-                  <Compass className="h-4 w-4" />
-                  每日学习工作台
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenProfilePage}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
-                >
-                  <UserRoundSearch className="h-4 w-4" />
-                  查看个人画像
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenServicePage}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  个性化学习路径
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenResourceGenerationPage}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
-                >
-                  <Layers3 className="h-4 w-4" />
-                  资源库
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenResourceGenerationTool}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  资源生成
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenMistakeBook}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
-                >
-                  <BookOpenCheck className="h-4 w-4" />
-                  错题本
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenNotebook}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
-                >
-                  <NotebookPen className="h-4 w-4" />
-                  AI 笔记本
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenSettings}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-slate-400 dark:hover:bg-primary-900/50 dark:hover:text-primary-300"
-                >
-                  <Settings className="h-4 w-4" />
-                  LLM 设置
-                </button>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
+        <NavButton active={inEngine} icon={<Sparkles className="h-4 w-4" />} label="学习路径" onClick={handleOpenServicePage} />
+        <NavButton active={inResources && !location.pathname.startsWith('/resources/generation')} icon={<Layers3 className="h-4 w-4" />} label="资源库" onClick={handleOpenResourceGenerationPage} />
+        <NavButton active={location.pathname.startsWith('/resources/generation')} icon={<Sparkles className="h-4 w-4" />} label="资源生成" onClick={handleOpenResourceGenerationTool} />
+        <NavButton active={inMistakes} icon={<BookOpenCheck className="h-4 w-4" />} label="错题本" onClick={handleOpenMistakeBook} />
+        <NavButton active={inNotes} icon={<NotebookPen className="h-4 w-4" />} label="AI 笔记本" onClick={handleOpenNotebook} />
+        <NavButton active={inProfile} icon={<UserRoundSearch className="h-4 w-4" />} label="学习画像" onClick={handleOpenProfilePage} />
+        <NavButton active={inSettings} icon={<Settings className="h-4 w-4" />} label="LLM 设置" onClick={handleOpenSettings} />
       </div>
 
       {isAuthenticated ? (
@@ -755,10 +665,10 @@ export default function Layout() {
                     <span className="settings-breadcrumb-label sm:hidden">{breadcrumbTitle}</span>
                   </>
                 ) : null}
-                <span className="hidden sm:inline">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源库' : inEngine ? '个性化学习路径' : '新对话'}</span>
+                <span className="hidden sm:inline">{breadcrumbTitle}</span>
                 <span className="hidden text-slate-300 sm:inline">/</span>
-                <span className="hidden sm:inline">{inProfile ? '学习节奏与能力概览' : inMistakes ? '自动错题复习' : inResources ? '搜索、收藏与学习进度' : inEngine ? '阶段路径与资源推送' : '智能学习与解题助手'}</span>
-                <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : '智能对话'}</span>
+                <span className="hidden sm:inline">{breadcrumbSubtitle}</span>
+                <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : inChat ? '问答辅导' : '工作台'}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 md:gap-3">
@@ -830,6 +740,19 @@ export default function Layout() {
       ) : null}
       <StageTestExamPage />
     </div>
+  );
+}
+
+function NavButton(props: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className={`app-sidebar-nav-item ${props.active ? 'is-active' : ''}`}
+    >
+      {props.icon}
+      {props.label}
+    </button>
   );
 }
 
@@ -905,7 +828,24 @@ function ProfileOnboardingModal(props: {
         <div className="space-y-3.5 px-5 py-4">
           <label className="block">
             <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">专业方向</div>
-            <input value={majorCode} onChange={(event) => setMajorCode(event.target.value)} className={inputClass} placeholder="例如：计算机科学、软件工程、数据科学" />
+            <select value={majorCode} onChange={(event) => setMajorCode(event.target.value)} className={optionsClass}>
+              <option value="">请选择专业方向</option>
+              <option value="PROGRAMMING_LANGUAGES">编程语言</option>
+              <option value="DATA_STRUCTURES_ALGORITHMS">数据结构/算法</option>
+              <option value="OPERATING_SYSTEMS">操作系统</option>
+              <option value="COMPUTER_NETWORKS">计算机网络</option>
+              <option value="DATABASES">数据库</option>
+              <option value="SOFTWARE_ENGINEERING">软件工程</option>
+              <option value="COMPILERS">编译器</option>
+              <option value="COMPUTER_ARCHITECTURE">计算机体系结构</option>
+              <option value="AI_ML">AI/ML</option>
+              <option value="SECURITY">安全</option>
+              <option value="DISTRIBUTED_CLOUD">分布式/云原生</option>
+              <option value="FRONTEND_WEB">前端 Web</option>
+              <option value="BACKEND_SYSTEMS">后端系统</option>
+              <option value="MATH_FOUNDATIONS">数学基础</option>
+              <option value="DEV_TOOLS">开发工具</option>
+            </select>
           </label>
           <label className="block">
             <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">当前基础</div>

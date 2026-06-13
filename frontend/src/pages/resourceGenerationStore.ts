@@ -6,7 +6,7 @@ import type {
 } from './LearningStudioDemoPage.types';
 
 export type GeneratedResourceType = 'DOCUMENT' | 'SLIDES' | 'MINDMAP' | 'QUIZ' | 'READING' | 'VIDEO' | 'CODE';
-export type ResourceGenerationResourceStatus = 'generating' | 'ready' | 'waiting_confirmation' | 'failed' | 'not_confirmed';
+export type ResourceGenerationResourceStatus = 'generating' | 'ready' | 'failed';
 
 export interface ResourceGenerationQuizSummary {
   title: string;
@@ -35,16 +35,16 @@ export interface ResourceGenerationResource {
   };
   sourceAgent?: string;
   inline?: InlineResourceView;
-  slideOutline?: string;
   quiz?: ResourceGenerationQuizSummary;
   video?: VideoResult;
+  pptistSlides?: string;
   updatedAt: number;
 }
 
 export interface ResourceGenerationSession {
   conversationId: string;
   topic?: string;
-  taskStatus: 'idle' | 'running' | 'waiting_confirmation' | 'completed' | 'partial_failed' | 'failed';
+  taskStatus: 'idle' | 'running' | 'completed' | 'partial_failed' | 'failed';
   conversationTriggered: boolean;
   progress: number;
   statusText: string;
@@ -61,53 +61,6 @@ export function loadResourceGenerationSession(conversationId: string): ResourceG
   const normalizedId = normalizeConversationId(conversationId);
   const all = loadAllSessions();
   return all[normalizedId] ?? createEmptySession(normalizedId);
-}
-
-export function clearResourceGenerationSession(conversationId: string): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  const normalizedId = normalizeConversationId(conversationId);
-  const all = loadAllSessions();
-  delete all[normalizedId];
-  saveAllSessions(all);
-  notifyResourceGenerationUpdated(normalizedId);
-}
-
-export function markSlideOutlineRejected(conversationId: string, outlineTitle?: string): ResourceGenerationSession {
-  const normalizedId = normalizeConversationId(conversationId);
-  const all = loadAllSessions();
-  const current = all[normalizedId] ?? createEmptySession(normalizedId);
-  const title = (outlineTitle || '').trim();
-  const now = Date.now();
-  const resources = current.resources.map((resource) => {
-    const target = resource.type === 'SLIDES'
-      && resource.status === 'waiting_confirmation'
-      && (!title || resource.title === title);
-    if (!target) {
-      return resource;
-    }
-    return {
-      ...resource,
-      status: 'not_confirmed' as const,
-      statusText: '未确认，未生成',
-      download: undefined,
-      downloadFallback: undefined,
-      inline: undefined,
-      slideOutline: undefined,
-      updatedAt: now,
-    };
-  });
-  const next = {
-    ...current,
-    resources,
-    updatedAt: now,
-    statusText: 'PPT 大纲未确认，已停止生成演示文稿',
-  };
-  all[normalizedId] = next;
-  saveAllSessions(all);
-  notifyResourceGenerationUpdated(normalizedId);
-  return next;
 }
 
 export function recordConversationResourceEvent(
@@ -300,14 +253,13 @@ function reduceResourceEvent(
     const status = readString(payload.status).toUpperCase();
     const failed = status === 'FAILED' || status === 'ERROR';
     const partial = status === 'PARTIAL_FAILED';
-    const waitingConfirmation = status === 'WAITING_CONFIRMATION';
     return {
       ...next,
-      taskStatus: failed ? 'failed' : partial ? 'partial_failed' : waitingConfirmation ? 'waiting_confirmation' : 'completed',
-      progress: failed ? next.progress : waitingConfirmation ? Math.min(next.progress, 99) : 100,
+      taskStatus: failed ? 'failed' : partial ? 'partial_failed' : 'completed',
+      progress: failed ? next.progress : 100,
       statusText: readString(payload.summary)
-        || (failed ? '资源生成失败' : partial ? '资源部分完成' : waitingConfirmation ? '等待确认后继续生成' : '资源生成完成'),
-      completedAt: waitingConfirmation ? next.completedAt : now,
+        || (failed ? '资源生成失败' : partial ? '资源部分完成' : '资源生成完成'),
+      completedAt: now,
     };
   }
 
@@ -335,8 +287,7 @@ function readResourceFile(payload: Record<string, unknown>, now: number): Resour
   const downloadUrl = readPayloadString(payload, 'downloadUrl', 'download_url');
   const inline = readInlineResource(payload);
   const displayMode = readPayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
-  const waitingSlideConfirmation = type === 'SLIDES' && displayMode === 'SLIDE_OUTLINE_CONFIRMATION';
-  const missingSlideOutline = waitingSlideConfirmation && !readPayloadString(payload, 'inlineContent', 'inline_content');
+  const isPptistEditor = type === 'SLIDES' && displayMode === 'PPTIST_EDITOR';
   const video = type === 'VIDEO' ? readVideoResult(payload) : null;
   const fileName = readPayloadString(payload, 'fileName', 'file_name') || defaultFileName(title, type, inline);
   const mimeType = readString(payload.mimeType) || defaultMimeType(type, inline);
@@ -345,9 +296,8 @@ function readResourceFile(payload: Record<string, unknown>, now: number): Resour
     type,
     title,
     summary,
-    status: missingSlideOutline ? 'failed' : waitingSlideConfirmation ? 'waiting_confirmation' : 'ready',
-    statusText: missingSlideOutline ? 'PPT 大纲暂未生成完整，请重新生成' : waitingSlideConfirmation ? '等待确认后生成 PPT 文件' : '已生成',
-    failureReason: missingSlideOutline ? 'PPT 大纲暂未生成完整，请重新生成' : undefined,
+    status: 'ready',
+    statusText: '已生成',
     sourceAgent: readPayloadString(payload, 'agentName', 'agent_name')
       || readPayloadString(payload, 'generatedBy', 'generated_by')
       || readPayloadString(payload, 'sourceAgent', 'source_agent')
@@ -370,8 +320,8 @@ function readResourceFile(payload: Record<string, unknown>, now: number): Resour
       }
       : undefined,
     downloadFallback: undefined,
-    inline: waitingSlideConfirmation ? undefined : inline ?? undefined,
-    slideOutline: waitingSlideConfirmation ? readPayloadString(payload, 'inlineContent', 'inline_content') || undefined : undefined,
+    inline: isPptistEditor ? undefined : inline ?? undefined,
+    pptistSlides: isPptistEditor ? readPayloadString(payload, 'inlineContent', 'inline_content') || undefined : undefined,
     video: video ?? undefined,
     updatedAt: now,
   };
@@ -394,7 +344,7 @@ function readInlineResource(payload: Record<string, unknown>): InlineResourceVie
   if (assetType === 'MINDMAP' || displayMode === 'MERMAID' || inlineContent.trim().toLowerCase().startsWith('mindmap')) {
     return { ...base, kind: 'mermaid' };
   }
-  if (assetType === 'CODE' || mimeType.includes('python') || mimeType.includes('javascript')) {
+  if (assetType === 'CODE' || mimeType.includes('python') || mimeType.includes('javascript') || mimeType.includes('sql')) {
     return {
       ...base,
       kind: 'code',
@@ -422,19 +372,10 @@ function readQuestionBatchSummary(payload: Record<string, unknown>): ResourceGen
 }
 
 function hasAllowedResourceProvenance(payload: Record<string, unknown>): boolean {
-  if (isSlideOutlineConfirmationPayload(payload)) {
-    return true;
-  }
   if (!requiresLlmProvenance(payload)) {
     return true;
   }
   return hasRealLlmProvenance(payload);
-}
-
-function isSlideOutlineConfirmationPayload(payload: Record<string, unknown>): boolean {
-  const assetType = readPayloadString(payload, 'assetType', 'asset_type').toUpperCase();
-  const displayMode = readPayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
-  return (assetType === 'SLIDES' || assetType === 'PPT') && displayMode === 'SLIDE_OUTLINE_CONFIRMATION';
 }
 
 function requiresLlmProvenance(payload: Record<string, unknown>): boolean {
@@ -511,7 +452,6 @@ function upsertResource(
     downloadFallback: Object.prototype.hasOwnProperty.call(item, 'downloadFallback') ? item.downloadFallback : next[index].downloadFallback,
     sourceAgent: item.sourceAgent ?? next[index].sourceAgent,
     inline: Object.prototype.hasOwnProperty.call(item, 'inline') ? item.inline : next[index].inline,
-    slideOutline: Object.prototype.hasOwnProperty.call(item, 'slideOutline') ? item.slideOutline : next[index].slideOutline,
     quiz: Object.prototype.hasOwnProperty.call(item, 'quiz') ? item.quiz : next[index].quiz,
     video: Object.prototype.hasOwnProperty.call(item, 'video') ? item.video : next[index].video,
   };
@@ -731,6 +671,9 @@ function defaultFileExtension(type: GeneratedResourceType, inline: InlineResourc
     }
     if (language === 'typescript' || language === 'ts') {
       return 'ts';
+    }
+    if (language === 'sql') {
+      return 'sql';
     }
     return 'txt';
   }

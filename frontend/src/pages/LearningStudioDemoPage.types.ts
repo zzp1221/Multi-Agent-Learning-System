@@ -28,15 +28,6 @@ export interface ChatMessage {
   localImagePreviews?: string[];
   webSearchEnabled?: boolean;
   deepReasoningEnabled?: boolean;
-  slideConfirmation?: SlideOutlineConfirmation;
-}
-
-export interface SlideOutlineConfirmation {
-  id: string;
-  title: string;
-  outline: string;
-  topic?: string;
-  status: 'pending' | 'confirmed' | 'rejected';
 }
 
 export interface PendingChatImage {
@@ -453,11 +444,6 @@ export interface ResourceTypeButtonConfig {
   label: string;
 }
 
-export interface PushResourceTypeButtonConfig {
-  type: PushResourceType;
-  label: string;
-}
-
 export type {
   ConversationStreamEventPayload,
   SmartEngineServiceType,
@@ -482,14 +468,6 @@ export const resourceTypeButtons: ResourceTypeButtonConfig[] = [
   { type: 'MINDMAP', label: '思维导图' },
   { type: 'SLIDES', label: '演示课件' },
   { type: 'VIDEO', label: '数字人视频' },
-];
-
-export const pushResourceTypeOptions: PushResourceTypeButtonConfig[] = [
-  { type: 'EXPLANATION', label: '讲解文档' },
-  { type: 'CODE_CASE', label: '代码案例' },
-  { type: 'PRACTICAL_CASE', label: '实操案例' },
-  { type: 'READING', label: '拓展阅读' },
-  { type: 'VIDEO', label: '视频' },
 ];
 
 export const serviceTypeMap: Record<EngineService, SmartEngineServiceType> = {

@@ -28,8 +28,9 @@ function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Layout />}>
-              <Route index element={<LearningStudioDemoPage mode="qna" />} />
-              <Route path="dashboard" element={<DailyStudyWorkbenchPage />} />
+              <Route index element={<DailyStudyWorkbenchPage />} />
+              <Route path="chat" element={<LearningStudioDemoPage mode="qna" />} />
+              <Route path="dashboard" element={<Navigate to="/" replace />} />
               <Route path="engine" element={<PersonalizedLearningPathPage />} />
               <Route path="resources" element={<ResourceLibraryPage />} />
               <Route path="resources/generation" element={<MultiAgentResourceGenerationPage />} />

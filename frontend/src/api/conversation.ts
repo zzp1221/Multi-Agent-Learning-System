@@ -55,9 +55,6 @@ export interface ConversationMessageStreamRequest {
     questionCount?: string;
     questionTypePreference?: string;
     difficultyPreference?: string;
-    requiresSlideOutlineConfirmation?: string;
-    confirmedSlideOutline?: string;
-    confirmedSlideOutlineText?: string;
   };
 }
 

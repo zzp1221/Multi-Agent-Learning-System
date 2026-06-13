@@ -129,7 +129,9 @@ const ReasoningPanel = memo(function ReasoningPanel({
         <ChevronDown className="qna-reasoning-chevron h-4 w-4" />
       </button>
       {expanded ? (
-        <pre className="qna-reasoning-content">{content}</pre>
+        <div className="qna-reasoning-content">
+          <MarkdownRenderer content={content} isStreaming={isStreaming} />
+        </div>
       ) : null}
     </div>
   );

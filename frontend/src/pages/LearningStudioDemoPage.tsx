@@ -228,7 +228,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
             </div>
             <button
               type="button"
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/chat')}
               className="learning-service-close"
               aria-label="返回对话"
             >

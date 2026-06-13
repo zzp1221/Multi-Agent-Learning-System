@@ -50,7 +50,7 @@ import type { ResourceSemanticSearchResponse } from '../api/resources';
 
 const PAGE_SIZE = 30;
 const AUTOSAVE_DELAY_MS = 1200;
-const NOTE_EXIT_FALLBACK_ROUTE = '/dashboard';
+const NOTE_EXIT_FALLBACK_ROUTE = '/';
 const NEW_NOTE_TEMPLATE = '# 未命名笔记\n\n记录一个概念、例题、疑问或复盘结论。';
 
 type EditorPaneMode = 'write' | 'preview' | 'split';
@@ -702,7 +702,7 @@ export default function NotebookPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center px-4 py-6">
+      <div className="notebook-page flex min-h-screen items-center justify-center px-4 py-6">
         <div className="rounded-2xl bg-white/90 p-8 text-center shadow-sm shadow-slate-200/50 dark:bg-slate-900/80 dark:shadow-slate-950/20">
           <BookOpen className="mx-auto h-12 w-12 text-primary-500" />
           <h1 className="mt-4 text-xl font-semibold text-slate-950 dark:text-white">AI 笔记本</h1>
@@ -721,7 +721,7 @@ export default function NotebookPage() {
   }
 
   return (
-    <div className="min-h-screen w-full space-y-4 px-3 py-3 sm:px-4 lg:px-5">
+    <div className="notebook-page min-h-screen w-full space-y-4 px-3 py-3 sm:px-4 lg:px-5">
       <div className="flex flex-col gap-4 rounded-[1.4rem] border border-white/70 bg-white/92 px-5 py-4 shadow-[0_18px_48px_rgba(64,91,142,0.08)] dark:border-slate-800/70 dark:bg-slate-900/88 dark:shadow-slate-950/20 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <button

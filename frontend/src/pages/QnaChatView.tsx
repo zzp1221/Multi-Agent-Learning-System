@@ -101,13 +101,13 @@ export default function QnaChatView(props: QnaChatViewProps) {
               transition={{ duration: 0.55, ease: [0.32, 0.72, 0, 1] }}
               className="qna-hero-panel"
             >
-              <div className="qna-eyebrow">学习闭环</div>
+              <div className="qna-eyebrow">问答辅导</div>
               <h1 className="qna-hero-title">
-                智学引擎
-                <span>从一个问题走到一次掌握</span>
+                今天的问题放在这里
+                <span>按步骤讲清楚，再沉淀到路径、资源和错题</span>
               </h1>
               <p className="qna-hero-subtitle">
-                围绕学习全过程组织：先看画像与薄弱点，再给路径、资源、练习、错题复盘和笔记沉淀。
+                输入题目、概念、材料或图片。辅导区会保留逐字推理、联网搜索、历史对话和图片附件。
               </p>
             </motion.div>
 
@@ -115,7 +115,7 @@ export default function QnaChatView(props: QnaChatViewProps) {
               <InputPanel
                 value={props.qnaInput}
                 busy={props.qnaBusy}
-                placeholder="输入学习问题，或描述你想解决的内容"
+                placeholder="写下题目、概念、材料链接，或粘贴一张图片"
                 pendingImages={props.pendingImages ?? []}
                 errorMessage={props.imageErrorMessage}
                 deepReasoningEnabled={props.deepReasoningEnabled}

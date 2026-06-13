@@ -703,6 +703,10 @@ function responseSummaryToLines(summary: Record<string, unknown>, service: Engin
       'pushedResources',
       'agentTrace',
       'criticReview',
+      'planning',
+      'checkpointActions',
+      'learningLoop',
+      'planningWarnings',
       'resourceFailures',
       'traceId',
       'taskId',
@@ -1341,7 +1345,6 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
     const selectedResourceTypes = resolveSelectedResourceTypes(resourceForm.resourceTypes, resourceForm.resourceType);
     const normalizedResourceTypes = uniqueResourceTypes(selectedResourceTypes.map(normalizeResourceType));
     const includeVideo = normalizedResourceTypes.includes('VIDEO');
-    const includeSlides = normalizedResourceTypes.includes('SLIDES');
     const resourceTypeLabelText = selectedResourceTypes.map(resourceTypeLabel).join('、');
     const difficultyLabel = resourceDifficultyLabel(resourceForm.difficulty);
     const query = [
@@ -1364,9 +1367,7 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
       learningContext: {
         course: resourceForm.course,
         chapter: resourceForm.keyPoints,
-        requiresSlideOutlineConfirmation: includeSlides ? true : undefined,
       },
-      requiresSlideOutlineConfirmation: includeSlides ? true : undefined,
       style: includeVideo ? 'talking_head' : undefined,
       duration: includeVideo ? 60 : undefined,
     };

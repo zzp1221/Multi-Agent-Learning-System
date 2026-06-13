@@ -31,10 +31,6 @@ const DEFAULT_STATE: StageTestSessionState = {
 const listeners = new Set<(state: StageTestSessionState) => void>();
 let state: StageTestSessionState = loadStoredState();
 
-export function getStageTestSessionState(): StageTestSessionState {
-  return state;
-}
-
 export function subscribeStageTestSession(listener: (state: StageTestSessionState) => void): () => void {
   listeners.add(listener);
   listener(state);

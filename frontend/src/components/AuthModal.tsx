@@ -45,6 +45,10 @@ export default function AuthModal(props: AuthModalProps) {
       setError('密码首尾不能包含空格，请确认后重试');
       return;
     }
+    if (tab === 'register' && password.trim().length < 6) {
+      setError('密码长度至少为6位');
+      return;
+    }
     if (tab === 'register' && !fullName.trim()) {
       setError('请填写姓名');
       return;
@@ -95,7 +99,6 @@ export default function AuthModal(props: AuthModalProps) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.36, ease: [0.32, 0.72, 0, 1] }}
             className="absolute inset-0 bg-slate-950/42 backdrop-blur-sm"
-            onClick={props.onClose}
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 10 }}

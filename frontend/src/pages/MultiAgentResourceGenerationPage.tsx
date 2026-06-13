@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from 'react';
 import {
   AlertTriangle,
   BookOpen,
@@ -15,7 +15,6 @@ import {
   MessageSquareText,
   Network,
   Presentation,
-  TimerReset,
   Sparkles,
 } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
@@ -24,6 +23,7 @@ import VideoCard from '../components/VideoCard';
 import { downloadAuthenticatedFile, isInternalArtifactDownloadUrl } from '../utils/authenticatedDownload';
 import { renderTalkingVideoInBrowser } from '../utils/browserVideoRenderer';
 import { ACTIVE_CONVERSATION_ID_STORAGE_KEY } from './LearningStudioDemoPage.model';
+const PPTistEditor = lazy(() => import('../components/PPTistEditor'));
 import type { InlineResourceView } from './LearningStudioDemoPage.types';
 import {
   RESOURCE_GENERATION_UPDATED_EVENT,
@@ -378,8 +378,10 @@ function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
         <span>{new Date(resource.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 更新</span>
         <span className="truncate">{resourceSubtitle(resource)}</span>
       </div>
-      <div className="mt-3">
-        {downloadable ? (
+      <div className="mt-3 flex gap-2">
+        {resource.pptistSlides ? (
+          <PPTistEditorButton resource={resource} />
+        ) : downloadable ? (
           <ResourceDownloadButton resource={resource} />
         ) : (
           <div className="rounded-xl bg-slate-50/72 px-3 py-2 text-xs text-slate-500 dark:bg-slate-900/58 dark:text-slate-400">
@@ -442,6 +444,31 @@ function ResourceDownloadButton({
   return null;
 }
 
+function PPTistEditorButton({ resource }: { resource: ResourceGenerationResource }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-indigo-50 px-3 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/20"
+      >
+        <Presentation className="h-4 w-4" />
+        在浏览器中编辑
+      </button>
+      {open && resource.pptistSlides ? (
+        <Suspense fallback={null}>
+          <PPTistEditor
+            slidesJson={resource.pptistSlides}
+            title={resource.title}
+            onClose={() => setOpen(false)}
+          />
+        </Suspense>
+      ) : null}
+    </>
+  );
+}
+
 function renderResourcePreview(resource: ResourceGenerationResource) {
   if (resource.video) {
     return <VideoCard {...resource.video} />;
@@ -451,6 +478,23 @@ function renderResourcePreview(resource: ResourceGenerationResource) {
   }
   if (resource.inline) {
     return <InlinePreview inline={resource.inline} />;
+  }
+  if (resource.pptistSlides) {
+    let slideCount = 0;
+    try {
+      slideCount = JSON.parse(resource.pptistSlides).slides?.length ?? 0;
+    } catch { /* ignore */ }
+    return (
+      <div className="flex h-full min-h-[150px] items-center justify-center rounded-2xl bg-indigo-50/40 px-4 text-center dark:bg-slate-900/40">
+        <div>
+          <Presentation className="mx-auto h-12 w-12 text-indigo-500" />
+          <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            {slideCount > 0 ? `${slideCount} 页可编辑幻灯片` : 'PPT 课件'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">点击下方按钮进入全屏编辑器</p>
+        </div>
+      </div>
+    );
   }
   if (resource.download) {
     return (
@@ -593,13 +637,6 @@ function getStatusTone(status: ResourceGenerationSession['taskStatus']) {
       icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
     };
   }
-  if (status === 'waiting_confirmation') {
-    return {
-      label: '等待确认',
-      className: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
-      icon: <TimerReset className="h-3.5 w-3.5" />,
-    };
-  }
   if (status === 'completed') {
     return {
       label: '已完成',
@@ -634,7 +671,7 @@ function activeAgentStepIndex(session: ResourceGenerationSession): number {
   if (session.progress >= 25) {
     return 1;
   }
-  if (session.taskStatus === 'running' || session.taskStatus === 'waiting_confirmation') {
+  if (session.taskStatus === 'running') {
     return 0;
   }
   return -1;
@@ -655,24 +692,10 @@ function getResourceStatusMeta(resource: ResourceGenerationResource) {
       icon: <CheckCircle2 className="h-3.5 w-3.5" />,
     };
   }
-  if (resource.status === 'waiting_confirmation') {
-    return {
-      label: '等待确认',
-      className: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
-      icon: <TimerReset className="h-3.5 w-3.5" />,
-    };
-  }
   if (resource.status === 'failed') {
     return {
       label: '失败',
       className: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300',
-      icon: <AlertTriangle className="h-3.5 w-3.5" />,
-    };
-  }
-  if (resource.status === 'not_confirmed') {
-    return {
-      label: '未生成',
-      className: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
       icon: <AlertTriangle className="h-3.5 w-3.5" />,
     };
   }
@@ -685,13 +708,7 @@ function getResourceStatusMeta(resource: ResourceGenerationResource) {
 
 function resourceSubtitle(resource: ResourceGenerationResource): string {
   if (resource.status === 'ready') {
-    return resource.download ? '可下载' : '可在线预览';
-  }
-  if (resource.status === 'waiting_confirmation') {
-    return '等待确认后继续生成';
-  }
-  if (resource.status === 'not_confirmed') {
-    return '已跳过生成';
+    return resource.pptistSlides ? '可在线编辑' : resource.download ? '可下载' : '可在线预览';
   }
   if (resource.status === 'failed') {
     return '需要重新生成';
@@ -709,19 +726,10 @@ function estimateRemainingTime(session: ResourceGenerationSession): string {
   if (session.taskStatus === 'failed') {
     return '已停止，可重新发起生成。';
   }
-  if (session.taskStatus === 'waiting_confirmation') {
-    return '等待你在对话中确认 PPT 大纲。';
-  }
   return session.progress > 0 ? '正在整理生成进度。' : '等待开始生成。';
 }
 
 function downloadUnavailableReason(resource: ResourceGenerationResource): string {
-  if (resource.status === 'waiting_confirmation') {
-    return 'PPT 大纲待确认，确认后再生成文件。';
-  }
-  if (resource.status === 'not_confirmed') {
-    return '已跳过 PPT 文件生成。';
-  }
   if (resource.status === 'failed') {
     return '资源生成失败，可在对话中重新生成。';
   }
