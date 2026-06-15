@@ -272,6 +272,7 @@ export default function DailyStudyWorkbenchPage() {
           title="今日执行台读取失败"
           description={error}
           actionLabel="重新加载"
+          visual={false}
           onAction={() => void loadDaily()}
         />
       </WorkbenchShell>
@@ -281,85 +282,86 @@ export default function DailyStudyWorkbenchPage() {
   return (
     <WorkbenchShell>
       <div className="space-y-5">
-        <section className="overflow-hidden rounded-[28px] bg-white/78 shadow-[0_20px_60px_rgba(59,97,155,0.11)] backdrop-blur-xl dark:bg-slate-900/70 dark:shadow-slate-950/24">
-          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_330px] lg:p-6">
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
-                <Compass className="h-3.5 w-3.5" />
-                今日学习执行台
-              </div>
-              <h1 className="mt-4 max-w-3xl text-2xl font-semibold tracking-normal text-slate-950 dark:text-white md:text-4xl">
-                {executionPlan?.title || '今天从一个可完成的任务开始'}
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                {executionPlan?.subtitle || '系统会把今天最该做的一件事放到前面，其余内容只作为依据和辅助入口。'}
-              </p>
-              {executionPlan?.focusReason ? (
-                <div className="mt-5 rounded-2xl bg-slate-50/82 p-4 text-sm leading-6 text-slate-600 dark:bg-slate-950/34 dark:text-slate-300">
-                  <span className="font-semibold text-slate-900 dark:text-white">为什么先做它：</span>
-                  {executionPlan.focusReason}
-                </div>
-              ) : null}
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <HeroFact
-                  icon={<Clock3 className="h-4 w-4" />}
-                  label="预计用时"
-                  value={`${executionPlan?.estimatedMinutes ?? 15} 分钟`}
-                />
-                <HeroFact
-                  icon={<CheckCircle2 className="h-4 w-4" />}
-                  label="完成标准"
-                  value={executionPlan?.successCriteria || '完成一次可回流的学习动作'}
-                />
-              </div>
-              {error ? <InlineError text={error} /> : null}
-              {stageStatus === 'failed' && stageError ? <InlineError text={stageError} /> : null}
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => runTaskAction(executionPlan?.primaryTask)}
-                  disabled={canGenerateStageTest(executionPlan?.primaryTask) && stageStatus === 'generating'}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-sm font-semibold text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {stageStatus === 'generating' && canGenerateStageTest(executionPlan?.primaryTask) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  {executionPlan?.primaryTask.actionLabel || '开始'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void refresh()}
-                  disabled={refreshing}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-600 shadow-sm shadow-slate-200/60 transition hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-950/38 dark:text-slate-300 dark:shadow-none"
-                >
-                  {refreshing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  刷新计划
-                </button>
-              </div>
+        <section className="workbench-hero no-theme-surface">
+          <div className="workbench-hero-copy">
+            <div className="workbench-kicker">
+              <Compass className="h-3.5 w-3.5" />
+              今日学习执行台
             </div>
+            <h1>
+              {executionPlan?.title || '今天从一个可完成的任务开始'}
+            </h1>
+            <p>
+              {executionPlan?.subtitle || '系统会把今天最该做的一件事放到前面，其余内容只作为依据和辅助入口。'}
+            </p>
+            {executionPlan?.focusReason ? (
+              <div className="workbench-reason">
+                <span>为什么先做它</span>
+                <p>{executionPlan.focusReason}</p>
+              </div>
+            ) : null}
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <HeroFact
+                icon={<Clock3 className="h-4 w-4" />}
+                label="预计用时"
+                value={`${executionPlan?.estimatedMinutes ?? 15} 分钟`}
+              />
+              <HeroFact
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                label="完成标准"
+                value={executionPlan?.successCriteria || '完成一次可回流的学习动作'}
+              />
+            </div>
+            {error ? <InlineError text={error} /> : null}
+            {stageStatus === 'failed' && stageError ? <InlineError text={stageError} /> : null}
+            <div className="workbench-action-row">
+              <button
+                type="button"
+                onClick={() => runTaskAction(executionPlan?.primaryTask)}
+                disabled={canGenerateStageTest(executionPlan?.primaryTask) && stageStatus === 'generating'}
+                className="workbench-primary-button"
+              >
+                {stageStatus === 'generating' && canGenerateStageTest(executionPlan?.primaryTask) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                {executionPlan?.primaryTask.actionLabel || '开始'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                disabled={refreshing}
+                className="workbench-secondary-button"
+              >
+                {refreshing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                刷新计划
+              </button>
+            </div>
+          </div>
 
-            <div className="rounded-2xl bg-slate-50/82 p-4 dark:bg-slate-950/36">
-              <div className="flex items-center justify-between gap-3">
+          <div className="workbench-hero-media">
+            <img src="/images/study-workspace.jpg" alt="书桌上的笔记本电脑和打开的学习笔记" />
+            <div className="workbench-hero-plan-card">
+              <div className="workbench-plan-head">
                 <div>
-                  <div className="text-xs font-medium text-slate-400 dark:text-slate-500">本轮完成度</div>
-                  <div className="mt-1 text-3xl font-semibold text-slate-950 dark:text-white">
+                  <span>本轮完成度</span>
+                  <strong>
                     {data?.summary.progressPercent ?? 0}%
-                  </div>
+                  </strong>
                 </div>
-                <span className="rounded-xl bg-white px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-slate-900 dark:text-primary-300">
+                <span>
                   {executionPlan?.steps.length ?? 4} 步
                 </span>
               </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-800">
+              <div className="workbench-progress-line">
                 <div className="h-full rounded-full bg-primary-500" style={{ width: `${data?.summary.progressPercent ?? 0}%` }} />
               </div>
-              <div className="mt-4 space-y-2">
+              <div className="workbench-compact-steps">
                 {(executionPlan?.steps ?? []).map((step, index) => (
-                  <div key={step.id} className="flex items-center gap-3 rounded-xl bg-white/76 px-3 py-2 text-sm dark:bg-slate-900/68">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-xs font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
+                  <button key={step.id} type="button" onClick={() => runStepAction(step)}>
+                    <span>
                       {index + 1}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-slate-100">{step.phase}</span>
-                    <span className="text-xs text-slate-400 dark:text-slate-500">{statusLabel(step.status)}</span>
-                  </div>
+                    <strong>{step.phase}</strong>
+                    <small>{statusLabel(step.status)}</small>
+                  </button>
                 ))}
               </div>
             </div>
@@ -644,23 +646,28 @@ function ResourceFocusCard(props: {
   );
 }
 
-function AccessState(props: { icon: ReactNode; title: string; description: string; actionLabel: string; onAction: () => void }) {
+function AccessState(props: { icon: ReactNode; title: string; description: string; actionLabel: string; visual?: boolean; onAction: () => void }) {
   return (
-    <div className="flex min-h-[420px] items-center justify-center rounded-[28px] bg-white/72 p-6 text-center shadow-[0_18px_56px_rgba(59,97,155,0.10)] backdrop-blur-xl dark:bg-slate-900/68 dark:shadow-slate-950/20">
-      <div className="max-w-md">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
+    <div className={`workbench-access-state no-theme-surface ${props.visual === false ? 'is-compact' : ''}`}>
+      <div className="workbench-access-copy">
+        <div className="workbench-access-icon">
           {props.icon}
         </div>
-        <h1 className="text-xl font-semibold text-slate-950 dark:text-white">{props.title}</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{props.description}</p>
+        <h1>{props.title}</h1>
+        <p>{props.description}</p>
         <button
           type="button"
           onClick={props.onAction}
-          className="mt-5 inline-flex h-10 items-center justify-center rounded-xl bg-primary-600 px-4 text-sm font-medium text-white shadow-sm shadow-primary-500/20 transition hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+          className="workbench-primary-button"
         >
           {props.actionLabel}
         </button>
       </div>
+      {props.visual !== false ? (
+        <div className="workbench-access-media" aria-hidden="true">
+          <img src="/images/study-workspace.jpg" alt="" />
+        </div>
+      ) : null}
     </div>
   );
 }
