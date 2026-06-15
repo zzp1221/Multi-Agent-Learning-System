@@ -9,27 +9,44 @@ import uuid
 import json
 import time
 import hashlib
-from datetime import datetime, timezone
-from pathlib import Path
+import re
+from dataclasses import dataclass
 
 import psycopg2
 from dashscope import MultiModalEmbedding
-from settings_helper import configure_dashscope_api_key
+try:
+    from settings_helper import configure_dashscope_api_key
+except ModuleNotFoundError:
+    from knowledge.settings_helper import configure_dashscope_api_key
 
-RUNTIME_CONFIG = configure_dashscope_api_key()
+RUNTIME_CONFIG = None
 
 
 # 鈹€鈹€ Config 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-DB_CONFIG = RUNTIME_CONFIG.postgres.model_dump()
-
-DIMENSION = RUNTIME_CONFIG.embedding_dimension
+DIMENSION = 1024
 BATCH_SIZE = 5  # texts per API call
 API_DELAY = 0.3  # seconds between batches
+MAX_CHUNK_TOKENS = 420
+
+
+@dataclass(slots=True)
+class MarkdownBlock:
+    kind: str
+    text: str
+    level: int = 0
 
 
 # 鈹€鈹€ DB 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 def connect():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(**get_runtime_config().postgres.model_dump())
+
+
+def get_runtime_config():
+    """Load runtime config lazily so pure chunking tests do not need API keys."""
+    global RUNTIME_CONFIG
+    if RUNTIME_CONFIG is None:
+        RUNTIME_CONFIG = configure_dashscope_api_key()
+    return RUNTIME_CONFIG
 
 
 def fetch_wiki_pages(cur, limit: int = None) -> list[dict]:
@@ -131,11 +148,13 @@ def insert_knowledge_chunks(cur, chunks: list[dict]):
 
 
 # 鈹€鈹€ Embedding 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-def generate_embeddings(texts: list[str], dimension: int = RUNTIME_CONFIG.embedding_dimension) -> list[list[float]]:
+def generate_embeddings(texts: list[str], dimension: int | None = None) -> list[list[float]]:
     """Generate embeddings for multiple texts via DashScope API."""
+    runtime_config = get_runtime_config()
+    dimension = dimension or runtime_config.embedding_dimension
     input_data = [{"text": t} for t in texts]
     resp = MultiModalEmbedding.call(
-        model=RUNTIME_CONFIG.embedding_model_name,
+        model=runtime_config.embedding_model_name,
         input=input_data,
         dimension=dimension,
         output_type="dense",
@@ -166,6 +185,156 @@ def build_embedding_str(vec: list[float]) -> str:
 
 
 # 鈹€鈹€ Main 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+def split_markdown_blocks(markdown: str) -> list[MarkdownBlock]:
+    """Split markdown into heading and paragraph/code blocks."""
+    blocks: list[MarkdownBlock] = []
+    paragraph: list[str] = []
+    code_block: list[str] = []
+    in_code = False
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            text = "\n".join(paragraph).strip()
+            if text:
+                blocks.append(MarkdownBlock(kind="paragraph", text=text))
+            paragraph.clear()
+
+    for raw_line in str(markdown or "").replace("\r\n", "\n").split("\n"):
+        line = raw_line.rstrip()
+        if line.strip().startswith("```"):
+            if in_code:
+                code_block.append(line)
+                text = "\n".join(code_block).strip()
+                if text:
+                    blocks.append(MarkdownBlock(kind="code", text=text))
+                code_block.clear()
+                in_code = False
+            else:
+                flush_paragraph()
+                code_block = [line]
+                in_code = True
+            continue
+        if in_code:
+            code_block.append(line)
+            continue
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if match:
+            flush_paragraph()
+            blocks.append(
+                MarkdownBlock(
+                    kind="heading",
+                    text=match.group(2).strip(),
+                    level=len(match.group(1)),
+                )
+            )
+            continue
+        if not line.strip():
+            flush_paragraph()
+            continue
+        paragraph.append(line)
+
+    if in_code and code_block:
+        blocks.append(MarkdownBlock(kind="code", text="\n".join(code_block).strip()))
+    flush_paragraph()
+    return blocks
+
+
+def split_long_text(text: str, max_tokens: int = MAX_CHUNK_TOKENS) -> list[str]:
+    """Split oversized paragraphs by sentence-like boundaries."""
+    text = str(text or "").strip()
+    if not text:
+        return []
+    if estimate_tokens(text) <= max_tokens:
+        return [text]
+
+    pieces = [piece.strip() for piece in re.split(r"(?<=[。！？.!?])\s*", text) if piece.strip()]
+    if len(pieces) <= 1:
+        step = max(200, max_tokens * 2)
+        return [text[i : i + step].strip() for i in range(0, len(text), step) if text[i : i + step].strip()]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    for piece in pieces:
+        candidate = "".join(current + [piece])
+        if current and estimate_tokens(candidate) > max_tokens:
+            chunks.append("".join(current).strip())
+            current = [piece]
+        else:
+            current.append(piece)
+    if current:
+        chunks.append("".join(current).strip())
+    return chunks
+
+
+def markdown_chunks_for_page(page: dict, max_tokens: int = MAX_CHUNK_TOKENS) -> list[dict]:
+    """Build readable chunks and embedding texts for one wiki page."""
+    title = str(page.get("title") or "").strip()
+    slug = str(page.get("slug") or "").strip()
+    wiki_page_id = str(page.get("wiki_id") or "").strip()
+    blocks = split_markdown_blocks(str(page.get("content") or ""))
+    if not blocks:
+        fallback = str(page.get("summary") or title).strip()
+        blocks = [MarkdownBlock(kind="paragraph", text=fallback)]
+
+    section_stack: list[tuple[int, str]] = []
+    chunks: list[dict] = []
+    current_parts: list[str] = []
+    current_section_path: list[str] = []
+
+    def active_section_path() -> list[str]:
+        return [heading for _level, heading in section_stack]
+
+    def flush_current() -> None:
+        if not current_parts:
+            return
+        content = "\n\n".join(part.strip() for part in current_parts if part.strip()).strip()
+        current_parts.clear()
+        if not content:
+            return
+        section_path = list(current_section_path)
+        chunk_index = len(chunks) + 1
+        path_text = " > ".join(section_path)
+        embedding_parts = [title]
+        if path_text:
+            embedding_parts.append(path_text)
+        embedding_parts.append(content)
+        chunks.append(
+            {
+                "chunk_no": chunk_index,
+                "content": content,
+                "embedding_text": "\n".join(part for part in embedding_parts if part),
+                "token_count": estimate_tokens(content),
+                "metadata": {
+                    "wiki_page_id": wiki_page_id,
+                    "slug": slug,
+                    "section_path": section_path,
+                    "chunk_index": chunk_index,
+                    "content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                },
+            }
+        )
+
+    for block in blocks:
+        if block.kind == "heading":
+            flush_current()
+            section_stack = [(level, text) for level, text in section_stack if level < block.level]
+            section_stack.append((block.level, block.text))
+            continue
+
+        for text_part in split_long_text(block.text, max_tokens=max_tokens):
+            candidate_parts = current_parts + [text_part]
+            if current_parts and estimate_tokens("\n\n".join(candidate_parts)) > max_tokens:
+                flush_current()
+            if not current_parts:
+                current_section_path = active_section_path()
+            current_parts.append(text_part)
+            if estimate_tokens(text_part) > max_tokens:
+                flush_current()
+
+    flush_current()
+    return chunks
+
+
 def main():
     dry_run = "--dry-run" in sys.argv
     incremental = "--incremental" in sys.argv
@@ -173,10 +342,12 @@ def main():
     for i, arg in enumerate(sys.argv):
         if arg == "--limit" and i + 1 < len(sys.argv):
             limit = int(sys.argv[i + 1])
+    runtime_config = get_runtime_config()
+    dimension = runtime_config.embedding_dimension
 
     print("=" * 60)
     print("Wiki Vectorization 鈫?PostgreSQL" + (" (INCREMENTAL)" if incremental else ""))
-    print(f"Model: {RUNTIME_CONFIG.embedding_model_name} | Dimension: {DIMENSION}")
+    print(f"Model: {runtime_config.embedding_model_name} | Dimension: {dimension}")
     print("=" * 60)
 
     if dry_run:
@@ -203,39 +374,22 @@ def main():
                     batch_num = batch_start // BATCH_SIZE + 1
                     total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
 
-                    texts = [p["title"] for p in batch]
                     status = ", ".join(p["title"][:20] for p in batch)
                     print(f"\n[Batch {batch_num}/{total_batches}] {len(batch)} pages: {status}...")
 
                     if dry_run:
-                        print("  (dry-run, skipping API call)")
+                        chunk_count = sum(len(markdown_chunks_for_page(page)) for page in batch)
+                        print(f"  (dry-run, skipping API call; would create {chunk_count} chunks)")
                         continue
-
-                    # Generate embeddings
-                    try:
-                        embeddings = generate_embeddings(texts, DIMENSION)
-                    except Exception as e:
-                        print(f"  API ERROR: {e}")
-                        print("  Falling back to single-text mode...")
-                        # Retry one by one
-                        embeddings = []
-                        for t in texts:
-                            try:
-                                emb = generate_embeddings([t], DIMENSION)
-                                embeddings.extend(emb)
-                                time.sleep(API_DELAY)
-                            except Exception as e2:
-                                print(f"  FAILED: {e2}")
-                                embeddings.append(None)
 
                     # Write to DB
                     for i, page in enumerate(batch):
-                        emb_vec = embeddings[i] if i < len(embeddings) and embeddings[i] is not None else None
-                        if emb_vec is None:
-                            print(f"  SKIP (no embedding): {page['title']}")
+                        page_chunks = markdown_chunks_for_page(page)
+                        if not page_chunks:
+                            print(f"  SKIP (no chunks): {page['title']}")
                             continue
 
-                        content = page["content"]
+                        content = page["content"] or ""
                         doc = {
                             "id": str(uuid.uuid4()),
                             "title": page["title"],
@@ -251,23 +405,57 @@ def main():
                             "created_by": "wiki_vectorizer",
                         }
 
-                        doc_id = insert_knowledge_document(cur, doc)
+                        pending_chunks = []
+                        for chunk_start in range(0, len(page_chunks), BATCH_SIZE):
+                            chunk_batch = page_chunks[chunk_start : chunk_start + BATCH_SIZE]
+                            texts = [chunk["embedding_text"] for chunk in chunk_batch]
+                            try:
+                                embeddings = generate_embeddings(texts, dimension)
+                            except Exception as e:
+                                print(f"  API ERROR: {e}")
+                                print("  Falling back to single-text mode...")
+                                embeddings = []
+                                for text in texts:
+                                    try:
+                                        emb = generate_embeddings([text], dimension)
+                                        embeddings.extend(emb)
+                                        time.sleep(API_DELAY)
+                                    except Exception as e2:
+                                        print(f"  FAILED: {e2}")
+                                        embeddings.append(None)
 
-                        chunk = {
-                            "document_id": doc_id,
-                            "chunk_no": 1,
-                            "content": content,
-                            "embedding": build_embedding_str(emb_vec),
-                            "token_count": estimate_tokens(content),
-                            "domain": "COMPUTER_SCIENCE",
-                            "difficulty": page["difficulty"],
-                            "access_scope": "GLOBAL",
-                            "quality_score": 0.85,
-                            "metadata": {},
-                        }
-                        insert_knowledge_chunks(cur, [chunk])
+                            for chunk_offset, chunk_data in enumerate(chunk_batch):
+                                emb_vec = (
+                                    embeddings[chunk_offset]
+                                    if chunk_offset < len(embeddings) and embeddings[chunk_offset] is not None
+                                    else None
+                                )
+                                if emb_vec is None:
+                                    continue
+                                pending_chunks.append(
+                                    {
+                                        "chunk_no": chunk_data["chunk_no"],
+                                        "content": chunk_data["content"],
+                                        "embedding": build_embedding_str(emb_vec),
+                                        "token_count": chunk_data["token_count"],
+                                        "domain": "COMPUTER_SCIENCE",
+                                        "difficulty": page["difficulty"],
+                                        "access_scope": "GLOBAL",
+                                        "quality_score": 0.88,
+                                        "metadata": chunk_data["metadata"],
+                                    }
+                                )
 
-                        print(f"  OK [{batch_start + i + 1}/{total}]: {page['title']}  dim={len(emb_vec)}")
+                        if pending_chunks:
+                            doc_id = insert_knowledge_document(cur, doc)
+                            for pending_chunk in pending_chunks:
+                                pending_chunk["document_id"] = doc_id
+                            insert_knowledge_chunks(cur, pending_chunks)
+
+                        print(
+                            f"  OK [{batch_start + i + 1}/{total}]: {page['title']}  "
+                            f"chunks={len(pending_chunks)}/{len(page_chunks)}"
+                        )
 
                     time.sleep(API_DELAY)
 

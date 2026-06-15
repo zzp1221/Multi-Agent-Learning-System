@@ -140,6 +140,7 @@ Sessionx.vim
 frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
+frontend/public/pptist/
 frontend/.env
 frontend/.env.local
 frontend/.env.*.local
@@ -302,6 +303,9 @@ python-agent/sft_output/
 python-agent/reports/graph_rag_100_pr*.json
 python-agent/reports/rag_100_pr*.json
 python-agent/reports/*judge_cache.json
+python-agent/reports/*judge_cache*.json
+python-agent/reports/*embedding_cache.json
+python-agent/reports/*_2026*.json
 
 # ============================================================
 # 9. Docker
@@ -320,6 +324,7 @@ docker-compose.override.yml
 docs/*
 !docs/deployment.md
 !docs/experiment_log.md
+!docs/rag_error_book.yaml
 !docs/graph_multi_agent_architecture.md
 !docs/learning_effect_evaluation_personalized_implementation_plan.md
 !docs/personalized_learning_multi_agent_refactor_plan.md
@@ -335,6 +340,8 @@ user_uploads/
 sandbox-temp/
 temp/
 tmp/
+pptist/
+新建 文本文档.txt
 *.tmp
 *.temp
 

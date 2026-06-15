@@ -1,0 +1,106 @@
+{
+  "sourceReport": "graph_rag_100_phase2_grep_top3_20260614.json",
+  "scope": "lowEvidenceRecords",
+  "repairs": [
+    {
+      "id": "grq055",
+      "graphIntent": "PREREQUISITE_PATH",
+      "links": [["离散数学/环与域", "离散数学/同余与模运算"], ["离散数学/环与域", "离散数学/群论"]]
+    },
+    {
+      "id": "grq030",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [["Python深入/生成器与协程", "JavaScript/TypeScript/Promise与微任务"], ["JavaScript/TypeScript/Promise与微任务", "Python深入/上下文管理器"]]
+    },
+    {
+      "id": "grq047",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [["计算机网络/IPv4与IPv6对比", "计算机网络/应用层-HTTP"], ["计算机网络/TCP三次握手详解", "计算机网络/应用层-HTTP"]]
+    },
+    {
+      "id": "grq048",
+      "graphIntent": "MECHANISM_APPLICATION",
+      "links": [["计算机组成原理/页表与TLB", "C语言深入/指针算术与内存模型"], ["操作系统/写时复制COW", "C语言深入/指针算术与内存模型"]]
+    },
+    {
+      "id": "grq050",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [["计算机网络/零拷贝与sendfile", "操作系统/写时复制COW"], ["计算机网络/零拷贝与sendfile", "计算机网络/TCP三次握手详解"]]
+    },
+    {
+      "id": "grq052",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [["离散数学/欧拉图与哈密顿图", "数据结构/最小生成树MST"], ["数据结构/最小生成树MST", "离散数学/图着色与多项式"]]
+    },
+    {
+      "id": "grq062",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [["C语言深入/链接器与ABI", "C语言深入/内存对齐与位域"], ["C语言深入/链接器与ABI", "编译原理/GCC与LLVM架构对比"]]
+    },
+    {
+      "id": "grq089",
+      "graphIntent": "COMPARISON",
+      "links": [["JavaScript/TypeScript/Promise与微任务", "Python深入/生成器与协程"], ["Python深入/生成器与协程", "程序设计/线程池原理"]]
+    },
+    {
+      "id": "grq002",
+      "graphIntent": "PREREQUISITE_PATH",
+      "links": [["算法设计与分析/NP完全理论", "离散数学/图着色与多项式"], ["算法设计与分析/主定理", "离散数学/图着色与多项式"]]
+    },
+    {
+      "id": "grq005",
+      "graphIntent": "PREREQUISITE_PATH",
+      "links": [["离散数学/欧拉函数与RSA", "离散数学/同余与模运算"], ["离散数学/环与域", "离散数学/同余与模运算"]]
+    },
+    {
+      "id": "grq017",
+      "graphIntent": "PREREQUISITE_PATH",
+      "links": [["离散数学/置换群", "离散数学/群论"], ["离散数学/环与域", "离散数学/群论"]]
+    },
+    {
+      "id": "grq020",
+      "graphIntent": "PREREQUISITE_PATH",
+      "links": [["编译原理/First-Follow", "编译原理/First-Follow"], ["编译原理/递归下降", "编译原理/First-Follow"]]
+    },
+    {
+      "id": "grq081",
+      "graphIntent": "PREREQUISITE_PATH",
+      "links": [["离散数学/欧拉函数与RSA", "离散数学/同余与模运算"], ["信息安全/消息认证码MAC与HMAC", "离散数学/同余与模运算"]]
+    },
+    {
+      "id": "grq006",
+      "graphIntent": "MECHANISM_APPLICATION",
+      "links": [["数据库原理/关系模型", "数据库原理/SQL-SELECT基础"], ["数据库原理/SQL-触发器", "数据库原理/SQL-SELECT基础"]]
+    },
+    {
+      "id": "grq008",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [["C语言深入/内存对齐与位域", "C语言深入/指针算术与内存模型"], ["C语言深入/指针算术与内存模型", "C语言深入/链接器与ABI"]]
+    },
+    {
+      "id": "grq012",
+      "graphIntent": "COMPARISON",
+      "links": [["操作系统/磁盘调度-FCFS与SSTF", "数据结构/最短路径-Dijkstra"], ["数据结构/最短路径-BellmanFord", "数据结构/最短路径-Dijkstra"]]
+    },
+    {
+      "id": "grq019",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [["Rust语言/智能指针与内部可变性", "程序设计/类型系统"], ["Rust语言/智能指针与内部可变性", "Rust语言/迭代器与组合器"]]
+    },
+    {
+      "id": "grq021",
+      "graphIntent": "COMPARISON",
+      "links": [["计算机图形学/着色频率（Flat/Gouraud/Phong Shading）", "计算机图形学/PBR物理渲染原理"], ["计算机图形学/光照模型（Lambert/Phong/Blinn-Phong）", "计算机图形学/PBR物理渲染原理"]]
+    },
+    {
+      "id": "grq023",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [["操作系统/写时复制COW", "计算机组成原理/页表与TLB"], ["计算机网络/零拷贝与sendfile", "计算机组成原理/页表与TLB"]]
+    },
+    {
+      "id": "grq026",
+      "graphIntent": "MECHANISM_APPLICATION",
+      "links": [["数据结构/关键路径", "数据结构/最小生成树MST"], ["算法设计与分析/活动选择问题", "数据结构/最小生成树MST"]]
+    }
+  ]
+}

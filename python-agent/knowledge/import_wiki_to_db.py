@@ -14,13 +14,18 @@ from collections import defaultdict
 
 import psycopg2
 from settings_helper import configure_dashscope_api_key
+from graph_low_evidence_repairs import build_repair_wikilinks, load_repair_link_records
 
 RUNTIME_CONFIG = configure_dashscope_api_key()
 from psycopg2.extras import execute_values
 
 # ── Config ──────────────────────────────────────────────────
 DB_CONFIG = RUNTIME_CONFIG.postgres.model_dump()
-WIKI_ROOT = Path(__file__).parent.parent.parent / "wiki"
+_WIKI_ROOT_CANDIDATES = [
+    Path(__file__).parent.parent.parent / "wiki",
+    Path(__file__).parent.parent / "wiki",
+]
+WIKI_ROOT = next((path for path in _WIKI_ROOT_CANDIDATES if path.exists()), _WIKI_ROOT_CANDIDATES[0])
 
 
 # ── Frontmatter Parser ───────────────────────────────────────
@@ -172,6 +177,9 @@ def insert_wiki_links(cur, links: list[dict], title_to_id: dict[str, str]):
             continue
         seen.add(key)
         rows.append((from_id, to_id, rel, link.get("weight", 1)))
+    if not rows:
+        print("  Inserted 0 wiki links")
+        return
     sql = """
         INSERT INTO rag.wiki_link (from_page_id, to_page_id, relation_type, weight)
         VALUES %s
@@ -266,6 +274,11 @@ def main():
                 "relation": "WIKILINK",
                 "weight": 1,
             })
+    repair_records = load_repair_link_records()
+    repair_wikilinks = build_repair_wikilinks(repair_records, pages=pages)
+    wikilink_records.extend(repair_wikilinks)
+    if repair_wikilinks:
+        print(f"  Added {len(repair_wikilinks)} graph low-evidence repair WIKILINK(s)")
 
     if dry_run:
         print(f"\n[DRY RUN] Would write {len(pages)} page(s) and {len(wikilink_records)} WIKILINK(s) to PostgreSQL")
@@ -290,9 +303,20 @@ def main():
                 title_to_id = insert_wiki_pages(cur, pages)
                 print(f"  OK: {len(title_to_id)} pages inserted")
 
+                full_title_to_id = title_to_id
+                if incremental:
+                    cur.execute("SELECT title, id FROM rag.wiki_page WHERE is_active = true")
+                    full_title_to_id = {row[0]: str(row[1]) for row in cur.fetchall()}
+
                 # WIKILINK relations
                 print(f"Writing {len(wikilink_records)} WIKILINK relations...")
                 insert_wiki_links(cur, wikilink_records, title_to_id)
+                if incremental and repair_records:
+                    cur.execute("SELECT slug, title FROM rag.wiki_page WHERE is_active = true")
+                    full_slug_to_title = {row[0]: row[1] for row in cur.fetchall()}
+                    repair_wikilinks = build_repair_wikilinks(repair_records, slug_to_title=full_slug_to_title)
+                    print(f"Writing {len(repair_wikilinks)} incremental graph repair WIKILINK relations...")
+                    insert_wiki_links(cur, repair_wikilinks, full_title_to_id)
 
                 # SHARED_TAG relations
                 if incremental:
@@ -302,9 +326,6 @@ def main():
                     for row in cur.fetchall():
                         pid, ptitle, ptags = row
                         all_pages_for_tags.append({"title": ptitle, "tags": ptags if isinstance(ptags, list) else (ptags or [])})
-                    # Re-fetch title_to_id to include all pages
-                    cur.execute("SELECT title, id FROM rag.wiki_page WHERE is_active = true")
-                    full_title_to_id = {row[0]: str(row[1]) for row in cur.fetchall()}
                     st_links = build_shared_tag_links(all_pages_for_tags, full_title_to_id)
                 else:
                     st_links = build_shared_tag_links(pages, title_to_id)

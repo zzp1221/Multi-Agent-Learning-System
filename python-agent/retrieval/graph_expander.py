@@ -541,8 +541,16 @@ class GraphExpander:
         terms = self._extract_query_terms(query)
         if query:
             quoted_chunks = re.findall(r"[「《“\"]([^」》”\"]+)[」》”\"]", query)
+            quoted_chunks.extend(
+                re.findall(r"[\u300c\u300e\u201c\"]([^\u300d\u300f\u201d\"]+)[\u300d\u300f\u201d\"]", query)
+            )
             for chunk in quoted_chunks:
                 terms.append(self._normalize_text(chunk))
+                terms.extend(
+                    self._normalize_text(part)
+                    for part in re.split(r"[\u3001,，;；/()（）\s]+", chunk)
+                    if self._normalize_text(part)
+                )
                 terms.extend(
                     self._normalize_text(part)
                     for part in re.split(r"[、,，/（）()\\s]+", chunk)
@@ -553,7 +561,11 @@ class GraphExpander:
         result: list[str] = []
         for term in terms:
             normalized = self._normalize_text(term)
-            if not normalized or len(normalized) < 2 or normalized in seen:
+            if (
+                not normalized
+                or normalized in seen
+                or (len(normalized) < 2 and not re.fullmatch(r"[\u4e00-\u9fff]", normalized))
+            ):
                 continue
             seen.add(normalized)
             result.append(normalized)
@@ -638,6 +650,7 @@ class GraphExpander:
 
     def _has_specific_direct_match(self, query_terms: list[str], slug: str, title: str, aliases_text, tags_text) -> bool:
         slug_norm = self._normalize_text(slug)
+        slug_tail_norm = self._normalize_text(str(slug or "").rsplit("/", 1)[-1])
         title_norm = self._normalize_text(title)
         alias_norms = {self._normalize_text(alias) for alias in self._parse_json_list(aliases_text)}
         tag_norms = {self._normalize_text(tag) for tag in self._parse_json_list(tags_text)}
@@ -645,6 +658,8 @@ class GraphExpander:
         for term in query_terms:
             if term in generic_terms:
                 continue
+            if term == slug_tail_norm or term == title_norm or term in alias_norms:
+                return True
             has_cjk = bool(re.search(r"[\u4e00-\u9fff]", term))
             if (has_cjk and len(term) < 3) or (not has_cjk and len(term) < 4):
                 continue
@@ -676,15 +691,18 @@ class GraphExpander:
         if not query_terms:
             return 0.0
         slug_norm = self._normalize_text(slug)
+        slug_tail_norm = self._normalize_text(str(slug or "").rsplit("/", 1)[-1])
         title_norm = self._normalize_text(title)
         alias_norms = {self._normalize_text(alias) for alias in self._parse_json_list(aliases_text)}
         tag_norms = {self._normalize_text(tag) for tag in self._parse_json_list(tags_text)}
         bonus = 0.0
         for term in query_terms:
-            if not term or len(term) < 2:
+            if not term:
                 continue
-            if term == slug_norm or term == title_norm:
+            if term == slug_norm or term == slug_tail_norm or term == title_norm:
                 bonus += 3.0
+                continue
+            if len(term) < 2:
                 continue
             if term in alias_norms:
                 bonus += 2.5

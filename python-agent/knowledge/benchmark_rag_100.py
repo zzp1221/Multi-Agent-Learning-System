@@ -15,12 +15,15 @@ import statistics
 import sys
 import time
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 import psycopg2
 
@@ -36,6 +39,8 @@ DEFAULT_QUESTION_COUNT = 100
 DEFAULT_SEED = 20260524
 TOP_K = 5
 JUDGE_CACHE_VERSION = "rag-judge-v1"
+DEFAULT_EMBEDDING_CACHE = Path("reports/rag_100_embedding_cache.json")
+DEFAULT_EMBEDDING_CACHE_TTL_DAYS = 30
 
 
 def _normalize_slug(value: Any) -> str:
@@ -154,6 +159,102 @@ def _json_hash(payload: Any) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+class QueryEmbeddingCache:
+    """Persistent benchmark-only query embedding cache."""
+
+    def __init__(
+        self,
+        path: Path | str,
+        *,
+        ttl_days: int = DEFAULT_EMBEDDING_CACHE_TTL_DAYS,
+        now_fn=None,
+    ) -> None:
+        self.path = Path(path)
+        self.ttl_days = max(1, int(ttl_days))
+        self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
+        self._entries: dict[str, Any] = self._load_entries()
+        self.stats = {
+            "hits": 0,
+            "misses": 0,
+            "expired": 0,
+            "modelDimensionMismatches": 0,
+            "writes": 0,
+        }
+
+    def get(self, query: str, *, model: str, dimension: int) -> list[float] | None:
+        key = self._key(query, model=model, dimension=dimension)
+        entry = self._entries.get(key)
+        if not isinstance(entry, dict):
+            self.stats["misses"] += 1
+            return None
+        if str(entry.get("model") or "") != str(model) or int(entry.get("dimension") or 0) != int(dimension):
+            self.stats["modelDimensionMismatches"] += 1
+            return None
+        created_at = self._parse_created_at(entry.get("createdAt"))
+        entry_ttl_days = int(entry.get("ttlDays") or self.ttl_days)
+        if created_at is None or self._now() - created_at > timedelta(days=entry_ttl_days):
+            self.stats["expired"] += 1
+            return None
+        embedding = entry.get("embedding")
+        if not isinstance(embedding, list) or len(embedding) != int(dimension):
+            self.stats["modelDimensionMismatches"] += 1
+            return None
+        self.stats["hits"] += 1
+        return [float(value) for value in embedding]
+
+    def set(self, query: str, *, model: str, dimension: int, embedding: list[float]) -> None:
+        if len(embedding) != int(dimension):
+            raise ValueError(f"embedding dimension mismatch: expected {dimension}, got {len(embedding)}")
+        key = self._key(query, model=model, dimension=dimension)
+        self._entries[key] = {
+            "model": str(model),
+            "dimension": int(dimension),
+            "querySha256": self._query_hash(query),
+            "embedding": [float(value) for value in embedding],
+            "createdAt": self._now().isoformat(),
+            "ttlDays": self.ttl_days,
+        }
+        self.stats["writes"] += 1
+        self.save()
+
+    def save(self) -> None:
+        _write_json(self.path, {"version": 1, "entries": self._entries})
+
+    def snapshot_stats(self) -> dict[str, int | str]:
+        return {"path": str(self.path), **self.stats}
+
+    def _load_entries(self) -> dict[str, Any]:
+        if not self.path.exists():
+            return {}
+        payload = _read_json(self.path)
+        if isinstance(payload, dict) and isinstance(payload.get("entries"), dict):
+            return dict(payload["entries"])
+        return payload if isinstance(payload, dict) else {}
+
+    def _now(self) -> datetime:
+        value = self._now_fn()
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def _parse_created_at(self, value: Any) -> datetime | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def _key(self, query: str, *, model: str, dimension: int) -> str:
+        return f"{model}:{int(dimension)}:{self._query_hash(query)}"
+
+    def _query_hash(self, query: str) -> str:
+        return hashlib.sha256(str(query or "").encode("utf-8")).hexdigest()
+
+
 def percentile_ms(values_ms: list[float], ratio: float) -> float:
     if not values_ms:
         return 0.0
@@ -230,7 +331,32 @@ def channel_timer(timings: dict[str, float], channel_name: str):
         timings[channel_name] += (time.perf_counter() - started) * 1000
 
 
-def _search_vector_with_retries(retriever: HybridRetriever, cur, question: str, max_attempts: int = 3) -> list[tuple]:
+def _install_embedding_cache(retriever: HybridRetriever, embedding_cache: QueryEmbeddingCache | None) -> None:
+    if embedding_cache is None or getattr(retriever._vector, "_benchmark_embedding_cache_installed", False):
+        return
+    vector = retriever._vector
+    original_embed = vector._embed
+
+    def cached_embed(text: str) -> list[float]:
+        cached = embedding_cache.get(text, model=vector.model, dimension=vector.dimension)
+        if cached is not None:
+            return cached
+        embedding = original_embed(text)
+        embedding_cache.set(text, model=vector.model, dimension=vector.dimension, embedding=embedding)
+        return embedding
+
+    vector._embed = cached_embed
+    vector._benchmark_embedding_cache_installed = True
+
+
+def _search_vector_with_retries(
+    retriever: HybridRetriever,
+    cur,
+    question: str,
+    max_attempts: int = 1,
+    embedding_cache: QueryEmbeddingCache | None = None,
+) -> list[tuple]:
+    _install_embedding_cache(retriever, embedding_cache)
     last_error: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
@@ -253,7 +379,9 @@ def run_retrieval(
     question: str,
     *,
     graph_intent: str | None = None,
+    retrieval_strategy: str = "LOCAL_HYBRID",
     include_diagnostics: bool = False,
+    embedding_cache: QueryEmbeddingCache | None = None,
 ) -> tuple[dict[str, Any], dict[str, float], float, str | None]:
     retriever = HybridRetriever(DB_CONFIG, top_k=TOP_K)
     timings = {"init_ms": 0.0, "grep_ms": 0.0, "vector_ms": 0.0, "graph_ms": 0.0, "web_ms": 0.0, "fusion_ms": 0.0}
@@ -275,37 +403,56 @@ def run_retrieval(
                         channel_errors["grep"] = f"{type(exc).__name__}: {exc}"
                         grep_results = {"priority": [], "normal": []}
 
-                with channel_timer(timings, "vector_ms"):
-                    try:
-                        vector_all = _search_vector_with_retries(retriever, cur, question)
-                    except Exception as exc:
-                        channel_errors["vector"] = f"{type(exc).__name__}: {exc}"
-                        vector_all = []
-                    vector_results = [(item[0], item[1], item[2]) for item in vector_all]
-
-                with channel_timer(timings, "graph_ms"):
-                    grep_slugs = [item[0] for item in grep_results.get("priority", [])[: retriever.graph_seed_n]]
-                    vec_slugs = [item[0] for item in vector_results[: retriever.graph_seed_n]]
-                    seed_slugs = list(dict.fromkeys(grep_slugs + vec_slugs))[: retriever.graph_seed_n]
-                    prerequisite_evidence = retriever._empty_prerequisite_evidence()
-                    try:
-                        graph_results = retriever._graph.expand(
-                            cur,
-                            seed_slugs,
-                            top_n=retriever._graph_top_n(graph_intent),
-                            query=question,
-                            graph_intent=graph_intent,
-                        )
-                        if retriever._uses_prerequisite_evidence_fill(graph_intent, question):
-                            prerequisite_evidence = retriever._graph.build_prerequisite_evidence(cur, seed_slugs, question)
-                            graph_results = retriever._merge_graph_evidence(
-                                prerequisite_evidence["directEvidence"],
-                                graph_results,
-                                prerequisite_evidence["protectedSeeds"],
+                use_grep_first = (
+                    retrieval_strategy.strip().upper() == "LOCAL_GREP_FIRST"
+                    and not retriever._is_graph_aware_intent(graph_intent)
+                    and retriever._has_strong_grep_hit(grep_results)
+                )
+                if use_grep_first:
+                    vector_all = []
+                    vector_results = []
+                else:
+                    with channel_timer(timings, "vector_ms"):
+                        try:
+                            vector_all = _search_vector_with_retries(
+                                retriever,
+                                cur,
+                                question,
+                                embedding_cache=embedding_cache,
                             )
-                    except Exception as exc:
-                        channel_errors["graph"] = f"{type(exc).__name__}: {exc}"
-                        graph_results = []
+                        except Exception as exc:
+                            channel_errors["vector"] = f"{type(exc).__name__}: {exc}"
+                            vector_all = []
+                        vector_results = [(item[0], item[1], item[2]) for item in vector_all]
+
+                seed_slugs = []
+                prerequisite_evidence = retriever._empty_prerequisite_evidence()
+                graph_results = []
+                if not use_grep_first:
+                    with channel_timer(timings, "graph_ms"):
+                        seed_slugs = retriever._graph_seed_slugs(
+                            grep_results,
+                            vector_results,
+                            graph_intent,
+                        )
+                        try:
+                            graph_results = retriever._graph.expand(
+                                cur,
+                                seed_slugs,
+                                top_n=retriever._graph_top_n(graph_intent),
+                                query=question,
+                                graph_intent=graph_intent,
+                            )
+                            if retriever._uses_prerequisite_evidence_fill(graph_intent, question):
+                                prerequisite_evidence = retriever._graph.build_prerequisite_evidence(cur, seed_slugs, question)
+                                graph_results = retriever._merge_graph_evidence(
+                                    prerequisite_evidence["directEvidence"],
+                                    graph_results,
+                                    prerequisite_evidence["protectedSeeds"],
+                                )
+                        except Exception as exc:
+                            channel_errors["graph"] = f"{type(exc).__name__}: {exc}"
+                            graph_results = []
 
                 web_results: list[Any] = []
                 with channel_timer(timings, "fusion_ms"):
@@ -326,7 +473,16 @@ def run_retrieval(
                         pre_fused,
                         graph_results,
                         graph_intent,
-                        protected_slugs={item[0] for item in prerequisite_evidence["protectedSeeds"]},
+                        protected_slugs={
+                            item[0]
+                            for item in prerequisite_evidence["protectedSeeds"]
+                            + prerequisite_evidence["directEvidence"]
+                        },
+                    )
+                    fused, grep_top3_diagnostics = retriever._protect_strong_grep_top3_with_diagnostics(
+                        fused,
+                        grep_results,
+                        graph_intent,
                     )
                     fused, grep_top_diagnostics = retriever._promote_strong_grep_top_with_diagnostics(
                         fused,
@@ -351,6 +507,7 @@ def run_retrieval(
                     diagnostics = {
                         "retrievalGraphIntent": graph_intent,
                         "channelErrors": channel_errors,
+                        "embeddingCache": embedding_cache.snapshot_stats() if embedding_cache else None,
                         "graphSeedSlugs": seed_slugs,
                         "channelsTopN": {
                             "grepPriority": _top_channel_items(grep_results.get("priority", []), 10),
@@ -364,7 +521,13 @@ def run_retrieval(
                         "fusionReplacementsTop5": _fusion_replacements(pre_fused, fused),
                         "prerequisiteEvidence": retriever._format_prerequisite_evidence(prerequisite_evidence),
                         "top5Stabilization": graph_diagnostics,
+                        "strongGrepTop3": grep_top3_diagnostics,
                         "strongGrepTop": grep_top_diagnostics,
+                        "wikiTraversal": {
+                            "enabled": retriever._normalize_graph_intent(graph_intent)
+                            in {"PREREQUISITE_PATH", "MULTI_HOP_RELATION", "COMPARISON"},
+                            "wiki_neighbors_ms": round(timings.get("graph_ms", 0.0), 2),
+                        },
                         "lowValueSources": _summarize_low_value_sources(
                             grep_results=grep_results,
                             vector_results=vector_results,
@@ -377,7 +540,9 @@ def run_retrieval(
                 result = {
                     "query": question,
                     "graphIntent": graph_intent,
+                    "retrievalStrategy": "LOCAL_GREP_FIRST" if use_grep_first else "LOCAL_HYBRID",
                     "webSearchEnabled": False,
+                    "channelErrors": channel_errors,
                     "channels": {
                         "grep": {
                             "priority": grep_results.get("priority", []),
@@ -396,6 +561,7 @@ def run_retrieval(
                 error = f"{type(exc).__name__}: {exc}"
 
     total_ms = (time.perf_counter() - started) * 1000
+    result.setdefault("channelErrors", channel_errors)
     return result, timings, total_ms, error
 
 
@@ -502,7 +668,15 @@ def normalize_judge_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def benchmark_questions(*, questions_path: Path, output_path: Path, judge_cache_path: Path) -> dict[str, Any]:
+async def benchmark_questions(
+    *,
+    questions_path: Path,
+    output_path: Path,
+    judge_cache_path: Path,
+    retrieval_strategy: str = "LOCAL_HYBRID",
+    embedding_cache_path: Path | None = DEFAULT_EMBEDDING_CACHE,
+    embedding_cache_ttl_days: int = DEFAULT_EMBEDDING_CACHE_TTL_DAYS,
+) -> dict[str, Any]:
     question_set = _read_json(questions_path)
     questions = question_set.get("questions", [])
     if not isinstance(questions, list) or not questions:
@@ -510,12 +684,21 @@ async def benchmark_questions(*, questions_path: Path, output_path: Path, judge_
 
     judge = LLMRetrievalJudge()
     judge_cache = _load_judge_cache(judge_cache_path)
+    embedding_cache = (
+        QueryEmbeddingCache(embedding_cache_path, ttl_days=embedding_cache_ttl_days)
+        if embedding_cache_path
+        else None
+    )
     records = []
     total_started = time.perf_counter()
 
     for index, question_item in enumerate(questions, start=1):
         question = str(question_item.get("question") or "")
-        result, timings, total_ms, error = run_retrieval(question)
+        result, timings, total_ms, error = run_retrieval(
+            question,
+            retrieval_strategy=retrieval_strategy,
+            embedding_cache=embedding_cache,
+        )
         candidates = _top_candidates(result)
         cache_key = _judge_cache_key(question_item, candidates)
         if cache_key in judge_cache:
@@ -537,6 +720,7 @@ async def benchmark_questions(*, questions_path: Path, output_path: Path, judge_
             "channelLatencyMs": {key: round(value, 2) for key, value in timings.items()},
             "success": error is None,
             "error": error,
+            "channelErrors": result.get("channelErrors", {}),
             "top": candidates,
             "judge": judge_result,
             "judgeFromCache": judge_from_cache,
@@ -561,6 +745,8 @@ async def benchmark_questions(*, questions_path: Path, output_path: Path, judge_
             "domain": RUNTIME_CONFIG.retrieval_domain,
             "topK": TOP_K,
             "judgeCacheVersion": JUDGE_CACHE_VERSION,
+            "retrievalStrategy": retrieval_strategy,
+            "embeddingCache": embedding_cache.snapshot_stats() if embedding_cache else {"enabled": False},
         },
         "summary": summarize_records(records),
         "records": records,
@@ -635,6 +821,14 @@ def main() -> None:
     parser.add_argument("--questions", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--judge-cache", type=Path, default=Path("reports/rag_100_judge_cache.json"))
+    parser.add_argument("--embedding-cache", type=Path, default=DEFAULT_EMBEDDING_CACHE)
+    parser.add_argument("--embedding-cache-ttl-days", type=int, default=DEFAULT_EMBEDDING_CACHE_TTL_DAYS)
+    parser.add_argument("--no-embedding-cache", action="store_true")
+    parser.add_argument(
+        "--retrieval-strategy",
+        choices=["LOCAL_HYBRID", "LOCAL_GREP_FIRST"],
+        default="LOCAL_HYBRID",
+    )
     args = parser.parse_args()
 
     if args.generate:
@@ -651,6 +845,9 @@ def main() -> None:
             questions_path=args.questions,
             output_path=args.output,
             judge_cache_path=args.judge_cache,
+            retrieval_strategy=args.retrieval_strategy,
+            embedding_cache_path=None if args.no_embedding_cache else args.embedding_cache,
+            embedding_cache_ttl_days=args.embedding_cache_ttl_days,
         )
     )
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))

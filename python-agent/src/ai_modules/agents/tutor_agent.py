@@ -35,6 +35,7 @@ from src.ai_modules.runtime import (
 )
 from src.ai_modules.runtime.planning_contract import PlanningParamKeys
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
+from retrieval.wiki_tools import WikiToolset, graph_intent_allows_wiki_tools
 
 LOGGER = logging.getLogger(__name__)
 
@@ -296,7 +297,7 @@ class TutorAgent(PlaceholderAgent):
         for llm_client in self.llm_clients:
             streamed = False
             emitted_stream_event = False
-            if not response_constraints:
+            if not response_constraints and not self._wiki_tools_enabled(params):
                 try:
                     async for stream_event in self._try_direct_chat_stream(
                         llm_client=llm_client,
@@ -760,16 +761,17 @@ class TutorAgent(PlaceholderAgent):
     ) -> str:
         del snapshot
         user_query = self._resolve_user_query(params)
-        try:
-            return await self._try_direct_chat(
-                llm_client=llm_client,
-                system_prompt=system_prompt,
-                user_query=user_query,
-                params=params,
-                persisted_summary=persisted_summary,
-            )
-        except Exception as exc:
-            self._log_llm_failure("direct_chat", exc, llm_client)
+        if not self._wiki_tools_enabled(params):
+            try:
+                return await self._try_direct_chat(
+                    llm_client=llm_client,
+                    system_prompt=system_prompt,
+                    user_query=user_query,
+                    params=params,
+                    persisted_summary=persisted_summary,
+                )
+            except Exception as exc:
+                self._log_llm_failure("direct_chat", exc, llm_client)
         return await self._run_with_agent_core_loop(
             llm_client=llm_client,
             system_prompt=system_prompt,
@@ -1128,6 +1130,7 @@ class TutorAgent(PlaceholderAgent):
             description="读取从上传题目图片中提取的多模态图片分析结果。",
             parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
+        self._register_wiki_tools(tool_registry=tool_registry, params=params)
         core_loop = AgentCoreLoop(
             llm_client=llm_client,
             tool_registry=tool_registry,
@@ -1149,6 +1152,83 @@ class TutorAgent(PlaceholderAgent):
             ],
         )
         return result.final_text
+
+    def _register_wiki_tools(
+        self,
+        *,
+        tool_registry: ToolRegistry,
+        params: dict[str, Any],
+    ) -> None:
+        if not self._wiki_tools_enabled(params):
+            return
+        tool_registry.register(
+            name="wiki_search",
+            fn=lambda tool_input: self._tool_wiki_search(tool_input=tool_input, params=params),
+            permission_level=PermissionLevel.READ_ONLY,
+            description="Search wiki_page title, aliases, tags, and summary for graph-aware tutoring queries.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        )
+        tool_registry.register(
+            name="wiki_read",
+            fn=lambda tool_input: self._tool_wiki_read(tool_input=tool_input, params=params),
+            permission_level=PermissionLevel.READ_ONLY,
+            description="Read one wiki page summary, chunks, and shallow graph edges by slug.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "chunkLimit": {"type": "integer", "minimum": 1, "maximum": 5},
+                },
+                "required": ["slug"],
+                "additionalProperties": False,
+            },
+        )
+        tool_registry.register(
+            name="wiki_neighbors",
+            fn=lambda tool_input: self._tool_wiki_neighbors(tool_input=tool_input, params=params),
+            permission_level=PermissionLevel.READ_ONLY,
+            description="Read incoming and outgoing wiki graph neighbors for one slug.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "relationType": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+                },
+                "required": ["slug"],
+                "additionalProperties": False,
+            },
+        )
+
+    def _build_wiki_tool_protocol(self, params: dict[str, Any]) -> str:
+        intent = self._resolve_graph_intent_from_params(params)
+        if intent == "PREREQUISITE_PATH":
+            return (
+                "Wiki graph tool protocol: first read the seed page, then use wiki_neighbors "
+                "for prerequisite/follow-up evidence. Use at most 3 wiki tool steps. Treat wiki "
+                "results as evidence enhancement, not as a replacement for retrieval evidence.\n\n"
+            )
+        if intent == "MULTI_HOP_RELATION":
+            return (
+                "Wiki graph tool protocol: explain the relation chain around seed pages and "
+                "neighbors. Use at most 3 wiki tool steps. Do not present candidate edges as a "
+                "strict verified path unless the evidence explicitly supports it.\n\n"
+            )
+        if intent == "COMPARISON":
+            return (
+                "Wiki graph tool protocol: read the comparison object pages and key chunks, then "
+                "summarize common points, differences, and boundaries. Use at most 3 wiki tool "
+                "steps and keep retrieval evidence as the primary grounding.\n\n"
+            )
+        return ""
 
     async def _load_persisted_summary(
         self,
@@ -1276,6 +1356,7 @@ class TutorAgent(PlaceholderAgent):
                 params=params,
                 documents=documents,
             ),
+            "wikiTraversal": self._build_wiki_traversal_diagnostics(params),
         }
 
     def _web_search_enabled(self, params: dict[str, Any]) -> bool:
@@ -1289,6 +1370,243 @@ class TutorAgent(PlaceholderAgent):
                 and web_result.get("enabled") is True
             )
         )
+
+    def _tool_wiki_search(
+        self,
+        *,
+        tool_input: dict[str, Any],
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        started = self._perf_counter()
+        allowed, reason = self._claim_wiki_tool_step(params)
+        if not allowed:
+            result = {"enabled": False, "reason": reason}
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_search",
+                tool_input=tool_input,
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
+        query = str(tool_input.get("query") or params.get("rewrittenQuery") or params.get("query") or "").strip()
+        limit = self._bounded_int(tool_input.get("limit"), default=5, minimum=1, maximum=8)
+        try:
+            result = {"enabled": True, **WikiToolset(self._wiki_db_config()).wiki_search(query, limit=limit)}
+        except Exception as exc:
+            LOGGER.warning("wiki_search failed: %s", exc)
+            result = {"enabled": True, "error": f"{type(exc).__name__}: {exc}", "results": []}
+        self._record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_search",
+            tool_input={"query": query, "limit": limit},
+            result=result,
+            elapsed_ms=self._elapsed_ms(started),
+        )
+        return result
+
+    def _tool_wiki_read(
+        self,
+        *,
+        tool_input: dict[str, Any],
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        started = self._perf_counter()
+        allowed, reason = self._claim_wiki_tool_step(params)
+        if not allowed:
+            result = {"enabled": False, "reason": reason}
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_read",
+                tool_input=tool_input,
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
+        slug = str(tool_input.get("slug") or "").strip()
+        chunk_limit = self._bounded_int(tool_input.get("chunkLimit"), default=3, minimum=1, maximum=5)
+        try:
+            result = {"enabled": True, **WikiToolset(self._wiki_db_config()).wiki_read(slug, chunk_limit=chunk_limit)}
+        except Exception as exc:
+            LOGGER.warning("wiki_read failed: %s", exc)
+            result = {"enabled": True, "error": f"{type(exc).__name__}: {exc}", "found": False}
+        self._record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_read",
+            tool_input={"slug": slug, "chunkLimit": chunk_limit},
+            result=result,
+            elapsed_ms=self._elapsed_ms(started),
+        )
+        return result
+
+    def _tool_wiki_neighbors(
+        self,
+        *,
+        tool_input: dict[str, Any],
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        started = self._perf_counter()
+        allowed, reason = self._claim_wiki_tool_step(params)
+        if not allowed:
+            result = {"enabled": False, "reason": reason}
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_neighbors",
+                tool_input=tool_input,
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
+        slug = str(tool_input.get("slug") or "").strip()
+        relation_type = str(tool_input.get("relationType") or "").strip() or None
+        limit = self._bounded_int(tool_input.get("limit"), default=8, minimum=1, maximum=12)
+        try:
+            result = {
+                "enabled": True,
+                **WikiToolset(self._wiki_db_config()).wiki_neighbors(
+                    slug,
+                    relation_type=relation_type,
+                    limit=limit,
+                ),
+            }
+        except Exception as exc:
+            LOGGER.warning("wiki_neighbors failed: %s", exc)
+            result = {"enabled": True, "error": f"{type(exc).__name__}: {exc}", "outgoing": [], "incoming": []}
+        self._record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_neighbors",
+            tool_input={"slug": slug, "relationType": relation_type, "limit": limit},
+            result=result,
+            elapsed_ms=self._elapsed_ms(started),
+        )
+        return result
+
+    def _wiki_tools_enabled(self, params: dict[str, Any]) -> bool:
+        return graph_intent_allows_wiki_tools(self._resolve_graph_intent_from_params(params))
+
+    def _claim_wiki_tool_step(self, params: dict[str, Any]) -> tuple[bool, str]:
+        if not self._wiki_tools_enabled(params):
+            return False, "wiki tools are limited to graph-aware intents"
+        current_steps = self._bounded_int(params.get("wikiToolStepCount"), default=0, minimum=0, maximum=3)
+        if current_steps >= 3:
+            return False, "wiki tool traversal is limited to 3 steps"
+        params["wikiToolStepCount"] = current_steps + 1
+        return True, ""
+
+    def _record_wiki_tool_call(
+        self,
+        *,
+        params: dict[str, Any],
+        tool_name: str,
+        tool_input: dict[str, Any],
+        result: dict[str, Any],
+        elapsed_ms: float,
+    ) -> None:
+        calls = params.setdefault("wikiToolCalls", [])
+        if not isinstance(calls, list):
+            calls = []
+            params["wikiToolCalls"] = calls
+        summary = {
+            "tool": tool_name,
+            "query": tool_input.get("query"),
+            "slug": tool_input.get("slug"),
+            "relationType": tool_input.get("relationType"),
+            "elapsedMs": round(elapsed_ms, 2),
+            "enabled": result.get("enabled") is not False,
+            "hitCount": self._wiki_result_hit_count(tool_name=tool_name, result=result),
+        }
+        if result.get("reason"):
+            summary["disabled"] = str(result["reason"])
+        if result.get("error"):
+            summary["error"] = str(result["error"])
+        calls.append(summary)
+        self._sync_wiki_traversal_diagnostics(params)
+
+    def _wiki_result_hit_count(self, *, tool_name: str, result: dict[str, Any]) -> int:
+        if tool_name == "wiki_search":
+            values = result.get("results", [])
+            return len(values) if isinstance(values, list) else 0
+        if tool_name == "wiki_read":
+            chunks = result.get("chunks", [])
+            incoming = result.get("incoming", [])
+            outgoing = result.get("outgoing", [])
+            return sum(len(value) for value in (chunks, incoming, outgoing) if isinstance(value, list))
+        if tool_name == "wiki_neighbors":
+            incoming = result.get("incoming", [])
+            outgoing = result.get("outgoing", [])
+            return sum(len(value) for value in (incoming, outgoing) if isinstance(value, list))
+        return 0
+
+    def _build_wiki_traversal_diagnostics(self, params: dict[str, Any]) -> dict[str, Any]:
+        calls = params.get("wikiToolCalls", [])
+        calls = calls if isinstance(calls, list) else []
+        diagnostics = {
+            "enabled": self._wiki_tools_enabled(params),
+            "stepCount": self._bounded_int(params.get("wikiToolStepCount"), default=0, minimum=0, maximum=3),
+            "wiki_search_ms": 0.0,
+            "wiki_read_ms": 0.0,
+            "wiki_neighbors_ms": 0.0,
+            "errors": [],
+            "calls": [],
+        }
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            tool_name = str(call.get("tool") or "")
+            key = f"{tool_name}_ms"
+            if key in diagnostics:
+                diagnostics[key] = round(float(diagnostics[key]) + self._safe_elapsed_ms(call.get("elapsedMs")), 2)
+            if call.get("error"):
+                diagnostics["errors"].append(str(call["error"]))
+            elif call.get("disabled"):
+                diagnostics["errors"].append(str(call["disabled"]))
+            diagnostics["calls"].append(
+                {
+                    "tool": tool_name,
+                    "query": call.get("query"),
+                    "slug": call.get("slug"),
+                    "relationType": call.get("relationType"),
+                    "enabled": call.get("enabled") is not False,
+                    "hitCount": int(call.get("hitCount") or 0),
+                }
+            )
+        return diagnostics
+
+    def _sync_wiki_traversal_diagnostics(self, params: dict[str, Any]) -> dict[str, Any]:
+        diagnostics = self._build_wiki_traversal_diagnostics(params)
+        params["wikiTraversal"] = diagnostics
+        raw_result = params.get("retrievalRawResult")
+        if isinstance(raw_result, dict):
+            graph_diagnostics = raw_result.setdefault("graphDiagnostics", {})
+            if isinstance(graph_diagnostics, dict):
+                graph_diagnostics["wikiTraversal"] = diagnostics
+        return diagnostics
+
+    def _perf_counter(self) -> float:
+        import time
+
+        return time.perf_counter()
+
+    def _elapsed_ms(self, started: float) -> float:
+        return (self._perf_counter() - started) * 1000
+
+    def _safe_elapsed_ms(self, value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _wiki_db_config(self) -> dict[str, Any]:
+        from src.ai_modules.config import get_settings
+
+        return get_settings().postgres_connect_kwargs()
+
+    def _bounded_int(self, value: Any, *, default: int, minimum: int, maximum: int) -> int:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            number = default
+        return max(minimum, min(maximum, number))
 
     def _collect_external_resources(
         self,
@@ -1755,6 +2073,7 @@ class TutorAgent(PlaceholderAgent):
             "请基于以下结构化上下文给出自然、贴合输入类型的回答。"
             "如果用户是在回答上一轮问题，要先承接；如果是问候或感谢，就自然回复；"
             "只有真的不清楚时才澄清。除非适合继续教学，否则不要强行追问。\n\n"
+            f"{self._build_wiki_tool_protocol(params)}"
             f"{enriched_message}"
         )
 

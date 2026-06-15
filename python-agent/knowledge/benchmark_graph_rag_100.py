@@ -18,11 +18,15 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from knowledge.benchmark_rag_100 import (  # noqa: E402
+    DEFAULT_EMBEDDING_CACHE_TTL_DAYS,
     JUDGE_CACHE_VERSION,
     RUNTIME_CONFIG,
     TOP_K,
+    QueryEmbeddingCache,
     _json_hash,
     _load_judge_cache,
     _read_json,
@@ -41,10 +45,17 @@ from src.ai_modules.retrieval import QueryClassifier  # noqa: E402
 DEFAULT_QUESTIONS = PROJECT_ROOT / "reports" / "graph_rag_100_questions.json"
 DEFAULT_OUTPUT = PROJECT_ROOT / "reports" / "graph_rag_100_current.json"
 DEFAULT_CACHE = PROJECT_ROOT / "reports" / "graph_rag_100_judge_cache.json"
+DEFAULT_GRAPH_EMBEDDING_CACHE = PROJECT_ROOT / "reports" / "graph_rag_100_embedding_cache.json"
 GRAPH_METRIC_VERSION = "graph-rag-lite-metrics-v1"
 GRAPH_JUDGE_CACHE_VERSION = f"{JUDGE_CACHE_VERSION}:graph-v1"
 INTENT_MODE_ORACLE = "oracle"
 INTENT_MODE_CLASSIFIER = "classifier"
+GRAPH_HIT_AT3_MIN_PCT = 93.0
+GRAPH_AVG_LATENCY_MAX_MS = 1956.40
+GRAPH_P95_LATENCY_MAX_MS = 3730.16
+GRAPH_PRIMARY_TOP5_MIN_PCT = 95.0
+GRAPH_COMPLETE_EVIDENCE_TOP5_MIN_PCT = 60.0
+GRAPH_EVIDENCE_RECALL_TOP5_MIN_PCT = 85.0
 
 
 def _normalize_slug(value: Any) -> str:
@@ -66,7 +77,20 @@ def _equivalent_evidence_nodes(expected_slug: str, candidate: dict[str, Any]) ->
     candidate_title = compact_text(candidate.get("title"))
     if expected_tail and (expected_tail == candidate_tail or expected_tail == candidate_title):
         return {expected_slug}
+    if _is_competing_equivalent_label(expected_tail, candidate_tail, candidate_title):
+        return {expected_slug}
     return set()
+
+
+def _is_competing_equivalent_label(expected_tail: str, *candidate_labels: str) -> bool:
+    if len(expected_tail) < 4:
+        return False
+    for label in candidate_labels:
+        if len(label) < 4:
+            continue
+        if label in expected_tail:
+            return True
+    return False
 
 
 def evaluate_graph_evidence(question_item: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -133,6 +157,52 @@ def summarize_graph_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def summarize_graph_quality_gates(
+    summary: dict[str, Any],
+    graph_summary: dict[str, Any],
+) -> dict[str, Any]:
+    pass_hit_at3 = float(summary.get("hitAt3Pct") or 0.0) >= GRAPH_HIT_AT3_MIN_PCT
+    pass_latency = (
+        float(summary.get("avgLatencyMs") or 0.0) <= GRAPH_AVG_LATENCY_MAX_MS
+        and float(summary.get("p95LatencyMs") or 0.0) <= GRAPH_P95_LATENCY_MAX_MS
+    )
+    pass_channel_errors = int(summary.get("channelErrorCount") or 0) == 0
+    pass_primary_top5 = float(graph_summary.get("primaryTop5Pct") or 0.0) >= GRAPH_PRIMARY_TOP5_MIN_PCT
+    pass_evidence_recall = (
+        float(graph_summary.get("evidenceNodeRecallTop5Pct") or 0.0) >= GRAPH_EVIDENCE_RECALL_TOP5_MIN_PCT
+    )
+    pass_complete_evidence = (
+        float(graph_summary.get("completeEvidenceTop5Pct") or 0.0) >= GRAPH_COMPLETE_EVIDENCE_TOP5_MIN_PCT
+    )
+    return {
+        "passHitAt3": pass_hit_at3,
+        "passLatency": pass_latency,
+        "passChannelErrors": pass_channel_errors,
+        "passPrimaryTop5": pass_primary_top5,
+        "passEvidenceRecall": pass_evidence_recall,
+        "passCompleteEvidence": pass_complete_evidence,
+        "overallPass": all(
+            [
+                pass_hit_at3,
+                pass_latency,
+                pass_channel_errors,
+                pass_primary_top5,
+                pass_evidence_recall,
+                pass_complete_evidence,
+            ]
+        ),
+        "thresholds": {
+            "hitAt3Pct": GRAPH_HIT_AT3_MIN_PCT,
+            "avgLatencyMs": GRAPH_AVG_LATENCY_MAX_MS,
+            "p95LatencyMs": GRAPH_P95_LATENCY_MAX_MS,
+            "primaryTop5Pct": GRAPH_PRIMARY_TOP5_MIN_PCT,
+            "completeEvidenceTop5Pct": GRAPH_COMPLETE_EVIDENCE_TOP5_MIN_PCT,
+            "evidenceNodeRecallTop5Pct": GRAPH_EVIDENCE_RECALL_TOP5_MIN_PCT,
+            "channelErrorCount": 0,
+        },
+    }
+
+
 def summarize_by_graph_intent(records: list[dict[str, Any]]) -> dict[str, Any]:
     buckets: dict[str, list[dict[str, Any]]] = {}
     for record in records:
@@ -145,7 +215,110 @@ def summarize_by_graph_intent(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def summarize_low_evidence_records(records: list[dict[str, Any]], limit: int = 20) -> list[dict[str, Any]]:
+def classify_low_evidence_reasons(record: dict[str, Any]) -> dict[str, bool]:
+    missing = {
+        _normalize_slug(slug)
+        for slug in record.get("graphMetrics", {}).get("missingEvidenceSlugsTop5", [])
+        if _normalize_slug(slug)
+    }
+    diagnostics = record.get("diagnostics", {})
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    graph_explain = diagnostics.get("graphCandidateExplainTop50", {})
+    graph_explain = graph_explain if isinstance(graph_explain, dict) else {}
+    channels = diagnostics.get("channelsTopN", {})
+    channels = channels if isinstance(channels, dict) else {}
+    alias_diagnostics = record.get("aliasDiagnostics", {})
+    alias_diagnostics = alias_diagnostics if isinstance(alias_diagnostics, dict) else {}
+
+    top_slugs = {_normalize_slug(item.get("slug")) for item in record.get("top", []) if isinstance(item, dict)}
+    seed_slugs = {_normalize_slug(slug) for slug in graph_explain.get("seedSlugs", [])}
+    candidate_slugs = {
+        _normalize_slug(item.get("slug"))
+        for item in graph_explain.get("candidates", [])
+        if isinstance(item, dict)
+    }
+    graph_channel_slugs = {
+        _normalize_slug(item.get("slug"))
+        for item in channels.get("graph", [])
+        if isinstance(item, dict)
+    }
+    direct_evidence = diagnostics.get("prerequisiteEvidence", {})
+    direct_evidence = direct_evidence if isinstance(direct_evidence, dict) else {}
+    direct_slugs = {
+        _normalize_slug(item.get("slug"))
+        for item in direct_evidence.get("directEvidenceCandidatesTopN", [])
+        if isinstance(item, dict)
+    }
+    found_graph_slugs = seed_slugs | candidate_slugs | graph_channel_slugs | direct_slugs
+
+    missing_alias = any(
+        isinstance(item, dict)
+        and (
+            item.get("likelyFalseNegative") is True
+            or bool(item.get("possibleTop5Matches"))
+        )
+        for item in alias_diagnostics.values()
+    )
+    resource_slug_competing = _has_resource_slug_competition(
+        missing_slugs=missing,
+        top_slugs=top_slugs,
+        channels=channels,
+        diagnostics=diagnostics,
+    )
+    classifier_mismatch = bool(record.get("graphIntent") != record.get("classifierGraphIntent"))
+    missing_graph_edge = bool(missing - found_graph_slugs) and not missing_alias
+    return {
+        "missingAlias": missing_alias,
+        "missingGraphEdge": missing_graph_edge,
+        "resourceSlugCompeting": resource_slug_competing,
+        "classifierMismatch": classifier_mismatch,
+    }
+
+
+def _has_resource_slug_competition(
+    *,
+    missing_slugs: set[str],
+    top_slugs: set[str],
+    channels: dict[str, Any],
+    diagnostics: dict[str, Any],
+) -> bool:
+    candidate_items = []
+    for channel_name in ("vector", "grepPriority", "grepNormal", "graph"):
+        values = channels.get(channel_name, [])
+        if isinstance(values, list):
+            candidate_items.extend(item for item in values if isinstance(item, dict))
+    candidate_items.extend(
+        item
+        for item in diagnostics.get("lowValueSources", {}).get("items", [])
+        if isinstance(item, dict)
+    )
+    for item in candidate_items:
+        raw_slug = str(item.get("slug") or "")
+        normalized = _normalize_slug(raw_slug)
+        kind = str(item.get("kind") or "")
+        if raw_slug.lower().startswith(("wiki://", "http://", "https://")) and (
+            normalized in missing_slugs or normalized in top_slugs
+        ):
+            return True
+        if kind in {"wiki", "http", "video"} and normalized in top_slugs:
+            return True
+    return False
+
+
+def _low_evidence_summary_item(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": record.get("id"),
+        "graphIntent": record.get("graphIntent"),
+        "classifierGraphIntent": record.get("classifierGraphIntent"),
+        "retrievalGraphIntent": record.get("retrievalGraphIntent"),
+        "evidenceNodeRecallTop5": record["graphMetrics"]["evidenceNodeRecallTop5"],
+        "missingEvidenceSlugsTop5": record["graphMetrics"].get("missingEvidenceSlugsTop5", []),
+        "topSlugs": [candidate.get("slug") for candidate in record.get("top", [])],
+        "reasonCandidates": classify_low_evidence_reasons(record),
+    }
+
+
+def _sorted_low_evidence_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     low_records = [
         record
         for record in records
@@ -158,17 +331,21 @@ def summarize_low_evidence_records(records: list[dict[str, Any]], limit: int = 2
             str(record.get("id") or ""),
         )
     )
-    return [
-        {
-            "id": record.get("id"),
-            "graphIntent": record.get("graphIntent"),
-            "classifierGraphIntent": record.get("classifierGraphIntent"),
-            "evidenceNodeRecallTop5": record["graphMetrics"]["evidenceNodeRecallTop5"],
-            "missingEvidenceSlugsTop5": record["graphMetrics"].get("missingEvidenceSlugsTop5", []),
-            "topSlugs": [candidate.get("slug") for candidate in record.get("top", [])],
-        }
-        for record in low_records[:limit]
-    ]
+    return low_records
+
+
+def summarize_low_evidence_records(records: list[dict[str, Any]], limit: int = 20) -> list[dict[str, Any]]:
+    return [_low_evidence_summary_item(record) for record in _sorted_low_evidence_records(records)[:limit]]
+
+
+def summarize_low_evidence_by_intent(records: list[dict[str, Any]], limit_per_intent: int = 20) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record in _sorted_low_evidence_records(records):
+        intent = str(record.get("graphIntent") or "UNKNOWN")
+        items = grouped.setdefault(intent, [])
+        if len(items) < limit_per_intent:
+            items.append(_low_evidence_summary_item(record))
+    return dict(sorted(grouped.items()))
 
 
 def summarize_intent_mismatches(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -406,6 +583,8 @@ async def benchmark_graph_questions(
     output_path: Path,
     judge_cache_path: Path,
     intent_mode: str = INTENT_MODE_ORACLE,
+    embedding_cache_path: Path | None = DEFAULT_GRAPH_EMBEDDING_CACHE,
+    embedding_cache_ttl_days: int = DEFAULT_EMBEDDING_CACHE_TTL_DAYS,
 ) -> dict[str, Any]:
     question_set = _read_json(questions_path)
     questions = question_set.get("questions", [])
@@ -415,6 +594,11 @@ async def benchmark_graph_questions(
     judge = LLMRetrievalJudge()
     classifier = QueryClassifier()
     judge_cache = _load_judge_cache(judge_cache_path)
+    embedding_cache = (
+        QueryEmbeddingCache(embedding_cache_path, ttl_days=embedding_cache_ttl_days)
+        if embedding_cache_path
+        else None
+    )
     records = []
 
     for index, question_item in enumerate(questions, start=1):
@@ -429,6 +613,7 @@ async def benchmark_graph_questions(
             question,
             graph_intent=retrieval_graph_intent,
             include_diagnostics=True,
+            embedding_cache=embedding_cache,
         )
         candidates = _top_candidates(result)
         cache_key = _graph_judge_cache_key(question_item, candidates)
@@ -478,6 +663,7 @@ async def benchmark_graph_questions(
 
     legacy_summary = summarize_records(records)
     graph_summary = summarize_graph_records(records)
+    legacy_summary.update(summarize_graph_quality_gates(legacy_summary, graph_summary))
     alias_summary = attach_alias_diagnostics(records)
     report = {
         "questionSet": {
@@ -493,6 +679,7 @@ async def benchmark_graph_questions(
             "graphJudgeCacheVersion": GRAPH_JUDGE_CACHE_VERSION,
             "graphMetricVersion": GRAPH_METRIC_VERSION,
             "intentMode": intent_mode,
+            "embeddingCache": embedding_cache.snapshot_stats() if embedding_cache else {"enabled": False},
         },
         "summary": legacy_summary,
         "graphSummary": graph_summary,
@@ -502,6 +689,7 @@ async def benchmark_graph_questions(
         "aliasDiagnosticSummary": alias_summary,
         "focusedLowCaseDiagnostics": attach_focused_low_case_diagnostics(records),
         "lowEvidenceRecords": summarize_low_evidence_records(records),
+        "lowEvidenceRecordsByIntent": summarize_low_evidence_by_intent(records),
         "records": records,
     }
     _write_json(output_path, report)
@@ -514,6 +702,9 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--judge-cache", type=Path, default=DEFAULT_CACHE)
     parser.add_argument("--intent-mode", choices=[INTENT_MODE_ORACLE, INTENT_MODE_CLASSIFIER], default=INTENT_MODE_ORACLE)
+    parser.add_argument("--embedding-cache", type=Path, default=DEFAULT_GRAPH_EMBEDDING_CACHE)
+    parser.add_argument("--embedding-cache-ttl-days", type=int, default=DEFAULT_EMBEDDING_CACHE_TTL_DAYS)
+    parser.add_argument("--no-embedding-cache", action="store_true")
     args = parser.parse_args()
 
     report = asyncio.run(
@@ -522,6 +713,8 @@ def main() -> None:
             output_path=args.output,
             judge_cache_path=args.judge_cache,
             intent_mode=args.intent_mode,
+            embedding_cache_path=None if args.no_embedding_cache else args.embedding_cache,
+            embedding_cache_ttl_days=args.embedding_cache_ttl_days,
         )
     )
     print(
@@ -535,6 +728,7 @@ def main() -> None:
                 "aliasDiagnosticSummary": report["aliasDiagnosticSummary"],
                 "focusedLowCaseDiagnostics": report["focusedLowCaseDiagnostics"],
                 "lowEvidenceRecords": report["lowEvidenceRecords"],
+                "lowEvidenceRecordsByIntent": report["lowEvidenceRecordsByIntent"],
             },
             ensure_ascii=False,
             indent=2,

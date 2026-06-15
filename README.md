@@ -2,14 +2,14 @@
 
 > **AI 驱动的个性化计算机学习系统** -- 多智能体协作、RAG 知识检索、学习画像闭环
 >
-> 最后更新：2026-06-13
+> 最后更新：2026-06-15
 
 ---
 
 ## 项目亮点
 
 - **18 个专职智能体协作运行**：基于 LangGraph 构建多智能体运行时，由 `PythonAgentSupervisor` 统一编排，支持动态意图路由、fan-out 并行生成和链式任务组合。
-- **四路融合 RAG 检索**：短语优先 grep、向量语义、知识图谱扩展、联网搜索四路召回经 RRF 融合，基础 100 题 hit@3 达 98%，图谱型 100 题 hit@3 达 94%。
+- **四路融合 RAG 检索**：Grep（FMM 术语词典 + 三阶段渐进回退）、Vector（DashScope embedding + pgvector 1024 维）、Graph（1-hop/2-hop 知识图谱扩展 + PageRank + 社区加权）、Web（Tavily 联网搜索）四路并行召回，经加权 RRF 融合（k=60，Graph 权重按 7 种 intent 动态调整 0.5-1.8），纯规则 QueryClassifier 零 LLM 调用分类检索策略；第三阶段 benchmark 中基础 100 题 hit@3 达 100/100，图谱型 100 题 hit@3 达 94/100，且 channelErrorCount=0。
 - **完整学习闭环**：从诊断评估、路径规划、资源推送、练习批改到错题复习，形成"学-练-测-评-复"全链路闭环，学习画像与知识掌握图谱实时更新。
 - **上下文工程分层架构**：会话记忆、结构化摘要、学习画像、知识图谱、学习计划、练习结果六层记忆分层持久化，`SnapshotBuilder` 聚合为系统提示词，`ConversationCompactor` 智能压缩长对话。
 - **无伪生成边界保障**：可发布资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 等标识，Python/Java/前端三层共同校验。
@@ -53,6 +53,7 @@ flowchart TB
     subgraph 智能体运行时
         Supervisor["PythonAgentSupervisor<br/>18 Agent / 意图路由 / 链式编排"]
         Worker["SmartEngine Worker<br/>Redis Streams 消费"]
+        RAG["四路 RAG 检索<br/>Grep + Vector + Graph + Web<br/>加权 RRF 融合 / QueryClassifier"]
         Agents["Agent Pool<br/>tutor / retrieval / resource_bundle<br/>evaluation / path_planning / critic ..."]
     end
 
@@ -71,7 +72,9 @@ flowchart TB
     Worker -->|消费| Redis
     Worker --> Supervisor
     Worker -->|回调 started/events/failed| Java
+    Supervisor --> RAG
     Supervisor --> Agents
+    RAG --> PG
     Agents --> PG
     Agents --> Mongo
 ```
@@ -220,18 +223,66 @@ Python `PythonAgentSupervisor` 注册 18 个 Agent，通过 `supervisor_routes.j
 | `PERSONALIZED_LEARNING` | profile→evaluation→query_rewrite→retrieval→path_planning→resource_push→critic | 7-Stage 个性化学习主入口 |
 | `EVALUATION` | evaluation | 学习效果诊断，产出 masteryDiagnosis |
 
-### RAG 检索
+### RAG 检索（核心亮点）
 
-四路召回经 RRF（Reciprocal Rank Fusion）融合：
+系统采用 **四路召回 + 加权 RRF 融合** 的混合检索架构，由纯规则驱动的 `QueryClassifier`（零 LLM 调用）根据查询意图动态选择检索策略。
 
-1. **短语优先 grep**：精确匹配知识库中的术语和概念
-2. **向量语义检索**：基于 pgvector 的 1024 维嵌入相似度搜索
-3. **知识图谱扩展**：沿知识点依赖关系扩展检索范围
-4. **联网搜索**：可选 Tavily Web Search 补充最新信息
+```mermaid
+flowchart LR
+    Q["用户查询"] --> QC["QueryClassifier<br/>纯规则 / 零 LLM"]
+    QC --> QR["QueryRewrite<br/>上下文增强"]
+    QR --> CH["四路并行召回"]
 
-预置向量数据随仓库提供（`vector_data.dump`），首次部署自动恢复。当前 RAG 指标：
-- 基础 100 题 hit@3：**98%**
-- 图谱型 100 题 hit@3：**94%**
+    CH --> A["Channel A<br/>Grep<br/>FMM 术语词典<br/>短语优先 + IDF 加权"]
+    CH --> B["Channel B<br/>Vector<br/>DashScope Embedding<br/>pgvector 1024 维"]
+    CH --> C["Channel C<br/>Graph<br/>1-hop / 2-hop 图扩展<br/>PageRank + 社区加权"]
+    CH --> D["Channel D<br/>Web<br/>Tavily 联网搜索<br/>opt-in / 8s 超时"]
+
+    A & B & C & D --> RRF["加权 RRF 融合<br/>k=60, 按 intent 动态调权"]
+    RRF --> STAB["图谱 Top5 稳定化<br/>+ 强 Grep 提升"]
+    STAB --> CACHE["InMemoryTTLCache<br/>自适应命中率旁路"]
+    CACHE --> OUT["Top 5 排序结果"]
+```
+
+Graph-aware 查询会额外启用图谱种子 canonical 化、低价值 `wiki://` seed 跳过、direct evidence Top5 保护，以及 strong grep top3 保护。普通 `LOCAL_HYBRID` 默认路径保持不变，线上向量检索仍使用单次 1 秒 embedding 预算；持久 query embedding cache 仅用于 benchmark 稳定复跑，不扩大普通请求延迟。
+
+**四路召回详解**：
+
+| 通道 | 核心技术 | 策略 |
+|---|---|---|
+| **Grep** | FMM 前缀 Trie + `rag.term_lexicon` 术语词典 + `rag.synonym_group` 同义词扩展 | 三阶段：短语精确匹配 → FMM 子短语搜索 → Token IDF 覆盖率回退；标题匹配 400 分、正文匹配 200 分 |
+| **Vector** | DashScope `text-embedding-v4` + pgvector 余弦距离 | 同时搜索 `knowledge_chunk` 和 `resource_chunk` 两表；线上请求保持 1s 单次 embedding 预算，benchmark 可用持久 query embedding cache 稳定复跑 |
+| **Graph** | `rag.wiki_link` 双向边遍历 + `wiki_page_graph_features` PageRank | 1-hop 基础扩展（WIKILINK 权重 2、SHARED_TAG 权重 1）+ 2-hop 深度扩展（衰减 0.45，仅 PREREQUISITE_PATH intent）；得分 = base + query_bonus + community_bonus + pagerank_bonus |
+| **Web** | Tavily API | 严格 opt-in，时间敏感查询自动追加当前日期，8 秒超时 |
+
+**加权 RRF 融合公式**：
+
+```
+RRF_score(item) = Σ weight × priority_boost × slug_penalty / (k + rank + 1)
+```
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `k` | 60 | RRF 平滑常数 |
+| `grep_weight` | 3.0 | 短语匹配额外 1.5x 加成 |
+| `vector_weight` | 5.0 | 语义检索主权重 |
+| `graph_weight` | 0.5-1.8 | 按 intent 动态调整（PREREQUISITE_PATH 最高 1.8） |
+| `web_weight` | 1.5 | 联网搜索 |
+
+**QueryClassifier**：纯规则驱动的本地分类器，零 LLM 调用，决策树包含 IMAGE_QUESTION、SMALL_TALK、ANSWER_PREVIOUS、7 种 Graph intent（PREREQUISITE_PATH / COMPARISON / MULTI_HOP_RELATION 等）、CURRENT_INFO、ERROR_DEBUG、PROCEDURAL、FOLLOW_UP、NEW_CONCEPT 等类型，每种映射到不同检索策略（NONE / CONTEXT_ONLY / LOCAL_GREP_FIRST / LOCAL_HYBRID / WEB_AUGMENTED / DEEP_EVIDENCE）。
+
+**RAG 质量指标**（第三阶段报告支撑）：
+
+| 测试集 | hit@1 | hit@3 | 平均延迟 | P95 延迟 |
+|---|---|---|---|---|
+| 基础 100 题 | 100% | **100/100** | 861.07ms | 972.03ms |
+| 图谱型 100 题 | 56% | **94/100** | 652.38ms | 765.35ms |
+
+图谱型测试额外指标：primaryTop5 98.0%、evidenceNodeRecallTop5 85.67%、completeEvidenceTop5 63.0%、channelErrorCount 0、overallPass=true。
+
+报告文件：`python-agent/reports/rag_100_phase3_20260614.json`、`python-agent/reports/graph_rag_100_phase3_pass_20260614.json`。Graph benchmark summary 固化了 `passHitAt3`、`passLatency`、`passEvidenceRecall`、`passCompleteEvidence`、`overallPass` 等门槛字段，`lowEvidenceRecordsByIntent` 用于后续低召回样本修复。
+
+预置向量数据随仓库提供（`vector_data.dump`，642 wiki + 499 资源文档），首次部署自动恢复。
 
 ### 记忆系统与上下文工程
 
@@ -356,6 +407,9 @@ cd python-agent && pytest tests/ -v
 
 # RAG 检索质量（hits@3 >= 90%）
 cd python-agent && pytest tests/ -k rag -v
+
+# RAG 第三阶段重点回归
+python-agent/.venv/Scripts/pytest.exe python-agent/tests/test_wiki_chunking_tools_error_book.py python-agent/tests/test_graph_intent_plumbing.py python-agent/tests/test_retrieval_services.py -q
 ```
 
 ### 语音助手专项验收
