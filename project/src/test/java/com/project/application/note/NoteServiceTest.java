@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.UUID;
@@ -162,6 +163,60 @@ class NoteServiceTest {
         noteIndexTaskExecutor.runNext();
 
         verify(notePythonClient, times(2)).index(any(NoteRagIndexRequest.class));
+    }
+
+    @Test
+    void noteListAndDetailQueriesHydrateTagUsageCounts() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000103");
+        UUID noteId = UUID.fromString("63000000-0000-0000-0000-000000000103");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        NotePythonClient notePythonClient = mock(NotePythonClient.class);
+        ResourceLibraryService resourceLibraryService = mock(ResourceLibraryService.class);
+        List<String> noteSql = new ArrayList<>();
+
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class))).thenAnswer(invocation -> {
+            String sql = invocation.getArgument(0, String.class);
+            if (sql.contains("FROM app.note n")) {
+                noteSql.add(sql);
+                return List.of(new NoteDetailResponse(
+                    noteId,
+                    null,
+                    "标签统计",
+                    "# 标签统计",
+                    "标签统计",
+                    "hash",
+                    List.of(),
+                    4,
+                    1,
+                    null,
+                    null,
+                    null,
+                    false,
+                    null
+                ));
+            }
+            return List.of();
+        });
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class))).thenReturn(1L);
+
+        NoteService service = new NoteService(
+            jdbcTemplate,
+            new ObjectMapper(),
+            notePythonClient,
+            resourceLibraryService,
+            new CapturingTaskExecutor()
+        );
+
+        service.getNote(userId, noteId);
+        service.listNotes(userId, null, null, null, 0, 10);
+
+        assertThat(noteSql).hasSize(2);
+        assertThat(noteSql)
+            .allSatisfy(sql -> assertThat(sql)
+                .doesNotContain("'count', 0")
+                .contains("COUNT(active_notes.id) AS count")
+                .contains("active_notes.status = 'ACTIVE'")
+                .contains("active_notes.user_id = n.user_id"));
     }
 
     private static final class CapturingTaskExecutor implements TaskExecutor {

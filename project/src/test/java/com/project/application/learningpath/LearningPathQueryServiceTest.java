@@ -31,6 +31,40 @@ import static org.mockito.Mockito.when;
 class LearningPathQueryServiceTest {
 
     @Test
+    void emptyLearningPathReturnsActionableSummaryWithoutFakeSteps() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000014");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findFirstByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(Optional.empty());
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.PERSONALIZED_LEARNING))
+            .thenReturn(List.of());
+        when(taskRepository.findTop5ByUserIdAndServiceTypeOrderByCreatedAtDesc(userId, ServiceType.RESOURCE_PUSH))
+            .thenReturn(List.of());
+
+        LearningPathQueryService service = new LearningPathQueryService(
+            jdbcTemplate,
+            taskRepository,
+            mock(TaskStateMachineService.class),
+            new ObjectMapper(),
+            mock(ResourceSemanticWarmupService.class)
+        );
+
+        LearningPathCurrentResponse response = service.getCurrent(userId);
+
+        assertThat(response.status()).isEqualTo("EMPTY");
+        assertThat(response.summary()).isEqualTo("还没有生成学习路径，请先完成画像配置或发起一次个性化学习路径生成。");
+        assertThat(response.learningPath()).isEmpty();
+        assertThat(response.activeStep()).isNull();
+        assertThat(response.triggerSource()).isNull();
+    }
+
+    @Test
     void returnsLearningPathFromCompletedTaskWhenPlanTableIsEmpty() {
         UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000005");
         NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);

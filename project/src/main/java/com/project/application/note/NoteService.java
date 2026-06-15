@@ -19,7 +19,6 @@ import com.project.api.note.dto.NoteVersionResponse;
 import com.project.api.note.dto.UpdateNoteFolderRequest;
 import com.project.api.note.dto.UpdateNoteRequest;
 import com.project.api.note.dto.UpdateNoteTagsRequest;
-import com.project.api.resource.dto.ResourceSemanticResultResponse;
 import com.project.api.resource.dto.ResourceSemanticSearchResponse;
 import com.project.application.common.ApplicationException;
 import com.project.application.resource.ResourceLibraryService;
@@ -48,7 +47,6 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -66,8 +64,6 @@ public class NoteService {
     private static final int NOTE_RAG_INDEX_MAX_ATTEMPTS = 3;
     private static final long NOTE_RAG_INDEX_RETRY_BACKOFF_MILLIS = 100L;
     private static final TypeReference<List<Map<String, Object>>> TAG_LIST_TYPE = new TypeReference<>() {
-    };
-    private static final TypeReference<Map<String, Object>> STRING_OBJECT_MAP = new TypeReference<>() {
     };
     private static final Pattern MARKDOWN_SYNTAX = Pattern.compile(
         "(?m)^#{1,6}\\s+|^\\s{0,3}>\\s?|^\\s*[-+*]\\s+|```[\\s\\S]*?```|`([^`]+)`|!\\[[^]]*]\\([^)]*\\)|\\[([^]]+)]\\([^)]*\\)|(?<![\\p{L}\\p{N}_])[*_~]+|[*_~]+(?![\\p{L}\\p{N}_])"
@@ -209,7 +205,6 @@ public class NoteService {
         upsertNoteResource(userId, noteId, ensureRagResourceId(userId, noteId), normalized, tagNamesForNote(noteId));
         if (contentChanged) {
             createVersion(userId, noteId, normalized, "自动保存");
-            deleteStaleAnalysis(noteId);
         }
         indexNoteForRagAfterCommit(userId, noteId);
         return getNote(userId, noteId);
@@ -397,7 +392,6 @@ public class NoteService {
                 .addValue("readingMinutes", normalized.readingMinutes())
         );
         createVersion(userId, noteId, normalized, "恢复版本 " + version.versionNo());
-        deleteStaleAnalysis(noteId);
         upsertNoteResource(userId, noteId, ensureRagResourceId(userId, noteId), normalized, tagNamesForNote(noteId));
         indexNoteForRagAfterCommit(userId, noteId);
         return getNote(userId, noteId);
@@ -406,18 +400,7 @@ public class NoteService {
     @Transactional
     public NoteAnalysisResponse analyze(UUID userId, UUID noteId, boolean force) {
         NoteDetailResponse note = getNote(userId, noteId);
-        if (!force) {
-            NoteAnalysisResponse cached = findCachedAnalysis(noteId, note.contentHash());
-            if (cached != null) {
-                return cached;
-            }
-        }
         NoteAiAnalysisResult result = notePythonClient.analyze(note.title(), note.markdownContent(), note.plainText());
-        Map<String, Object> resultJson = new LinkedHashMap<>();
-        resultJson.put("summary", result.summary());
-        resultJson.put("keywords", result.keywords());
-        resultJson.put("todos", result.todos());
-        writeAnalysisArtifact(userId, noteId, "SUMMARY", note.contentHash(), resultJson, result.provider(), result.model());
         return new NoteAnalysisResponse(
             note.contentHash(),
             result.summary(),
@@ -436,9 +419,7 @@ public class NoteService {
     public ResourceSemanticSearchResponse relatedResources(UUID userId, UUID noteId, Integer topK) {
         NoteDetailResponse note = getNote(userId, noteId);
         String query = buildRelatedResourceQuery(note);
-        ResourceSemanticSearchResponse response = resourceLibraryService.semanticSearch(userId, query, topK);
-        persistRelatedResourceLinks(noteId, response.results());
-        return response;
+        return resourceLibraryService.semanticSearch(userId, query, topK);
     }
 
     @Transactional(readOnly = true)
@@ -722,9 +703,26 @@ public class NoteService {
                    COALESCE(tags.tags_json, '[]') AS tags_json
             FROM app.note n
             LEFT JOIN LATERAL (
-              SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'color', t.color, 'count', 0) ORDER BY t.name) AS tags_json
+              SELECT json_agg(
+                       json_build_object(
+                         'id', t.id,
+                         'name', t.name,
+                         'color', t.color,
+                         'count', COALESCE(tag_usage.count, 0)
+                       )
+                       ORDER BY t.name
+                     ) AS tags_json
               FROM app.note_tag_link l
-              JOIN app.note_tag t ON t.id = l.tag_id
+              JOIN app.note_tag t ON t.id = l.tag_id AND t.user_id = n.user_id
+              LEFT JOIN LATERAL (
+                SELECT COUNT(active_notes.id) AS count
+                FROM app.note_tag_link usage_link
+                JOIN app.note active_notes
+                  ON active_notes.id = usage_link.note_id
+                 AND active_notes.user_id = n.user_id
+                 AND active_notes.status = 'ACTIVE'
+                WHERE usage_link.tag_id = t.id
+              ) tag_usage ON true
               WHERE l.note_id = n.id
             ) tags ON true
             WHERE n.id = :noteId AND n.user_id = :userId AND n.status = 'ACTIVE'
@@ -759,91 +757,6 @@ public class NoteService {
             );
         } catch (EmptyResultDataAccessException ex) {
             throw new ApplicationException("VERSION_NOT_FOUND", "版本不存在", HttpStatus.NOT_FOUND);
-        }
-    }
-
-    private NoteAnalysisResponse findCachedAnalysis(UUID noteId, String contentHash) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-            """
-            SELECT result_json::text AS result_json, provider, model, created_at
-            FROM app.note_ai_artifact
-            WHERE note_id = :noteId AND input_hash = :contentHash AND artifact_type = 'SUMMARY'
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            new MapSqlParameterSource("noteId", noteId).addValue("contentHash", contentHash)
-        );
-        if (rows.isEmpty()) {
-            return null;
-        }
-        Map<String, Object> row = rows.get(0);
-        Map<String, Object> result = parseMap(String.valueOf(row.get("result_json")));
-        List<String> keywords = readStringList(result.get("keywords"));
-        List<NoteTodoResponse> todos = readTodos(result.get("todos"));
-        return new NoteAnalysisResponse(
-            contentHash,
-            readString(result.get("summary")),
-            keywords,
-            todos,
-            readString(row.get("provider")),
-            readString(row.get("model")),
-            readOffsetDateTime(row.get("created_at")),
-            true
-        );
-    }
-
-    private void writeAnalysisArtifact(
-        UUID userId,
-        UUID noteId,
-        String artifactType,
-        String inputHash,
-        Map<String, Object> resultJson,
-        String provider,
-        String model
-    ) {
-        jdbcTemplate.update(
-            """
-            INSERT INTO app.note_ai_artifact(note_id, user_id, artifact_type, input_hash, result_json, provider, model)
-            VALUES (:noteId, :userId, :artifactType, :inputHash, CAST(:resultJson AS jsonb), :provider, :model)
-            ON CONFLICT (note_id, artifact_type, input_hash) DO UPDATE SET
-              result_json = EXCLUDED.result_json,
-              provider = EXCLUDED.provider,
-              model = EXCLUDED.model,
-              created_at = now()
-            """,
-            baseParams(userId)
-                .addValue("noteId", noteId)
-                .addValue("artifactType", artifactType)
-                .addValue("inputHash", inputHash)
-                .addValue("resultJson", writeJson(resultJson))
-                .addValue("provider", provider == null ? "" : provider)
-                .addValue("model", model == null ? "" : model)
-        );
-    }
-
-    private void deleteStaleAnalysis(UUID noteId) {
-        jdbcTemplate.update("DELETE FROM app.note_ai_artifact WHERE note_id = :noteId", new MapSqlParameterSource("noteId", noteId));
-    }
-
-    private void persistRelatedResourceLinks(UUID noteId, List<ResourceSemanticResultResponse> results) {
-        for (ResourceSemanticResultResponse result : results) {
-            if (result.resourceId() == null) {
-                continue;
-            }
-            jdbcTemplate.update(
-                """
-                INSERT INTO app.note_resource_link(note_id, resource_id, relation_type, score, reason)
-                VALUES (:noteId, :resourceId, 'RELATED', :score, :reason)
-                ON CONFLICT (note_id, resource_id, relation_type) DO UPDATE SET
-                  score = EXCLUDED.score,
-                  reason = EXCLUDED.reason,
-                  created_at = now()
-                """,
-                new MapSqlParameterSource("noteId", noteId)
-                    .addValue("resourceId", result.resourceId())
-                    .addValue("score", result.score())
-                    .addValue("reason", result.reason() == null ? "" : result.reason())
-            );
         }
     }
 
@@ -888,9 +801,26 @@ public class NoteService {
                    COALESCE(tags.tags_json, '[]') AS tags_json
             FROM app.note n
             LEFT JOIN LATERAL (
-              SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'color', t.color, 'count', 0) ORDER BY t.name) AS tags_json
+              SELECT json_agg(
+                       json_build_object(
+                         'id', t.id,
+                         'name', t.name,
+                         'color', t.color,
+                         'count', COALESCE(tag_usage.count, 0)
+                       )
+                       ORDER BY t.name
+                     ) AS tags_json
               FROM app.note_tag_link l
-              JOIN app.note_tag t ON t.id = l.tag_id
+              JOIN app.note_tag t ON t.id = l.tag_id AND t.user_id = n.user_id
+              LEFT JOIN LATERAL (
+                SELECT COUNT(active_notes.id) AS count
+                FROM app.note_tag_link usage_link
+                JOIN app.note active_notes
+                  ON active_notes.id = usage_link.note_id
+                 AND active_notes.user_id = n.user_id
+                 AND active_notes.status = 'ACTIVE'
+                WHERE usage_link.tag_id = t.id
+              ) tag_usage ON true
               WHERE l.note_id = n.id
             ) tags ON true
             """;
@@ -1062,47 +992,6 @@ public class NoteService {
         }
     }
 
-    private List<String> readStringList(Object value) {
-        if (!(value instanceof List<?> list)) {
-            return List.of();
-        }
-        return list.stream()
-            .map(String::valueOf)
-            .map(String::trim)
-            .filter(item -> !item.isBlank())
-            .toList();
-    }
-
-    private List<NoteTodoResponse> readTodos(Object value) {
-        if (!(value instanceof List<?> list)) {
-            return List.of();
-        }
-        List<NoteTodoResponse> todos = new ArrayList<>();
-        for (Object item : list) {
-            if (item instanceof Map<?, ?> map) {
-                todos.add(new NoteTodoResponse(
-                    readString(map.get("title")),
-                    readString(map.get("priority")),
-                    Boolean.TRUE.equals(map.get("completed"))
-                ));
-            } else if (item instanceof NoteTodoResult todo) {
-                todos.add(new NoteTodoResponse(todo.title(), todo.priority(), todo.completed()));
-            }
-        }
-        return todos;
-    }
-
-    private Map<String, Object> parseMap(String json) {
-        if (json == null || json.isBlank()) {
-            return Map.of();
-        }
-        try {
-            return objectMapper.readValue(json, STRING_OBJECT_MAP);
-        } catch (JsonProcessingException ex) {
-            return Map.of();
-        }
-    }
-
     private String writeJson(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
@@ -1123,16 +1012,6 @@ public class NoteService {
     private OffsetDateTime readOffsetDateTime(ResultSet rs, String column) throws SQLException {
         Timestamp timestamp = rs.getTimestamp(column);
         return timestamp == null ? null : timestamp.toInstant().atOffset(ZoneOffset.UTC);
-    }
-
-    private OffsetDateTime readOffsetDateTime(Object value) {
-        if (value instanceof Timestamp timestamp) {
-            return timestamp.toInstant().atOffset(ZoneOffset.UTC);
-        }
-        if (value instanceof OffsetDateTime offsetDateTime) {
-            return offsetDateTime;
-        }
-        return null;
     }
 
     private UUID readUuid(Object value) {

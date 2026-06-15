@@ -5,6 +5,9 @@ import com.project.application.audit.AuditService;
 import com.project.application.idempotency.IdempotencyService;
 import com.project.application.learningpath.LearningPathProgressService;
 import com.project.application.learningpath.PersonalizedLearningRefreshService;
+import com.project.application.settings.UserLlmSettingsService;
+import com.project.domain.conversation.QnaSession;
+import com.project.domain.conversation.QnaSessionRepository;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.domain.task.ServiceType;
 import com.project.domain.task.SmartEngineTask;
@@ -19,6 +22,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -27,6 +31,88 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SmartEngineOrchestratorServiceTest {
+
+    @Test
+    void formalUserWithoutLlmConfigIsRejectedBeforeTaskCreation() {
+        UUID userId = UUID.fromString("30000000-0000-0000-0000-000000000031");
+        JwtAuthenticatedUser user = new JwtAuthenticatedUser(userId, "learner", "STUDENT");
+        TaskStateMachineService taskStateMachineService = mock(TaskStateMachineService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        UserLlmSettingsService userLlmSettingsService = mock(UserLlmSettingsService.class);
+        when(userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)).thenReturn(false);
+
+        SmartEngineOrchestratorService service = new SmartEngineOrchestratorService(
+            taskStateMachineService,
+            mock(SseEmitterService.class),
+            queueProvider,
+            mock(IdempotencyService.class),
+            mock(AuditService.class),
+            mock(UserProfileCurrentRepository.class),
+            mock(PersonalizedLearningContextService.class),
+            mock(PersonalizedLearningRefreshService.class),
+            mock(LearningPathProgressService.class),
+            mock(PracticeResultPersistenceService.class),
+            userLlmSettingsService,
+            mock(QnaSessionRepository.class)
+        );
+
+        assertThatThrownBy(() -> service.submit(user, new SubmitTaskRequest(
+            UUID.fromString("30000000-0000-0000-0000-000000000032"),
+            ServiceType.PERSONALIZED_LEARNING,
+            Map.of("topic", "database index")
+        )))
+            .isInstanceOf(com.project.application.common.ApplicationException.class)
+            .hasMessage("请先配置并保存模型和 API Key 后再使用智能功能。")
+            .satisfies(error -> assertThat(((com.project.application.common.ApplicationException) error).getCode())
+                .isEqualTo("USER_LLM_REQUIRED"));
+
+        verify(taskStateMachineService, never()).createTask(any(), any(), any(), any(), any());
+        verify(queueProvider, never()).getIfAvailable();
+    }
+
+    @Test
+    void missingConversationIsRejectedBeforeTaskCreation() {
+        UUID userId = UUID.fromString("30000000-0000-0000-0000-000000000041");
+        UUID conversationId = UUID.fromString("30000000-0000-0000-0000-000000000042");
+        JwtAuthenticatedUser user = new JwtAuthenticatedUser(userId, "learner", "STUDENT");
+        TaskStateMachineService taskStateMachineService = mock(TaskStateMachineService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        IdempotencyService idempotencyService = mock(IdempotencyService.class);
+        UserLlmSettingsService userLlmSettingsService = mock(UserLlmSettingsService.class);
+        QnaSessionRepository qnaSessionRepository = mock(QnaSessionRepository.class);
+        when(userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)).thenReturn(true);
+        when(qnaSessionRepository.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.empty());
+
+        SmartEngineOrchestratorService service = new SmartEngineOrchestratorService(
+            taskStateMachineService,
+            mock(SseEmitterService.class),
+            queueProvider,
+            idempotencyService,
+            mock(AuditService.class),
+            mock(UserProfileCurrentRepository.class),
+            mock(PersonalizedLearningContextService.class),
+            mock(PersonalizedLearningRefreshService.class),
+            mock(LearningPathProgressService.class),
+            mock(PracticeResultPersistenceService.class),
+            userLlmSettingsService,
+            qnaSessionRepository
+        );
+
+        assertThatThrownBy(() -> service.submit(user, new SubmitTaskRequest(
+            conversationId,
+            ServiceType.PERSONALIZED_LEARNING,
+            Map.of("topic", "database index")
+        )))
+            .isInstanceOf(com.project.application.common.ApplicationException.class)
+            .satisfies(error -> assertThat(((com.project.application.common.ApplicationException) error).getCode())
+                .isEqualTo("CONVERSATION_NOT_FOUND"));
+
+        verify(taskStateMachineService, never()).createTask(any(), any(), any(), any(), any());
+        verify(idempotencyService, never()).reserve(any(), any(), any(), any());
+        verify(queueProvider, never()).getIfAvailable();
+    }
 
     @Test
     void personalizedLearningSubmissionInjectsServerSideContext() {
@@ -46,6 +132,8 @@ class SmartEngineOrchestratorServiceTest {
         PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
         LearningPathProgressService progressService = mock(LearningPathProgressService.class);
         PracticeResultPersistenceService practiceResultPersistenceService = mock(PracticeResultPersistenceService.class);
+        UserLlmSettingsService userLlmSettingsService = mock(UserLlmSettingsService.class);
+        QnaSessionRepository qnaSessionRepository = mock(QnaSessionRepository.class);
 
         SmartEngineTask task = pendingTask(userId);
         when(taskStateMachineService.createTask(any(), eq(userId), any(), eq(ServiceType.PERSONALIZED_LEARNING), any()))
@@ -53,6 +141,8 @@ class SmartEngineOrchestratorServiceTest {
         when(queueProvider.getIfAvailable()).thenReturn(queueService);
         when(queueService.enqueue(any())).thenReturn("stream-record-1");
         when(idempotencyService.findExisting(any(), any(), any())).thenReturn(Optional.empty());
+        when(userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)).thenReturn(true);
+        when(qnaSessionRepository.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.of(mock(QnaSession.class)));
 
         Map<String, Object> automaticContext = new LinkedHashMap<>();
         automaticContext.put("profile", Map.of("knowledgeBase", "INTERMEDIATE"));
@@ -72,7 +162,9 @@ class SmartEngineOrchestratorServiceTest {
             contextService,
             refreshService,
             progressService,
-            practiceResultPersistenceService
+            practiceResultPersistenceService,
+            userLlmSettingsService,
+            qnaSessionRepository
         );
 
         service.submit(user, new SubmitTaskRequest(
@@ -132,7 +224,9 @@ class SmartEngineOrchestratorServiceTest {
             mock(PersonalizedLearningContextService.class),
             refreshService,
             progressService,
-            practiceResultPersistenceService
+            practiceResultPersistenceService,
+            null,
+            mock(QnaSessionRepository.class)
         );
 
         service.recordWorkerEvent(taskId, new PythonStreamEvent("done", "judge", Map.of("status", "SUCCESS")), 9);
@@ -181,7 +275,9 @@ class SmartEngineOrchestratorServiceTest {
             mock(PersonalizedLearningContextService.class),
             refreshService,
             progressService,
-            practiceResultPersistenceService
+            practiceResultPersistenceService,
+            null,
+            mock(QnaSessionRepository.class)
         );
 
         service.recordWorkerEvent(taskId, new PythonStreamEvent("done", "judge", Map.of("status", "SUCCESS")), 11);

@@ -2,14 +2,13 @@ package com.project;
 
 import com.project.application.artifact.ArtifactDownloadService;
 import com.project.application.smartengine.PythonStreamEvent;
+import com.project.application.smartengine.SmartEngineTaskEventCache;
 import com.project.application.smartengine.TaskEventRecordResult;
 import com.project.application.smartengine.TaskStateMachineService;
 import com.project.application.smartengine.TaskStreamEventPayload;
 import com.project.application.smartengine.VideoGenerationTaskService;
 import com.project.domain.task.ServiceType;
 import com.project.domain.task.SmartEngineTask;
-import com.project.domain.task.SmartEngineTaskEvent;
-import com.project.domain.task.SmartEngineTaskEventRepository;
 import com.project.domain.task.SmartEngineTaskRepository;
 import com.project.domain.task.TaskStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +28,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.argThat;
 
 @ExtendWith(MockitoExtension.class)
 class TaskStateMachineProvenanceTest {
@@ -38,23 +36,22 @@ class TaskStateMachineProvenanceTest {
     private SmartEngineTaskRepository taskRepository;
 
     @Mock
-    private SmartEngineTaskEventRepository taskEventRepository;
-
-    @Mock
     private ArtifactDownloadService artifactDownloadService;
 
     @Mock
     private VideoGenerationTaskService videoGenerationTaskService;
 
     private TaskStateMachineService service;
+    private SmartEngineTaskEventCache taskEventCache;
     private SmartEngineTask task;
     private UUID taskId;
 
     @BeforeEach
     void setUp() {
+        taskEventCache = new SmartEngineTaskEventCache();
         service = new TaskStateMachineService(
             taskRepository,
-            taskEventRepository,
+            taskEventCache,
             artifactDownloadService,
             videoGenerationTaskService
         );
@@ -67,9 +64,6 @@ class TaskStateMachineProvenanceTest {
         task.setTaskStatus(TaskStatus.RUNNING);
 
         when(taskRepository.findWithLockById(taskId)).thenReturn(Optional.of(task));
-        when(taskEventRepository.countByTaskId(taskId)).thenReturn(0);
-        when(taskEventRepository.save(any(SmartEngineTaskEvent.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -287,9 +281,8 @@ class TaskStateMachineProvenanceTest {
         assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.RUNNING);
         assertThat(task.getProgressPercent()).isEqualByComparingTo("90");
         assertThat((Number) result.payload().get("percent")).isEqualTo(90);
-        verify(taskEventRepository).save(argThat(event ->
-            ((Number) event.getEventPayload().get("percent")).intValue() == 90
-        ));
+        assertThat(taskEventCache.replay(taskId)).hasSize(1);
+        assertThat((Number) taskEventCache.replay(taskId).get(0).payload().get("percent")).isEqualTo(90);
     }
 
     @Test
@@ -312,10 +305,8 @@ class TaskStateMachineProvenanceTest {
         assertThat(startResult.event()).isEqualTo("video_gen:start");
         assertThat(task.getProgressPercent()).isEqualByComparingTo("60");
         assertThat((Number) startResult.payload().get("percent")).isEqualTo(60);
-        verify(taskEventRepository).save(argThat(event ->
-            event.getEventType().equals("video_gen:start")
-                && ((Number) event.getEventPayload().get("percent")).intValue() == 60
-        ));
+        assertThat(taskEventCache.replay(taskId).get(0).event()).isEqualTo("video_gen:start");
+        assertThat((Number) taskEventCache.replay(taskId).get(0).payload().get("percent")).isEqualTo(60);
 
         TaskStreamEventPayload speechResult = service.recordPythonEvent(
             taskId,
@@ -345,15 +336,14 @@ class TaskStateMachineProvenanceTest {
 
     @Test
     void duplicateTerminalSeqStillFailsActiveTaskAtNextSequence() {
-        SmartEngineTaskEvent existingEvent = new SmartEngineTaskEvent();
-        existingEvent.setTask(task);
-        existingEvent.setEventSeq(8);
-        existingEvent.setEventType("progress");
-        existingEvent.setStageName("practice");
-        existingEvent.setEventPayload(Map.of("stage", "practice", "percent", 35));
-
-        when(taskEventRepository.findByTaskIdAndEventSeq(taskId, 8)).thenReturn(Optional.of(existingEvent));
-        when(taskEventRepository.countByTaskId(taskId)).thenReturn(8);
+        taskEventCache.append(new TaskStreamEventPayload(
+            "progress",
+            taskId,
+            task.getTraceId(),
+            8,
+            java.time.OffsetDateTime.now(),
+            Map.of("stage", "practice", "percent", 35)
+        ));
 
         TaskEventRecordResult result = service.recordPythonEvent(
             taskId,

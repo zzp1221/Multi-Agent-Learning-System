@@ -45,7 +45,7 @@ import type { LayoutOutletContext } from '../components/Layout';
 import { conversationApi } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
 import { readConversationChunk } from '../api/sse';
-import { notesApi, type NoteAnalysis, type NoteDetail, type NoteFolder, type NoteListItem, type NoteSemanticSearchResponse, type NoteTag, type NoteVersion } from '../api/notes';
+import { notesApi, readLocalNoteAnalysis, type NoteAnalysis, type NoteDetail, type NoteFolder, type NoteListItem, type NoteSemanticSearchResponse, type NoteTag, type NoteVersion } from '../api/notes';
 import type { ResourceSemanticSearchResponse } from '../api/resources';
 
 const PAGE_SIZE = 30;
@@ -257,7 +257,7 @@ export default function NotebookPage() {
         tags: nextDetail.tags.map((item) => item.name),
       });
       setSaveStatus('saved');
-      setAnalysis(null);
+      setAnalysis(readLocalNoteAnalysis(nextDetail.id, nextDetail.contentHash));
       setRelatedResources(null);
       void loadVersions(noteId);
     } catch (loadError) {
@@ -552,7 +552,7 @@ export default function NotebookPage() {
     setAnalysisLoading(true);
     setError('');
     try {
-      setAnalysis(await notesApi.analyze(detail.id, force));
+      setAnalysis(await notesApi.analyze(detail.id, force, detail.contentHash));
     } catch (analyzeError) {
       setError(getErrorMessage(analyzeError));
     } finally {

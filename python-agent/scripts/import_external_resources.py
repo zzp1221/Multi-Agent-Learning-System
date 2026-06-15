@@ -58,6 +58,8 @@ BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/125.0 Safari/537.36 zhixue-resource-importer/1.0"
 )
+WIKI_BOUND_LEXICAL_CONFIDENCE_MIN = 0.60
+GENERIC_LEXICAL_SCORE_RE = re.compile(r"generic lexical score\s+([0-9]+(?:[.][0-9]+)?)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,7 @@ class ResourceCandidate:
     wiki_title: str | None = None
     wiki_source_ref: str | None = None
     wiki_aliases: tuple[str, ...] = ()
+    wiki_binding_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -230,6 +233,35 @@ def _split_tags(raw_tags: Any) -> list[str]:
     else:
         values = re.split(r"[,，、;/\s]+", str(raw_tags or ""))
     return [tag for tag in (_clean_markup_text(value) for value in values) if tag]
+
+
+def _generic_lexical_score(text: str | None) -> float | None:
+    if not text:
+        return None
+    match = GENERIC_LEXICAL_SCORE_RE.search(text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _has_low_confidence_wiki_binding(summary: str | None) -> bool:
+    score = _generic_lexical_score(summary)
+    return score is not None and score < WIKI_BOUND_LEXICAL_CONFIDENCE_MIN
+
+
+def _drop_low_confidence_wiki_binding(resource: dict[str, Any], summary: str) -> tuple[dict[str, Any], str | None]:
+    if not _has_low_confidence_wiki_binding(summary):
+        return resource, None
+    cleaned = dict(resource)
+    cleaned.pop("wikiSlug", None)
+    cleaned.pop("wikiTitle", None)
+    cleaned.pop("wikiSourceRef", None)
+    cleaned.pop("wikiAliases", None)
+    cleaned.pop("tags", None)
+    return cleaned, "LOW_CONFIDENCE_DROPPED"
 
 
 def _bilibili_video_url(item: dict[str, Any]) -> str | None:
@@ -499,6 +531,7 @@ def _candidate_from_source(
         or defaults.get("summary")
         or ""
     )
+    resource, wiki_binding_status = _drop_low_confidence_wiki_binding(resource, summary)
     tags = _as_tags(default_tags, source_tags, resource.get("tags", []))
     cs_category = str(resource.get("csCategory") or _source_value(source, defaults, "csCategory", "GENERAL_CS")).strip().upper()
     cs_subcategory = str(resource.get("csSubcategory") or _source_value(source, defaults, "csSubcategory", "General")).strip()
@@ -550,6 +583,7 @@ def _candidate_from_source(
         wiki_title=wiki_title or None,
         wiki_source_ref=wiki_source_ref or None,
         wiki_aliases=wiki_aliases,
+        wiki_binding_status=wiki_binding_status,
     )
 
 
@@ -1114,6 +1148,8 @@ def build_metadata(
         metadata["wikiSourceRef"] = candidate.wiki_source_ref
     if candidate.wiki_aliases:
         metadata["wikiAliases"] = list(candidate.wiki_aliases)
+    if candidate.wiki_binding_status:
+        metadata["wikiBindingStatus"] = candidate.wiki_binding_status
     if source_url != candidate.url:
         metadata["redirected"] = True
     return metadata
@@ -1220,7 +1256,20 @@ def upsert_resource_rag(
     returned = cur.fetchone()
     actual_doc_id = str(returned[0]) if returned else doc_id
     cur.execute("DELETE FROM rag.resource_chunk WHERE document_id = %s", (actual_doc_id,))
+    chunk_base_metadata = {
+        "sourceUrl": source_url,
+        "csCategory": candidate.cs_category,
+        "csSubcategory": candidate.cs_subcategory,
+    }
+    if candidate.wiki_slug:
+        chunk_base_metadata["wikiSlug"] = candidate.wiki_slug
+    if candidate.wiki_source_ref:
+        chunk_base_metadata["wikiSourceRef"] = candidate.wiki_source_ref
+    if candidate.wiki_binding_status:
+        chunk_base_metadata["wikiBindingStatus"] = candidate.wiki_binding_status
     for chunk_no, (chunk, embedding) in enumerate(zip(chunks, embeddings), start=1):
+        chunk_metadata = dict(chunk_base_metadata)
+        chunk_metadata["chunkHash"] = hashlib.sha256(chunk.encode("utf-8")).hexdigest()
         cur.execute(
             """
             INSERT INTO rag.resource_chunk (
@@ -1244,14 +1293,7 @@ def upsert_resource_rag(
                 candidate.resource_type,
                 candidate.difficulty,
                 metadata["qualityScore"],
-                _json({
-                    "sourceUrl": source_url,
-                    "csCategory": candidate.cs_category,
-                    "csSubcategory": candidate.cs_subcategory,
-                    "wikiSlug": candidate.wiki_slug,
-                    "wikiSourceRef": candidate.wiki_source_ref,
-                    "chunkHash": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
-                }),
+                _json(chunk_metadata),
             ),
         )
     return actual_doc_id

@@ -13,6 +13,7 @@ import com.project.api.note.dto.UpdateNoteFolderRequest;
 import com.project.api.note.dto.UpdateNoteRequest;
 import com.project.api.note.dto.UpdateNoteTagsRequest;
 import com.project.api.resource.dto.ResourceSemanticSearchResponse;
+import com.project.application.common.ApplicationException;
 import com.project.application.note.NoteService;
 import com.project.security.AuthenticatedUserResolver;
 import com.project.security.JwtAuthenticatedUser;
@@ -20,6 +21,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -206,10 +208,19 @@ public class NoteController {
     @Operation(summary = "Semantic search user notes")
     public ResponseEntity<NoteSemanticSearchResponse> semanticSearch(
         Authentication authentication,
-        @RequestParam String query,
+        @RequestParam(required = false) String query,
+        @RequestParam(required = false, name = "q") String queryAlias,
         @RequestParam(required = false) Integer topK
     ) {
         JwtAuthenticatedUser principal = AuthenticatedUserResolver.require(authentication);
-        return ResponseEntity.ok(noteService.semanticSearch(principal.userId(), query, topK));
+        return ResponseEntity.ok(noteService.semanticSearch(principal.userId(), resolveSemanticQuery(query, queryAlias), topK));
+    }
+
+    private String resolveSemanticQuery(String query, String queryAlias) {
+        String resolved = query == null || query.isBlank() ? queryAlias : query;
+        if (resolved == null || resolved.isBlank()) {
+            throw new ApplicationException("INVALID_ARGUMENT", "搜索关键词不能为空", HttpStatus.BAD_REQUEST);
+        }
+        return resolved;
     }
 }

@@ -197,15 +197,29 @@ public class UserLlmSettingsService {
             .orElseGet(() -> emptyRuntimeConfig(allowEnvironmentFallback(userId)));
     }
 
+    @Transactional(readOnly = true)
+    public boolean isUserLlmReadyOrAllowedFallback(UUID userId) {
+        if (allowEnvironmentFallback(userId)) {
+            return true;
+        }
+        if (!appProperties.getUserLlm().isEnabled()) {
+            return false;
+        }
+        return repository.findByUserId(userId)
+            .map(this::hasReadyActiveProvider)
+            .orElse(false);
+    }
+
     public Map<String, Object> testSettings(UUID userId, UserLlmSettingsRequest request) {
+        ensureFeatureEnabled();
+        String provider = resolveTestProvider(request);
+        List<String> models = verifyProviderConnection(userId, provider, request);
         UserLlmSettingsResponse saved = saveSettings(userId, request);
-        boolean ready = !saved.activeProvider().isBlank()
-            && saved.providers().containsKey(saved.activeProvider())
-            && saved.providers().get(saved.activeProvider()).hasApiKey();
         return Map.of(
-            "ok", ready,
+            "ok", true,
             "activeProvider", saved.activeProvider(),
-            "message", ready ? "User LLM settings saved and ready" : "Settings saved, but the active provider is missing an API key"
+            "message", "User LLM settings saved and verified",
+            "models", models
         );
     }
 
@@ -238,6 +252,57 @@ public class UserLlmSettingsService {
             throw new ApplicationException("LLM_API_KEY_REQUIRED", "请先输入或保存该厂商 API Key", HttpStatus.BAD_REQUEST);
         }
 
+        List<String> models = fetchProviderModels(baseUrl, apiKey);
+        return new UserLlmModelListResponse(provider, trimTrailingSlash(baseUrl), models);
+    }
+
+    private String resolveTestProvider(UserLlmSettingsRequest request) {
+        String provider = normalizeProviderKey(request.activeProvider());
+        if (!provider.isBlank()) {
+            return provider;
+        }
+        Map<String, UserLlmProviderConfigDto> providers = request.providers() == null ? Map.of() : request.providers();
+        for (Map.Entry<String, UserLlmProviderConfigDto> entry : providers.entrySet()) {
+            String candidate = normalizeProviderKey(entry.getValue() == null
+                ? entry.getKey()
+                : firstNonBlank(entry.getValue().provider(), entry.getKey()));
+            if (!candidate.isBlank()) {
+                return candidate;
+            }
+        }
+        throw new ApplicationException("LLM_PROVIDER_REQUIRED", "请选择厂商后再测试连接", HttpStatus.BAD_REQUEST);
+    }
+
+    private List<String> verifyProviderConnection(UUID userId, String provider, UserLlmSettingsRequest request) {
+        UserLlmSettingsRepository.UserLlmSettingsRecord existing = repository.findByUserId(userId).orElse(null);
+        Map<String, UserLlmProviderStoredConfig> existingProviders = existing == null
+            ? Map.of()
+            : readJson(existing.providerConfigJson(), PROVIDER_MAP, Map.of());
+        Map<String, Object> existingSecrets = existing == null
+            ? Map.of()
+            : readJson(existing.encryptedSecretsJson(), OBJECT_MAP, Map.of());
+        UserLlmProviderStoredConfig existingProvider = existingProviders.get(provider);
+        UserLlmProviderConfigDto requestProvider = findRequestProvider(
+            request.providers() == null ? Map.of() : request.providers(),
+            provider
+        );
+
+        String baseUrl = firstNonBlank(requestProvider == null ? "" : requestProvider.baseUrl(), existingProvider == null ? "" : existingProvider.baseUrl());
+        baseUrl = firstNonBlank(baseUrl, PROVIDER_DEFAULT_BASE_URLS.getOrDefault(provider, ""));
+        if (baseUrl.isBlank()) {
+            throw new ApplicationException("LLM_BASE_URL_REQUIRED", "请先填写厂商官网兼容 Base URL", HttpStatus.BAD_REQUEST);
+        }
+
+        Map<String, Object> providerSecrets = readObjectMap(existingSecrets.get(provider));
+        String apiKey = firstNonBlank(requestProvider == null ? "" : requestProvider.apiKey(), decrypt(providerSecrets.get("apiKey")));
+        if (apiKey.isBlank()) {
+            throw new ApplicationException("LLM_API_KEY_REQUIRED", "请先输入或保存该厂商 API Key", HttpStatus.BAD_REQUEST);
+        }
+
+        return fetchProviderModels(baseUrl, apiKey);
+    }
+
+    private List<String> fetchProviderModels(String baseUrl, String apiKey) {
         URI modelsEndpoint = modelsEndpoint(baseUrl);
         HttpRequest httpRequest = HttpRequest.newBuilder(modelsEndpoint)
             .timeout(Duration.ofSeconds(12))
@@ -245,7 +310,6 @@ public class UserLlmSettingsService {
             .header("Authorization", "Bearer " + apiKey)
             .GET()
             .build();
-
         try {
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 401 || response.statusCode() == 403) {
@@ -258,7 +322,7 @@ public class UserLlmSettingsService {
             if (models.isEmpty()) {
                 throw new ApplicationException("LLM_MODEL_LIST_EMPTY", "厂商未返回可用模型", HttpStatus.BAD_GATEWAY);
             }
-            return new UserLlmModelListResponse(provider, trimTrailingSlash(baseUrl), models);
+            return models;
         } catch (ApplicationException ex) {
             throw ex;
         } catch (IOException ex) {
@@ -361,6 +425,20 @@ public class UserLlmSettingsService {
 
     private UserLlmRuntimeConfigResponse emptyRuntimeConfig(boolean allowEnvironmentFallback) {
         return new UserLlmRuntimeConfigResponse(false, allowEnvironmentFallback, "", "", Map.of(), Map.of(), Map.of());
+    }
+
+    private boolean hasReadyActiveProvider(UserLlmSettingsRepository.UserLlmSettingsRecord record) {
+        String activeProvider = trim(record.activeProvider());
+        if (activeProvider.isBlank()) {
+            return false;
+        }
+        Map<String, UserLlmProviderStoredConfig> storedProviders = readJson(record.providerConfigJson(), PROVIDER_MAP, Map.of());
+        if (!storedProviders.containsKey(activeProvider)) {
+            return false;
+        }
+        Map<String, Object> encryptedSecrets = readJson(record.encryptedSecretsJson(), OBJECT_MAP, Map.of());
+        Map<String, Object> providerSecrets = readObjectMap(encryptedSecrets.get(activeProvider));
+        return hasText(providerSecrets.get("apiKey"));
     }
 
     private boolean allowEnvironmentFallback(UUID userId) {

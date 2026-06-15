@@ -5,16 +5,23 @@ import com.project.api.settings.dto.UserLlmComponentOverrideDto;
 import com.project.api.settings.dto.UserLlmProviderConfigDto;
 import com.project.api.settings.dto.UserLlmSettingsRequest;
 import com.project.api.settings.dto.UserLlmSkillOverrideDto;
+import com.project.application.common.ApplicationException;
 import com.project.config.AppProperties;
 import com.project.domain.settings.UserLlmSettingsRepository;
 import com.project.domain.user.UserAccount;
 import com.project.domain.user.UserAccountRepository;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -70,7 +77,9 @@ class UserLlmSettingsServiceTest {
         UserLlmSettingsService service = service(new InMemoryRepository());
 
         var view = service.getSettings(userId);
-        var testResult = service.testSettings(userId, new UserLlmSettingsRequest(
+
+        assertThat(view.enabled()).isTrue();
+        assertThatThrownBy(() -> service.testSettings(userId, new UserLlmSettingsRequest(
             false,
             "openai",
             "",
@@ -84,13 +93,14 @@ class UserLlmSettingsServiceTest {
             )),
             Map.of(),
             Map.of()
-        ));
-
-        assertThat(view.enabled()).isTrue();
-        assertThat(testResult).containsEntry("ok", false);
-        assertThat(service.runtimeConfig(userId).enabled()).isTrue();
-        assertThat(service.runtimeConfig(userId).allowEnvironmentFallback()).isFalse();
-        assertThat(service.runtimeConfig(userId).providers().get("openai").apiKey()).isEmpty();
+        )))
+            .isInstanceOf(ApplicationException.class)
+            .extracting("code")
+            .isEqualTo("LLM_API_KEY_REQUIRED");
+        var runtime = service.runtimeConfig(userId);
+        assertThat(runtime.enabled()).isFalse();
+        assertThat(runtime.allowEnvironmentFallback()).isFalse();
+        assertThat(runtime.providers()).isEmpty();
     }
 
     @Test
@@ -107,6 +117,50 @@ class UserLlmSettingsServiceTest {
 
         assertThat(runtime.enabled()).isFalse();
         assertThat(runtime.allowEnvironmentFallback()).isTrue();
+        assertThat(service.isUserLlmReadyOrAllowedFallback(userId)).isTrue();
+    }
+
+    @Test
+    void formalUserRequiresActiveProviderWithApiKeyBeforeLlmUse() {
+        UUID userId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        UserLlmSettingsService service = service(repository);
+
+        assertThat(service.isUserLlmReadyOrAllowedFallback(userId)).isFalse();
+
+        service.saveSettings(userId, new UserLlmSettingsRequest(
+            true,
+            "dashscope",
+            "",
+            Map.of("dashscope", new UserLlmProviderConfigDto(
+                "dashscope",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "",
+                "",
+                "",
+                Map.of("main_chat_model", "qwen-plus")
+            )),
+            Map.of(),
+            Map.of()
+        ));
+        assertThat(service.isUserLlmReadyOrAllowedFallback(userId)).isFalse();
+
+        service.saveSettings(userId, new UserLlmSettingsRequest(
+            true,
+            "dashscope",
+            "",
+            Map.of("dashscope", new UserLlmProviderConfigDto(
+                "dashscope",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "sk-user-key",
+                "",
+                "",
+                Map.of("main_chat_model", "qwen-plus")
+            )),
+            Map.of(),
+            Map.of()
+        ));
+        assertThat(service.isUserLlmReadyOrAllowedFallback(userId)).isTrue();
     }
 
     @Test
@@ -181,6 +235,37 @@ class UserLlmSettingsServiceTest {
     }
 
     @Test
+    void testSettingsVerifiesProviderBeforeSaving() throws Exception {
+        UUID userId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        UserLlmSettingsService service = service(repository);
+        HttpServer server = startModelListServer("valid-key");
+        String baseUrl = "http://" + server.getAddress().getHostString() + ":" + server.getAddress().getPort();
+
+        try {
+            UserLlmSettingsRequest invalidRequest = settingsRequest("custom_openai_compatible", baseUrl, "bad-key");
+            assertThatThrownBy(() -> service.testSettings(userId, invalidRequest))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("code")
+                .isEqualTo("LLM_MODEL_LIST_UNAUTHORIZED");
+            assertThat(repository.record).isNull();
+
+            Map<String, Object> result = service.testSettings(
+                userId,
+                settingsRequest("custom_openai_compatible", baseUrl, "valid-key")
+            );
+
+            assertThat(result)
+                .containsEntry("ok", true)
+                .containsEntry("activeProvider", "custom_openai_compatible");
+            assertThat(repository.record).isNotNull();
+            assertThat(service.runtimeConfig(userId).providers().get("custom_openai_compatible").apiKey()).isEqualTo("valid-key");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void extractsProviderModelIdsFromCommonModelListShapes() {
         UserLlmSettingsService service = service(new InMemoryRepository());
 
@@ -216,6 +301,46 @@ class UserLlmSettingsServiceTest {
 
     private UserLlmSettingsService service(InMemoryRepository repository) {
         return service(repository, mock(UserAccountRepository.class));
+    }
+
+    private UserLlmSettingsRequest settingsRequest(String provider, String baseUrl, String apiKey) {
+        return new UserLlmSettingsRequest(
+            true,
+            provider,
+            "",
+            Map.of(provider, new UserLlmProviderConfigDto(
+                provider,
+                baseUrl,
+                apiKey,
+                "",
+                "",
+                Map.of()
+            )),
+            Map.of(),
+            Map.of()
+        );
+    }
+
+    private HttpServer startModelListServer(String acceptedApiKey) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/models", exchange -> {
+            String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
+            byte[] body;
+            int status;
+            if (("Bearer " + acceptedApiKey).equals(authHeader)) {
+                status = 200;
+                body = "{\"data\":[{\"id\":\"verified-model\"}]}".getBytes(StandardCharsets.UTF_8);
+            } else {
+                status = 401;
+                body = "{\"error\":\"unauthorized\"}".getBytes(StandardCharsets.UTF_8);
+            }
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(status, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        return server;
     }
 
     private UserLlmSettingsService service(InMemoryRepository repository, UserAccountRepository userRepository) {

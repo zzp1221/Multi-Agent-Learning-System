@@ -8,6 +8,8 @@ import com.project.application.common.ApplicationException;
 import com.project.application.idempotency.IdempotencyService;
 import com.project.application.learningpath.LearningPathProgressService;
 import com.project.application.learningpath.PersonalizedLearningRefreshService;
+import com.project.application.settings.UserLlmSettingsService;
+import com.project.domain.conversation.QnaSessionRepository;
 import com.project.domain.profile.UserProfileCurrentRepository;
 import com.project.domain.task.SmartEngineTask;
 import com.project.domain.task.ServiceType;
@@ -31,6 +33,7 @@ import java.util.UUID;
 public class SmartEngineOrchestratorService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SmartEngineOrchestratorService.class);
+    private static final String USER_LLM_REQUIRED_MESSAGE = "请先配置并保存模型和 API Key 后再使用智能功能。";
 
     private final TaskStateMachineService taskStateMachineService;
     private final SseEmitterService sseEmitterService;
@@ -42,6 +45,8 @@ public class SmartEngineOrchestratorService {
     private final PersonalizedLearningRefreshService personalizedLearningRefreshService;
     private final LearningPathProgressService learningPathProgressService;
     private final PracticeResultPersistenceService practiceResultPersistenceService;
+    private final UserLlmSettingsService userLlmSettingsService;
+    private final QnaSessionRepository qnaSessionRepository;
 
     public SmartEngineOrchestratorService(
         TaskStateMachineService taskStateMachineService,
@@ -53,7 +58,9 @@ public class SmartEngineOrchestratorService {
         PersonalizedLearningContextService personalizedLearningContextService,
         PersonalizedLearningRefreshService personalizedLearningRefreshService,
         LearningPathProgressService learningPathProgressService,
-        PracticeResultPersistenceService practiceResultPersistenceService
+        PracticeResultPersistenceService practiceResultPersistenceService,
+        UserLlmSettingsService userLlmSettingsService,
+        QnaSessionRepository qnaSessionRepository
     ) {
         this.taskStateMachineService = taskStateMachineService;
         this.sseEmitterService = sseEmitterService;
@@ -65,6 +72,8 @@ public class SmartEngineOrchestratorService {
         this.personalizedLearningRefreshService = personalizedLearningRefreshService;
         this.learningPathProgressService = learningPathProgressService;
         this.practiceResultPersistenceService = practiceResultPersistenceService;
+        this.userLlmSettingsService = userLlmSettingsService;
+        this.qnaSessionRepository = qnaSessionRepository;
     }
 
     public SubmitTaskAcceptance submit(JwtAuthenticatedUser currentUser, SubmitTaskRequest request) {
@@ -93,6 +102,8 @@ public class SmartEngineOrchestratorService {
         SubmitTaskRequest request,
         String idempotencyKey
     ) {
+        requireUserLlmReady(currentUser.userId());
+        requireOwnedConversation(currentUser.userId(), request.conversationId());
         UUID taskId = UUID.randomUUID();
         String traceId = UUID.randomUUID().toString();
         Map<String, Object> requestPayload = new LinkedHashMap<>();
@@ -169,6 +180,20 @@ public class SmartEngineOrchestratorService {
             new SubmitTaskResponse(task.getId(), traceId, task.getTaskStatus()),
             false
         );
+    }
+
+    private void requireUserLlmReady(UUID userId) {
+        if (userLlmSettingsService == null || userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)) {
+            return;
+        }
+        throw new ApplicationException("USER_LLM_REQUIRED", USER_LLM_REQUIRED_MESSAGE, HttpStatus.PRECONDITION_REQUIRED);
+    }
+
+    private void requireOwnedConversation(UUID userId, UUID conversationId) {
+        if (qnaSessionRepository.findByIdAndUserId(conversationId, userId).isPresent()) {
+            return;
+        }
+        throw new ApplicationException("CONVERSATION_NOT_FOUND", "会话不存在", HttpStatus.NOT_FOUND);
     }
 
     private Map<String, Object> buildInvocationParams(JwtAuthenticatedUser currentUser, SubmitTaskRequest request) {

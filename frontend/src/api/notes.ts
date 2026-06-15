@@ -1,4 +1,10 @@
 import { request } from './request';
+import type { ResourceSemanticSearchResponse } from './resources';
+
+const NOTE_ANALYSIS_CACHE_KEY = 'notebook_note_analysis_cache';
+const NOTE_RELATED_RESOURCES_CACHE_KEY = 'notebook_related_resources_cache';
+const NOTE_ANALYSIS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const NOTE_RELATED_RESOURCES_TTL_MS = 30 * 60 * 1000;
 
 export interface NoteTag {
   id: string;
@@ -147,15 +153,29 @@ export const notesApi = {
     return request.post<NoteDetail>(`/api/notes/${noteId}/versions/${versionId}/restore`);
   },
 
-  analyze(id: string, force = false): Promise<NoteAnalysis> {
-    return request.post<NoteAnalysis>(`/api/notes/${id}/ai/analyze`, undefined, { params: { force } });
+  async analyze(id: string, force = false, inputHash?: string): Promise<NoteAnalysis> {
+    if (!force) {
+      const cached = readAnalysisCache(id, inputHash);
+      if (cached) {
+        return cached;
+      }
+    }
+    const analysis = await request.post<NoteAnalysis>(`/api/notes/${id}/ai/analyze`, undefined, { params: { force } });
+    writeAnalysisCache(id, analysis);
+    return analysis;
   },
 
-  relatedResources(id: string, topK = 6) {
-    return request.get<import('./resources').ResourceSemanticSearchResponse>(`/api/notes/${id}/related-resources`, {
+  async relatedResources(id: string, topK = 6): Promise<ResourceSemanticSearchResponse> {
+    const cached = readRelatedResourcesCache(id, topK);
+    if (cached) {
+      return cached;
+    }
+    const response = await request.get<ResourceSemanticSearchResponse>(`/api/notes/${id}/related-resources`, {
       params: { topK },
       dedupe: false,
     });
+    writeRelatedResourcesCache(id, topK, response);
+    return response;
   },
 
   semantic(query: string, topK = 8): Promise<NoteSemanticSearchResponse> {
@@ -166,3 +186,104 @@ export const notesApi = {
     });
   },
 };
+
+function readAnalysisCache(noteId: string, inputHash?: string): NoteAnalysis | null {
+  const cache = readLocalRecord<{
+    savedAt: number;
+    analysis: NoteAnalysis;
+  }>(NOTE_ANALYSIS_CACHE_KEY);
+  if (inputHash) {
+    return readFreshAnalysis(cache[analysisCacheId(noteId, inputHash)]);
+  }
+  return Object.entries(cache)
+    .find(([key, entry]) => key.startsWith(`${noteId}:`) && readFreshAnalysis(entry))?.[1]
+    ?.analysis ?? null;
+}
+
+export function readLocalNoteAnalysis(noteId: string, inputHash?: string): NoteAnalysis | null {
+  return readAnalysisCache(noteId, inputHash);
+}
+
+function writeAnalysisCache(noteId: string, analysis: NoteAnalysis): void {
+  const cache = readLocalRecord<{
+    savedAt: number;
+    analysis: NoteAnalysis;
+  }>(NOTE_ANALYSIS_CACHE_KEY);
+  Object.keys(cache)
+    .filter((key) => key.startsWith(`${noteId}:`))
+    .forEach((key) => delete cache[key]);
+  cache[analysisCacheId(noteId, analysis.inputHash)] = {
+    savedAt: Date.now(),
+    analysis: { ...analysis, fromCache: true },
+  };
+  writeLocalRecord(NOTE_ANALYSIS_CACHE_KEY, cache);
+}
+
+function readFreshAnalysis(entry?: { savedAt: number; analysis: NoteAnalysis }): NoteAnalysis | null {
+  if (!entry || Date.now() - entry.savedAt > NOTE_ANALYSIS_TTL_MS) {
+    return null;
+  }
+  return entry.analysis;
+}
+
+function analysisCacheId(noteId: string, inputHash: string): string {
+  return `${noteId}:${inputHash || 'unknown'}`;
+}
+
+function readRelatedResourcesCache(
+  noteId: string,
+  topK: number,
+): ResourceSemanticSearchResponse | null {
+  const cache = readLocalRecord<{
+    savedAt: number;
+    response: ResourceSemanticSearchResponse;
+  }>(NOTE_RELATED_RESOURCES_CACHE_KEY);
+  const cached = cache[relatedResourcesCacheId(noteId, topK)];
+  if (!cached || Date.now() - cached.savedAt > NOTE_RELATED_RESOURCES_TTL_MS) {
+    return null;
+  }
+  return cached.response;
+}
+
+function writeRelatedResourcesCache(
+  noteId: string,
+  topK: number,
+  response: ResourceSemanticSearchResponse,
+): void {
+  const cache = readLocalRecord<{
+    savedAt: number;
+    response: ResourceSemanticSearchResponse;
+  }>(NOTE_RELATED_RESOURCES_CACHE_KEY);
+  cache[relatedResourcesCacheId(noteId, topK)] = {
+    savedAt: Date.now(),
+    response,
+  };
+  writeLocalRecord(NOTE_RELATED_RESOURCES_CACHE_KEY, cache);
+}
+
+function relatedResourcesCacheId(noteId: string, topK: number): string {
+  return `${noteId}:${topK}`;
+}
+
+function readLocalRecord<T>(key: string): Record<string, T> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || '{}') as Record<string, T>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed;
+  } catch {
+    window.localStorage.removeItem(key);
+    return {};
+  }
+}
+
+function writeLocalRecord<T>(key: string, value: Record<string, T>): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.setItem(key, JSON.stringify(value));
+}

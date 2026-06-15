@@ -35,6 +35,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -111,7 +112,7 @@ class ConversationAndProfileIntegrationTest {
             return null;
         }).when(pythonAgentClient).stream(any(), any());
 
-        AuthContext authContext = register("conv_" + System.nanoTime());
+        AuthContext authContext = register("testuser_conv_" + System.nanoTime());
 
         MvcResult createConversationResult = mockMvc.perform(post("/api/conversations")
                 .header("Authorization", "Bearer " + authContext.token()))
@@ -188,6 +189,82 @@ class ConversationAndProfileIntegrationTest {
             .andExpect(jsonPath("$.userId").value(authContext.userId()))
             .andExpect(jsonPath("$.profile.knowledgeBase").value("INTERMEDIATE"))
             .andExpect(jsonPath("$.summary").value("数据库原理基础中等，偏好图文结合讲解"));
+    }
+
+    @Test
+    void malformedConversationStreamPathReturnsBadRequest() throws Exception {
+        AuthContext authContext = register("bad_conv_" + System.nanoTime());
+
+        mockMvc.perform(post("/api/conversations/not-a-uuid/messages/stream")
+                .header("Authorization", "Bearer " + authContext.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "message": "hello"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+    }
+
+    @Test
+    void conversationStreamValidationErrorsReturnSseErrorEvent() throws Exception {
+        AuthContext authContext = register("sse_error_" + System.nanoTime());
+        String conversationId = readField(mockMvc.perform(post("/api/conversations")
+                .header("Authorization", "Bearer " + authContext.token()))
+            .andExpect(status().isOk())
+            .andReturn(), "conversationId");
+
+        MvcResult blankResult = mockMvc.perform(post("/api/conversations/" + conversationId + "/messages/stream")
+                .header("Authorization", "Bearer " + authContext.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"message\":\"   \"}"))
+            .andExpect(request().asyncStarted())
+            .andReturn();
+
+        String blankBody = mockMvc.perform(asyncDispatch(blankResult))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString(StandardCharsets.UTF_8);
+        assertThat(blankBody).contains("event:error", "INVALID_ARGUMENT");
+
+        MvcResult missingResult = mockMvc.perform(post("/api/conversations/00000000-0000-0000-0000-000000000000/messages/stream")
+                .header("Authorization", "Bearer " + authContext.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"message\":\"hello\"}"))
+            .andExpect(request().asyncStarted())
+            .andReturn();
+
+        String missingBody = mockMvc.perform(asyncDispatch(missingResult))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString(StandardCharsets.UTF_8);
+        assertThat(missingBody).contains("event:error", "CONVERSATION_NOT_FOUND");
+    }
+
+    @Test
+    void imageUploadWithoutFilePartReturnsBadRequest() throws Exception {
+        AuthContext authContext = register("bad_upload_" + System.nanoTime());
+
+        mockMvc.perform(multipart("/api/conversations/images/upload")
+                .file("metadata", "{}".getBytes(StandardCharsets.UTF_8))
+                .header("Authorization", "Bearer " + authContext.token()))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+    }
+
+    @Test
+    void imageUploadWithNonMultipartContentTypeReturnsBadRequest() throws Exception {
+        AuthContext authContext = register("bad_upload_media_" + System.nanoTime());
+
+        mockMvc.perform(post("/api/conversations/images/upload")
+                .header("Authorization", "Bearer " + authContext.token())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
     }
 
     @Test

@@ -22,9 +22,11 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
+    private final RevokedTokenStore revokedTokenStore;
 
-    public JwtAuthenticationFilter(JwtProvider jwtProvider) {
+    public JwtAuthenticationFilter(JwtProvider jwtProvider, RevokedTokenStore revokedTokenStore) {
         this.jwtProvider = jwtProvider;
+        this.revokedTokenStore = revokedTokenStore;
     }
 
     @Override
@@ -41,6 +43,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = header.substring(7);
         try {
+            if (revokedTokenStore.isRevoked(token)) {
+                SecurityContextHolder.clearContext();
+                filterChain.doFilter(request, response);
+                return;
+            }
             JwtAuthenticatedUser principal = jwtProvider.parse(token);
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 principal,

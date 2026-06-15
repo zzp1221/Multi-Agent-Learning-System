@@ -7,12 +7,16 @@ import com.project.application.voice.VoiceGatewayService;
 import com.project.application.voice.VoiceMetricContext;
 import com.project.application.voice.VoiceMetricLogger;
 import com.project.application.voice.VoiceTtsClient;
+import com.project.application.voice.VoiceTtsChunk;
 import com.project.application.voice.VoiceTurnMetricsService;
 import com.project.config.AppProperties;
 import com.project.security.JwtAuthenticatedUser;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.security.core.Authentication;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
 
@@ -26,6 +30,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
 class VoiceControllerTest {
 
@@ -120,6 +127,35 @@ class VoiceControllerTest {
             isNull(),
             eq("")
         );
+    }
+
+    @Test
+    void ttsStreamSendsSingleDoneWhenProviderAlsoSendsFinishedChunk() throws Exception {
+        VoiceTtsClient ttsClient = (text, voice, chunkConsumer) -> {
+            chunkConsumer.accept(new VoiceTtsChunk("YXVkaW8=", 16000, "pcm", false));
+            chunkConsumer.accept(new VoiceTtsChunk("", 16000, "pcm", true));
+        };
+        MockMvc mockMvc = standaloneSetup(controller(ttsClient, mock(VoiceMetricLogger.class), new VoiceTurnMetricsService()))
+            .build();
+
+        MvcResult result = mockMvc.perform(post("/api/voice/tts/stream")
+                .principal(auth())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "text": "hello",
+                      "voice": "default",
+                      "turnComplete": false
+                    }
+                    """))
+            .andReturn();
+
+        MvcResult asyncResult = mockMvc.perform(asyncDispatch(result))
+            .andReturn();
+
+        assertThat(asyncResult.getResponse().getContentAsString())
+            .contains("event:audio")
+            .containsOnlyOnce("event:done");
     }
 
     @Test

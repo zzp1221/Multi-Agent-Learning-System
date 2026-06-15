@@ -60,6 +60,10 @@ public class ProfileOnboardingService {
         OffsetDateTime now = OffsetDateTime.now();
         Map<String, Object> profileJson = buildProfileJson(request);
         String summary = buildSummary(request);
+        UserProfileCurrent existingCurrent = currentRepository.findById(currentUser.userId()).orElse(null);
+        if (isSameOnboardingProfile(existingCurrent, profileJson, summary)) {
+            return queryService.getCurrentProfile(currentUser, currentUser.userId());
+        }
 
         UserProfileSnapshot snapshot = new UserProfileSnapshot();
         snapshot.setId(UUID.randomUUID());
@@ -71,7 +75,7 @@ public class ProfileOnboardingService {
         snapshot.setCreatedAt(now);
         snapshotRepository.save(snapshot);
 
-        UserProfileCurrent current = currentRepository.findById(currentUser.userId()).orElseGet(UserProfileCurrent::new);
+        UserProfileCurrent current = existingCurrent == null ? new UserProfileCurrent() : existingCurrent;
         current.setUserId(currentUser.userId());
         current.setActiveSnapshotId(snapshot.getId());
         current.setProfileJson(profileJson);
@@ -81,6 +85,16 @@ public class ProfileOnboardingService {
 
         triggerInitialLearningPathAfterCommit(currentUser.userId(), majorCode);
         return queryService.getCurrentProfile(currentUser, currentUser.userId());
+    }
+
+    private boolean isSameOnboardingProfile(
+        UserProfileCurrent current,
+        Map<String, Object> profileJson,
+        String summary
+    ) {
+        return current != null
+            && profileJson.equals(current.getProfileJson())
+            && summary.equals(current.getSummaryText());
     }
 
     private Map<String, Object> buildProfileJson(ProfileOnboardingRequest request) {

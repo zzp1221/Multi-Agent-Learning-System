@@ -23,6 +23,7 @@ import com.project.api.study.dto.MistakeTrainingCampResponse.TrainingCampSummary
 import com.project.api.study.dto.MistakeTrainingCampResponse.TrainingMicroPractice;
 import com.project.application.common.ApplicationException;
 import com.project.application.learningpath.LearningPathQueryService;
+import com.project.application.learningpath.PersonalizedLearningRefreshService;
 import com.project.application.profile.LearnerKnowledgeGraphService;
 import com.project.application.profile.UserProfileQueryService;
 import com.project.application.resource.ResourceLibraryService;
@@ -184,6 +185,7 @@ public class StudyWorkbenchService {
     private final ResourceLibraryService resourceLibraryService;
     private final LearnerKnowledgeGraphService learnerKnowledgeGraphService;
     private final UserProfileQueryService userProfileQueryService;
+    private final PersonalizedLearningRefreshService refreshService;
 
     public StudyWorkbenchService(
         NamedParameterJdbcTemplate jdbcTemplate,
@@ -191,7 +193,8 @@ public class StudyWorkbenchService {
         LearningPathQueryService learningPathQueryService,
         ResourceLibraryService resourceLibraryService,
         LearnerKnowledgeGraphService learnerKnowledgeGraphService,
-        UserProfileQueryService userProfileQueryService
+        UserProfileQueryService userProfileQueryService,
+        PersonalizedLearningRefreshService refreshService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -199,6 +202,7 @@ public class StudyWorkbenchService {
         this.resourceLibraryService = resourceLibraryService;
         this.learnerKnowledgeGraphService = learnerKnowledgeGraphService;
         this.userProfileQueryService = userProfileQueryService;
+        this.refreshService = refreshService;
     }
 
     @Transactional(readOnly = true)
@@ -211,7 +215,9 @@ public class StudyWorkbenchService {
             ? null
             : new LinkedHashMap<>((Map<String, Object>) learningPath.activeStep());
         List<MistakeRecordResponse> dueMistakes = loadDueMistakes(userId, DUE_MISTAKE_LIMIT);
-        List<ResourceItemResponse> resources = resourceLibraryService.recommendations(userId, RECOMMENDED_RESOURCE_LIMIT);
+        List<ResourceItemResponse> resources = resourceLibraryService.recommendations(userId, RECOMMENDED_RESOURCE_LIMIT).stream()
+            .map(this::compactWorkbenchResource)
+            .toList();
         KnowledgeGraphResponse graph = learnerKnowledgeGraphService.getGraph(currentUser, userId);
         UserProfileResponse profile = userProfileQueryService.getCurrentProfile(currentUser, userId);
 
@@ -249,6 +255,19 @@ public class StudyWorkbenchService {
             profile,
             dataAvailable
         );
+    }
+
+    @Transactional
+    public DailyStudyWorkbenchResponse refreshDaily(JwtAuthenticatedUser currentUser) {
+        UUID userId = currentUser.userId();
+        LearningPathCurrentResponse currentPath = learningPathQueryService.getCurrent(userId);
+        refreshService.triggerResourceRecommendationRefresh(
+            userId,
+            "刷新今日学习工作台推荐资源",
+            currentPath.learningPath(),
+            currentPath.pushedResources()
+        );
+        return daily(currentUser);
     }
 
     @Transactional(readOnly = true)
@@ -417,6 +436,44 @@ public class StudyWorkbenchService {
                 .addValue("knowledgeTag", knowledgeTag)
                 .addValue("limit", Math.max(1, limit)),
             mistakeRowMapper()
+        );
+    }
+
+    private ResourceItemResponse compactWorkbenchResource(ResourceItemResponse resource) {
+        return new ResourceItemResponse(
+            resource.id(),
+            resource.title(),
+            resource.domain(),
+            resource.resourceType(),
+            resource.displayType(),
+            resource.difficultyLevel(),
+            resource.sourceKind(),
+            resource.summaryText(),
+            resource.tags(),
+            resource.sourceUrl(),
+            resource.sourceName(),
+            resource.coverUrl(),
+            resource.license(),
+            resource.copyrightStatus(),
+            resource.accessibilityStatus(),
+            resource.httpStatus(),
+            resource.lastCheckedAt(),
+            resource.qualityScore(),
+            resource.popularityScore(),
+            resource.favoriteCount(),
+            resource.viewCount(),
+            resource.likeCount(),
+            resource.durationMinutes(),
+            resource.fileSizeBytes(),
+            resource.favorite(),
+            resource.progress(),
+            resource.completed(),
+            resource.lastStudyAt(),
+            resource.createdAt(),
+            resource.updatedAt(),
+            resource.csCategory(),
+            resource.csSubcategory(),
+            Map.of()
         );
     }
 

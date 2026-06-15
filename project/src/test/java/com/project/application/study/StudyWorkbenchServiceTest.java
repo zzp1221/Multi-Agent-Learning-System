@@ -10,6 +10,7 @@ import com.project.api.resource.dto.ResourceSemanticResultResponse;
 import com.project.api.resource.dto.ResourceSemanticSearchResponse;
 import com.project.application.common.ApplicationException;
 import com.project.application.learningpath.LearningPathQueryService;
+import com.project.application.learningpath.PersonalizedLearningRefreshService;
 import com.project.application.profile.LearnerKnowledgeGraphService;
 import com.project.application.profile.UserProfileQueryService;
 import com.project.application.resource.ResourceLibraryService;
@@ -30,7 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class StudyWorkbenchServiceTest {
@@ -40,7 +43,13 @@ class StudyWorkbenchServiceTest {
         UUID userId = UUID.fromString("61000000-0000-0000-0000-000000000001");
         JwtAuthenticatedUser currentUser = new JwtAuthenticatedUser(userId, "learner@example.com", "USER");
         MistakeRecordResponse dueMistake = mistake("循环边界题", "conceptual", "循环");
-        ResourceItemResponse resource = resource("循环讲解", false);
+        ResourceItemResponse resource = resource(
+            "循环讲解",
+            false,
+            "summary",
+            List.of("循环"),
+            Map.of("contentHash", "large-internal-hash", "wikiTitle", "循环")
+        );
         KnowledgeGraphResponse graph = graph();
         LearningPathCurrentResponse learningPath = learningPath(userId, 40);
         UserProfileResponse profile = new UserProfileResponse(
@@ -68,7 +77,10 @@ class StudyWorkbenchServiceTest {
         assertThat(response.userId()).isEqualTo(userId);
         assertThat(response.dataAvailable()).isTrue();
         assertThat(response.dueMistakes()).containsExactly(dueMistake);
-        assertThat(response.recommendedResources()).containsExactly(resource);
+        assertThat(response.recommendedResources()).hasSize(1);
+        assertThat(response.recommendedResources().getFirst().title()).isEqualTo(resource.title());
+        assertThat(response.recommendedResources().getFirst().sourceUrl()).isEqualTo(resource.sourceUrl());
+        assertThat(response.recommendedResources().getFirst().metadata()).isEmpty();
         assertThat(response.summary().dueMistakeCount()).isEqualTo(1);
         assertThat(response.summary().recommendedResourceCount()).isEqualTo(1);
         assertThat(response.summary().weakKnowledgeCount()).isEqualTo(1);
@@ -120,6 +132,41 @@ class StudyWorkbenchServiceTest {
         assertThat(response.executionPlan().steps())
             .extracting("sourceTaskType")
             .contains("STAGE_TEST");
+    }
+
+    @Test
+    void refreshDailyTriggersResourceRecommendationRefreshBeforeReturningSnapshot() {
+        UUID userId = UUID.fromString("61000000-0000-0000-0000-000000000008");
+        JwtAuthenticatedUser currentUser = new JwtAuthenticatedUser(userId, "learner@example.com", "USER");
+        LearningPathCurrentResponse learningPath = learningPath(userId, 40);
+        ResourceItemResponse resource = resource("循环讲解", false);
+
+        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+        LearningPathQueryService pathService = mock(LearningPathQueryService.class);
+        ResourceLibraryService resourceService = mock(ResourceLibraryService.class);
+        LearnerKnowledgeGraphService graphService = mock(LearnerKnowledgeGraphService.class);
+        UserProfileQueryService profileService = mock(UserProfileQueryService.class);
+        PersonalizedLearningRefreshService refreshService = mock(PersonalizedLearningRefreshService.class);
+        when(pathService.getCurrent(userId)).thenReturn(learningPath);
+        when(resourceService.recommendations(userId, 6)).thenReturn(List.of(resource));
+        when(graphService.getGraph(currentUser, userId)).thenReturn(graph());
+        when(profileService.getCurrentProfile(currentUser, userId))
+            .thenReturn(new UserProfileResponse(userId, Map.of(), "", OffsetDateTime.now(), List.of()));
+        when(jdbc.query(anyString(), any(MapSqlParameterSource.class), anyMistakeMapper()))
+            .thenReturn(List.of());
+
+        var response = service(jdbc, pathService, resourceService, graphService, profileService, refreshService)
+            .refreshDaily(currentUser);
+
+        assertThat(response.recommendedResources()).hasSize(1);
+        assertThat(response.recommendedResources().getFirst().title()).isEqualTo(resource.title());
+        assertThat(response.recommendedResources().getFirst().metadata()).isEmpty();
+        verify(refreshService).triggerResourceRecommendationRefresh(
+            eq(userId),
+            eq("刷新今日学习工作台推荐资源"),
+            eq(learningPath.learningPath()),
+            eq(learningPath.pushedResources())
+        );
     }
 
     @Test
@@ -289,7 +336,27 @@ class StudyWorkbenchServiceTest {
             pathService,
             resourceService,
             graphService,
-            profileService
+            profileService,
+            mock(PersonalizedLearningRefreshService.class)
+        );
+    }
+
+    private static StudyWorkbenchService service(
+        NamedParameterJdbcTemplate jdbc,
+        LearningPathQueryService pathService,
+        ResourceLibraryService resourceService,
+        LearnerKnowledgeGraphService graphService,
+        UserProfileQueryService profileService,
+        PersonalizedLearningRefreshService refreshService
+    ) {
+        return new StudyWorkbenchService(
+            jdbc,
+            new ObjectMapper(),
+            pathService,
+            resourceService,
+            graphService,
+            profileService,
+            refreshService
         );
     }
 

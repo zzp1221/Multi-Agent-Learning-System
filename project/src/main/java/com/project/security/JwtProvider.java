@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
@@ -40,6 +41,7 @@ public class JwtProvider {
         return Jwts.builder()
             .issuer(appProperties.getSecurity().getJwt().getIssuer())
             .subject(userId.toString())
+            .id(UUID.randomUUID().toString())
             .claims(Map.of(
                 "loginId", loginId,
                 "role", role
@@ -65,6 +67,7 @@ public class JwtProvider {
         var builder = Jwts.builder()
             .issuer(appProperties.getSecurity().getJwt().getIssuer())
             .subject(subject)
+            .id(UUID.randomUUID().toString())
             .issuedAt(Date.from(now))
             .expiration(Date.from(expiresAt));
         if (claims != null && !claims.isEmpty()) {
@@ -81,6 +84,14 @@ public class JwtProvider {
             .build()
             .parseSignedClaims(token)
             .getPayload();
+    }
+
+    public Duration remainingTtl(String token) {
+        Date expiration = parseClaims(token).getExpiration();
+        if (expiration == null) {
+            return Duration.ZERO;
+        }
+        return Duration.between(Instant.now(), expiration.toInstant());
     }
 
     private SecretKey buildSigningKey(String configuredSecret) {

@@ -62,3 +62,25 @@ def test_vector_searcher_keeps_non_200_embedding_error(monkeypatch: pytest.Monke
 
     with pytest.raises(RuntimeError, match="Embedding API error: InvalidApiKey denied"):
         searcher._embed("死锁")
+
+
+def test_search_all_excludes_low_confidence_dropped_resources(monkeypatch: pytest.MonkeyPatch) -> None:
+    executed = {}
+
+    class FakeCursor:
+        def execute(self, sql, params):
+            executed["sql"] = sql
+            executed["params"] = params
+
+        def fetchall(self):
+            return []
+
+    monkeypatch.setattr(VectorSearcher, "_embed", lambda self, query: [0.1] * self.dimension)
+    searcher = VectorSearcher(dimension=1024, model="fake-model")
+
+    rows = searcher.search_all(FakeCursor(), "dynamic programming", top_k=5, domain="COMPUTER_SCIENCE")
+
+    assert rows == []
+    assert "wikiBindingStatus" in executed["sql"]
+    assert "LOW_CONFIDENCE_DROPPED" in executed["sql"]
+    assert executed["params"][-1] == 5

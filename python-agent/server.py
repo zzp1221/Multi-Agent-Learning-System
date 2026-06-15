@@ -12,6 +12,7 @@ import secrets
 import tempfile
 import uuid
 from contextlib import asynccontextmanager, suppress
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -43,6 +44,14 @@ INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token"
 INTERNAL_TOKEN_FILE = Path("/run/secrets/zhixue-python-agent-internal-token")
 RESOURCE_IMPORT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "zhixue-ai-resource-library")
 TAVILY_RESOURCE_QUERY_MAX_CHARS = 240
+SMART_ENGINE_WORKER_RESTART_SECONDS = 5.0
+SMART_ENGINE_WORKER_STATE: dict[str, Any] = {
+    "status": "not_started",
+    "restartCount": 0,
+    "lastStartedAt": None,
+    "lastStoppedAt": None,
+    "lastError": "",
+}
 
 
 class FileCancelledTasks:
@@ -272,6 +281,7 @@ def _search_resource_chunks(query: str, top_k: int, domain: str | None = None, u
                 JOIN rag.resource_document rd ON rd.id = rc.document_id
                 JOIN app.learning_resource lr ON lr.id = rc.resource_id
                 WHERE lr.status = 'ACTIVE'
+                  AND COALESCE(lr.metadata_json ->> 'wikiBindingStatus', '') <> 'LOW_CONFIDENCE_DROPPED'
                   AND (%s IS NULL OR rc.domain = %s)
                   AND (
                     rc.access_scope::text = 'GLOBAL'
@@ -619,6 +629,7 @@ def _resource_rows_for_hybrid_refs(
                     LIMIT 1
                   ) rc ON TRUE
                   WHERE lr.status = 'ACTIVE'
+                    AND COALESCE(lr.metadata_json ->> 'wikiBindingStatus', '') <> 'LOW_CONFIDENCE_DROPPED'
                   ORDER BY lr.id, ranked_ref.rag_rank, rc.chunk_no
                 )
                 SELECT
@@ -992,10 +1003,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
 
     cleanup_task = asyncio.create_task(_sandbox_cleanup_loop())
-    stream_worker = SmartEngineStreamWorker(SETTINGS, SUPERVISOR, internal_token)
     stream_worker_task = asyncio.create_task(
-        stream_worker.run_forever(),
-        name="smart-engine-redis-stream-worker",
+        _smart_engine_worker_supervisor_loop(),
+        name="smart-engine-redis-stream-worker-supervisor",
     )
 
     yield
@@ -1011,9 +1021,43 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except asyncio.CancelledError:
         pass
     except Exception:
-        LOGGER.exception("SmartEngine Redis Streams worker stopped with an error")
+        LOGGER.exception("SmartEngine Redis Streams worker supervisor stopped with an error")
     await OpenAICompatibleStructuredGenerator.close_async_clients()
     await OpenAICompatibleClient.close_shared_clients()
+
+
+async def _smart_engine_worker_supervisor_loop() -> None:
+    """Keep the Redis Streams worker alive for the process lifetime."""
+
+    while True:
+        worker = SmartEngineStreamWorker(SETTINGS, SUPERVISOR, internal_token)
+        worker_task = asyncio.create_task(
+            worker.run_forever(),
+            name="smart-engine-redis-stream-worker",
+        )
+        SMART_ENGINE_WORKER_STATE["status"] = "running"
+        SMART_ENGINE_WORKER_STATE["lastStartedAt"] = datetime.now(timezone.utc).isoformat()
+        SMART_ENGINE_WORKER_STATE["lastStoppedAt"] = None
+        SMART_ENGINE_WORKER_STATE["lastError"] = ""
+        try:
+            await worker_task
+            SMART_ENGINE_WORKER_STATE["status"] = "stopped"
+            SMART_ENGINE_WORKER_STATE["lastError"] = "worker returned unexpectedly"
+            LOGGER.error("SmartEngine Redis Streams worker returned unexpectedly; restarting")
+        except asyncio.CancelledError:
+            SMART_ENGINE_WORKER_STATE["status"] = "stopping"
+            worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker_task
+            raise
+        except Exception as exc:
+            SMART_ENGINE_WORKER_STATE["status"] = "error"
+            SMART_ENGINE_WORKER_STATE["lastError"] = str(exc)
+            LOGGER.exception("SmartEngine Redis Streams worker crashed; restarting")
+        finally:
+            SMART_ENGINE_WORKER_STATE["lastStoppedAt"] = datetime.now(timezone.utc).isoformat()
+        SMART_ENGINE_WORKER_STATE["restartCount"] = int(SMART_ENGINE_WORKER_STATE.get("restartCount") or 0) + 1
+        await asyncio.sleep(SMART_ENGINE_WORKER_RESTART_SECONDS)
 
 
 async def _sandbox_cleanup_loop() -> None:
@@ -1177,6 +1221,7 @@ async def health() -> JSONResponse:
         "model": SETTINGS.model_name,
         "resolvedMainModel": SETTINGS.resolve_logical_model("main_chat_model"),
         "resolvedFastModel": SETTINGS.resolve_logical_model("fast_model"),
+        "smartEngineWorker": dict(SMART_ENGINE_WORKER_STATE),
     }
     return JSONResponse(payload)
 

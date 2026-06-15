@@ -11,6 +11,7 @@ import com.project.application.artifact.ArtifactDownloadService;
 import com.project.application.smartengine.PythonAgentClient;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
+import com.project.application.settings.UserLlmSettingsService;
 import com.project.application.streaming.SseStreamSender;
 import com.project.application.voice.VoiceMetricContext;
 import com.project.application.voice.VoiceMetricLogger;
@@ -54,6 +55,7 @@ public class ConversationService {
 
     private static final long DEFAULT_TIMEOUT_MS = 0L;
     private static final Logger LOGGER = LoggerFactory.getLogger(ConversationService.class);
+    private static final String USER_LLM_REQUIRED_MESSAGE = "请先配置并保存模型和 API Key 后再使用智能功能。";
     private static final int DEFAULT_CONVERSATION_PAGE = 0;
     private static final int DEFAULT_CONVERSATION_SIZE = 12;
     private static final int DEFAULT_MESSAGE_SIZE = 50;
@@ -68,6 +70,7 @@ public class ConversationService {
     private final VoicePartialDraftService voicePartialDraftService;
     private final SmartEngineTaskRepository smartEngineTaskRepository;
     private final ArtifactDownloadService artifactDownloadService;
+    private final UserLlmSettingsService userLlmSettingsService;
 
     public ConversationService(
         QnaSessionRepository qnaSessionRepository,
@@ -79,7 +82,8 @@ public class ConversationService {
         VoiceTurnMetricsService voiceTurnMetricsService,
         VoicePartialDraftService voicePartialDraftService,
         SmartEngineTaskRepository smartEngineTaskRepository,
-        ArtifactDownloadService artifactDownloadService
+        ArtifactDownloadService artifactDownloadService,
+        UserLlmSettingsService userLlmSettingsService
     ) {
         this.qnaSessionRepository = qnaSessionRepository;
         this.pythonAgentClient = pythonAgentClient;
@@ -91,6 +95,7 @@ public class ConversationService {
         this.voicePartialDraftService = voicePartialDraftService;
         this.smartEngineTaskRepository = smartEngineTaskRepository;
         this.artifactDownloadService = artifactDownloadService;
+        this.userLlmSettingsService = userLlmSettingsService;
     }
 
     @Transactional
@@ -150,11 +155,16 @@ public class ConversationService {
         UUID conversationId,
         ConversationMessageStreamRequest request
     ) {
-        if (!request.hasUsableInput()) {
-            throw new ApplicationException("INVALID_ARGUMENT", "请输入问题内容或上传至少一张图片", HttpStatus.BAD_REQUEST);
+        if (request == null || !request.hasUsableInput()) {
+            return immediateErrorEmitter(conversationId, "INVALID_ARGUMENT", "请输入问题内容或上传至少一张图片");
         }
-        QnaSession session = qnaSessionRepository.findByIdAndUserId(conversationId, currentUser.userId())
-            .orElseThrow(() -> new ApplicationException("CONVERSATION_NOT_FOUND", "会话不存在", HttpStatus.NOT_FOUND));
+        QnaSession session = qnaSessionRepository.findByIdAndUserId(conversationId, currentUser.userId()).orElse(null);
+        if (session == null) {
+            return immediateErrorEmitter(conversationId, "CONVERSATION_NOT_FOUND", "会话不存在");
+        }
+        if (!isUserLlmReady(currentUser.userId())) {
+            return immediateErrorEmitter(conversationId, "USER_LLM_REQUIRED", USER_LLM_REQUIRED_MESSAGE);
+        }
         String normalizedMessage = request.normalizedMessage();
         List<String> imageUrls = request.normalizedImageUrls();
 
@@ -267,6 +277,29 @@ public class ConversationService {
         } catch (IllegalArgumentException ex) {
             return VoiceTurnRef.empty();
         }
+    }
+
+    private boolean isUserLlmReady(UUID userId) {
+        return userLlmSettingsService == null || userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId);
+    }
+
+    private SseEmitter immediateErrorEmitter(UUID conversationId, String code, String message) {
+        SseEmitter emitter = new SseEmitter(DEFAULT_TIMEOUT_MS);
+        SseStreamSender streamSender = new SseStreamSender(emitter, new AtomicInteger(0));
+        conversationTaskExecutor.execute(() -> {
+            streamSender.sendError(nextSeq -> new ConversationStreamEventPayload(
+                "error",
+                nextSeq,
+                OffsetDateTime.now(),
+                new ConversationDialogState(conversationId, "turn_" + nextSeq, "CORRECT", "END_SESSION"),
+                Map.of(
+                    "code", code,
+                    "message", message
+                )
+            ));
+            safeComplete(emitter);
+        });
+        return emitter;
     }
 
     private void streamConversationAnswer(

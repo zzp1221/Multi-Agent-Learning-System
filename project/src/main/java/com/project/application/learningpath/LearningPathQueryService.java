@@ -35,6 +35,7 @@ import java.util.UUID;
 public class LearningPathQueryService {
 
     private static final Duration LIVE_TASK_STALE_AFTER = Duration.ofMinutes(30);
+    private static final String EMPTY_PATH_SUMMARY = "还没有生成学习路径，请先完成画像配置或发起一次个性化学习路径生成。";
 
     private static final String CURRENT_PLAN_SQL = """
         SELECT p.id,
@@ -153,18 +154,19 @@ public class LearningPathQueryService {
                 Map<String, Object> learningPath = normalizeLearningPath(fallbackLearningPath);
                 Map<String, Object> currentResourcePushPlan = firstNonEmptyMap(resourcePushPlan, learningPath.get("resourcePushPlan"));
                 Map<String, Object> alignedResourcePushPlan = alignResourcePushPlan(learningPath, currentResourcePushPlan, pushedResources);
+                boolean emptyPath = learningPath.isEmpty();
                 return new LearningPathCurrentResponse(
                     null,
                     userId,
                     null,
-                    learningPath.isEmpty() ? "EMPTY" : "ACTIVE",
+                    emptyPath ? "EMPTY" : "ACTIVE",
                     learningPath,
                     resolveActiveStep(learningPath),
                     alignedResourcePushPlan,
                     flattenResourcePushPlan(alignedResourcePushPlan),
                     null,
-                    learningPath.isEmpty() ? null : "TASK_RESPONSE_FALLBACK",
-                    readString(latestCompletedSummary.get("summary")),
+                    emptyPath ? null : "TASK_RESPONSE_FALLBACK",
+                    emptyPath ? EMPTY_PATH_SUMMARY : readString(latestCompletedSummary.get("summary")),
                     null,
                     refreshTaskResponse,
                     resourceRefreshTaskResponse

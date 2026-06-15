@@ -289,35 +289,6 @@ CREATE TABLE IF NOT EXISTS app.note_version (
 CREATE INDEX IF NOT EXISTS idx_note_version_note_created
 ON app.note_version(note_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS app.note_ai_artifact (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  note_id       UUID NOT NULL REFERENCES app.note(id) ON DELETE CASCADE,
-  user_id       UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-  artifact_type TEXT NOT NULL CHECK (artifact_type IN ('SUMMARY', 'KEYWORDS', 'TODOS')),
-  input_hash    TEXT NOT NULL,
-  result_json   JSONB NOT NULL DEFAULT '{}'::jsonb,
-  provider      TEXT NOT NULL DEFAULT '',
-  model         TEXT NOT NULL DEFAULT '',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (note_id, artifact_type, input_hash)
-);
-
-CREATE INDEX IF NOT EXISTS idx_note_ai_artifact_note_type
-ON app.note_ai_artifact(note_id, artifact_type, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS app.note_resource_link (
-  note_id       UUID NOT NULL REFERENCES app.note(id) ON DELETE CASCADE,
-  resource_id   UUID NOT NULL REFERENCES app.learning_resource(id) ON DELETE CASCADE,
-  relation_type TEXT NOT NULL DEFAULT 'RELATED' CHECK (relation_type IN ('RELATED', 'CITED', 'GENERATED_FROM')),
-  score         NUMERIC(6,4) NOT NULL DEFAULT 0,
-  reason        TEXT NOT NULL DEFAULT '',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (note_id, resource_id, relation_type)
-);
-
-CREATE INDEX IF NOT EXISTS idx_note_resource_link_note_score
-ON app.note_resource_link(note_id, score DESC);
-
 -- =========================================================
 -- 对话元数据
 -- =========================================================
@@ -339,39 +310,6 @@ CREATE TABLE IF NOT EXISTS app.qna_session (
 CREATE INDEX IF NOT EXISTS idx_qna_session_user_created
 ON app.qna_session(user_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS app.qna_message_ref (
-  id                BIGSERIAL PRIMARY KEY,
-  session_id        UUID NOT NULL REFERENCES app.qna_session(id) ON DELETE CASCADE,
-  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-  message_seq       INT NOT NULL,
-  role              TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'agent')),
-  message_type      TEXT NOT NULL CHECK (message_type IN ('QUESTION', 'ANSWER', 'SYSTEM', 'AGENT_PROGRESS')),
-  mongo_message_id  TEXT NOT NULL,
-  content_preview   TEXT,
-  image_urls        JSONB NOT NULL DEFAULT '[]'::jsonb,
-  payload_json      JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (session_id, message_seq),
-  UNIQUE (session_id, mongo_message_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_qna_message_ref_session_created
-ON app.qna_message_ref(session_id, created_at ASC);
-
-CREATE INDEX IF NOT EXISTS idx_qna_message_ref_user_created
-ON app.qna_message_ref(user_id, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS app.smart_engine_session (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  qna_session_id    UUID NOT NULL UNIQUE REFERENCES app.qna_session(id) ON DELETE CASCADE,
-  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-  status            app.engine_status NOT NULL DEFAULT 'IDLE',
-  selected_action   TEXT,
-  engine_state      JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 -- =========================================================
 -- 用户画像（当前态 + 历史 + 画像向量）
 -- =========================================================
@@ -379,7 +317,6 @@ CREATE TABLE IF NOT EXISTS app.user_profile_snapshot (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id               UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
   source_session_id     UUID REFERENCES app.qna_session(id) ON DELETE SET NULL,
-  source_message_ref_id BIGINT REFERENCES app.qna_message_ref(id) ON DELETE SET NULL,
   version               INT NOT NULL,
   profile_json          JSONB NOT NULL DEFAULT '{}'::jsonb,
   summary_text          TEXT NOT NULL DEFAULT '',
@@ -659,7 +596,6 @@ WITH (lists = 100);
 -- =========================================================
 CREATE TABLE IF NOT EXISTS app.smart_engine_task (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  smart_session_id  UUID REFERENCES app.smart_engine_session(id) ON DELETE SET NULL,
   qna_session_id    UUID REFERENCES app.qna_session(id) ON DELETE SET NULL,
   user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
   course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
@@ -683,35 +619,6 @@ ON app.smart_engine_task(user_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_smart_engine_task_status
 ON app.smart_engine_task(task_status, service_type, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS app.smart_engine_task_event (
-  id                BIGSERIAL PRIMARY KEY,
-  task_id           UUID NOT NULL REFERENCES app.smart_engine_task(id) ON DELETE CASCADE,
-  event_seq         INT NOT NULL,
-  event_type        TEXT NOT NULL CHECK (
-    event_type IN (
-      'progress',
-      'result_chunk',
-      'resource_file',
-      'question_batch',
-      'judge_result',
-      'video_gen:start',
-      'video_gen:script',
-      'video_gen:speech',
-      'video_gen:avatar',
-      'video_gen:complete',
-      'done',
-      'error'
-    )
-  ),
-  stage_name        TEXT,
-  event_payload     JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (task_id, event_seq)
-);
-
-CREATE INDEX IF NOT EXISTS idx_smart_engine_task_event_task_created
-ON app.smart_engine_task_event(task_id, created_at ASC);
 
 CREATE TABLE IF NOT EXISTS app.generated_artifact (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -959,24 +866,6 @@ BEGIN
   END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS app.tutoring_session (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
-  session_state     JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS app.assessment_result (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id           UUID NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-  course_id         UUID REFERENCES app.courses(id) ON DELETE SET NULL,
-  score             NUMERIC(5,2),
-  result_json       JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 CREATE TABLE IF NOT EXISTS app.practice_set (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id           UUID REFERENCES app.smart_engine_task(id) ON DELETE SET NULL,
@@ -1133,10 +1022,7 @@ $$;
 ALTER TABLE app.learning_resource ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.user_llm_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.qna_session ENABLE ROW LEVEL SECURITY;
-ALTER TABLE app.qna_message_ref ENABLE ROW LEVEL SECURITY;
-ALTER TABLE app.smart_engine_session ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.smart_engine_task ENABLE ROW LEVEL SECURITY;
-ALTER TABLE app.smart_engine_task_event ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.generated_artifact ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.user_resource_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.user_profile_snapshot ENABLE ROW LEVEL SECURITY;
@@ -1147,8 +1033,6 @@ ALTER TABLE app.autonomous_learning_loop ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.autonomous_learning_subgoal ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.autonomous_planning_checkpoint ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.autonomous_replan_event ENABLE ROW LEVEL SECURITY;
-ALTER TABLE app.tutoring_session ENABLE ROW LEVEL SECURITY;
-ALTER TABLE app.assessment_result ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.practice_set ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.practice_item ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.practice_submission ENABLE ROW LEVEL SECURITY;
@@ -1191,39 +1075,10 @@ CREATE POLICY p_qna_session_rw ON app.qna_session
 FOR ALL USING (user_id = app.current_user_uuid())
 WITH CHECK (user_id = app.current_user_uuid());
 
-DROP POLICY IF EXISTS p_qna_message_ref_rw ON app.qna_message_ref;
-CREATE POLICY p_qna_message_ref_rw ON app.qna_message_ref
-FOR ALL USING (user_id = app.current_user_uuid())
-WITH CHECK (user_id = app.current_user_uuid());
-
-DROP POLICY IF EXISTS p_smart_engine_session_rw ON app.smart_engine_session;
-CREATE POLICY p_smart_engine_session_rw ON app.smart_engine_session
-FOR ALL USING (user_id = app.current_user_uuid())
-WITH CHECK (user_id = app.current_user_uuid());
-
 DROP POLICY IF EXISTS p_smart_engine_task_rw ON app.smart_engine_task;
 CREATE POLICY p_smart_engine_task_rw ON app.smart_engine_task
 FOR ALL USING (user_id = app.current_user_uuid())
 WITH CHECK (user_id = app.current_user_uuid());
-
-DROP POLICY IF EXISTS p_smart_engine_task_event_rw ON app.smart_engine_task_event;
-CREATE POLICY p_smart_engine_task_event_rw ON app.smart_engine_task_event
-FOR ALL USING (
-  EXISTS (
-    SELECT 1
-    FROM app.smart_engine_task t
-    WHERE t.id = app.smart_engine_task_event.task_id
-      AND t.user_id = app.current_user_uuid()
-  )
-)
-WITH CHECK (
-  EXISTS (
-    SELECT 1
-    FROM app.smart_engine_task t
-    WHERE t.id = app.smart_engine_task_event.task_id
-      AND t.user_id = app.current_user_uuid()
-  )
-);
 
 DROP POLICY IF EXISTS p_generated_artifact_rw ON app.generated_artifact;
 CREATE POLICY p_generated_artifact_rw ON app.generated_artifact
@@ -1277,16 +1132,6 @@ WITH CHECK (user_id = app.current_user_uuid());
 
 DROP POLICY IF EXISTS p_autonomous_replan_event_rw ON app.autonomous_replan_event;
 CREATE POLICY p_autonomous_replan_event_rw ON app.autonomous_replan_event
-FOR ALL USING (user_id = app.current_user_uuid())
-WITH CHECK (user_id = app.current_user_uuid());
-
-DROP POLICY IF EXISTS p_tutoring_session_rw ON app.tutoring_session;
-CREATE POLICY p_tutoring_session_rw ON app.tutoring_session
-FOR ALL USING (user_id = app.current_user_uuid())
-WITH CHECK (user_id = app.current_user_uuid());
-
-DROP POLICY IF EXISTS p_assessment_result_rw ON app.assessment_result;
-CREATE POLICY p_assessment_result_rw ON app.assessment_result
 FOR ALL USING (user_id = app.current_user_uuid())
 WITH CHECK (user_id = app.current_user_uuid());
 
@@ -1494,11 +1339,6 @@ CREATE TRIGGER trg_qna_session_touch_updated_at
 BEFORE UPDATE ON app.qna_session
 FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
 
-DROP TRIGGER IF EXISTS trg_smart_engine_session_touch_updated_at ON app.smart_engine_session;
-CREATE TRIGGER trg_smart_engine_session_touch_updated_at
-BEFORE UPDATE ON app.smart_engine_session
-FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
-
 DROP TRIGGER IF EXISTS trg_smart_engine_task_touch_updated_at ON app.smart_engine_task;
 CREATE TRIGGER trg_smart_engine_task_touch_updated_at
 BEFORE UPDATE ON app.smart_engine_task
@@ -1527,11 +1367,6 @@ FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
 DROP TRIGGER IF EXISTS trg_autonomous_learning_subgoal_touch_updated_at ON app.autonomous_learning_subgoal;
 CREATE TRIGGER trg_autonomous_learning_subgoal_touch_updated_at
 BEFORE UPDATE ON app.autonomous_learning_subgoal
-FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
-
-DROP TRIGGER IF EXISTS trg_tutoring_session_touch_updated_at ON app.tutoring_session;
-CREATE TRIGGER trg_tutoring_session_touch_updated_at
-BEFORE UPDATE ON app.tutoring_session
 FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
 
 DROP TRIGGER IF EXISTS trg_practice_set_touch_updated_at ON app.practice_set;
@@ -1680,10 +1515,7 @@ FOR EACH ROW EXECUTE FUNCTION app.touch_updated_at();
 
 ANALYZE app.learning_resource;
 ANALYZE app.qna_session;
-ANALYZE app.qna_message_ref;
-ANALYZE app.smart_engine_session;
 ANALYZE app.smart_engine_task;
-ANALYZE app.smart_engine_task_event;
 ANALYZE app.generated_artifact;
 ANALYZE app.user_resource_state;
 ANALYZE app.user_profile_snapshot;

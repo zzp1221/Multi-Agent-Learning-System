@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.api.resource.dto.ResourceItemResponse;
 import com.project.api.resource.dto.ResourceListResponse;
 import com.project.api.resource.dto.ResourceProgressRequest;
+import com.project.api.resource.dto.ResourceSemanticHitResponse;
 import com.project.api.resource.dto.ResourceSemanticResultResponse;
 import com.project.api.resource.dto.ResourceSemanticSearchResponse;
 import com.project.application.common.ApplicationException;
@@ -13,6 +14,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 
+import java.sql.ResultSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -67,6 +69,8 @@ class ResourceLibraryServiceTest {
                     && sql.contains("sourceUrl")
                     && sql.contains("accessibilityStatus")
                     && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
+                    && sql.contains("wiki_resource_importer")
+                    && sql.contains("generic lexical score")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
@@ -111,6 +115,8 @@ class ResourceLibraryServiceTest {
                     && sql.contains("sourceUrl")
                     && sql.contains("accessibilityStatus")
                     && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
+                    && sql.contains("wiki_resource_importer")
+                    && sql.contains("generic lexical score")
                     && !sql.contains("unnest(:stageRankedIds::uuid[])")
                     && !sql.contains("context_signals AS")
                     && !sql.contains("preferred_category")
@@ -190,13 +196,14 @@ class ResourceLibraryServiceTest {
         UUID resourceId = UUID.fromString("70000000-0000-0000-0000-000000000002");
         NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
         ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        ResourceSemanticWarmupService warmupService = mock(ResourceSemanticWarmupService.class);
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Boolean.class)))
             .thenReturn(true);
         when(jdbcTemplate.update(anyString(), any(MapSqlParameterSource.class))).thenReturn(1);
         when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
             .thenReturn(null);
 
-        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient, warmupService);
         service.updateProgress(userId, resourceId, new ResourceProgressRequest(100, false));
 
         verify(jdbcTemplate).queryForObject(
@@ -220,6 +227,26 @@ class ResourceLibraryServiceTest {
                     && Boolean.TRUE.equals(source.getValue("completed"))
             )
         );
+        verify(warmupService).evictUser(userId);
+    }
+
+    @Test
+    void setFavoriteEvictsWarmRecommendationCacheAfterStateChange() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000018");
+        UUID resourceId = UUID.fromString("70000000-0000-0000-0000-000000000018");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        ResourceSemanticWarmupService warmupService = mock(ResourceSemanticWarmupService.class);
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Boolean.class)))
+            .thenReturn(true);
+        when(jdbcTemplate.update(anyString(), any(MapSqlParameterSource.class))).thenReturn(1);
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(null);
+
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient, warmupService);
+        service.setFavorite(userId, resourceId, true);
+
+        verify(warmupService).evictUser(userId);
     }
 
     @Test
@@ -270,10 +297,15 @@ class ResourceLibraryServiceTest {
         verify(semanticClient, never()).search(any(UUID.class), anyString(), any(Integer.class));
         verify(jdbcTemplate).query(
             org.mockito.ArgumentMatchers.argThat((String sql) ->
-                sql.contains("WITH ranked AS")
+                sql.contains("WITH stage_ranked AS")
                     && sql.contains("FROM (VALUES")
                     && sql.contains("CAST(:stageRankedId0 AS uuid)")
-                    && sql.contains("ORDER BY semantic_rank ASC")
+                    && sql.contains("GREATEST(0.0, 0.18 - (sr.stage_rank * 0.01))")
+                    && sql.contains("recommendation_score DESC")
+                    && sql.contains("stage_rank ASC NULLS LAST")
+                    && sql.contains("app.user_resource_state history_state")
+                    && sql.contains("COALESCE(urs.is_favorite, false)")
+                    && sql.contains("COALESCE(urs.progress_percent, 0) * 0.0012")
                     && !sql.contains("unnest(:rankedIds::uuid[])")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
@@ -377,7 +409,21 @@ class ResourceLibraryServiceTest {
                     null,
                     0.72,
                     "tavily_current_stage_fallback",
-                    List.of(),
+                    List.of(new ResourceSemanticHitResponse(
+                        11L,
+                        0,
+                        0.91,
+                        """
+                        Wiki title: "Graph Traversal"
+                        Wiki slug: algorithms/graph-traversal
+                        Aliases: BFS, DFS
+                        Wiki summary: Graph traversal overview.
+                        Resource title: External graph guide
+                        Tags: graph, wiki-bound-resource, "metadata-search-fallback", existing-web-match, traversal
+                        URL: https://example.com/graph
+                        """,
+                        "https://example.com/graph"
+                    )),
                     new com.project.api.resource.dto.ResourceExternalCandidateResponse(
                         "External graph guide",
                         "https://example.com/graph",
@@ -399,6 +445,12 @@ class ResourceLibraryServiceTest {
 
         assertThat(response.results()).hasSize(1);
         assertThat(response.results().get(0).resource().id()).isEqualTo(resourceId);
+        String hitContent = response.results().get(0).hits().get(0).content();
+        assertThat(hitContent)
+            .contains("Topic: Graph Traversal")
+            .contains("Topic summary: Graph traversal overview.")
+            .contains("Tags: graph, traversal")
+            .doesNotContain("Wiki slug:", "Aliases:", "wiki-bound-resource", "metadata-search-fallback", "existing-web-match");
         verify(jdbcTemplate).update(
             org.mockito.ArgumentMatchers.contains("INSERT INTO app.learning_resource"),
             org.mockito.ArgumentMatchers.<MapSqlParameterSource>argThat(params ->
@@ -424,13 +476,66 @@ class ResourceLibraryServiceTest {
             org.mockito.ArgumentMatchers.argThat((String sql) ->
                 sql.contains("jsonb_typeof(lr.tags) = 'array'")
                     && sql.contains("ELSE '[]'::jsonb END")
+                    && sql.contains("lower(trim")
+                    && sql.contains("NOT IN (:internalTags)")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
                     && Integer.valueOf(12).equals(source.getValue("limit"))
+                    && source.getValue("internalTags") instanceof java.util.Set<?> internalTags
+                    && internalTags.contains("wiki-bound-resource")
+                    && internalTags.contains("existing-web-match")
+                    && internalTags.contains("metadata-search-fallback")
             ),
             any(RowMapper.class)
         );
+    }
+
+    @Test
+    void resourceMapperCleansPipelineSummaryAndWrappedTitle() throws Exception {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000017");
+        UUID resourceId = UUID.fromString("70000000-0000-0000-0000-000000000017");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenAnswer(invocation -> {
+                RowMapper<ResourceItemResponse> mapper = invocation.getArgument(2);
+                return List.of(mapper.mapRow(resourceResultSet(resourceId), 0));
+            });
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
+            .thenReturn(1L);
+
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
+        ResourceListResponse response = service.listResources(userId, null, null, null, null, null, null, null, false, "latest", 0, 12);
+
+        assertThat(response.items()).hasSize(1);
+        ResourceItemResponse item = response.items().get(0);
+        assertThat(item.title()).isEqualTo("路由协议对比（RIP与OSPF）");
+        assertThat(item.summaryText()).isEmpty();
+        assertThat(item.tags()).contains("routing");
+        assertThat(item.tags()).doesNotContain(
+            "wiki-bound-resource",
+            "Existing-Web-Match",
+            "\"metadata-search-fallback\"",
+            "metadata-search-fallback",
+            "\"路由协议对比（RIP与OSPF）\"",
+            "RIP",
+            "OSPF"
+        );
+        assertThat(item.metadata())
+            .doesNotContainKeys(
+                "wikiSlug",
+                "wikiTitle",
+                "wikiSourceRef",
+                "wikiAliases",
+                "wikiBindingStatus",
+                "ingestedBy",
+                "displayType",
+                "accessibilityStatus",
+                "qualityScore",
+                "popularityScore"
+            )
+            .containsEntry("noteId", "note-123");
     }
 
     @Test
@@ -462,6 +567,8 @@ class ResourceLibraryServiceTest {
                     && sql.contains("sourceUrl")
                     && sql.contains("accessibilityStatus")
                     && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
+                    && sql.contains("wiki_resource_importer")
+                    && sql.contains("generic lexical score")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
@@ -476,6 +583,8 @@ class ResourceLibraryServiceTest {
                     && sql.contains("sourceUrl")
                     && sql.contains("accessibilityStatus")
                     && sql.contains("resource_type::text NOT IN ('QUIZ', 'PRACTICE')")
+                    && sql.contains("wiki_resource_importer")
+                    && sql.contains("generic lexical score")
             ),
             org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
                 params instanceof MapSqlParameterSource source
@@ -537,6 +646,42 @@ class ResourceLibraryServiceTest {
             "",
             java.util.Map.of()
         );
+    }
+
+    private static ResultSet resourceResultSet(UUID resourceId) throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.getObject("id")).thenReturn(resourceId);
+        when(rs.getString("title")).thenReturn("\"路由协议对比（RIP与OSPF）\"");
+        when(rs.getString("domain")).thenReturn("COMPUTER_SCIENCE");
+        when(rs.getString("resource_type")).thenReturn("READING");
+        when(rs.getString("difficulty_level")).thenReturn("BASIC");
+        when(rs.getString("source_kind")).thenReturn("WEB");
+        when(rs.getString("summary_text")).thenReturn("Metadata-only URL candidate matched to wiki topic with generic lexical score 0.4210");
+        when(rs.getString("tags_json")).thenReturn("[\"routing\",\"wiki-bound-resource\",\"Existing-Web-Match\",\"\\\"metadata-search-fallback\\\"\",\"\\\"路由协议对比（RIP与OSPF）\\\"\",\"RIP\",\"OSPF\"]");
+        when(rs.getString("metadata_json")).thenReturn("""
+            {
+              "sourceUrl": "https://example.com/routing",
+              "sourceName": "example.com",
+              "ingestedBy": "wiki_resource_importer",
+              "wikiSlug": "networking/routing-protocols",
+              "wikiTitle": "\\"路由协议对比（RIP与OSPF）\\"",
+              "wikiSourceRef": "wiki://networking/routing-protocols",
+              "wikiAliases": ["RIP", "OSPF"],
+              "noteId": "note-123",
+              "displayType": "DOCUMENT",
+              "accessibilityStatus": "ACCESSIBLE",
+              "copyrightStatus": "AUTHORIZED",
+              "qualityScore": 0.9,
+              "popularityScore": 0.1,
+              "csCategory": "GENERAL_CS",
+              "csSubcategory": "Networking"
+            }
+            """);
+        when(rs.getLong("favorite_count")).thenReturn(0L);
+        when(rs.getBoolean("is_favorite")).thenReturn(false);
+        when(rs.getInt("progress_percent")).thenReturn(0);
+        when(rs.getBoolean("completed")).thenReturn(false);
+        return rs;
     }
 
     private static ResourceLibraryService service(

@@ -1,5 +1,6 @@
 package com.project.api.note.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
@@ -10,6 +11,7 @@ public record UpdateNoteRequest(
     String title,
 
     @Size(max = 120000, message = "笔记内容不能超过 120000 字")
+    @JsonAlias("content")
     String markdownContent,
 
     UUID folderId,

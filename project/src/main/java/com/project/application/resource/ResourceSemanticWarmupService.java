@@ -53,7 +53,7 @@ public class ResourceSemanticWarmupService {
         if (entry != null && !entry.isExpired()) {
             return List.of();
         }
-        String query = currentLearningStageQuery(userId);
+        String query = resolveCurrentLearningStageQuery(userId);
         if (query.isBlank()) {
             entries.remove(userId);
             return List.of();
@@ -64,6 +64,13 @@ public class ResourceSemanticWarmupService {
 
     public List<UUID> recommendationIds(UUID userId, int desiredLimit) {
         return stageRankedIds(userId, Math.max(desiredLimit * 3, desiredLimit));
+    }
+
+    public void evictUser(UUID userId) {
+        if (userId == null) {
+            return;
+        }
+        entries.remove(userId);
     }
 
     public void submitCurrentStageWarmup(UUID userId) {
@@ -77,7 +84,7 @@ public class ResourceSemanticWarmupService {
         int topK = normalizeTopK(desiredLimit);
         warmupTaskExecutor.execute(() -> {
             try {
-                String query = currentLearningStageQuery(userId);
+                String query = resolveCurrentLearningStageQuery(userId);
                 if (query.isBlank()) {
                     entries.remove(userId);
                     return;
@@ -130,6 +137,15 @@ public class ResourceSemanticWarmupService {
             }
         }
         return new ArrayList<>(seen);
+    }
+
+    private String resolveCurrentLearningStageQuery(UUID userId) {
+        try {
+            return currentLearningStageQuery(userId);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Skip resource semantic warmup because current learning stage query is unavailable userId={}: {}", userId, ex.getMessage());
+            return "";
+        }
     }
 
     private String currentLearningStageQuery(UUID userId) {

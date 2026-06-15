@@ -129,6 +129,7 @@ public class VoiceController {
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         AtomicInteger sequence = new AtomicInteger(0);
         AtomicBoolean firstAudioSent = new AtomicBoolean(false);
+        AtomicBoolean doneSent = new AtomicBoolean(false);
         String streamId = UUID.randomUUID().toString();
         long startedAtNanos = System.nanoTime();
         emitter.onCompletion(() -> LOGGER.debug("Voice TTS SSE completed"));
@@ -142,13 +143,13 @@ public class VoiceController {
                     if (!chunk.finished() && firstAudioSent.compareAndSet(false, true)) {
                         recordTtsMetric("tts_first_audio_ms", metricContext, streamId, startedAtNanos, "success", text.length(), chunk.audioBase64().length(), "");
                     }
-                    sendTtsChunk(emitter, sequence, chunk);
+                    sendTtsChunk(emitter, sequence, doneSent, chunk);
                 });
                 recordTtsMetric("tts_done_ms", metricContext, streamId, startedAtNanos, "success", text.length(), null, "");
                 if (request.isTurnComplete()) {
                     recordVoiceTurnTotal(metricContext, request.normalizedCompletionOutcome(), text.length(), null, "");
                 }
-                sendEvent(emitter, "done", sequence, Map.of("finished", true));
+                sendDoneIfNeeded(emitter, sequence, doneSent, Map.of("finished", true));
                 emitter.complete();
             } catch (Exception ex) {
                 if (ClientDisconnectDetector.isClientDisconnect(ex)) {
@@ -308,9 +309,14 @@ public class VoiceController {
         );
     }
 
-    private void sendTtsChunk(SseEmitter emitter, AtomicInteger sequence, VoiceTtsChunk chunk) {
+    private void sendTtsChunk(
+        SseEmitter emitter,
+        AtomicInteger sequence,
+        AtomicBoolean doneSent,
+        VoiceTtsChunk chunk
+    ) {
         if (chunk.finished()) {
-            sendEvent(emitter, "done", sequence, Map.of("finished", true));
+            sendDoneIfNeeded(emitter, sequence, doneSent, Map.of("finished", true));
             return;
         }
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -318,6 +324,17 @@ public class VoiceController {
         payload.put("sampleRate", chunk.sampleRate() > 0 ? chunk.sampleRate() : appProperties.getVoice().getSampleRate());
         payload.put("format", chunk.format());
         sendEvent(emitter, "audio", sequence, payload);
+    }
+
+    private void sendDoneIfNeeded(
+        SseEmitter emitter,
+        AtomicInteger sequence,
+        AtomicBoolean doneSent,
+        Map<String, Object> payload
+    ) {
+        if (doneSent.compareAndSet(false, true)) {
+            sendEvent(emitter, "done", sequence, payload);
+        }
     }
 
     private void sendEvent(SseEmitter emitter, String name, AtomicInteger sequence, Map<String, Object> payload) {

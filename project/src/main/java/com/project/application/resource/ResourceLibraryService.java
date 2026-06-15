@@ -8,6 +8,7 @@ import com.project.api.resource.dto.ResourceDetailResponse;
 import com.project.api.resource.dto.ResourceItemResponse;
 import com.project.api.resource.dto.ResourceListResponse;
 import com.project.api.resource.dto.ResourceProgressRequest;
+import com.project.api.resource.dto.ResourceSemanticHitResponse;
 import com.project.api.resource.dto.ResourceSemanticResultResponse;
 import com.project.api.resource.dto.ResourceSemanticSearchResponse;
 import com.project.api.resource.dto.ResourceStatsResponse;
@@ -33,6 +34,7 @@ import java.sql.Timestamp;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,14 +42,34 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class ResourceLibraryService {
 
     private static final int DEFAULT_PAGE_SIZE = 12;
     private static final int MAX_PAGE_SIZE = 60;
+    private static final double WIKI_BOUND_LEXICAL_CONFIDENCE_MIN = 0.60;
     private static final UUID UUID_NAMESPACE_URL = UUID.fromString("6ba7b811-9dad-11d1-80b4-00c04fd430c8");
     private static final UUID EXTERNAL_RESOURCE_NAMESPACE = uuid5(UUID_NAMESPACE_URL, "zhixue-ai-resource-library");
+    private static final Set<String> INTERNAL_RESOURCE_TAGS = Set.of(
+        "existing-web-match",
+        "metadata-search-fallback",
+        "resource_library_tavily_fallback",
+        "wiki-bound-resource"
+    );
+    private static final List<String> INTERNAL_SUMMARY_PREFIXES = List.of(
+        "Metadata-only URL candidate matched to wiki topic",
+        "Metadata-only URL candidate"
+    );
+    private static final Set<String> PUBLIC_METADATA_KEYS = Set.of(
+        "noteId"
+    );
+    private static final Pattern GENERIC_LEXICAL_SCORE_PATTERN = Pattern.compile(
+        "generic lexical score\\s+([0-9]+(?:[.][0-9]+)?)",
+        Pattern.CASE_INSENSITIVE
+    );
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
     private static final TypeReference<Map<String, Object>> STRING_OBJECT_MAP = new TypeReference<>() {
@@ -146,6 +168,7 @@ public class ResourceLibraryService {
             """,
             baseParams(userId).addValue("resourceId", resourceId).addValue("favorite", favorite)
         );
+        semanticWarmupService.evictUser(userId);
         return getState(userId, resourceId);
     }
 
@@ -172,6 +195,7 @@ public class ResourceLibraryService {
                 .addValue("progress", progress)
                 .addValue("completed", completed)
         );
+        semanticWarmupService.evictUser(userId);
         return getState(userId, resourceId);
     }
 
@@ -190,7 +214,7 @@ public class ResourceLibraryService {
                     hydrateSemanticResource(userId, result),
                     result.score(),
                     result.reason(),
-                    result.hits(),
+                    displaySemanticHits(result.hits()),
                     result.externalResource()
                 ))
                 .filter(result -> result.resource() != null)
@@ -210,47 +234,7 @@ public class ResourceLibraryService {
     public List<ResourceItemResponse> recommendations(UUID userId, Integer limit) {
         int safeLimit = Math.max(1, Math.min(20, limit == null ? 6 : limit));
         List<UUID> rankedIds = semanticWarmupService.recommendationIds(userId, safeLimit);
-        if (!rankedIds.isEmpty()) {
-            List<ResourceItemResponse> warmRecommendations = resourcesByIds(userId, rankedIds, safeLimit, true);
-            if (warmRecommendations.size() >= safeLimit) {
-                return warmRecommendations;
-            }
-            List<ResourceItemResponse> fallback = fallbackRecommendations(userId, safeLimit, resourceIds(warmRecommendations));
-            return mergeResources(warmRecommendations, fallback, safeLimit);
-        }
-        return fallbackRecommendations(userId, safeLimit, Set.of());
-    }
-
-    private List<ResourceItemResponse> resourcesByIds(UUID userId, List<UUID> resourceIds, int limit, boolean incompleteOnly) {
-        if (resourceIds.isEmpty()) {
-            return List.of();
-        }
-        MapSqlParameterSource params = baseParams(userId)
-            .addValue("limit", limit);
-        bindStageRankedIds(params, resourceIds);
-        String completedCondition = incompleteOnly ? "AND COALESCE(urs.completed, false) = false\n" : "";
-        return jdbcTemplate.query(
-            """
-            WITH ranked AS (
-              SELECT resource_id, stage_rank
-              FROM (VALUES
-            """ + stageRankedValuesSql(resourceIds.size()) + """
-              ) AS ranked(resource_id, stage_rank)
-            )
-            """ + resourceSelectSql(", ranked.stage_rank AS semantic_rank\n") + """
-            JOIN ranked ON ranked.resource_id = lr.id
-            WHERE lr.status = 'ACTIVE'
-              """ + completedCondition + """
-              AND
-            """ + visibleResourceCondition() + """
-              AND
-            """ + readableResourceCondition() + """
-            ORDER BY semantic_rank ASC
-            LIMIT :limit
-            """,
-            params,
-            resourceRowMapper()
-        );
+        return rankedRecommendations(userId, rankedIds, safeLimit);
     }
 
     private ResourceItemResponse hydrateSemanticResource(UUID userId, ResourceSemanticResultResponse result) {
@@ -324,19 +308,51 @@ public class ResourceLibraryService {
         return resourceId;
     }
 
-    private List<ResourceItemResponse> fallbackRecommendations(UUID userId, int limit, Set<UUID> excludedIds) {
+    private List<ResourceItemResponse> rankedRecommendations(UUID userId, List<UUID> stageRankedIds, int limit) {
+        return rankedRecommendations(userId, stageRankedIds, limit, Set.of());
+    }
+
+    private List<ResourceItemResponse> rankedRecommendations(
+        UUID userId,
+        List<UUID> stageRankedIds,
+        int limit,
+        Set<UUID> excludedIds
+    ) {
         MapSqlParameterSource params = baseParams(userId)
             .addValue("limit", limit)
             .addValue("excludedIds", excludedIds.isEmpty() ? List.of(UUID.randomUUID()) : List.copyOf(excludedIds))
             .addValue("excludedIdsEmpty", excludedIds.isEmpty());
+        bindStageRankedIds(params, stageRankedIds);
         String recommendationScore = recommendationScoreSql();
+        String stageRankCte = stageRankedIds.isEmpty() ? """
+            WITH
+            """ : """
+            WITH stage_ranked AS (
+              SELECT resource_id, stage_rank
+              FROM (VALUES
+            """ + stageRankedValuesSql(stageRankedIds.size()) + """
+              ) AS ranked(resource_id, stage_rank)
+            ),
+            """;
+        String stageRankColumn = stageRankedIds.isEmpty()
+            ? ", NULL::int AS stage_rank\n"
+            : ", sr.stage_rank\n";
+        String stageRankJoin = stageRankedIds.isEmpty()
+            ? ""
+            : "LEFT JOIN stage_ranked sr ON sr.resource_id = lr.id\n";
+        String semanticRankBoost = stageRankedIds.isEmpty()
+            ? ""
+            : """
+              + CASE WHEN sr.stage_rank IS NULL THEN 0 ELSE GREATEST(0.0, 0.18 - (sr.stage_rank * 0.01)) END
+            """;
         return jdbcTemplate.query(
-            """
-            WITH scored_resources AS (
+            stageRankCte + """
+            scored_resources AS (
             """ + resourceSelectSql("""
-              , """ + recommendationScore + """
+              , (""" + recommendationScore + semanticRankBoost + """
+              )
                AS recommendation_score
-            """) + """
+            """ + stageRankColumn) + stageRankJoin + """
               WHERE lr.status = 'ACTIVE'
                 AND (:excludedIdsEmpty = true OR lr.id NOT IN (:excludedIds))
                 AND COALESCE(urs.completed, false) = false
@@ -349,6 +365,7 @@ public class ResourceLibraryService {
             FROM scored_resources
             ORDER BY
               recommendation_score DESC,
+              stage_rank ASC NULLS LAST,
               updated_at DESC
             LIMIT :limit
             """,
@@ -401,6 +418,7 @@ public class ResourceLibraryService {
               CASE WHEN jsonb_typeof(lr.tags) = 'array' THEN lr.tags ELSE '[]'::jsonb END
             ) AS tag
             WHERE lr.status = 'ACTIVE'
+              AND lower(trim(both chr(34) from trim(both chr(39) from btrim(tag)))) NOT IN (:internalTags)
               AND
               """ + visibleResourceCondition() + """
               AND
@@ -409,7 +427,9 @@ public class ResourceLibraryService {
             ORDER BY count DESC, tag ASC
             LIMIT :limit
             """,
-            baseParams(userId).addValue("limit", safeLimit),
+            baseParams(userId)
+                .addValue("limit", safeLimit)
+                .addValue("internalTags", INTERNAL_RESOURCE_TAGS),
             (rs, rowNum) -> new ResourceTagResponse(rs.getString("tag"), rs.getLong("count"))
         );
     }
@@ -671,9 +691,25 @@ public class ResourceLibraryService {
                 AND COALESCE(NULLIF(upper(lr.metadata_json ->> 'displayType'), ''), lr.resource_type::text) NOT IN ('QUIZ', 'PRACTICE')
                 AND COALESCE(lr.metadata_json ->> 'sourceUrl', '') ~* '^https?://'
                 AND COALESCE(lr.metadata_json ->> 'accessibilityStatus', '') = 'ACCESSIBLE'
+                AND
+                """ + highConfidenceExternalResourceCondition() + """
               )
             )
             """;
+    }
+
+    private String highConfidenceExternalResourceCondition() {
+        return """
+            (
+              COALESCE(lr.metadata_json ->> 'ingestedBy', '') <> 'wiki_resource_importer'
+              OR COALESCE(lr.summary_text, '') !~* 'generic lexical score [0-9]+[.][0-9]+'
+              OR COALESCE(
+                   NULLIF((regexp_match(COALESCE(lr.summary_text, ''), 'generic lexical score ([0-9]+[.][0-9]+)', 'i'))[1], '')::numeric,
+                   0
+                 ) >= %s
+            )
+            AND COALESCE(lr.metadata_json ->> 'wikiBindingStatus', '') <> 'LOW_CONFIDENCE_DROPPED'
+            """.formatted(WIKI_BOUND_LEXICAL_CONFIDENCE_MIN);
     }
 
     private String recommendationScoreSql() {
@@ -715,7 +751,8 @@ public class ResourceLibraryService {
                     AND (COALESCE(history_state.is_favorite, false) OR COALESCE(history_state.progress_percent, 0) > 0)
                     AND jsonb_exists(lr.tags, history_tag.tag)
                 ) THEN 0.12 ELSE 0 END
-              + CASE WHEN COALESCE(urs.progress_percent, 0) > 0 THEN 0.03 ELSE 0 END
+              + CASE WHEN COALESCE(urs.is_favorite, false) THEN 0.18 ELSE 0 END
+              + LEAST(0.12, COALESCE(urs.progress_percent, 0) * 0.0012)
               + CASE WHEN lower(lr.title) LIKE 'redirecting%%'
                   OR lower(COALESCE(lr.summary_text, '')) LIKE 'redirecting%%'
                 THEN -0.30 ELSE 0 END
@@ -820,42 +857,44 @@ public class ResourceLibraryService {
 
     private RowMapper<ResourceItemResponse> resourceRowMapper() {
         return (rs, rowNum) -> {
-            Map<String, Object> metadata = parseObject(rs.getString("metadata_json"));
-            List<String> tags = parseStringList(rs.getString("tags_json"));
+            String rawSummary = rs.getString("summary_text");
+            Map<String, Object> rawMetadata = parseObject(rs.getString("metadata_json"));
+            List<String> tags = displayTags(parseStringList(rs.getString("tags_json")), rawMetadata, rawSummary);
+            Map<String, Object> metadata = displayMetadata(rawMetadata, rawSummary);
             String resourceType = rs.getString("resource_type");
             return new ResourceItemResponse(
                 (UUID) rs.getObject("id"),
-                displayTitle(rs.getString("title"), metadata),
+                displayTitle(rs.getString("title"), rawMetadata),
                 rs.getString("domain"),
                 resourceType,
-                displayType(resourceType, metadata),
+                displayType(resourceType, rawMetadata),
                 rs.getString("difficulty_level"),
                 rs.getString("source_kind"),
-                rs.getString("summary_text"),
+                displaySummary(rawSummary),
                 tags,
-                readString(metadata, "sourceUrl", "sourceURL", "url"),
-                readString(metadata, "sourceName", "provider", "siteName"),
-                readString(metadata, "coverUrl", "coverURL", "thumbnailUrl"),
-                readString(metadata, "license"),
-                readString(metadata, "copyrightStatus"),
-                readString(metadata, "accessibilityStatus"),
-                readInteger(metadata, "httpStatus"),
-                readOffsetDateTime(metadata, "lastCheckedAt"),
-                readDoubleOrNull(metadata, "qualityScore"),
-                readDoubleOrNull(metadata, "popularityScore"),
+                readString(rawMetadata, "sourceUrl", "sourceURL", "url"),
+                readString(rawMetadata, "sourceName", "provider", "siteName"),
+                readString(rawMetadata, "coverUrl", "coverURL", "thumbnailUrl"),
+                readString(rawMetadata, "license"),
+                readString(rawMetadata, "copyrightStatus"),
+                readString(rawMetadata, "accessibilityStatus"),
+                readInteger(rawMetadata, "httpStatus"),
+                readOffsetDateTime(rawMetadata, "lastCheckedAt"),
+                readDoubleOrNull(rawMetadata, "qualityScore"),
+                readDoubleOrNull(rawMetadata, "popularityScore"),
                 rs.getLong("favorite_count"),
-                readLongOrNull(metadata, "viewCount"),
-                readLongOrNull(metadata, "likeCount"),
-                readInteger(metadata, "durationMinutes"),
-                readLongOrNull(metadata, "fileSizeBytes"),
+                readLongOrNull(rawMetadata, "viewCount"),
+                readLongOrNull(rawMetadata, "likeCount"),
+                readInteger(rawMetadata, "durationMinutes"),
+                readLongOrNull(rawMetadata, "fileSizeBytes"),
                 rs.getBoolean("is_favorite"),
                 rs.getInt("progress_percent"),
                 rs.getBoolean("completed"),
                 readOffsetDateTime(rs, "last_study_at"),
                 readOffsetDateTime(rs, "created_at"),
                 readOffsetDateTime(rs, "updated_at"),
-                readString(metadata, "csCategory"),
-                readString(metadata, "csSubcategory"),
+                readString(rawMetadata, "csCategory"),
+                readString(rawMetadata, "csSubcategory"),
                 metadata
             );
         };
@@ -871,42 +910,6 @@ public class ResourceLibraryService {
             || normalized.equals("comprehensive")
             || normalized.equals("recommended")
             || normalized.equals("recommendation");
-    }
-
-    private List<ResourceItemResponse> mergeResources(
-        List<ResourceItemResponse> primary,
-        List<ResourceItemResponse> secondary,
-        int limit
-    ) {
-        List<ResourceItemResponse> merged = new ArrayList<>();
-        Set<UUID> seen = new LinkedHashSet<>();
-        for (ResourceItemResponse resource : primary) {
-            if (resource != null && seen.add(resource.id())) {
-                merged.add(resource);
-            }
-            if (merged.size() >= limit) {
-                return merged;
-            }
-        }
-        for (ResourceItemResponse resource : secondary) {
-            if (resource != null && seen.add(resource.id())) {
-                merged.add(resource);
-            }
-            if (merged.size() >= limit) {
-                break;
-            }
-        }
-        return merged;
-    }
-
-    private Set<UUID> resourceIds(List<ResourceItemResponse> resources) {
-        Set<UUID> ids = new LinkedHashSet<>();
-        for (ResourceItemResponse resource : resources) {
-            if (resource != null) {
-                ids.add(resource.id());
-            }
-        }
-        return ids;
     }
 
     private UUID resourceUuid(String sourceUrl) {
@@ -1037,11 +1040,11 @@ public class ResourceLibraryService {
     }
 
     private String displayTitle(String rawTitle, Map<String, Object> metadata) {
-        String title = rawTitle == null ? "" : rawTitle.trim();
+        String title = stripWrappingQuotes(rawTitle == null ? "" : rawTitle.trim());
         if (!isPlaceholderTitle(title)) {
             return title;
         }
-        String metadataTitle = readString(metadata, "title", "sourceTitle", "pageTitle");
+        String metadataTitle = stripWrappingQuotes(readString(metadata, "title", "sourceTitle", "pageTitle"));
         if (metadataTitle != null && !isPlaceholderTitle(metadataTitle)) {
             return metadataTitle;
         }
@@ -1055,6 +1058,179 @@ public class ResourceLibraryService {
             return "PyTorch: " + derivedTitle;
         }
         return derivedTitle;
+    }
+
+    private String displaySummary(String rawSummary) {
+        String summary = safeString(rawSummary);
+        if (summary.isBlank()) {
+            return "";
+        }
+        String normalized = summary.toLowerCase(Locale.ROOT);
+        boolean internalSummary = INTERNAL_SUMMARY_PREFIXES.stream()
+            .map(prefix -> prefix.toLowerCase(Locale.ROOT))
+            .anyMatch(normalized::startsWith);
+        return internalSummary ? "" : summary;
+    }
+
+    private Map<String, Object> displayMetadata(Map<String, Object> metadata, String rawSummary) {
+        if (metadata.isEmpty()) {
+            return metadata;
+        }
+        Map<String, Object> displayMetadata = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+            if (PUBLIC_METADATA_KEYS.contains(entry.getKey())) {
+                displayMetadata.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return displayMetadata;
+    }
+
+    private List<String> displayTags(List<String> tags, Map<String, Object> metadata, String rawSummary) {
+        if (tags.isEmpty()) {
+            return tags;
+        }
+        boolean lowConfidenceWikiBound = isLowConfidenceWikiBound(metadata, rawSummary);
+        Set<String> blockedTags = normalizedTagSet(INTERNAL_RESOURCE_TAGS);
+        if (lowConfidenceWikiBound) {
+            addBlockedTag(blockedTags, metadata.get("wikiTitle"));
+            Object aliases = metadata.get("wikiAliases");
+            if (aliases instanceof Iterable<?> values) {
+                values.forEach(value -> addBlockedTag(blockedTags, value));
+            }
+        }
+        return tags.stream()
+            .filter(tag -> tag != null && !tag.isBlank())
+            .filter(tag -> !blockedTags.contains(normalizeTagForDisplayFilter(tag)))
+            .toList();
+    }
+
+    private List<ResourceSemanticHitResponse> displaySemanticHits(List<ResourceSemanticHitResponse> hits) {
+        if (hits == null || hits.isEmpty()) {
+            return List.of();
+        }
+        return hits.stream()
+            .map(hit -> new ResourceSemanticHitResponse(
+                hit.chunkId(),
+                hit.chunkNo(),
+                hit.similarity(),
+                displaySemanticHitContent(hit.content()),
+                hit.sourceUrl()
+            ))
+            .toList();
+    }
+
+    private String displaySemanticHitContent(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        List<String> lines = content.lines()
+            .map(this::displaySemanticHitLine)
+            .filter(line -> line != null && !line.isBlank())
+            .toList();
+        return String.join("\n", lines);
+    }
+
+    private String displaySemanticHitLine(String line) {
+        String trimmed = line.trim();
+        String normalized = trimmed.toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("wiki slug:") || normalized.startsWith("aliases:")) {
+            return "";
+        }
+        if (normalized.startsWith("wiki title:")) {
+            return "Topic: " + stripWrappingQuotes(trimmed.substring("wiki title:".length()).trim());
+        }
+        if (normalized.startsWith("wiki summary:")) {
+            return "Topic summary: " + trimmed.substring("wiki summary:".length()).trim();
+        }
+        if (normalized.startsWith("tags:")) {
+            String cleanedTags = displayTagLine(trimmed.substring("tags:".length()));
+            return cleanedTags.isBlank() ? "" : "Tags: " + cleanedTags;
+        }
+        return line;
+    }
+
+    private String displayTagLine(String rawTags) {
+        if (rawTags == null || rawTags.isBlank()) {
+            return "";
+        }
+        Set<String> blockedTags = normalizedTagSet(INTERNAL_RESOURCE_TAGS);
+        List<String> cleaned = Arrays.stream(rawTags.split(","))
+            .map(String::trim)
+            .filter(tag -> !tag.isBlank())
+            .filter(tag -> !blockedTags.contains(normalizeTagForDisplayFilter(tag)))
+            .toList();
+        return String.join(", ", cleaned);
+    }
+
+    private void addBlockedTag(Set<String> blockedTags, Object value) {
+        if (value == null) {
+            return;
+        }
+        String text = normalizeTagForDisplayFilter(String.valueOf(value));
+        if (!text.isBlank()) {
+            blockedTags.add(text);
+        }
+    }
+
+    private Set<String> normalizedTagSet(Set<String> tags) {
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String tag : tags) {
+            String value = normalizeTagForDisplayFilter(tag);
+            if (!value.isBlank()) {
+                normalized.add(value);
+            }
+        }
+        return normalized;
+    }
+
+    private String normalizeTagForDisplayFilter(String value) {
+        String unwrapped = stripWrappingQuotes(value);
+        return unwrapped == null ? "" : unwrapped.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean isLowConfidenceWikiBound(Map<String, Object> metadata, String rawSummary) {
+        if ("LOW_CONFIDENCE_DROPPED".equals(readString(metadata, "wikiBindingStatus"))) {
+            return true;
+        }
+        if (!"wiki_resource_importer".equals(readString(metadata, "ingestedBy"))) {
+            return false;
+        }
+        Double score = genericLexicalScore(rawSummary);
+        return score != null && score < WIKI_BOUND_LEXICAL_CONFIDENCE_MIN;
+    }
+
+    private Double genericLexicalScore(String rawSummary) {
+        if (rawSummary == null || rawSummary.isBlank()) {
+            return null;
+        }
+        Matcher matcher = GENERIC_LEXICAL_SCORE_PATTERN.matcher(rawSummary);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(matcher.group(1));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private String stripWrappingQuotes(String value) {
+        if (value == null) {
+            return null;
+        }
+        String current = value.trim();
+        boolean changed = true;
+        while (changed && current.length() >= 2) {
+            changed = false;
+            if ((current.startsWith("\"") && current.endsWith("\""))
+                || (current.startsWith("'") && current.endsWith("'"))
+                || (current.startsWith("“") && current.endsWith("”"))
+                || (current.startsWith("《") && current.endsWith("》"))) {
+                current = current.substring(1, current.length() - 1).trim();
+                changed = true;
+            }
+        }
+        return current;
     }
 
     private boolean isPlaceholderTitle(String title) {

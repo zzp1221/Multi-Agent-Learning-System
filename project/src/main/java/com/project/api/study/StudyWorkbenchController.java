@@ -32,6 +32,6 @@ public class StudyWorkbenchController {
     @PostMapping("/daily/refresh")
     @Operation(summary = "Refresh the daily study workbench snapshot")
     public ResponseEntity<DailyStudyWorkbenchResponse> refreshDaily(Authentication authentication) {
-        return ResponseEntity.ok(studyWorkbenchService.daily(AuthenticatedUserResolver.require(authentication)));
+        return ResponseEntity.ok(studyWorkbenchService.refreshDaily(AuthenticatedUserResolver.require(authentication)));
     }
 }

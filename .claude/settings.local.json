@@ -212,7 +212,9 @@
       "Bash(npx.cmd vite *)",
       "Bash(docker restart *)",
       "Bash(npx.cmd tsc *)",
-      "Bash(awk '{print $NF}')"
+      "Bash(awk '{print $NF}')",
+      "WebFetch(domain:undraw.co)",
+      "Bash(docker-compose ps *)"
     ]
   }
 }

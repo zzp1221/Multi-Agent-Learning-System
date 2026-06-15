@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpenCheck, Clock3, Compass, History, Layers3, LoaderCircle, Menu, MessageCirclePlus, NotebookPen, Search, Settings, Sparkles, UserRoundSearch } from 'lucide-react';
+import { BookOpenCheck, Clock3, Compass, History, Layers3, Menu, MessageCirclePlus, NotebookPen, Search, Settings, Sparkles, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
+import FirstRunOnboardingModal, { type FirstRunOnboardingStep } from './FirstRunOnboardingModal';
 import FloatingVoiceAssistant from './FloatingVoiceAssistant';
 import FloatingPracticeAssistant from './FloatingPracticeAssistant';
 import StageTestExamPage from '../pages/StageTestExamPage';
@@ -10,10 +11,12 @@ import ThemeToggle from './ThemeToggle';
 
 import { authApi, type AuthUser } from '../api/auth';
 import { conversationApi, type ConversationHistoryItem } from '../api/conversation';
-import { smartEngineApi, type ProfileOnboardingPayload } from '../api/smartEngine';
+import { smartEngineApi } from '../api/smartEngine';
+import { llmSettingsApi } from '../api/settings';
 import { AUTH_USER_STORAGE_KEY, clearAuthSession, getAuthToken, isUnauthorizedError } from '../api/request';
 import { clearPracticeSession } from '../pages/practiceSessionStore';
 import { clearStageTestSession } from '../pages/stageTestSessionStore';
+import { isLlmSettingsReady } from '../utils/llmSettingsDraft';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
   ENGINE_TASK_STORAGE_KEY,
@@ -101,8 +104,10 @@ export default function Layout() {
   const [activeConversationId, setActiveConversationId] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [profileOnboardingOpen, setProfileOnboardingOpen] = useState(false);
+  const [llmOnboardingNeeded, setLlmOnboardingNeeded] = useState(false);
   const [profileOnboardingNeeded, setProfileOnboardingNeeded] = useState(false);
+  const [firstRunOnboardingOpen, setFirstRunOnboardingOpen] = useState(false);
+  const [firstRunOnboardingStep, setFirstRunOnboardingStep] = useState<FirstRunOnboardingStep>('llm');
   const currentUserIdRef = useRef('');
 
   const isAuthenticated = Boolean(currentUser);
@@ -164,21 +169,37 @@ export default function Layout() {
     }
   };
 
-  const refreshProfileOnboardingState = useCallback(async (user: AuthUser | null) => {
+  const refreshFirstRunOnboardingState = useCallback(async (user: AuthUser | null, preferredStep?: FirstRunOnboardingStep) => {
     const userId = user?.userId ?? user?.id;
     if (userId === undefined || userId === null) {
+      setLlmOnboardingNeeded(false);
       setProfileOnboardingNeeded(false);
-      setProfileOnboardingOpen(false);
+      setFirstRunOnboardingOpen(false);
       return;
     }
     const normalizedUserId = String(userId);
+    let llmNeeded = false;
+    let profileNeeded = false;
     try {
-      const response = await smartEngineApi.getCurrentProfile(normalizedUserId);
-      const hasProfile = Boolean(response.profile && Object.keys(response.profile).length > 0);
-      setProfileOnboardingNeeded(!hasProfile);
+      const [llmSettings, profileResponse] = await Promise.all([
+        llmSettingsApi.get(),
+        smartEngineApi.getCurrentProfile(normalizedUserId),
+      ]);
+      llmNeeded = !isLlmSettingsReady(llmSettings);
+      profileNeeded = !(profileResponse.profile && Object.keys(profileResponse.profile).length > 0);
+      setLlmOnboardingNeeded(llmNeeded);
+      setProfileOnboardingNeeded(profileNeeded);
     } catch (error) {
-      console.error('Failed to check profile onboarding:', error);
+      console.error('Failed to check first-run onboarding:', error);
+      return;
     }
+    if (!llmNeeded && !profileNeeded) {
+      setFirstRunOnboardingOpen(false);
+      return;
+    }
+    const nextStep = preferredStep === 'profile' && !llmNeeded ? 'profile' : llmNeeded ? 'llm' : 'profile';
+    setFirstRunOnboardingStep(nextStep);
+    setFirstRunOnboardingOpen(true);
   }, []);
 
   useEffect(() => {
@@ -199,7 +220,7 @@ export default function Layout() {
         }
         window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(resolved));
         applyAuthenticatedUser(resolved);
-        void refreshProfileOnboardingState(resolved);
+        void refreshFirstRunOnboardingState(resolved);
         await loadRecentConversations();
       } catch (error) {
         if (isUnauthorizedError(error)) {
@@ -216,17 +237,13 @@ export default function Layout() {
     };
 
     bootstrapAuth();
-  }, [applyAuthenticatedUser, refreshProfileOnboardingState]);
+  }, [applyAuthenticatedUser, refreshFirstRunOnboardingState]);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setProfileOnboardingOpen(false);
-      return;
+      setFirstRunOnboardingOpen(false);
     }
-    if (profileOnboardingNeeded) {
-      setProfileOnboardingOpen(true);
-    }
-  }, [isAuthenticated, profileOnboardingNeeded]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -338,7 +355,8 @@ export default function Layout() {
       setConversationHistory([]);
       setLastSyncAt('');
       setActiveConversationId('');
-      setProfileOnboardingOpen(false);
+      setFirstRunOnboardingOpen(false);
+      setLlmOnboardingNeeded(false);
       setProfileOnboardingNeeded(false);
     }
   };
@@ -706,20 +724,28 @@ export default function Layout() {
         defaultTab={defaultTab}
         hint={authHint}
         onClose={() => setModalOpen(false)}
-        onSuccess={(user) => {
+        onSuccess={(user, authMode) => {
           applyAuthenticatedUser(user);
           setModalOpen(false);
-          void refreshProfileOnboardingState(user);
+          void refreshFirstRunOnboardingState(user, authMode === 'register' ? 'llm' : undefined);
           void loadRecentConversations();
         }}
       />
       {isAuthenticated ? (
-        <ProfileOnboardingModal
-          open={profileOnboardingOpen}
+        <FirstRunOnboardingModal
+          open={firstRunOnboardingOpen && (llmOnboardingNeeded || profileOnboardingNeeded)}
+          step={firstRunOnboardingStep}
           currentUser={currentUser}
-          onCompleted={() => {
+          onStepChange={setFirstRunOnboardingStep}
+          onLlmCompleted={() => {
+            setLlmOnboardingNeeded(false);
+            if (!profileOnboardingNeeded) {
+              setFirstRunOnboardingOpen(false);
+            }
+          }}
+          onProfileCompleted={() => {
             setProfileOnboardingNeeded(false);
-            setProfileOnboardingOpen(false);
+            setFirstRunOnboardingOpen(false);
             navigate('/profile');
           }}
         />
@@ -753,148 +779,5 @@ function NavButton(props: { active: boolean; icon: ReactNode; label: string; onC
       {props.icon}
       {props.label}
     </button>
-  );
-}
-
-function ProfileOnboardingModal(props: {
-  open: boolean;
-  currentUser: AuthUser | null;
-  onCompleted: () => void;
-}) {
-  const [majorCode, setMajorCode] = useState(props.currentUser?.majorCode ?? '');
-  const [knowledgeBase, setKnowledgeBase] = useState('');
-  const [learningGoal, setLearningGoal] = useState('');
-  const [learningPreference, setLearningPreference] = useState('');
-  const [resourcePreference, setResourcePreference] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (props.open) {
-      setMajorCode(props.currentUser?.majorCode ?? '');
-      setError('');
-    }
-  }, [props.currentUser?.majorCode, props.open]);
-
-  if (!props.open) {
-    return null;
-  }
-
-  const inputClass = 'w-full rounded-xl bg-slate-50/86 px-3.5 py-2.5 text-sm outline-none transition-all focus:bg-white focus:shadow-[0_10px_24px_rgba(59,130,246,0.14)] dark:bg-slate-950/70 dark:text-slate-200 dark:focus:bg-slate-950/90 dark:focus:shadow-[0_12px_28px_rgba(14,165,233,0.12)]';
-  const optionsClass = 'w-full rounded-xl bg-slate-50/86 px-3.5 py-2.5 text-sm outline-none transition-all focus:bg-white focus:shadow-[0_10px_24px_rgba(59,130,246,0.14)] dark:bg-slate-950/70 dark:text-slate-200 dark:focus:bg-slate-950/90 dark:focus:shadow-[0_12px_28px_rgba(14,165,233,0.12)]';
-
-  const submit = async () => {
-    const payload: ProfileOnboardingPayload = {
-      majorCode: majorCode.trim(),
-      knowledgeBase: knowledgeBase.trim(),
-      learningGoal: learningGoal.trim(),
-      learningPreference: learningPreference.trim(),
-      resourcePreference: resourcePreference.trim(),
-    };
-    if (Object.values(payload).some((value) => !value)) {
-      setError('请先完成所有基础画像选择');
-      return;
-    }
-    setSubmitting(true);
-    setError('');
-    try {
-      await smartEngineApi.completeProfileOnboarding(payload);
-      window.dispatchEvent(new Event('app:profile-updated'));
-      props.onCompleted();
-    } catch (submitError) {
-      console.error('Failed to complete profile onboarding:', submitError);
-      setError('画像保存失败，请稍后重试');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center px-4 py-6">
-      <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" />
-      <div className="relative max-h-[92dvh] w-full max-w-[560px] overflow-y-auto rounded-[24px] bg-white/94 shadow-2xl shadow-slate-950/12 backdrop-blur dark:bg-slate-900/94 dark:shadow-slate-950/40">
-        <div className="px-5 pb-3 pt-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white">
-              <UserRoundSearch className="h-4 w-4" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white">完成基础学习画像</h3>
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">新用户需要先补全画像，系统会据此生成首版个性化学习路径。</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3.5 px-5 py-4">
-          <label className="block">
-            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">专业方向</div>
-            <select value={majorCode} onChange={(event) => setMajorCode(event.target.value)} className={optionsClass}>
-              <option value="">请选择专业方向</option>
-              <option value="PROGRAMMING_LANGUAGES">编程语言</option>
-              <option value="DATA_STRUCTURES_ALGORITHMS">数据结构/算法</option>
-              <option value="OPERATING_SYSTEMS">操作系统</option>
-              <option value="COMPUTER_NETWORKS">计算机网络</option>
-              <option value="DATABASES">数据库</option>
-              <option value="SOFTWARE_ENGINEERING">软件工程</option>
-              <option value="COMPILERS">编译器</option>
-              <option value="COMPUTER_ARCHITECTURE">计算机体系结构</option>
-              <option value="AI_ML">AI/ML</option>
-              <option value="SECURITY">安全</option>
-              <option value="DISTRIBUTED_CLOUD">分布式/云原生</option>
-              <option value="FRONTEND_WEB">前端 Web</option>
-              <option value="BACKEND_SYSTEMS">后端系统</option>
-              <option value="MATH_FOUNDATIONS">数学基础</option>
-              <option value="DEV_TOOLS">开发工具</option>
-            </select>
-          </label>
-          <label className="block">
-            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">当前基础</div>
-            <select value={knowledgeBase} onChange={(event) => setKnowledgeBase(event.target.value)} className={optionsClass}>
-              <option value="">请选择当前基础</option>
-              <option value="零基础，刚开始学习">零基础，刚开始学习</option>
-              <option value="有基础，但知识不系统">有基础，但知识不系统</option>
-              <option value="中等基础，需要查漏补缺">中等基础，需要查漏补缺</option>
-              <option value="基础较好，希望项目实战">基础较好，希望项目实战</option>
-            </select>
-          </label>
-          <label className="block">
-            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">学习目标</div>
-            <input value={learningGoal} onChange={(event) => setLearningGoal(event.target.value)} className={inputClass} placeholder="例如：两个月内掌握数据库索引并完成项目实战" />
-          </label>
-          <label className="block">
-            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">学习偏好</div>
-            <select value={learningPreference} onChange={(event) => setLearningPreference(event.target.value)} className={optionsClass}>
-              <option value="">请选择学习偏好</option>
-              <option value="先讲概念，再给例题">先讲概念，再给例题</option>
-              <option value="项目实战驱动">项目实战驱动</option>
-              <option value="多做题巩固">多做题巩固</option>
-              <option value="图文结合，步骤清晰">图文结合，步骤清晰</option>
-            </select>
-          </label>
-          <label className="block">
-            <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">资源偏好</div>
-            <select value={resourcePreference} onChange={(event) => setResourcePreference(event.target.value)} className={optionsClass}>
-              <option value="">请选择资源偏好</option>
-              <option value="DOCUMENT">文档教程</option>
-              <option value="VIDEO">视频讲解</option>
-              <option value="QUIZ">练习题</option>
-              <option value="CODE_CASE">代码案例</option>
-            </select>
-          </label>
-
-          {error ? <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">{error}</div> : null}
-
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            保存画像并生成学习路径
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

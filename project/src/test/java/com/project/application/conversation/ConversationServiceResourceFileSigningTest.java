@@ -40,7 +40,8 @@ class ConversationServiceResourceFileSigningTest {
             null,
             null,
             null,
-            mock(ArtifactDownloadService.class)
+            mock(ArtifactDownloadService.class),
+            null
         );
         ConversationMessageStreamRequest request = new ConversationMessageStreamRequest(
             "confirm slide outline and generate PPT file",
@@ -131,7 +132,8 @@ class ConversationServiceResourceFileSigningTest {
             null,
             null,
             null,
-            downloadService
+            downloadService,
+            null
         );
         SmartEngineTask task = new SmartEngineTask();
         task.setId(UUID.randomUUID());
@@ -185,7 +187,8 @@ class ConversationServiceResourceFileSigningTest {
             null,
             null,
             null,
-            downloadService
+            downloadService,
+            null
         );
         SmartEngineTask task = new SmartEngineTask();
         task.setId(UUID.randomUUID());

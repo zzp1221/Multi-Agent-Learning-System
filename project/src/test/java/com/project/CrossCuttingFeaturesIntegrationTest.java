@@ -62,7 +62,8 @@ class CrossCuttingFeaturesIntegrationTest {
         Files.writeString(tempFile, "# database index guide", StandardCharsets.UTF_8);
         when(smartEngineQueueService.enqueue(any())).thenReturn("0-1");
 
-        AuthContext auth = register("cross_" + System.nanoTime());
+        AuthContext auth = register("testuser_cross_" + System.nanoTime());
+        String conversationId = createConversation(auth.token());
         String idempotencyKey = "idem-" + UUID.randomUUID();
 
         MvcResult firstSubmit = mockMvc.perform(post("/api/smart-engine/submit")
@@ -77,7 +78,7 @@ class CrossCuttingFeaturesIntegrationTest {
                         "resourceType": "DOCUMENT"
                       }
                     }
-                    """.formatted(UUID.randomUUID())))
+                    """.formatted(conversationId)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.taskId").isNotEmpty())
             .andReturn();
@@ -96,7 +97,7 @@ class CrossCuttingFeaturesIntegrationTest {
                         "resourceType": "DOCUMENT"
                       }
                     }
-                    """.formatted(UUID.randomUUID())))
+                    """.formatted(conversationId)))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("IDEMPOTENT_REPLAY"))
             .andExpect(jsonPath("$.taskId").value(taskId));
@@ -190,6 +191,14 @@ class CrossCuttingFeaturesIntegrationTest {
 
         JsonNode jsonNode = objectMapper.readTree(registerResult.getResponse().getContentAsString());
         return new AuthContext(jsonNode.path("token").asText());
+    }
+
+    private String createConversation(String token) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/conversations")
+                .header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk())
+            .andReturn();
+        return readField(result, "conversationId");
     }
 
     private String readField(MvcResult result, String fieldName) throws Exception {

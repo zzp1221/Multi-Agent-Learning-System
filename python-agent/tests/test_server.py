@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 
@@ -5,6 +6,8 @@ import pytest
 
 import server
 from src.ai_modules.config import Settings
+from src.ai_modules.llms import user_runtime_config
+from src.ai_modules.llms.user_runtime_config import RuntimeProvider, UserLlmRuntimeConfig
 from src.ai_modules.models import EngineStreamRequest
 from src.ai_modules.models.events import (
     DonePayload,
@@ -32,6 +35,59 @@ def test_health_endpoint(client) -> None:
     assert response.json()["status"] == "ok"
     assert response.json()["provider"] == "openai_compatible"
     assert response.json()["runtimeProvider"] == "openai_compatible"
+    assert response.json()["smartEngineWorker"]["status"] in {
+        "not_started",
+        "running",
+        "stopping",
+        "stopped",
+        "error",
+    }
+
+
+@pytest.mark.asyncio
+async def test_smart_engine_worker_supervisor_restarts_failed_worker(monkeypatch) -> None:
+    started = asyncio.Event()
+    restarted = asyncio.Event()
+    stop_second_worker = asyncio.Event()
+    attempts = 0
+
+    class RestartProbeWorker:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        async def run_forever(self) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                started.set()
+                raise RuntimeError("redis startup failed")
+            restarted.set()
+            await stop_second_worker.wait()
+
+    monkeypatch.setattr(server, "SmartEngineStreamWorker", RestartProbeWorker)
+    monkeypatch.setattr(server, "SMART_ENGINE_WORKER_RESTART_SECONDS", 0)
+    server.SMART_ENGINE_WORKER_STATE.update(
+        {
+            "status": "not_started",
+            "restartCount": 0,
+            "lastStartedAt": None,
+            "lastStoppedAt": None,
+            "lastError": "",
+        }
+    )
+    supervisor_task = asyncio.create_task(server._smart_engine_worker_supervisor_loop())
+
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        await asyncio.wait_for(restarted.wait(), timeout=1)
+        assert attempts == 2
+        assert server.SMART_ENGINE_WORKER_STATE["status"] == "running"
+        assert server.SMART_ENGINE_WORKER_STATE["restartCount"] == 1
+    finally:
+        stop_second_worker.set()
+        supervisor_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await supervisor_task
 
 
 def test_internal_stream_endpoint_requires_internal_token(client) -> None:
@@ -471,6 +527,8 @@ def test_resource_chunk_search_uses_domain_parameter(monkeypatch) -> None:
 
     assert rows == []
     assert "AND (%s IS NULL OR rc.domain = %s)" in executed["sql"]
+    assert "wikiBindingStatus" in executed["sql"]
+    assert "LOW_CONFIDENCE_DROPPED" in executed["sql"]
     assert "rc.access_scope::text = 'GLOBAL'" in executed["sql"]
     assert "rc.owner_user_id = %s::uuid" in executed["sql"]
     assert "app.user_course_enrollments" in executed["sql"]
@@ -796,6 +854,66 @@ def test_stream_endpoint_accepts_personalized_learning_service_type(client, monk
 
     event_names = [line.removeprefix("event: ") for line in lines[::2]]
     assert event_names == ["progress", "done"]
+
+
+def test_stream_endpoint_runs_supervisor_inside_user_llm_runtime_context(client, monkeypatch) -> None:
+    class StubSupervisor:
+        def resolve_route(self, service_type, params):
+            del service_type, params
+            return None
+
+        async def stream(self, request, cancelled=None):
+            del cancelled
+            assert user_runtime_config.is_user_llm_context_active() is True
+            assert user_runtime_config.current_user_llm_config() is runtime_config
+            yield DoneSSEEvent(
+                taskId=request.task_id,
+                traceId=request.trace_id,
+                seq=1,
+                payload=DonePayload(status="SUCCESS", summary="ok"),
+            )
+
+    runtime_config = UserLlmRuntimeConfig(
+        enabled=True,
+        allowEnvironmentFallback=False,
+        activeProvider="dashscope",
+        fallbackProvider="",
+        providers={
+            "dashscope": RuntimeProvider(
+                provider="dashscope",
+                baseUrl="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                apiKey="sk-user",
+                modelOverrides={"main_chat_model": "qwen-plus"},
+            )
+        },
+        componentOverrides={},
+        skillOverrides={},
+    )
+
+    async def fake_fetch_user_llm_runtime_config(**_: object) -> UserLlmRuntimeConfig:
+        return runtime_config
+
+    monkeypatch.setattr(server, "SUPERVISOR", StubSupervisor())
+    monkeypatch.setattr(user_runtime_config, "fetch_user_llm_runtime_config", fake_fetch_user_llm_runtime_config)
+
+    payload = {
+        "userId": "user-llm-context",
+        "serviceType": "PERSONALIZED_LEARNING",
+        "params": {"topic": "联合索引"},
+        "taskId": "task-user-runtime",
+        "traceId": "trace-user-runtime",
+    }
+
+    with client.stream(
+        "POST",
+        "/internal/smart-engine/stream",
+        json=payload,
+        headers=INTERNAL_HEADERS,
+    ) as response:
+        assert response.status_code == 200
+        lines = [line for line in response.iter_lines() if line]
+
+    assert [line.removeprefix("event: ") for line in lines[::2]] == ["done"]
 
 
 def test_engine_stream_request_normalizes_legacy_java_payload() -> None:

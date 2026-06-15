@@ -1,6 +1,8 @@
 package com.project.application.learningpath;
 
 import com.project.application.audit.AuditService;
+import com.project.application.common.ApplicationException;
+import com.project.application.settings.UserLlmSettingsService;
 import com.project.application.smartengine.PersonalizedLearningContextService;
 import com.project.application.smartengine.SmartEngineInvocation;
 import com.project.application.smartengine.SmartEngineQueueService;
@@ -12,6 +14,7 @@ import com.project.domain.task.TaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -31,25 +34,29 @@ public class PersonalizedLearningRefreshService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PersonalizedLearningRefreshService.class);
     private static final Duration ACTIVE_TASK_REUSE_WINDOW = Duration.ofMinutes(30);
+    private static final String USER_LLM_REQUIRED_MESSAGE = "请先配置并保存模型和 API Key 后再使用智能功能。";
 
     private final TaskStateMachineService taskStateMachineService;
     private final SmartEngineTaskRepository taskRepository;
     private final ObjectProvider<SmartEngineQueueService> queueServiceProvider;
     private final PersonalizedLearningContextService contextService;
     private final AuditService auditService;
+    private final UserLlmSettingsService userLlmSettingsService;
 
     public PersonalizedLearningRefreshService(
         TaskStateMachineService taskStateMachineService,
         SmartEngineTaskRepository taskRepository,
         ObjectProvider<SmartEngineQueueService> queueServiceProvider,
         PersonalizedLearningContextService contextService,
-        AuditService auditService
+        AuditService auditService,
+        UserLlmSettingsService userLlmSettingsService
     ) {
         this.taskStateMachineService = taskStateMachineService;
         this.taskRepository = taskRepository;
         this.queueServiceProvider = queueServiceProvider;
         this.contextService = contextService;
         this.auditService = auditService;
+        this.userLlmSettingsService = userLlmSettingsService;
     }
 
     @Async("conversationTaskExecutor")
@@ -84,7 +91,7 @@ public class PersonalizedLearningRefreshService {
         params.put("topic", "个性化学习路径调整");
         params.put("manualRefresh", true);
         params.put("adjustmentIntent", adjustmentIntent == null ? "" : adjustmentIntent.trim());
-        return triggerRefresh(userId, "MANUAL_ADJUSTMENT", params, false, ServiceType.PERSONALIZED_LEARNING);
+        return triggerRefresh(userId, "MANUAL_ADJUSTMENT", params, true, ServiceType.PERSONALIZED_LEARNING);
     }
 
     public SmartEngineTask triggerResourceRecommendationRefresh(
@@ -161,6 +168,7 @@ public class PersonalizedLearningRefreshService {
         boolean reuseActiveTask,
         ServiceType serviceType
     ) {
+        requireUserLlmReady(userId);
         if (reuseActiveTask) {
             Optional<SmartEngineTask> activeTask = taskRepository.findFirstByUserIdAndServiceTypeAndTaskStatusInOrderByCreatedAtDesc(
                 userId,
@@ -211,6 +219,13 @@ public class PersonalizedLearningRefreshService {
             "streamRecordId", recordId
         ));
         return task;
+    }
+
+    private void requireUserLlmReady(UUID userId) {
+        if (userLlmSettingsService == null || userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)) {
+            return;
+        }
+        throw new ApplicationException("USER_LLM_REQUIRED", USER_LLM_REQUIRED_MESSAGE, HttpStatus.PRECONDITION_REQUIRED);
     }
 
     private boolean isReusableActiveTask(SmartEngineTask task) {

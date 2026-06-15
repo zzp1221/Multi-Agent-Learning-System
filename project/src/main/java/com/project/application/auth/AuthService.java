@@ -52,7 +52,7 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         if (userAccountRepository.existsByLoginId(request.loginId())) {
-            throw new ApplicationException("LOGIN_ID_EXISTS", "登录账号已存在", HttpStatus.CONFLICT);
+            throw new ApplicationException("REGISTRATION_REJECTED", "注册信息无法使用", HttpStatus.BAD_REQUEST);
         }
 
         UserAccount userAccount = new UserAccount();

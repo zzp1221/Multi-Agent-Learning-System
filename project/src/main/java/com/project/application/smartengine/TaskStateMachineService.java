@@ -6,8 +6,6 @@ import com.project.application.artifact.ArtifactDownloadService;
 import com.project.application.common.ApplicationException;
 import com.project.domain.artifact.ResourceType;
 import com.project.domain.task.SmartEngineTask;
-import com.project.domain.task.SmartEngineTaskEvent;
-import com.project.domain.task.SmartEngineTaskEventRepository;
 import com.project.domain.task.SmartEngineTaskRepository;
 import com.project.domain.task.ServiceType;
 import com.project.domain.task.TaskStatus;
@@ -31,18 +29,18 @@ import java.util.UUID;
 public class TaskStateMachineService {
 
     private final SmartEngineTaskRepository taskRepository;
-    private final SmartEngineTaskEventRepository taskEventRepository;
+    private final SmartEngineTaskEventCache taskEventCache;
     private final ArtifactDownloadService artifactDownloadService;
     private final VideoGenerationTaskService videoGenerationTaskService;
 
     public TaskStateMachineService(
         SmartEngineTaskRepository taskRepository,
-        SmartEngineTaskEventRepository taskEventRepository,
+        SmartEngineTaskEventCache taskEventCache,
         ArtifactDownloadService artifactDownloadService,
         VideoGenerationTaskService videoGenerationTaskService
     ) {
         this.taskRepository = taskRepository;
-        this.taskEventRepository = taskEventRepository;
+        this.taskEventCache = taskEventCache;
         this.artifactDownloadService = artifactDownloadService;
         this.videoGenerationTaskService = videoGenerationTaskService;
     }
@@ -77,8 +75,8 @@ public class TaskStateMachineService {
     @Transactional
     public TaskStreamEventPayload recordPythonEvent(UUID taskId, PythonStreamEvent pythonEvent) {
         SmartEngineTask task = getTaskInternalForUpdate(taskId);
-        int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
-        return applyAndPersistPythonEvent(task, pythonEvent, nextSequence);
+        int nextSequence = taskEventCache.nextSequence(taskId);
+        return applyAndCachePythonEvent(task, pythonEvent, nextSequence);
     }
 
     @Transactional
@@ -88,23 +86,21 @@ public class TaskStateMachineService {
         }
 
         SmartEngineTask task = getTaskInternalForUpdate(taskId);
-        return taskEventRepository.findByTaskIdAndEventSeq(taskId, eventSeq)
-            .map(existingEvent -> {
-                if (!task.isTerminal() && pythonEvent.resolvedEventType().isTerminal()) {
-                    int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
-                    return new TaskEventRecordResult(applyAndPersistPythonEvent(task, pythonEvent, nextSequence), true);
-                }
-                return new TaskEventRecordResult(toPayload(task, existingEvent), false);
-            })
-            .orElseGet(() -> {
-                if (task.isTerminal()) {
-                    return TaskEventRecordResult.ignored();
-                }
-                return new TaskEventRecordResult(applyAndPersistPythonEvent(task, pythonEvent, eventSeq), true);
-            });
+        TaskStreamEventPayload existingPayload = taskEventCache.find(taskId, eventSeq);
+        if (existingPayload != null) {
+            if (!task.isTerminal() && pythonEvent.resolvedEventType().isTerminal()) {
+                int nextSequence = taskEventCache.nextSequence(taskId);
+                return new TaskEventRecordResult(applyAndCachePythonEvent(task, pythonEvent, nextSequence), true);
+            }
+            return new TaskEventRecordResult(existingPayload, false);
+        }
+        if (task.isTerminal()) {
+            return TaskEventRecordResult.ignored();
+        }
+        return new TaskEventRecordResult(applyAndCachePythonEvent(task, pythonEvent, eventSeq), true);
     }
 
-    private TaskStreamEventPayload applyAndPersistPythonEvent(
+    private TaskStreamEventPayload applyAndCachePythonEvent(
         SmartEngineTask task,
         PythonStreamEvent pythonEvent,
         int sequence
@@ -149,22 +145,14 @@ public class TaskStateMachineService {
             videoGenerationTaskService.syncFromPythonEvent(task, pythonEvent, payload);
         }
 
-        SmartEngineTaskEvent event = new SmartEngineTaskEvent();
-        event.setTask(task);
-        event.setEventSeq(sequence);
-        event.setEventType(persistedEventType);
-        event.setStageName(pythonEvent.stage());
-        event.setEventPayload(payload);
-        SmartEngineTaskEvent savedEvent = taskEventRepository.save(event);
-
-        return new TaskStreamEventPayload(
+        return taskEventCache.append(new TaskStreamEventPayload(
             persistedEventType,
             task.getId(),
             task.getTraceId(),
             sequence,
-            savedEvent.getCreatedAt(),
+            OffsetDateTime.now(),
             payload
-        );
+        ));
     }
 
     @Transactional
@@ -189,21 +177,20 @@ public class TaskStateMachineService {
         task.setCompletedAt(OffsetDateTime.now());
         videoGenerationTaskService.markFailed(task, message);
 
-        int nextSequence = taskEventRepository.countByTaskId(task.getId()) + 1;
+        int nextSequence = taskEventCache.nextSequence(task.getId());
         Map<String, Object> payload = Map.of(
             "code", errorCode,
             "message", message
         );
 
-        SmartEngineTaskEvent event = new SmartEngineTaskEvent();
-        event.setTask(task);
-        event.setEventSeq(nextSequence);
-        event.setEventType(StreamEventType.ERROR.wireValue());
-        event.setStageName(task.getCurrentStage());
-        event.setEventPayload(payload);
-        SmartEngineTaskEvent savedEvent = taskEventRepository.save(event);
-
-        return new TaskStreamEventPayload(StreamEventType.ERROR.wireValue(), task.getId(), task.getTraceId(), nextSequence, savedEvent.getCreatedAt(), payload);
+        return taskEventCache.append(new TaskStreamEventPayload(
+            StreamEventType.ERROR.wireValue(),
+            task.getId(),
+            task.getTraceId(),
+            nextSequence,
+            OffsetDateTime.now(),
+            payload
+        ));
     }
 
     @Transactional(readOnly = true)
@@ -239,28 +226,20 @@ public class TaskStateMachineService {
         task.setTaskStatus(TaskStatus.CANCELLED);
         task.setCompletedAt(OffsetDateTime.now());
 
-        int nextSequence = taskEventRepository.countByTaskId(taskId) + 1;
+        int nextSequence = taskEventCache.nextSequence(taskId);
         Map<String, Object> payload = Map.of(
             "code", "TASK_CANCELLED",
             "message", "任务已被取消"
         );
 
-        SmartEngineTaskEvent event = new SmartEngineTaskEvent();
-        event.setTask(task);
-        event.setEventSeq(nextSequence);
-        event.setEventType(StreamEventType.DONE.wireValue());
-        event.setStageName(task.getCurrentStage());
-        event.setEventPayload(payload);
-        SmartEngineTaskEvent savedEvent = taskEventRepository.save(event);
-
-        return new TaskStreamEventPayload(
+        return taskEventCache.append(new TaskStreamEventPayload(
             StreamEventType.DONE.wireValue(),
             task.getId(),
             task.getTraceId(),
             nextSequence,
-            savedEvent.getCreatedAt(),
+            OffsetDateTime.now(),
             payload
-        );
+        ));
     }
 
     @Transactional(readOnly = true)
@@ -281,17 +260,6 @@ public class TaskStateMachineService {
     private SmartEngineTask getTaskInternalForUpdate(UUID taskId) {
         return taskRepository.findWithLockById(taskId)
             .orElseThrow(() -> new ApplicationException("TASK_NOT_FOUND", "任务不存在", HttpStatus.NOT_FOUND));
-    }
-
-    private TaskStreamEventPayload toPayload(SmartEngineTask task, SmartEngineTaskEvent event) {
-        return new TaskStreamEventPayload(
-            event.getEventType(),
-            task.getId(),
-            task.getTraceId(),
-            event.getEventSeq(),
-            event.getCreatedAt(),
-            event.getEventPayload()
-        );
     }
 
     private void applyProgressEvent(SmartEngineTask task, PythonStreamEvent pythonEvent, Map<String, Object> payload) {

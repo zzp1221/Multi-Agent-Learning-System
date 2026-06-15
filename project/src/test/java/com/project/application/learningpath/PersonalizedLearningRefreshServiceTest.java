@@ -1,6 +1,8 @@
 package com.project.application.learningpath;
 
 import com.project.application.audit.AuditService;
+import com.project.application.common.ApplicationException;
+import com.project.application.settings.UserLlmSettingsService;
 import com.project.application.smartengine.PersonalizedLearningContextService;
 import com.project.application.smartengine.SmartEngineQueueService;
 import com.project.application.smartengine.TaskStateMachineService;
@@ -18,6 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -47,7 +50,8 @@ class PersonalizedLearningRefreshServiceTest {
             taskRepository,
             queueProvider,
             mock(PersonalizedLearningContextService.class),
-            mock(AuditService.class)
+            mock(AuditService.class),
+            readyLlmSettingsService(userId)
         );
 
         SmartEngineTask result = service.triggerRefresh(userId, "PRACTICE_PROGRESS", Map.of("topic", "练习变化"));
@@ -58,10 +62,48 @@ class PersonalizedLearningRefreshServiceTest {
     }
 
     @Test
-    void manualAdjustmentAlwaysCreatesNewTaskWithUserIntent() {
+    void manualAdjustmentReusesActiveTaskToAvoidDuplicateSubmissions() {
         UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000003");
+        SmartEngineTask activeTask = task(userId, TaskStatus.RUNNING);
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeAndTaskStatusInOrderByCreatedAtDesc(
+            eq(userId),
+            eq(ServiceType.PERSONALIZED_LEARNING),
+            any()
+        )).thenReturn(Optional.of(activeTask));
+        TaskStateMachineService stateMachineService = mock(TaskStateMachineService.class);
+        SmartEngineQueueService queueService = mock(SmartEngineQueueService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        PersonalizedLearningContextService contextService = mock(PersonalizedLearningContextService.class);
+
+        PersonalizedLearningRefreshService service = new PersonalizedLearningRefreshService(
+            stateMachineService,
+            taskRepository,
+            queueProvider,
+            contextService,
+            mock(AuditService.class),
+            readyLlmSettingsService(userId)
+        );
+
+        SmartEngineTask result = service.triggerManualAdjustment(userId, "先学索引");
+
+        assertThat(result).isSameAs(activeTask);
+        verify(stateMachineService, never()).createTask(any(), any(), any(), any(), any());
+        verify(queueProvider, never()).getIfAvailable();
+        verify(queueService, never()).enqueue(any());
+    }
+
+    @Test
+    void manualAdjustmentCreatesTaskWithUserIntentWhenNoActiveTaskExists() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000007");
         SmartEngineTask createdTask = task(userId, TaskStatus.PENDING);
         SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        when(taskRepository.findFirstByUserIdAndServiceTypeAndTaskStatusInOrderByCreatedAtDesc(
+            eq(userId),
+            eq(ServiceType.PERSONALIZED_LEARNING),
+            any()
+        )).thenReturn(Optional.empty());
         TaskStateMachineService stateMachineService = mock(TaskStateMachineService.class);
         when(stateMachineService.createTask(any(), eq(userId), any(), eq(ServiceType.PERSONALIZED_LEARNING), any()))
             .thenReturn(createdTask);
@@ -78,7 +120,8 @@ class PersonalizedLearningRefreshServiceTest {
             taskRepository,
             queueProvider,
             contextService,
-            mock(AuditService.class)
+            mock(AuditService.class),
+            readyLlmSettingsService(userId)
         );
 
         SmartEngineTask result = service.triggerManualAdjustment(userId, "先学索引");
@@ -118,7 +161,8 @@ class PersonalizedLearningRefreshServiceTest {
             taskRepository,
             queueProvider,
             contextService,
-            mock(AuditService.class)
+            mock(AuditService.class),
+            readyLlmSettingsService(userId)
         );
 
         SmartEngineTask result = service.triggerRefresh(userId, "INITIAL_PROFILE", Map.of("topic", "CS"));
@@ -156,7 +200,8 @@ class PersonalizedLearningRefreshServiceTest {
             taskRepository,
             queueProvider,
             contextService,
-            mock(AuditService.class)
+            mock(AuditService.class),
+            readyLlmSettingsService(userId)
         );
 
         SmartEngineTask result = service.triggerResourceRecommendationRefresh(
@@ -213,13 +258,42 @@ class PersonalizedLearningRefreshServiceTest {
             taskRepository,
             queueProvider,
             contextService,
-            mock(AuditService.class)
+            mock(AuditService.class),
+            readyLlmSettingsService(userId)
         );
 
         SmartEngineTask result = service.triggerRefresh(userId, "INITIAL_PROFILE", Map.of("topic", "CS"));
 
         assertThat(result).isSameAs(createdTask);
         verify(queueService).enqueue(any());
+    }
+
+    @Test
+    void manualAdjustmentRejectsFormalUserMissingLlmBeforeCreatingTask() {
+        UUID userId = UUID.fromString("40000000-0000-0000-0000-000000000006");
+        SmartEngineTaskRepository taskRepository = mock(SmartEngineTaskRepository.class);
+        TaskStateMachineService stateMachineService = mock(TaskStateMachineService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        UserLlmSettingsService userLlmSettingsService = mock(UserLlmSettingsService.class);
+        when(userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)).thenReturn(false);
+
+        PersonalizedLearningRefreshService service = new PersonalizedLearningRefreshService(
+            stateMachineService,
+            taskRepository,
+            queueProvider,
+            mock(PersonalizedLearningContextService.class),
+            mock(AuditService.class),
+            userLlmSettingsService
+        );
+
+        assertThatThrownBy(() -> service.triggerManualAdjustment(userId, "重新生成"))
+            .isInstanceOf(ApplicationException.class)
+            .hasMessage("请先配置并保存模型和 API Key 后再使用智能功能。")
+            .satisfies(error -> assertThat(((ApplicationException) error).getCode()).isEqualTo("USER_LLM_REQUIRED"));
+        verify(taskRepository, never()).findFirstByUserIdAndServiceTypeAndTaskStatusInOrderByCreatedAtDesc(any(), any(), any());
+        verify(stateMachineService, never()).createTask(any(), any(), any(), any(), any());
+        verify(queueProvider, never()).getIfAvailable();
     }
 
     private SmartEngineTask task(UUID userId, TaskStatus status) {
@@ -230,5 +304,11 @@ class PersonalizedLearningRefreshServiceTest {
         task.setServiceType(ServiceType.PERSONALIZED_LEARNING);
         task.setTaskStatus(status);
         return task;
+    }
+
+    private UserLlmSettingsService readyLlmSettingsService(UUID userId) {
+        UserLlmSettingsService userLlmSettingsService = mock(UserLlmSettingsService.class);
+        when(userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)).thenReturn(true);
+        return userLlmSettingsService;
     }
 }

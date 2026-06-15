@@ -52,6 +52,68 @@ def test_sitemap_candidates_are_filtered_and_limited() -> None:
     assert candidates[0].tags == ("official-docs", "web")
 
 
+def test_low_confidence_wiki_bound_candidate_is_downgraded_to_external_resource() -> None:
+    config = {
+        "defaults": {
+            "domain": "COMPUTER_SCIENCE",
+            "resourceType": "READING",
+            "difficulty": "MIXED",
+            "tags": ["external-resource"],
+        },
+        "sources": [
+            {
+                "id": "wiki-fill",
+                "sourceName": "Wiki Resource Importer",
+                "sourceType": "urls",
+                "resources": [
+                    {
+                        "url": "https://developer.mozilla.org/docs/Web/CSS/Flexbox",
+                        "title": "Flexbox",
+                        "summary": "Metadata-only URL candidate matched to wiki topic with generic lexical score 0.4210.",
+                        "tags": ["wiki-bound-resource", "metadata-search-fallback", "CSS", "Routing"],
+                        "wikiSlug": "networking/routing-protocols",
+                        "wikiTitle": "路由协议对比（RIP与OSPF）",
+                        "wikiSourceRef": "wiki://networking/routing-protocols",
+                        "wikiAliases": ["Routing"],
+                    }
+                ],
+            }
+        ],
+    }
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, request=request)))
+
+    [candidate] = import_external_resources.iter_candidates(config, client, limit=1)
+
+    assert import_external_resources.is_wiki_bound_candidate(candidate) is False
+    assert candidate.wiki_slug is None
+    assert candidate.wiki_title is None
+    assert candidate.wiki_source_ref is None
+    assert candidate.wiki_binding_status == "LOW_CONFIDENCE_DROPPED"
+    assert candidate.tags == ("external-resource",)
+    assert "wiki-bound-resource" not in candidate.tags
+    assert "metadata-search-fallback" not in candidate.tags
+    assert "css" not in candidate.tags
+    assert "routing" not in candidate.tags
+    parsed = import_external_resources.parse_candidate_document(candidate, b"<h1>Flexbox</h1><p>CSS layout guide</p>")
+    metadata = import_external_resources.build_metadata(
+        candidate,
+        import_external_resources.AccessResult(
+            original_url=candidate.url,
+            final_url=candidate.url,
+            status_code=200,
+            content_type="text/html",
+            checked_at="2026-06-15T00:00:00+00:00",
+            body=b"",
+        ),
+        parsed,
+        rag_ready=False,
+        rag_status="METADATA_ONLY",
+    )
+    assert metadata["ingestedBy"] == "external_resource_importer"
+    assert metadata["wikiBindingStatus"] == "LOW_CONFIDENCE_DROPPED"
+    assert "wikiTitle" not in metadata
+
+
 def test_candidates_are_sampled_across_sources_before_global_limit() -> None:
     sitemap_xml = """<?xml version="1.0" encoding="UTF-8"?>
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -737,7 +799,62 @@ def test_wiki_source_ref_is_written_to_resource_document() -> None:
     assert metadata["ingestedBy"] == "wiki_resource_importer"
     assert metadata["wikiSlug"] == "操作系统/死锁"
     assert metadata["wikiSourceRef"] == "wiki://操作系统/死锁"
-    assert json.loads(resource_chunk_call[1][-1])["wikiSlug"] == "操作系统/死锁"
+    chunk_metadata = json.loads(resource_chunk_call[1][-1])
+    assert chunk_metadata["wikiSlug"] == candidate.wiki_slug
+    assert chunk_metadata["wikiSourceRef"] == candidate.wiki_source_ref
+
+
+def test_low_confidence_wiki_resource_chunk_metadata_drops_wiki_refs() -> None:
+    class RecordingCursor:
+        def __init__(self) -> None:
+            self.calls = []
+            self.next_fetchone = None
+
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+
+        def fetchone(self):
+            return self.next_fetchone
+
+    cursor = RecordingCursor()
+    candidate = import_external_resources.ResourceCandidate(
+        source_id="wiki-fill",
+        source_name="Wiki Resource Importer",
+        url="https://example.test/css-flexbox",
+        title="Flexbox",
+        domain="COMPUTER_SCIENCE",
+        resource_type="READING",
+        display_type="DOCUMENT",
+        difficulty="MIXED",
+        license="Public web page",
+        copyright_status="PUBLICLY_ACCESSIBLE_WEB_RESOURCE",
+        tags=("external-resource",),
+        quality_score=0.82,
+        popularity_score=0.5,
+        summary="Metadata-only URL candidate matched to wiki topic with generic lexical score 0.4210.",
+        cs_category="GENERAL_CS",
+        cs_subcategory="General",
+        wiki_binding_status="LOW_CONFIDENCE_DROPPED",
+    )
+    access = import_external_resources.AccessResult(
+        original_url=candidate.url,
+        final_url=candidate.url,
+        status_code=200,
+        content_type="text/html",
+        checked_at="2026-06-15T00:00:00+00:00",
+        body=b"<h1>Flexbox</h1><p>CSS layout guide</p>",
+    )
+    parsed = import_external_resources.parse_candidate_document(candidate, access.body)
+    metadata = import_external_resources.build_metadata(candidate, access, parsed, rag_ready=True, rag_status="READY")
+    cursor.next_fetchone = (import_external_resources.document_uuid(candidate.url),)
+
+    import_external_resources.upsert_resource_rag(cursor, candidate, access, parsed, metadata, ["flexbox chunk"], [[0.1] * 1024])
+
+    resource_chunk_call = next(call for call in cursor.calls if "INSERT INTO rag.resource_chunk" in call[0])
+    chunk_metadata = json.loads(resource_chunk_call[1][-1])
+    assert chunk_metadata["wikiBindingStatus"] == "LOW_CONFIDENCE_DROPPED"
+    assert "wikiSlug" not in chunk_metadata
+    assert "wikiSourceRef" not in chunk_metadata
 
 
 def test_wiki_bound_resource_rag_uses_metadata_text_only() -> None:

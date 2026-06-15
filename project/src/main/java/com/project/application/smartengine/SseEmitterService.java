@@ -2,14 +2,11 @@ package com.project.application.smartengine;
 
 import com.project.application.streaming.SseStreamSender;
 import com.project.domain.task.SmartEngineTask;
-import com.project.domain.task.SmartEngineTaskEvent;
-import com.project.domain.task.SmartEngineTaskEventRepository;
 import com.project.domain.task.SmartEngineTaskRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,15 +21,15 @@ public class SseEmitterService {
 
     private static final long DEFAULT_TIMEOUT_MS = 0L;
 
-    private final SmartEngineTaskEventRepository taskEventRepository;
+    private final SmartEngineTaskEventCache taskEventCache;
     private final SmartEngineTaskRepository taskRepository;
     private final ConcurrentHashMap<UUID, SubscriberGroup> emitters = new ConcurrentHashMap<>();
 
     public SseEmitterService(
-        SmartEngineTaskEventRepository taskEventRepository,
+        SmartEngineTaskEventCache taskEventCache,
         SmartEngineTaskRepository taskRepository
     ) {
-        this.taskEventRepository = taskEventRepository;
+        this.taskEventCache = taskEventCache;
         this.taskRepository = taskRepository;
     }
 
@@ -95,17 +92,10 @@ public class SseEmitterService {
     }
 
     private boolean replayEvents(SmartEngineTask task, Subscriber subscriber) {
-        List<SmartEngineTaskEvent> events = taskEventRepository.findByTaskIdOrderByEventSeqAsc(task.getId());
-        for (SmartEngineTaskEvent event : events) {
+        List<TaskStreamEventPayload> events = taskEventCache.replay(task.getId());
+        for (TaskStreamEventPayload event : events) {
             try {
-                send(subscriber, new TaskStreamEventPayload(
-                    event.getEventType(),
-                    task.getId(),
-                    task.getTraceId(),
-                    event.getEventSeq(),
-                    event.getCreatedAt() == null ? OffsetDateTime.now() : event.getCreatedAt(),
-                    event.getEventPayload()
-                ));
+                send(subscriber, event);
             } catch (IOException ex) {
                 subscriber.emitter.completeWithError(ex);
                 return false;

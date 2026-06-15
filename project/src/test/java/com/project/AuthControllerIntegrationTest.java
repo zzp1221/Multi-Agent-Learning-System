@@ -95,6 +95,37 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
+    void repeatedLoginIssuesDistinctTokensSoLogoutDoesNotRevokeFreshLogin() throws Exception {
+        String loginId = "user_" + System.nanoTime();
+        String registerPayload = """
+            {
+              "loginId": "%s",
+              "password": "Password123",
+              "fullName": "Distinct Token User",
+              "majorCode": "SE"
+            }
+            """.formatted(loginId);
+
+        mockMvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(registerPayload))
+            .andExpect(status().isOk());
+
+        String firstToken = readToken(login(loginId));
+        String secondToken = readToken(login(loginId));
+        assertThat(secondToken).isNotEqualTo(firstToken);
+
+        mockMvc.perform(post("/api/auth/logout")
+                .header("Authorization", "Bearer " + firstToken))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/auth/me")
+                .header("Authorization", "Bearer " + secondToken))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.loginId").value(loginId));
+    }
+
+    @Test
     void meWithoutTokenReturnsAuthRequired() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
             .andExpect(status().isUnauthorized())
@@ -118,7 +149,32 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
-    void logoutWithTokenReturnsSuccessMessage() throws Exception {
+    void duplicateRegisterReturnsGenericRejection() throws Exception {
+        String loginId = "user_" + System.nanoTime();
+        String payload = """
+            {
+              "loginId": "%s",
+              "password": "Password123",
+              "fullName": "Duplicate User",
+              "majorCode": "CS"
+            }
+            """.formatted(loginId);
+
+        mockMvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("REGISTRATION_REJECTED"))
+            .andExpect(jsonPath("$.message").value("注册信息无法使用"));
+    }
+
+    @Test
+    void logoutRevokesCurrentToken() throws Exception {
         String loginId = "user_" + System.nanoTime();
         MvcResult registerResult = mockMvc.perform(post("/api/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -132,16 +188,57 @@ class AuthControllerIntegrationTest {
                     """.formatted(loginId)))
             .andExpect(status().isOk())
             .andReturn();
+        String token = readToken(registerResult);
 
         mockMvc.perform(post("/api/auth/logout")
-                .header("Authorization", "Bearer " + readToken(registerResult)))
+                .header("Authorization", "Bearer " + token))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.code").value("SUCCESS"))
             .andExpect(jsonPath("$.message").value("退出成功"));
+
+        mockMvc.perform(get("/api/auth/me")
+                .header("Authorization", "Bearer " + token))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
+    }
+
+    @Test
+    void unsupportedAuthenticatedMethodReturnsMethodNotAllowed() throws Exception {
+        String loginId = "user_" + System.nanoTime();
+        MvcResult registerResult = mockMvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "loginId": "%s",
+                      "password": "Password123",
+                      "fullName": "Test User",
+                      "majorCode": "AI"
+                    }
+                    """.formatted(loginId)))
+            .andExpect(status().isOk())
+            .andReturn();
+
+        mockMvc.perform(post("/api/auth/me")
+                .header("Authorization", "Bearer " + readToken(registerResult)))
+            .andExpect(status().isMethodNotAllowed())
+            .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
     }
 
     private String readToken(MvcResult result) throws Exception {
         JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
         return json.path("token").asText();
+    }
+
+    private MvcResult login(String loginId) throws Exception {
+        return mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "loginId": "%s",
+                      "password": "Password123"
+                    }
+                    """.formatted(loginId)))
+            .andExpect(status().isOk())
+            .andReturn();
     }
 }

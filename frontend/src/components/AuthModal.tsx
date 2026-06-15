@@ -11,7 +11,7 @@ interface AuthModalProps {
   defaultTab: AuthTab;
   hint?: string;
   onClose: () => void;
-  onSuccess: (user: AuthUser) => void;
+  onSuccess: (user: AuthUser, authMode: AuthTab) => void;
 }
 
 export default function AuthModal(props: AuthModalProps) {
@@ -79,7 +79,7 @@ export default function AuthModal(props: AuthModalProps) {
       persistAuthSession({
         token: result.token,
       });
-      props.onSuccess(user);
+      props.onSuccess(user, tab);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

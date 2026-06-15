@@ -108,6 +108,7 @@ class VectorSearcher:
                 JOIN app.learning_resource lr ON lr.id = rc.resource_id
                 WHERE rc.domain = %s
                   AND lr.status = 'ACTIVE'
+                  AND COALESCE(lr.metadata_json ->> 'wikiBindingStatus', '') <> 'LOW_CONFIDENCE_DROPPED'
                   AND rc.access_scope::text = 'GLOBAL'
             ) combined
             ORDER BY similarity DESC
