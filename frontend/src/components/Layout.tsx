@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpenCheck, Clock3, Compass, History, Layers3, Menu, MessageCirclePlus, NotebookPen, Search, Settings, Sparkles, UserRoundSearch } from 'lucide-react';
+import { BookOpenCheck, ChevronDown, Clock3, Compass, Flame, History, Layers3, Menu, MessageCirclePlus, NotebookPen, Search, Settings, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import FirstRunOnboardingModal, { type FirstRunOnboardingStep } from './FirstRunOnboardingModal';
 import FloatingVoiceAssistant from './FloatingVoiceAssistant';
@@ -104,6 +104,8 @@ export default function Layout() {
   const [activeConversationId, setActiveConversationId] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [llmOnboardingNeeded, setLlmOnboardingNeeded] = useState(false);
   const [profileOnboardingNeeded, setProfileOnboardingNeeded] = useState(false);
   const [firstRunOnboardingOpen, setFirstRunOnboardingOpen] = useState(false);
@@ -276,6 +278,12 @@ export default function Layout() {
     };
   }, []);
 
+  useEffect(() => {
+    setSidebarOpen(false);
+    setMoreMenuOpen(false);
+    setHistoryMenuOpen(false);
+  }, [location.pathname]);
+
   const handleOpenProfilePage = useCallback(() => {
     closeSidebar();
     if (!isAuthenticated) {
@@ -380,32 +388,6 @@ export default function Layout() {
     });
   }, [conversationHistory, historySearch]);
 
-  const breadcrumbTitle = inSettings
-    ? 'LLM 设置'
-    : inProfile
-      ? '个人画像'
-      : inMistakes
-        ? '错题本'
-        : inResources
-          ? '资源库'
-          : inEngine
-            ? '个性化学习路径'
-            : inChat
-              ? '问答辅导'
-              : '今日工作台';
-  const breadcrumbSubtitle = inSettings
-    ? '用户 API Key 与模型路由'
-    : inProfile
-      ? '学习节奏与能力概览'
-      : inMistakes
-        ? '自动错题复习'
-        : inResources
-          ? '搜索、收藏与学习进度'
-          : inEngine
-            ? '阶段路径与资源推送'
-            : inChat
-              ? '智能学习与解题助手'
-              : '从今天最该做的一件事开始';
   const pageShellClass = inNotes ? '' : !inChat ? 'app-page-shell' : '';
   const pageMotionKey = !inChat
     ? inSettings
@@ -438,7 +420,28 @@ export default function Layout() {
     window.dispatchEvent(new CustomEvent('app:active-conversation-changed', { detail: { conversationId: '' } }));
     window.dispatchEvent(new Event('app:new-chat'));
     setSidebarOpen(false);
+    setMoreMenuOpen(false);
+    setHistoryMenuOpen(false);
     navigate('/chat');
+  };
+
+  const handleOpenChatPage = () => {
+    if (!isAuthenticated) {
+      openAuthModal('login', '登录后即可创建和保存新对话');
+      setSidebarOpen(false);
+      setMoreMenuOpen(false);
+      setHistoryMenuOpen(false);
+      navigate('/chat');
+      return;
+    }
+    if (location.pathname !== '/chat') {
+      setSidebarOpen(false);
+      setMoreMenuOpen(false);
+      setHistoryMenuOpen(false);
+      navigate('/chat');
+      return;
+    }
+    handleCreateNewChat();
   };
 
   const handleOpenConversation = (item: ConversationHistoryItem) => {
@@ -476,9 +479,143 @@ export default function Layout() {
       }),
     );
     setSidebarOpen(false);
+    setMoreMenuOpen(false);
+    setHistoryMenuOpen(false);
   };
 
-  const closeSidebar = () => setSidebarOpen(false);
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+    setMoreMenuOpen(false);
+    setHistoryMenuOpen(false);
+  };
+
+  const navItems = [
+    {
+      key: 'dashboard',
+      label: '今日工作台',
+      icon: <Compass className="h-4 w-4" />,
+      active: !inChat && !inEngine && !inResources && !inMistakes && !inNotes && !inProfile && !inSettings,
+      onClick: handleOpenDashboard,
+    },
+    {
+      key: 'chat',
+      label: '问答辅导',
+      icon: <MessageCirclePlus className="h-4 w-4" />,
+      active: inChat,
+      onClick: handleOpenChatPage,
+    },
+    {
+      key: 'engine',
+      label: '学习路径',
+      icon: <Flame className="h-4 w-4" />,
+      active: inEngine,
+      onClick: handleOpenServicePage,
+    },
+    {
+      key: 'resources',
+      label: '资源库',
+      icon: <Layers3 className="h-4 w-4" />,
+      active: inResources && !location.pathname.startsWith('/resources/generation'),
+      onClick: handleOpenResourceGenerationPage,
+    },
+    {
+      key: 'generation',
+      label: '资源生成',
+      icon: <Flame className="h-4 w-4" />,
+      active: location.pathname.startsWith('/resources/generation'),
+      onClick: handleOpenResourceGenerationTool,
+    },
+    {
+      key: 'mistakes',
+      label: '错题本',
+      icon: <BookOpenCheck className="h-4 w-4" />,
+      active: inMistakes,
+      onClick: handleOpenMistakeBook,
+    },
+    {
+      key: 'notes',
+      label: 'AI 笔记本',
+      icon: <NotebookPen className="h-4 w-4" />,
+      active: inNotes,
+      onClick: handleOpenNotebook,
+    },
+    {
+      key: 'profile',
+      label: '学习画像',
+      icon: <UserRoundSearch className="h-4 w-4" />,
+      active: inProfile,
+      onClick: handleOpenProfilePage,
+    },
+    {
+      key: 'settings',
+      label: 'LLM 设置',
+      icon: <Settings className="h-4 w-4" />,
+      active: inSettings,
+      onClick: handleOpenSettings,
+    },
+  ];
+  const primaryNavItems = navItems.slice(0, 6);
+  const moreNavItems = navItems.slice(6);
+
+  const conversationHistoryContent = (
+    <>
+      <div className="app-history-search">
+        <label className="app-sidebar-search">
+          <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <input
+            value={historySearch}
+            onChange={(event) => setHistorySearch(event.target.value)}
+            placeholder="搜索历史对话"
+            className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-300 dark:placeholder:text-slate-500"
+          />
+        </label>
+      </div>
+      <div className="app-history-list scrollbar-thin">
+        <div className="mb-2 flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-2">
+            <History className="h-3.5 w-3.5" />
+            最近对话
+          </span>
+          <button type="button" onClick={() => void loadRecentConversations()} className="text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
+            刷新
+          </button>
+        </div>
+        <div className="space-y-1">
+          <AnimatePresence mode="popLayout">
+            {filteredConversationHistory.length > 0 ? filteredConversationHistory.map((item, index) => (
+              <motion.button
+                key={item.conversationId}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: Math.min(index * 0.02, 0.3) }}
+                type="button"
+                onClick={() => handleOpenConversation(item)}
+                className={`app-conversation-item group w-full truncate px-3 py-2 text-left text-sm ${
+                  item.conversationId === activeConversationId
+                    ? 'bg-white text-primary-700 shadow-sm shadow-blue-100/70 dark:bg-primary-500/10 dark:text-primary-400'
+                    : 'text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800'
+                }`}
+                title={item.lastMessagePreview || item.title}
+              >
+                <div className="truncate text-[13px] font-medium">{item.title}</div>
+                {item.lastMessagePreview ? (
+                  <div className="mt-0.5 truncate text-[11px] opacity-60">{item.lastMessagePreview}</div>
+                ) : null}
+              </motion.button>
+            )) : (
+              <div className="rounded-lg px-3 py-2 text-[13px] text-slate-400 dark:text-slate-500">
+                {historySearch.trim() ? '没有匹配的历史对话' : '暂无最近对话'}
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+      <div className="app-history-sync">
+        <Clock3 className="h-3.5 w-3.5" />
+        同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
+      </div>
+    </>
+  );
 
   const sidebarContent = (
     <div className="app-sidebar-content">
@@ -486,7 +623,7 @@ export default function Layout() {
       <div className="app-sidebar-logo">
         <NavLink to="/" onClick={closeSidebar} className="flex items-center gap-3">
           <div className="app-brand-mark">
-            <Sparkles className="h-4 w-4" />
+            <Flame className="h-4 w-4" />
           </div>
           <div>
             <p className="text-base font-semibold text-slate-900 dark:text-white">智学引擎</p>
@@ -497,94 +634,12 @@ export default function Layout() {
 
       {/* Navigation */}
       <div className="app-sidebar-nav">
-        <button
-          type="button"
-          onClick={handleOpenDashboard}
-          className={`app-sidebar-nav-item ${!inChat && !inEngine && !inResources && !inMistakes && !inNotes && !inProfile && !inSettings ? 'is-active' : ''}`}
-        >
-          <Compass className="h-4 w-4" />
-          今日工作台
-        </button>
-        <NavLink
-          to="/chat"
-          onClick={() => {
-            handleCreateNewChat();
-          }}
-          className={({ isActive }) =>
-            `app-sidebar-nav-item ${
-              isActive
-                ? 'is-active'
-                : ''
-            }`
-          }
-        >
-          <MessageCirclePlus className="h-4 w-4" />
-          问答辅导
-        </NavLink>
-        <NavButton active={inEngine} icon={<Sparkles className="h-4 w-4" />} label="学习路径" onClick={handleOpenServicePage} />
-        <NavButton active={inResources && !location.pathname.startsWith('/resources/generation')} icon={<Layers3 className="h-4 w-4" />} label="资源库" onClick={handleOpenResourceGenerationPage} />
-        <NavButton active={location.pathname.startsWith('/resources/generation')} icon={<Sparkles className="h-4 w-4" />} label="资源生成" onClick={handleOpenResourceGenerationTool} />
-        <NavButton active={inMistakes} icon={<BookOpenCheck className="h-4 w-4" />} label="错题本" onClick={handleOpenMistakeBook} />
-        <NavButton active={inNotes} icon={<NotebookPen className="h-4 w-4" />} label="AI 笔记本" onClick={handleOpenNotebook} />
-        <NavButton active={inProfile} icon={<UserRoundSearch className="h-4 w-4" />} label="学习画像" onClick={handleOpenProfilePage} />
-        <NavButton active={inSettings} icon={<Settings className="h-4 w-4" />} label="LLM 设置" onClick={handleOpenSettings} />
+        {navItems.map((item) => (
+          <NavButton key={item.key} active={item.active} icon={item.icon} label={item.label} onClick={item.onClick} />
+        ))}
       </div>
 
-      {isAuthenticated ? (
-        <div className="px-5 pb-4">
-          <label className="app-sidebar-search">
-            <Search className="mr-2 h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <input
-              value={historySearch}
-              onChange={(event) => setHistorySearch(event.target.value)}
-              placeholder="搜索历史对话"
-              className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-300 dark:placeholder:text-slate-500"
-            />
-          </label>
-        </div>
-      ) : null}
-
-      {isAuthenticated ? (
-        <div className="mt-1 flex-1 overflow-y-auto scrollbar-thin px-4 pb-4">
-          <div className="mb-2 flex items-center justify-between gap-2 px-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-            <span className="inline-flex items-center gap-2">
-            <History className="h-3.5 w-3.5" />
-            最近对话
-            </span>
-          </div>
-          <div className="space-y-1">
-            <AnimatePresence mode="popLayout">
-              {filteredConversationHistory.length > 0 ? filteredConversationHistory.map((item, index) => (
-                <motion.button
-                  key={item.conversationId}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: Math.min(index * 0.02, 0.3) }}
-                  type="button"
-                  onClick={() => handleOpenConversation(item)}
-                  className={`app-conversation-item group w-full truncate px-3 py-2 text-left text-sm ${
-                    item.conversationId === activeConversationId
-                      ? 'bg-white text-primary-700 shadow-sm shadow-blue-100/70 dark:bg-primary-500/10 dark:text-primary-400'
-                      : 'text-slate-600 hover:bg-white/70 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }`}
-                  title={item.lastMessagePreview || item.title}
-                >
-                  <div className="truncate text-[13px] font-medium">{item.title}</div>
-                  {item.lastMessagePreview ? (
-                    <div className="mt-0.5 truncate text-[11px] opacity-60">{item.lastMessagePreview}</div>
-                  ) : null}
-                </motion.button>
-              )) : (
-                <div className="rounded-lg px-3 py-2 text-[13px] text-slate-400 dark:text-slate-500">
-                  {historySearch.trim() ? '没有匹配的历史对话' : '暂无最近对话'}
-                </div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-      ) : (
-        <div className="flex-1" />
-      )}
+      {isAuthenticated && inChat ? <div className="app-sidebar-history">{conversationHistoryContent}</div> : <div className="flex-1" />}
 
       {/* Auth / User */}
       <div className="app-sidebar-auth">
@@ -609,33 +664,12 @@ export default function Layout() {
           </div>
         )}
       </div>
-
-      {isAuthenticated ? (
-        <div className="px-5 pb-4 pt-2">
-          <div className="app-sync-card">
-            <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
-              <Clock3 className="h-3.5 w-3.5" />
-              同步 {lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--'}
-            </div>
-            <button type="button" onClick={() => void loadRecentConversations()} className="text-[11px] text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">
-              刷新
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 
   return (
     <div className="flex min-h-[100dvh] bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Desktop Sidebar */}
-      {!inNotes ? (
-        <aside className="app-sidebar fixed bottom-4 left-4 top-4 z-40 hidden w-[286px] flex-col md:flex">
-          {sidebarContent}
-        </aside>
-      ) : null}
-
-      {/* Mobile Sidebar Overlay */}
+      {/* Small-screen Navigation Overlay */}
       <AnimatePresence>
         {sidebarOpen ? (
           <>
@@ -644,7 +678,7 @@ export default function Layout() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.36, ease: [0.32, 0.72, 0, 1] }}
-              className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm md:hidden"
+              className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm xl:hidden"
               onClick={closeSidebar}
             />
             <motion.aside
@@ -652,7 +686,7 @@ export default function Layout() {
               animate={{ x: 0 }}
               exit={{ x: -300 }}
               transition={{ duration: 0.48, ease: [0.32, 0.72, 0, 1] }}
-              className="app-sidebar fixed bottom-3 left-3 top-3 z-50 flex w-[302px] max-w-[86vw] flex-col md:hidden"
+              className="app-sidebar fixed bottom-3 left-3 top-3 z-50 flex w-[302px] max-w-[86vw] flex-col xl:hidden"
             >
               {sidebarContent}
             </motion.aside>
@@ -661,48 +695,113 @@ export default function Layout() {
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className={inNotes ? 'app-main min-w-0 flex-1' : 'app-main min-w-0 flex-1 md:ml-[318px]'}>
+      <main className="app-main min-w-0 flex-1">
         {/* Top Header */}
-        {!inNotes ? (
-          <header className="app-topbar sticky top-3 z-30 flex items-center justify-between gap-3 px-3 sm:px-4 md:px-8">
-            <div className="flex min-w-0 items-center gap-3">
+        <header className="app-topbar sticky top-3 z-30 px-3 sm:px-4 md:px-6">
+          <div className="app-topbar-inner">
+            <div className="app-topbar-left">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 md:hidden"
+                className="app-topbar-menu-button xl:hidden"
+                aria-label="打开导航"
               >
                 <Menu className="h-5 w-5" />
               </button>
-              <div className={`app-breadcrumb min-w-0 ${inSettings ? 'is-settings-breadcrumb' : ''}`}>
-                <Compass className="h-4 w-4 text-primary-500" />
-                {inSettings ? (
-                  <>
-                    <span className="settings-breadcrumb-label hidden sm:inline">{breadcrumbTitle}</span>
-                    <span className="settings-breadcrumb-label hidden text-slate-300 sm:inline">/</span>
-                    <span className="settings-breadcrumb-label hidden sm:inline">{breadcrumbSubtitle}</span>
-                    <span className="settings-breadcrumb-label sm:hidden">{breadcrumbTitle}</span>
-                  </>
-                ) : null}
-                <span className="hidden sm:inline">{breadcrumbTitle}</span>
-                <span className="hidden text-slate-300 sm:inline">/</span>
-                <span className="hidden sm:inline">{breadcrumbSubtitle}</span>
-                <span className="sm:hidden">{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : inChat ? '问答辅导' : '工作台'}</span>
+              <NavLink to="/" onClick={closeSidebar} className="app-topbar-brand">
+                <div className="app-brand-mark">
+                  <Flame className="h-4 w-4" />
+                </div>
+                <div className="app-topbar-brand-text">
+                  <p>智学引擎</p>
+                  <span>智能学习工作台</span>
+                </div>
+              </NavLink>
+              <div className={`app-breadcrumb min-w-0 xl:hidden ${inSettings ? 'is-settings-breadcrumb' : ''}`}>
+                <span>{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : inChat ? '问答辅导' : inNotes ? 'AI 笔记本' : '工作台'}</span>
               </div>
             </div>
-            <div className="flex items-center gap-2 md:gap-3">
+
+            <nav className="app-top-nav hidden xl:flex" aria-label="主导航">
+              {primaryNavItems.map((item) => (
+                <TopNavButton key={item.key} active={item.active} icon={item.icon} label={item.label} onClick={item.onClick} />
+              ))}
+              <div className="app-top-nav-more">
+                <button
+                  type="button"
+                  onClick={() => setMoreMenuOpen((open) => !open)}
+                  className={`app-top-nav-item ${moreNavItems.some((item) => item.active) ? 'is-active' : ''}`}
+                  aria-expanded={moreMenuOpen}
+                >
+                  更多
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${moreMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                <AnimatePresence>
+                  {moreMenuOpen ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 8 }}
+                      transition={{ duration: 0.18 }}
+                      className="app-more-menu app-top-more-menu"
+                    >
+                      {moreNavItems.map((item) => (
+                        <button key={item.key} type="button" onClick={item.onClick} className={item.active ? 'is-active' : ''}>
+                          {item.icon}
+                          {item.label}
+                        </button>
+                      ))}
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              </div>
+            </nav>
+
+            <div className="app-topbar-actions">
+              {isAuthenticated && inChat ? (
+                <div className="app-history-popover-anchor">
+                  <button
+                    type="button"
+                    onClick={() => setHistoryMenuOpen((open) => !open)}
+                    className={`app-topbar-utility ${historyMenuOpen ? 'is-active' : ''}`}
+                    aria-expanded={historyMenuOpen}
+                  >
+                    <History className="h-4 w-4" />
+                    历史
+                  </button>
+                  <AnimatePresence>
+                    {historyMenuOpen ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 8 }}
+                        transition={{ duration: 0.18 }}
+                        className="app-history-popover"
+                      >
+                        {conversationHistoryContent}
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
+              ) : null}
               <ThemeToggle />
               {!isAuthenticated ? (
                 <button
                   type="button"
                   onClick={() => openAuthModal('login', '')}
-                  className="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 md:hidden"
+                  className="app-topbar-login"
                 >
                   登录
                 </button>
-              ) : null}
+              ) : (
+                <div className="app-topbar-user">
+                  <span title={userDisplayName}>{userDisplayName}</span>
+                  <button type="button" onClick={handleLogout}>退出</button>
+                </div>
+              )}
             </div>
-          </header>
-        ) : null}
+          </div>
+        </header>
 
         {/* Page Content */}
         <div className={pageShellClass}>
@@ -766,6 +865,20 @@ export default function Layout() {
       ) : null}
       <StageTestExamPage />
     </div>
+  );
+}
+
+function TopNavButton(props: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className={`app-top-nav-item ${props.active ? 'is-active' : ''}`}
+      aria-current={props.active ? 'page' : undefined}
+    >
+      {props.icon}
+      {props.label}
+    </button>
   );
 }
 

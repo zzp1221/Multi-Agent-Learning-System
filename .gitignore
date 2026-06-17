@@ -66,6 +66,10 @@ data/
 # 3. IDE / Editor (multi-contributor safe)
 # ============================================================
 
+# Local agent/assistant workspaces and generated skills
+.codex/
+.claude/
+
 # JetBrains (IntelliJ / PyCharm / WebStorm / GoLand)
 .idea/
 *.iml
@@ -154,6 +158,13 @@ frontend/lerna-debug.log*
 
 # Vite cache
 frontend/.vite/
+
+# Browser test artifacts
+playwright-report/
+test-results/
+tests/screenshots/
+frontend/playwright-report/
+frontend/test-results/
 
 # TypeScript incremental build
 *.tsbuildinfo

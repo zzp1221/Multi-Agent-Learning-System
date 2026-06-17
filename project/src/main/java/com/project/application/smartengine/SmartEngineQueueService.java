@@ -45,11 +45,16 @@ public class SmartEngineQueueService {
         fields.put("paramsJson", serializeParams(invocation.params()));
         fields.put("createdAt", OffsetDateTime.now().toString());
 
+        String streamKey = appProperties.getSmartEngineQueue().getStreamKey();
         RecordId recordId = redisTemplate.opsForStream().add(
-            StreamRecords.mapBacked(fields).withStreamKey(appProperties.getSmartEngineQueue().getStreamKey())
+            StreamRecords.mapBacked(fields).withStreamKey(streamKey)
         );
         if (recordId == null) {
             throw new IllegalStateException("Redis XADD returned no record id");
+        }
+        long maxStreamLength = appProperties.getSmartEngineQueue().getMaxStreamLength();
+        if (maxStreamLength > 0) {
+            redisTemplate.opsForStream().trim(streamKey, maxStreamLength, true);
         }
         return recordId.getValue();
     }

@@ -31,13 +31,10 @@ import java.util.UUID;
 public class LearnerKnowledgeGraphService {
 
     private static final Logger log = LoggerFactory.getLogger(LearnerKnowledgeGraphService.class);
-    private static final List<String> NON_KNOWLEDGE_PREFIXES = List.of(
-        "学习主动性：",
-        "学习主动性:",
-        "复盘闭环：",
-        "复盘闭环:",
-        "案例迁移：",
-        "案例迁移:"
+    private static final List<String> NON_KNOWLEDGE_DIMENSIONS = List.of(
+        "学习主动性",
+        "复盘闭环",
+        "案例迁移"
     );
 
     private final NamedParameterJdbcTemplate jdbc;
@@ -59,12 +56,9 @@ public class LearnerKnowledgeGraphService {
             SELECT canonical_key, topic, mastery_score, node_status, source
             FROM app.learner_knowledge_node
             WHERE user_id = :userId
-              AND topic NOT LIKE '学习主动性：%'
-              AND topic NOT LIKE '学习主动性:%'
-              AND topic NOT LIKE '复盘闭环：%'
-              AND topic NOT LIKE '复盘闭环:%'
-              AND topic NOT LIKE '案例迁移：%'
-              AND topic NOT LIKE '案例迁移:%'
+              AND topic NOT LIKE '学习主动性%'
+              AND topic NOT LIKE '复盘闭环%'
+              AND topic NOT LIKE '案例迁移%'
             ORDER BY updated_at DESC
             LIMIT 60
             """,
@@ -204,7 +198,22 @@ public class LearnerKnowledgeGraphService {
             return true;
         }
         String trimmed = topic.trim();
-        return trimmed.isEmpty() || NON_KNOWLEDGE_PREFIXES.stream().anyMatch(trimmed::startsWith);
+        return trimmed.isEmpty() || NON_KNOWLEDGE_DIMENSIONS.stream().anyMatch(dimension ->
+            trimmed.equals(dimension) || startsWithDimensionSeparator(trimmed, dimension)
+        );
+    }
+
+    private boolean startsWithDimensionSeparator(String topic, String dimension) {
+        if (!topic.startsWith(dimension)) {
+            return false;
+        }
+        String suffix = topic.substring(dimension.length()).stripLeading();
+        return suffix.startsWith(":")
+            || suffix.startsWith("：")
+            || suffix.startsWith("-")
+            || suffix.startsWith("－")
+            || suffix.startsWith("—")
+            || suffix.startsWith("–");
     }
 
     private int statusRank(String status) {

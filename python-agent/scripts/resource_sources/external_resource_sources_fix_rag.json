@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "description": "Fix RAG for 5 resources missing chunks.",
+  "selectionMode": "categoryRoundRobin",
+  "categoryQuotas": {
+    "DATABASES": 10,
+    "BACKEND_SYSTEMS": 10,
+    "DEVOPS_CLOUD": 10
+  },
+  "defaults": {
+    "domain": "COMPUTER_SCIENCE",
+    "accessScope": "GLOBAL",
+    "sourceKind": "WEB",
+    "resourceType": "READING",
+    "displayType": "DOCUMENT",
+    "difficulty": "MIXED",
+    "qualityScore": 0.9,
+    "popularityScore": 0.8,
+    "copyrightStatus": "OFFICIAL_PUBLIC_DOCUMENTATION",
+    "tags": ["computer-science", "external-resource"]
+  },
+  "sources": [
+    {
+      "id": "pg-transaction-iso",
+      "sourceName": "PostgreSQL Documentation",
+      "sourceType": "urls",
+      "resources": ["https://www.postgresql.org/docs/current/transaction-iso.html"],
+      "license": "PostgreSQL License",
+      "resourceType": "READING",
+      "displayType": "DOCUMENT",
+      "difficulty": "INTERMEDIATE",
+      "qualityScore": 0.96,
+      "popularityScore": 0.88,
+      "csCategory": "DATABASES",
+      "csSubcategory": "Relational",
+      "tags": ["postgresql", "transaction", "isolation"]
+    },
+    {
+      "id": "pg-indexes",
+      "sourceName": "PostgreSQL Documentation",
+      "sourceType": "urls",
+      "resources": ["https://www.postgresql.org/docs/current/indexes.html"],
+      "license": "PostgreSQL License",
+      "resourceType": "READING",
+      "displayType": "DOCUMENT",
+      "difficulty": "INTERMEDIATE",
+      "qualityScore": 0.96,
+      "popularityScore": 0.88,
+      "csCategory": "DATABASES",
+      "csSubcategory": "Relational",
+      "tags": ["postgresql", "index", "performance"]
+    },
+    {
+      "id": "oracle-concurrenthashmap",
+      "sourceName": "Oracle Java Documentation",
+      "sourceType": "urls",
+      "resources": ["https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/ConcurrentHashMap.html"],
+      "license": "Oracle Technology Network License",
+      "resourceType": "READING",
+      "displayType": "DOCUMENT",
+      "difficulty": "ADVANCED",
+      "qualityScore": 0.96,
+      "popularityScore": 0.86,
+      "csCategory": "BACKEND_SYSTEMS",
+      "csSubcategory": "Frameworks",
+      "tags": ["java", "concurrency", "hashmap"]
+    },
+    {
+      "id": "docker-hub-api",
+      "sourceName": "Docker Documentation",
+      "sourceType": "urls",
+      "resources": ["https://docs.docker.com/reference/api/hub/latest/"],
+      "license": "Apache 2.0",
+      "resourceType": "READING",
+      "displayType": "DOCUMENT",
+      "difficulty": "INTERMEDIATE",
+      "qualityScore": 0.9,
+      "popularityScore": 0.82,
+      "csCategory": "DEVOPS_CLOUD",
+      "csSubcategory": "Containerization",
+      "tags": ["docker", "api", "hub"]
+    },
+    {
+      "id": "docker-dvp-api",
+      "sourceName": "Docker Documentation",
+      "sourceType": "urls",
+      "resources": ["https://docs.docker.com/reference/api/dvp/latest/"],
+      "license": "Apache 2.0",
+      "resourceType": "READING",
+      "displayType": "DOCUMENT",
+      "difficulty": "INTERMEDIATE",
+      "qualityScore": 0.9,
+      "popularityScore": 0.82,
+      "csCategory": "DEVOPS_CLOUD",
+      "csSubcategory": "Containerization",
+      "tags": ["docker", "api", "publisher"]
+    }
+  ]
+}

@@ -20,12 +20,15 @@ import com.project.application.common.ApplicationException;
 import com.project.config.AppProperties;
 import com.project.domain.settings.UserLlmSettingsRepository;
 import com.project.domain.user.UserAccountRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -113,8 +116,10 @@ public class UserLlmSettingsService {
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
     private final HttpClient httpClient;
+    private final HostAddressResolver hostAddressResolver;
     private final UserAccountRepository userAccountRepository;
 
+    @Autowired
     public UserLlmSettingsService(
         UserLlmSettingsRepository repository,
         UserLlmSecretCryptoService cryptoService,
@@ -122,14 +127,36 @@ public class UserLlmSettingsService {
         AppProperties appProperties,
         UserAccountRepository userAccountRepository
     ) {
+        this(
+            repository,
+            cryptoService,
+            objectMapper,
+            appProperties,
+            userAccountRepository,
+            HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(6))
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build(),
+            InetAddress::getAllByName
+        );
+    }
+
+    UserLlmSettingsService(
+        UserLlmSettingsRepository repository,
+        UserLlmSecretCryptoService cryptoService,
+        ObjectMapper objectMapper,
+        AppProperties appProperties,
+        UserAccountRepository userAccountRepository,
+        HttpClient httpClient,
+        HostAddressResolver hostAddressResolver
+    ) {
         this.repository = repository;
         this.cryptoService = cryptoService;
         this.objectMapper = objectMapper;
         this.appProperties = appProperties;
         this.userAccountRepository = userAccountRepository;
-        this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(6))
-            .build();
+        this.httpClient = httpClient;
+        this.hostAddressResolver = hostAddressResolver;
     }
 
     @Transactional(readOnly = true)
@@ -304,6 +331,10 @@ public class UserLlmSettingsService {
 
     private List<String> fetchProviderModels(String baseUrl, String apiKey) {
         URI modelsEndpoint = modelsEndpoint(baseUrl);
+        return fetchProviderModels(modelsEndpoint, apiKey, 0);
+    }
+
+    private List<String> fetchProviderModels(URI modelsEndpoint, String apiKey, int redirectCount) {
         HttpRequest httpRequest = HttpRequest.newBuilder(modelsEndpoint)
             .timeout(Duration.ofSeconds(12))
             .header("Accept", "application/json")
@@ -314,6 +345,13 @@ public class UserLlmSettingsService {
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 401 || response.statusCode() == 403) {
                 throw new ApplicationException("LLM_MODEL_LIST_UNAUTHORIZED", "API Key 无权拉取模型列表", HttpStatus.BAD_REQUEST);
+            }
+            if (response.statusCode() >= 300 && response.statusCode() < 400) {
+                URI redirectUri = validatedRedirectUri(modelsEndpoint, response);
+                if (redirectCount >= 1) {
+                    throw new ApplicationException("LLM_MODEL_LIST_FAILED", "厂商模型列表接口重定向次数过多", HttpStatus.BAD_GATEWAY);
+                }
+                return fetchProviderModels(redirectUri, apiKey, redirectCount + 1);
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new ApplicationException("LLM_MODEL_LIST_FAILED", "厂商模型列表接口暂不可用", HttpStatus.BAD_GATEWAY);
@@ -332,6 +370,22 @@ public class UserLlmSettingsService {
             throw new ApplicationException("LLM_MODEL_LIST_INTERRUPTED", "拉取模型列表已中断", HttpStatus.BAD_GATEWAY);
         } catch (IllegalArgumentException ex) {
             throw new ApplicationException("LLM_BASE_URL_INVALID", "Base URL 格式无效", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private URI validatedRedirectUri(URI requestUri, HttpResponse<String> response) {
+        String location = response.headers().firstValue("Location")
+            .orElseThrow(() -> new ApplicationException(
+                "LLM_MODEL_LIST_FAILED",
+                "厂商模型列表接口返回无效重定向",
+                HttpStatus.BAD_GATEWAY
+            ));
+        URI redirectUri = requestUri.resolve(location);
+        try {
+            validatePublicHttpsBaseUri(redirectUri);
+            return redirectUri;
+        } catch (IllegalArgumentException ex) {
+            throw new ApplicationException("LLM_BASE_URL_INVALID", "Base URL 重定向目标不是公网 HTTPS 地址", HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -465,8 +519,12 @@ public class UserLlmSettingsService {
             if (providerKey.isBlank() || config == null) {
                 return;
             }
+            String baseUrl = trim(config.baseUrl());
+            if (!baseUrl.isBlank()) {
+                validatePublicHttpsBaseUrl(baseUrl);
+            }
             normalized.put(providerKey, new UserLlmProviderStoredConfig(
-                trim(config.baseUrl()),
+                baseUrl,
                 normalizeModelOverrides(config.modelOverrides())
             ));
         });
@@ -700,11 +758,84 @@ public class UserLlmSettingsService {
     private URI modelsEndpoint(String baseUrl) {
         String normalized = trimTrailingSlash(baseUrl);
         URI baseUri = URI.create(normalized);
-        String scheme = baseUri.getScheme() == null ? "" : baseUri.getScheme().toLowerCase(Locale.ROOT);
-        if (!scheme.equals("http") && !scheme.equals("https")) {
+        validatePublicHttpsBaseUri(baseUri);
+        return URI.create(normalized + "/models");
+    }
+
+    private void validatePublicHttpsBaseUrl(String baseUrl) {
+        try {
+            validatePublicHttpsBaseUri(URI.create(trimTrailingSlash(baseUrl)));
+        } catch (IllegalArgumentException ex) {
+            throw new ApplicationException("LLM_BASE_URL_INVALID", "Base URL 必须是公网 HTTPS 地址", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private void validatePublicHttpsBaseUri(URI uri) {
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        if (!scheme.equals("https")) {
             throw new IllegalArgumentException("unsupported scheme");
         }
-        return URI.create(normalized + "/models");
+        if (uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
+            throw new IllegalArgumentException("base url must not include userinfo, query or fragment");
+        }
+        String host = uri.getHost();
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("missing host");
+        }
+        String normalizedHost = trimIpv6Brackets(host).toLowerCase(Locale.ROOT);
+        if (normalizedHost.equals("localhost") || normalizedHost.endsWith(".localhost")) {
+            throw new IllegalArgumentException("localhost is not allowed");
+        }
+        int port = uri.getPort();
+        if (port != -1 && port != 443) {
+            throw new IllegalArgumentException("only default HTTPS port is allowed");
+        }
+        validatePublicAddresses(normalizedHost);
+    }
+
+    private void validatePublicAddresses(String host) {
+        try {
+            InetAddress[] addresses = hostAddressResolver.resolve(host);
+            if (addresses.length == 0) {
+                throw new IllegalArgumentException("host has no address");
+            }
+            for (InetAddress address : addresses) {
+                if (!isPublicAddress(address)) {
+                    throw new IllegalArgumentException("host resolves to a non-public address");
+                }
+            }
+        } catch (UnknownHostException ex) {
+            throw new IllegalArgumentException("host cannot be resolved", ex);
+        }
+    }
+
+    private boolean isPublicAddress(InetAddress address) {
+        byte[] bytes = address.getAddress();
+        return !address.isAnyLocalAddress()
+            && !address.isLoopbackAddress()
+            && !address.isLinkLocalAddress()
+            && !address.isSiteLocalAddress()
+            && !address.isMulticastAddress()
+            && !isIpv4CarrierGradeNat(bytes)
+            && !isIpv6UniqueLocal(bytes);
+    }
+
+    private boolean isIpv4CarrierGradeNat(byte[] bytes) {
+        return bytes.length == 4
+            && Byte.toUnsignedInt(bytes[0]) == 100
+            && Byte.toUnsignedInt(bytes[1]) >= 64
+            && Byte.toUnsignedInt(bytes[1]) <= 127;
+    }
+
+    private boolean isIpv6UniqueLocal(byte[] bytes) {
+        return bytes.length == 16 && (Byte.toUnsignedInt(bytes[0]) & 0xFE) == 0xFC;
+    }
+
+    private String trimIpv6Brackets(String host) {
+        if (host.startsWith("[") && host.endsWith("]")) {
+            return host.substring(1, host.length() - 1);
+        }
+        return host;
     }
 
     private String trimTrailingSlash(String value) {
@@ -775,5 +906,9 @@ public class UserLlmSettingsService {
             components = components == null ? Map.of() : components;
             skills = skills == null ? Map.of() : skills;
         }
+    }
+
+    interface HostAddressResolver {
+        InetAddress[] resolve(String host) throws UnknownHostException;
     }
 }

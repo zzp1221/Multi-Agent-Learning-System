@@ -10,15 +10,28 @@ import com.project.config.AppProperties;
 import com.project.domain.settings.UserLlmSettingsRepository;
 import com.project.domain.user.UserAccount;
 import com.project.domain.user.UserAccountRepository;
-import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.net.Authenticator;
+import java.net.CookieHandler;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
+import java.net.ProxySelector;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -238,31 +251,86 @@ class UserLlmSettingsServiceTest {
     void testSettingsVerifiesProviderBeforeSaving() throws Exception {
         UUID userId = UUID.randomUUID();
         InMemoryRepository repository = new InMemoryRepository();
-        UserLlmSettingsService service = service(repository);
-        HttpServer server = startModelListServer("valid-key");
-        String baseUrl = "http://" + server.getAddress().getHostString() + ":" + server.getAddress().getPort();
+        StubHttpClient httpClient = new StubHttpClient(
+            StubHttpResponse.json(401, "{\"error\":\"unauthorized\"}"),
+            StubHttpResponse.json(200, "{\"data\":[{\"id\":\"verified-model\"}]}")
+        );
+        UserLlmSettingsService service = service(repository, mock(UserAccountRepository.class), httpClient, publicResolver());
+        String baseUrl = "https://models.example.com/v1";
 
-        try {
-            UserLlmSettingsRequest invalidRequest = settingsRequest("custom_openai_compatible", baseUrl, "bad-key");
-            assertThatThrownBy(() -> service.testSettings(userId, invalidRequest))
-                .isInstanceOf(ApplicationException.class)
-                .extracting("code")
-                .isEqualTo("LLM_MODEL_LIST_UNAUTHORIZED");
-            assertThat(repository.record).isNull();
+        UserLlmSettingsRequest invalidRequest = settingsRequest("custom_openai_compatible", baseUrl, "bad-key");
+        assertThatThrownBy(() -> service.testSettings(userId, invalidRequest))
+            .isInstanceOf(ApplicationException.class)
+            .extracting("code")
+            .isEqualTo("LLM_MODEL_LIST_UNAUTHORIZED");
+        assertThat(repository.record).isNull();
 
-            Map<String, Object> result = service.testSettings(
-                userId,
-                settingsRequest("custom_openai_compatible", baseUrl, "valid-key")
-            );
+        Map<String, Object> result = service.testSettings(
+            userId,
+            settingsRequest("custom_openai_compatible", baseUrl, "valid-key")
+        );
 
-            assertThat(result)
-                .containsEntry("ok", true)
-                .containsEntry("activeProvider", "custom_openai_compatible");
-            assertThat(repository.record).isNotNull();
-            assertThat(service.runtimeConfig(userId).providers().get("custom_openai_compatible").apiKey()).isEqualTo("valid-key");
-        } finally {
-            server.stop(0);
-        }
+        assertThat(result)
+            .containsEntry("ok", true)
+            .containsEntry("activeProvider", "custom_openai_compatible");
+        assertThat(repository.record).isNotNull();
+        assertThat(httpClient.requests()).extracting(HttpRequest::uri)
+            .containsExactly(URI.create("https://models.example.com/v1/models"), URI.create("https://models.example.com/v1/models"));
+        assertThat(service.runtimeConfig(userId).providers().get("custom_openai_compatible").apiKey()).isEqualTo("valid-key");
+    }
+
+    @Test
+    void saveSettingsRejectsPrivateOrNonHttpsBaseUrl() throws Exception {
+        UUID userId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        UserLlmSettingsService service = service(
+            repository,
+            mock(UserAccountRepository.class),
+            new StubHttpClient(),
+            host -> new InetAddress[] { InetAddress.getByName("10.0.0.5") }
+        );
+
+        assertThatThrownBy(() -> service.saveSettings(
+            userId,
+            settingsRequest("custom_openai_compatible", "https://llm.internal.example/v1", "key")
+        ))
+            .isInstanceOf(ApplicationException.class)
+            .extracting("code")
+            .isEqualTo("LLM_BASE_URL_INVALID");
+
+        assertThatThrownBy(() -> service.saveSettings(
+            userId,
+            settingsRequest("custom_openai_compatible", "http://models.example.com/v1", "key")
+        ))
+            .isInstanceOf(ApplicationException.class)
+            .extracting("code")
+            .isEqualTo("LLM_BASE_URL_INVALID");
+    }
+
+    @Test
+    void modelListRejectsRedirectToPrivateAddress() throws Exception {
+        UUID userId = UUID.randomUUID();
+        InMemoryRepository repository = new InMemoryRepository();
+        UserLlmSettingsService service = service(
+            repository,
+            mock(UserAccountRepository.class),
+            new StubHttpClient(StubHttpResponse.redirect("https://metadata.example.com/models")),
+            host -> {
+                if ("metadata.example.com".equals(host)) {
+                    return new InetAddress[] { InetAddress.getByName("127.0.0.1") };
+                }
+                return new InetAddress[] { InetAddress.getByName("93.184.216.34") };
+            }
+        );
+
+        assertThatThrownBy(() -> service.testSettings(
+            userId,
+            settingsRequest("custom_openai_compatible", "https://models.example.com/v1", "key")
+        ))
+            .isInstanceOf(ApplicationException.class)
+            .extracting("code")
+            .isEqualTo("LLM_BASE_URL_INVALID");
+        assertThat(repository.record).isNull();
     }
 
     @Test
@@ -321,29 +389,16 @@ class UserLlmSettingsServiceTest {
         );
     }
 
-    private HttpServer startModelListServer(String acceptedApiKey) throws IOException {
-        HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        server.createContext("/models", exchange -> {
-            String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
-            byte[] body;
-            int status;
-            if (("Bearer " + acceptedApiKey).equals(authHeader)) {
-                status = 200;
-                body = "{\"data\":[{\"id\":\"verified-model\"}]}".getBytes(StandardCharsets.UTF_8);
-            } else {
-                status = 401;
-                body = "{\"error\":\"unauthorized\"}".getBytes(StandardCharsets.UTF_8);
-            }
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(status, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.close();
-        });
-        server.start();
-        return server;
+    private UserLlmSettingsService service(InMemoryRepository repository, UserAccountRepository userRepository) {
+        return service(repository, userRepository, new StubHttpClient(), publicResolver());
     }
 
-    private UserLlmSettingsService service(InMemoryRepository repository, UserAccountRepository userRepository) {
+    private UserLlmSettingsService service(
+        InMemoryRepository repository,
+        UserAccountRepository userRepository,
+        HttpClient httpClient,
+        UserLlmSettingsService.HostAddressResolver resolver
+    ) {
         AppProperties properties = new AppProperties();
         properties.getUserLlm().setEncryptionKey("0123456789abcdef0123456789abcdef");
         return new UserLlmSettingsService(
@@ -351,8 +406,14 @@ class UserLlmSettingsServiceTest {
             new UserLlmSecretCryptoService(properties),
             new ObjectMapper(),
             properties,
-            userRepository
+            userRepository,
+            httpClient,
+            resolver
         );
+    }
+
+    private UserLlmSettingsService.HostAddressResolver publicResolver() {
+        return host -> new InetAddress[] { InetAddress.getByName("93.184.216.34") };
     }
 
     private static class InMemoryRepository implements UserLlmSettingsRepository {
@@ -376,6 +437,156 @@ class UserLlmSettingsServiceTest {
             if (record != null && record.userId().equals(userId)) {
                 record = null;
             }
+        }
+    }
+
+    private static class StubHttpClient extends HttpClient {
+        private final Queue<HttpResponse<String>> responses = new ArrayDeque<>();
+        private final List<HttpRequest> requests = new java.util.ArrayList<>();
+
+        StubHttpClient(HttpResponse<String>... responses) {
+            this.responses.addAll(List.of(responses));
+        }
+
+        List<HttpRequest> requests() {
+            return requests;
+        }
+
+        @Override
+        public Optional<CookieHandler> cookieHandler() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<Duration> connectTimeout() {
+            return Optional.of(Duration.ofSeconds(1));
+        }
+
+        @Override
+        public Redirect followRedirects() {
+            return Redirect.NEVER;
+        }
+
+        @Override
+        public Optional<ProxySelector> proxy() {
+            return Optional.empty();
+        }
+
+        @Override
+        public SSLContext sslContext() {
+            try {
+                return SSLContext.getDefault();
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex);
+            }
+        }
+
+        @Override
+        public SSLParameters sslParameters() {
+            return new SSLParameters();
+        }
+
+        @Override
+        public Optional<Authenticator> authenticator() {
+            return Optional.empty();
+        }
+
+        @Override
+        public HttpClient.Version version() {
+            return HttpClient.Version.HTTP_1_1;
+        }
+
+        @Override
+        public Optional<Executor> executor() {
+            return Optional.empty();
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler) throws IOException {
+            requests.add(request);
+            HttpResponse<String> response = responses.poll();
+            if (response == null) {
+                response = StubHttpResponse.json(200, "{\"data\":[{\"id\":\"default-model\"}]}");
+            }
+            return (HttpResponse<T>) response;
+        }
+
+        @Override
+        public <T> CompletableFuture<HttpResponse<T>> sendAsync(
+            HttpRequest request,
+            HttpResponse.BodyHandler<T> responseBodyHandler
+        ) {
+            throw new UnsupportedOperationException("sendAsync is not used in these tests");
+        }
+
+        @Override
+        public <T> CompletableFuture<HttpResponse<T>> sendAsync(
+            HttpRequest request,
+            HttpResponse.BodyHandler<T> responseBodyHandler,
+            HttpResponse.PushPromiseHandler<T> pushPromiseHandler
+        ) {
+            throw new UnsupportedOperationException("sendAsync is not used in these tests");
+        }
+    }
+
+    private record StubHttpResponse(
+        int statusCode,
+        String body,
+        HttpHeaders headers,
+        URI uri
+    ) implements HttpResponse<String> {
+        static StubHttpResponse json(int status, String body) {
+            return new StubHttpResponse(
+                status,
+                body,
+                HttpHeaders.of(Map.of("Content-Type", List.of("application/json")), (name, value) -> true),
+                URI.create("https://models.example.com/v1/models")
+            );
+        }
+
+        static StubHttpResponse redirect(String location) {
+            return new StubHttpResponse(
+                302,
+                "",
+                HttpHeaders.of(Map.of("Location", List.of(location)), (name, value) -> true),
+                URI.create("https://models.example.com/v1/models")
+            );
+        }
+
+        @Override
+        public HttpRequest request() {
+            return null;
+        }
+
+        @Override
+        public Optional<HttpResponse<String>> previousResponse() {
+            return Optional.empty();
+        }
+
+        @Override
+        public HttpHeaders headers() {
+            return headers;
+        }
+
+        @Override
+        public String body() {
+            return body;
+        }
+
+        @Override
+        public Optional<javax.net.ssl.SSLSession> sslSession() {
+            return Optional.empty();
+        }
+
+        @Override
+        public URI uri() {
+            return uri;
+        }
+
+        @Override
+        public HttpClient.Version version() {
+            return HttpClient.Version.HTTP_1_1;
         }
     }
 }

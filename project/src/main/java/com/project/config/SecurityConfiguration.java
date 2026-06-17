@@ -2,6 +2,7 @@ package com.project.config;
 
 import com.project.infrastructure.ratelimit.IpRateLimitFilter;
 import com.project.infrastructure.ratelimit.RateLimitFilter;
+import com.project.security.InternalTokenAuthenticationFilter;
 import com.project.security.JwtAuthenticationFilter;
 import com.project.security.RestAuthenticationEntryPoint;
 import jakarta.servlet.DispatcherType;
@@ -29,6 +30,7 @@ public class SecurityConfiguration {
     public SecurityFilterChain securityFilterChain(
         HttpSecurity http,
         IpRateLimitFilter ipRateLimitFilter,
+        InternalTokenAuthenticationFilter internalTokenAuthenticationFilter,
         JwtAuthenticationFilter jwtAuthenticationFilter,
         RestAuthenticationEntryPoint authenticationEntryPoint,
         RateLimitFilter rateLimitFilter
@@ -48,18 +50,20 @@ public class SecurityConfiguration {
                     "/api-docs/**",
                     "/swagger-ui.html",
                     "/swagger-ui/**",
-                    "/internal/**",
                     "/api/auth/register",
                     "/api/auth/login",
                     "/api/voice/ws",
                     "/api/conversations/images/*"
                 )
                 .permitAll()
+                .requestMatchers("/internal/**")
+                .hasAuthority("INTERNAL_SERVICE")
                 .anyRequest()
                 .authenticated()
             )
             .addFilterBefore(ipRateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterAfter(jwtAuthenticationFilter, IpRateLimitFilter.class)
+            .addFilterAfter(internalTokenAuthenticationFilter, IpRateLimitFilter.class)
+            .addFilterAfter(jwtAuthenticationFilter, InternalTokenAuthenticationFilter.class)
             .addFilterAfter(rateLimitFilter, JwtAuthenticationFilter.class)
             .build();
     }

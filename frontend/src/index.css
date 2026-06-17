@@ -1631,7 +1631,230 @@
   }
 
   .app-page-shell {
-    padding: 28px 18px 40px;
+    padding: 28px clamp(18px, 2.4vw, 34px) 40px;
+  }
+
+  .app-topbar-inner {
+    display: grid;
+    min-height: 58px;
+    grid-template-columns: minmax(238px, auto) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .app-topbar-left {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .app-topbar-brand {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+
+  .app-topbar-brand-text {
+    min-width: 0;
+  }
+
+  .app-topbar-brand-text p {
+    margin: 0;
+    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 760;
+    line-height: 1.1;
+  }
+
+  .app-topbar-brand-text span {
+    display: block;
+    max-width: 118px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .app-topbar-menu-button,
+  .app-topbar-utility,
+  .app-topbar-login {
+    display: inline-flex;
+    height: 38px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border-radius: 8px;
+    padding: 0 12px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 680;
+    transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .app-topbar-menu-button {
+    width: 38px;
+    padding: 0;
+  }
+
+  .app-topbar-utility:hover,
+  .app-topbar-utility.is-active,
+  .app-topbar-menu-button:hover {
+    background: rgba(230, 57, 70, 0.08);
+    color: var(--action);
+  }
+
+  .app-topbar-login {
+    background: var(--action);
+    color: #fff;
+  }
+
+  .app-topbar-login:hover {
+    background: var(--action-hover);
+    color: #fff;
+  }
+
+  .app-top-nav {
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .app-top-nav-item {
+    display: inline-flex;
+    height: 38px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0 10px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 680;
+    line-height: 1;
+    white-space: nowrap;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+
+  .app-top-nav-item:hover,
+  .app-top-nav-item.is-active {
+    border-color: rgba(230, 57, 70, 0.2);
+    background: rgba(230, 57, 70, 0.08);
+    color: var(--action);
+  }
+
+  .app-top-nav-more,
+  .app-history-popover-anchor {
+    position: relative;
+  }
+
+  .app-top-more-menu {
+    left: auto;
+    right: 0;
+    width: 176px;
+    min-width: 176px;
+  }
+
+  .app-more-menu > button {
+    display: flex;
+    min-height: 38px;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    text-align: left;
+  }
+
+  .app-more-menu > button.is-active {
+    background: rgba(230, 57, 70, 0.08);
+    color: var(--action);
+  }
+
+  .app-topbar-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .app-topbar-user {
+    display: inline-flex;
+    max-width: 172px;
+    align-items: center;
+    gap: 8px;
+    border-radius: 8px;
+    background: rgba(255, 238, 232, 0.62);
+    padding: 6px 8px 6px 10px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .app-topbar-user span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-topbar-user button {
+    flex-shrink: 0;
+    color: var(--action);
+    font-size: 12px;
+  }
+
+  .app-history-popover {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 10px);
+    z-index: 46;
+    width: min(380px, calc(100vw - 28px));
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(255, 251, 249, 0.96);
+    box-shadow: 0 18px 48px rgba(168, 29, 42, 0.12);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 12px;
+  }
+
+  .dark .app-history-popover {
+    background: rgba(17, 24, 39, 0.96);
+    box-shadow: 0 20px 52px rgba(0, 0, 0, 0.32);
+  }
+
+  .app-sidebar-history {
+    min-height: 0;
+    flex: 1;
+    padding: 0 14px 14px;
+  }
+
+  .app-history-search {
+    margin-bottom: 10px;
+  }
+
+  .app-history-list {
+    max-height: min(360px, calc(100dvh - 260px));
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .app-history-sync {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-secondary);
+    font-size: 11px;
   }
 
   .app-more-menu {
@@ -3647,38 +3870,38 @@
   }
 }
 
-/* Book-page workbench redesign: paper surfaces, ink text, hairline structure. */
+/* Kiana Kaslana - Herrscher of Flamescion theme: crimson, gold, warm white */
 @layer base {
   :root {
-    --page-bg: #f5f0e6;
-    --surface: #fffdf7;
-    --surface-muted: #f8f3ea;
-    --border: #e5ded2;
-    --text-primary: #22201c;
-    --text-secondary: #6d665c;
-    --primary: #d8c8a8;
-    --primary-strong: #4b3f2f;
-    --action: #3f5f4a;
-    --action-hover: #314a3a;
+    --page-bg: #fff5f2;
+    --surface: #fffbf9;
+    --surface-muted: #ffeee8;
+    --border: #f0d0cc;
+    --text-primary: #2a1015;
+    --text-secondary: #7a5058;
+    --primary: #e63946;
+    --primary-strong: #a81d2a;
+    --action: #e63946;
+    --action-hover: #c1121f;
     --surface-cream: var(--page-bg);
-    --surface-mist: #eee7dc;
+    --surface-mist: #ffe8e2;
     --surface-panel: var(--surface);
-    --surface-panel-strong: #fffaf0;
+    --surface-panel-strong: #fff8f6;
     --surface-control: var(--surface-muted);
     --surface-control-strong: var(--surface);
-    --surface-recessed: #efe8dc;
+    --surface-recessed: #ffe5de;
     --ink-strong: var(--text-primary);
     --ink-body: var(--text-secondary);
-    --ink-muted: #948a7b;
+    --ink-muted: #b08890;
     --accent-calm: var(--action);
     --accent-action: var(--action);
     --accent-action-hover: var(--action-hover);
-    --accent-soft: rgba(63, 95, 74, 0.1);
+    --accent-soft: rgba(230, 57, 70, 0.1);
     --ring-soft: var(--border);
     --ring-hairline: var(--border);
-    --shadow-soft: 0 10px 24px rgba(75, 63, 47, 0.06);
-    --shadow-lift: 0 14px 34px rgba(75, 63, 47, 0.08);
-    --shadow-button: 0 10px 20px rgba(63, 95, 74, 0.18);
+    --shadow-soft: 0 10px 24px rgba(168, 29, 42, 0.06);
+    --shadow-lift: 0 14px 34px rgba(168, 29, 42, 0.08);
+    --shadow-button: 0 10px 20px rgba(230, 57, 70, 0.22);
   }
 
   body {
@@ -3689,14 +3912,13 @@
 @layer components {
   .app-main {
     background:
-      linear-gradient(90deg, rgba(229, 222, 210, 0.28) 1px, transparent 1px),
-      linear-gradient(180deg, rgba(229, 222, 210, 0.24) 1px, transparent 1px),
+      radial-gradient(ellipse 80% 60% at 70% 20%, rgba(230, 57, 70, 0.05) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 30% 80%, rgba(240, 192, 64, 0.04) 0%, transparent 50%),
       var(--page-bg);
-    background-size: 72px 72px, 72px 72px, auto;
   }
 
   .app-sidebar {
-    background: rgba(255, 253, 247, 0.84);
+    background: rgba(255, 251, 249, 0.88);
     border: 1px solid var(--border);
     box-shadow: none;
     outline: 0;
@@ -3705,12 +3927,32 @@
   }
 
   .app-topbar {
-    background: rgba(255, 253, 247, 0.82);
-    border: 1px solid rgba(229, 222, 210, 0.82);
+    background: rgba(255, 251, 249, 0.85);
+    border: 1px solid rgba(240, 208, 204, 0.82);
     box-shadow: none;
     outline: 0;
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
+  }
+
+  .app-topbar-inner {
+    min-height: 58px;
+  }
+
+  .app-top-nav-item,
+  .app-topbar-utility,
+  .app-topbar-user {
+    border: 1px solid transparent;
+    box-shadow: none;
+  }
+
+  .app-top-nav-item:hover,
+  .app-top-nav-item.is-active,
+  .app-topbar-utility:hover,
+  .app-topbar-utility.is-active {
+    border-color: rgba(230, 57, 70, 0.2);
+    background: rgba(230, 57, 70, 0.08);
+    color: var(--accent-action);
   }
 
   .app-sidebar-nav-item,
@@ -3724,16 +3966,18 @@
   .app-sidebar-nav-item.is-active,
   .app-conversation-item:hover,
   .app-more-menu > button:hover {
-    background: rgba(255, 255, 252, 0.7);
+    background: rgba(230, 57, 70, 0.08);
     color: var(--accent-action);
     box-shadow: none;
   }
 
   .app-more-menu,
+  .app-history-popover,
+  .app-topbar-user,
   .app-user-card,
   .app-sync-card,
   .app-sidebar-search {
-    background: rgba(248, 243, 234, 0.72);
+    background: rgba(255, 238, 232, 0.72);
     border: 1px solid var(--border);
     box-shadow: none;
     outline: 0;
@@ -3745,10 +3989,9 @@
 
   .qna-landing-shell::before {
     background:
-      linear-gradient(90deg, rgba(229, 222, 210, 0.3) 1px, transparent 1px),
-      linear-gradient(180deg, rgba(229, 222, 210, 0.24) 1px, transparent 1px),
+      radial-gradient(ellipse 70% 50% at 50% 30%, rgba(230, 57, 70, 0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 80% 70%, rgba(240, 192, 64, 0.05) 0%, transparent 50%),
       var(--page-bg);
-    background-size: 88px 88px, 88px 88px, auto, auto;
   }
 
   .qna-landing-grid {
@@ -3759,34 +4002,35 @@
   .learning-service-badge,
   .learning-service-map span,
   .qna-cycle-head span {
-    background: rgba(255, 255, 252, 0.58);
+    background: rgba(230, 57, 70, 0.08);
     border: 0;
     box-shadow: none;
   }
 
   .qna-hero-title {
-    color: #162026;
+    color: #2a1015;
     font-weight: 790;
   }
 
   .qna-hero-title span {
-    color: #5f6b70;
+    color: #e63946;
   }
 
   .qna-hero-subtitle,
   .learning-service-copy p {
-    color: #5f6b70;
+    color: #7a5058;
   }
 
   .qna-composer {
-    background: rgba(255, 255, 252, 0.92);
-    border: 0;
+    background: rgba(255, 251, 249, 0.92);
+    border: 1px solid var(--border);
     outline: 0;
-    box-shadow: 0 18px 52px rgba(45, 55, 48, 0.08);
+    box-shadow: 0 18px 52px rgba(168, 29, 42, 0.06);
   }
 
   .qna-composer:focus-within {
-    box-shadow: 0 22px 64px rgba(31, 122, 114, 0.13);
+    box-shadow: 0 22px 64px rgba(230, 57, 70, 0.12);
+    border-color: rgba(230, 57, 70, 0.3);
   }
 
   .qna-icon-button,
@@ -3796,7 +4040,7 @@
   .learning-service-card,
   .qna-message-action-button,
   .qna-scroll-bottom-button {
-    background: rgba(247, 246, 238, 0.78);
+    background: rgba(255, 238, 232, 0.78);
     border: 0;
     box-shadow: none;
   }
@@ -3810,7 +4054,7 @@
   .learning-service-card.is-active,
   .qna-message-action-button:hover,
   .qna-scroll-bottom-button:hover {
-    background: rgba(255, 255, 252, 0.94);
+    background: rgba(230, 57, 70, 0.1);
     color: var(--accent-action);
     box-shadow: none;
   }
@@ -3835,12 +4079,12 @@
 
   .qna-cycle-step,
   .learning-service-card {
-    background: rgba(247, 246, 238, 0.68);
+    background: rgba(255, 238, 232, 0.68);
   }
 
   .qna-cycle-step-icon,
   .learning-service-card-icon {
-    background: rgba(31, 122, 114, 0.08);
+    background: rgba(230, 57, 70, 0.08);
     box-shadow: none;
   }
 
@@ -3857,7 +4101,7 @@
   }
 
   .qna-assistant-message {
-    background: rgba(255, 255, 252, 0.72);
+    background: rgba(255, 248, 246, 0.72);
     border: 0;
     outline: 0;
     box-shadow: none;
@@ -3865,7 +4109,7 @@
 
   .learning-service-action-bar,
   .assistant-action-bar {
-    background: rgba(255, 255, 252, 0.5);
+    background: rgba(255, 248, 246, 0.5);
     border: 0;
     box-shadow: none;
   }
@@ -3876,15 +4120,15 @@
   }
 
   :where(.resource-page, .profile-page, .settings-page, .mistake-page, .resource-generation-page, .auth-modal-shell, .voice-assistant-panel, .practice-assistant-panel) :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select, .auth-field) {
-    border: 0;
-    background: rgba(247, 246, 238, 0.78);
+    border: 1px solid var(--border);
+    background: rgba(255, 248, 246, 0.78);
   }
 }
 
 @media (max-width: 768px) {
   .app-sidebar {
-    background: rgba(250, 249, 244, 0.94);
-    box-shadow: 0 20px 64px rgba(41, 55, 48, 0.14);
+    background: rgba(255, 251, 249, 0.96);
+    box-shadow: 0 20px 64px rgba(168, 29, 42, 0.1);
   }
 
   .qna-landing-shell {
@@ -3912,10 +4156,10 @@
   .app-brand-mark {
     height: 38px;
     width: 38px;
-    border-radius: 8px;
-    background: var(--primary);
-    box-shadow: none;
-    color: var(--primary-strong);
+    border-radius: 10px;
+    background: linear-gradient(135deg, #e63946, #f0c040);
+    box-shadow: 0 4px 16px rgba(230, 57, 70, 0.25);
+    color: #fff;
   }
 
   .app-sidebar-nav {
@@ -3924,6 +4168,7 @@
   }
 
   .app-sidebar-nav-item {
+    position: relative;
     min-height: 40px;
     border: 1px solid transparent;
     border-radius: 6px;
@@ -3936,8 +4181,8 @@
 
   .app-sidebar-nav-item:hover,
   .app-sidebar-nav-item.is-active {
-    border-color: var(--border);
-    background: var(--surface-muted);
+    border-color: rgba(230, 57, 70, 0.2);
+    background: rgba(230, 57, 70, 0.06);
     box-shadow: none;
     color: var(--action);
     transform: none;
@@ -3947,6 +4192,34 @@
     min-height: 58px;
     border-radius: 8px;
     margin: 0 18px;
+  }
+
+  .app-topbar-inner {
+    display: flex;
+    min-height: 58px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .app-topbar-left {
+    flex: 1;
+  }
+
+  .app-topbar-actions {
+    flex-shrink: 0;
+  }
+
+  @media (min-width: 1280px) {
+    .app-topbar-inner {
+      display: grid;
+      grid-template-columns: minmax(220px, auto) minmax(0, 1fr) auto;
+      gap: 16px;
+    }
+
+    .app-topbar-left {
+      flex: initial;
+    }
   }
 
   .app-sidebar-search,
@@ -3961,26 +4234,28 @@
 
   .app-primary-action {
     min-height: 40px;
-    border-radius: 6px;
-    background: var(--action);
-    color: #fffdf7;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #e63946, #ff6b6b);
+    color: #fff;
+    font-weight: 600;
   }
 
   .app-primary-action:hover {
-    background: var(--action-hover);
+    background: linear-gradient(135deg, #c1121f, #e63946);
+    box-shadow: 0 6px 20px rgba(230, 57, 70, 0.35);
   }
 
   .app-main :focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--action) 54%, transparent);
+    outline: 2px solid rgba(230, 57, 70, 0.4);
     outline-offset: 3px;
   }
 
   .qna-composer {
-    box-shadow: 0 12px 30px rgba(75, 63, 47, 0.08);
+    box-shadow: 0 12px 30px rgba(168, 29, 42, 0.06);
   }
 
   .qna-composer:focus-within {
-    box-shadow: 0 14px 34px rgba(63, 95, 74, 0.14);
+    box-shadow: 0 14px 34px rgba(230, 57, 70, 0.12);
   }
 
   .qna-send-button,
@@ -5082,4 +5357,166 @@
   .qna-message-wrap.is-user {
     max-width: 92%;
   }
+}
+
+/* ======================== */
+/* Kiana Flamescion Decorations */
+/* ======================== */
+
+/* Brand mark glow pulse animation */
+@keyframes kiana-glow {
+  0%, 100% { box-shadow: 0 4px 16px rgba(230, 57, 70, 0.25); }
+  50% { box-shadow: 0 4px 24px rgba(230, 57, 70, 0.4), 0 0 40px rgba(240, 192, 64, 0.15); }
+}
+
+.app-brand-mark {
+  animation: kiana-glow 3s ease-in-out infinite;
+}
+
+/* Floating ember particles on main content */
+@keyframes kiana-ember-float {
+  0% { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+  15% { opacity: 0.6; }
+  85% { opacity: 0.3; }
+  100% { transform: translateY(-120px) translateX(30px) scale(0.3); opacity: 0; }
+}
+
+@keyframes kiana-ember-float-2 {
+  0% { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+  20% { opacity: 0.5; }
+  80% { opacity: 0.2; }
+  100% { transform: translateY(-100px) translateX(-20px) scale(0.4); opacity: 0; }
+}
+
+.app-main::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(2px 2px at 15% 25%, rgba(230, 57, 70, 0.3) 50%, transparent 50%),
+    radial-gradient(2px 2px at 85% 40%, rgba(240, 192, 64, 0.25) 50%, transparent 50%),
+    radial-gradient(1.5px 1.5px at 45% 70%, rgba(230, 57, 70, 0.2) 50%, transparent 50%),
+    radial-gradient(2px 2px at 70% 15%, rgba(240, 192, 64, 0.2) 50%, transparent 50%),
+    radial-gradient(1.5px 1.5px at 25% 85%, rgba(230, 57, 70, 0.15) 50%, transparent 50%),
+    radial-gradient(2px 2px at 55% 50%, rgba(240, 192, 64, 0.18) 50%, transparent 50%);
+  animation: kiana-ember-float 8s ease-in-out infinite;
+}
+
+.app-main::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 30% 60%, rgba(240, 192, 64, 0.25) 50%, transparent 50%),
+    radial-gradient(2px 2px at 60% 30%, rgba(230, 57, 70, 0.2) 50%, transparent 50%),
+    radial-gradient(1.5px 1.5px at 80% 75%, rgba(240, 192, 64, 0.2) 50%, transparent 50%),
+    radial-gradient(2px 2px at 10% 45%, rgba(230, 57, 70, 0.15) 50%, transparent 50%);
+  animation: kiana-ember-float-2 10s ease-in-out infinite 2s;
+}
+
+/* Sidebar decorative flame accent at bottom */
+.app-sidebar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(230, 57, 70, 0.06) 0%, transparent 100%);
+  border-radius: 0 0 8px 8px;
+  z-index: 0;
+}
+
+/* Gold accent stripe on sidebar top */
+.app-sidebar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #e63946, #f0c040, #e63946);
+  border-radius: 8px 8px 0 0;
+  z-index: 1;
+}
+
+/* Nav item active indicator - flame accent */
+.app-sidebar-nav-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: linear-gradient(to bottom, #e63946, #f0c040);
+  border-radius: 0 3px 3px 0;
+}
+
+/* Send button flame gradient */
+.qna-send-button {
+  background: linear-gradient(135deg, #e63946, #ff6b6b) !important;
+  box-shadow: 0 4px 16px rgba(230, 57, 70, 0.3) !important;
+}
+
+.qna-send-button:hover {
+  background: linear-gradient(135deg, #c1121f, #e63946) !important;
+  box-shadow: 0 6px 24px rgba(230, 57, 70, 0.4) !important;
+}
+
+/* Subtle flame border on focused inputs */
+:is(input, textarea, select):focus-visible {
+  border-color: rgba(230, 57, 70, 0.4) !important;
+  box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.08) !important;
+}
+
+/* Gold accent on links and interactive text */
+a, .text-action {
+  color: var(--action);
+}
+
+a:hover {
+  color: var(--action-hover);
+}
+
+/* Loading spinner flame color */
+.animate-spin {
+  color: var(--action);
+}
+
+/* Scrollbar styling with flame accent */
+::-webkit-scrollbar-thumb {
+  background: rgba(230, 57, 70, 0.2);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(230, 57, 70, 0.35);
+}
+
+/* Star sparkle decoration for hero section */
+@keyframes kiana-sparkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.8) rotate(0deg); }
+  50% { opacity: 0.8; transform: scale(1.2) rotate(180deg); }
+}
+
+.qna-hero-title::after {
+  content: '✦';
+  display: inline-block;
+  margin-left: 8px;
+  color: #f0c040;
+  font-size: 0.6em;
+  animation: kiana-sparkle 2s ease-in-out infinite;
+  vertical-align: super;
 }

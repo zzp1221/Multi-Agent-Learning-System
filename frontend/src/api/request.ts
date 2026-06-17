@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
+import { APP_EVENTS, dispatchAppEvent } from '../utils/appEvents';
 
 /**
  * 后端统一响应结构
@@ -26,6 +27,13 @@ class ApiError extends Error {
     this.code = options.code ?? -1;
     this.traceId = options.traceId;
     this.httpStatus = options.httpStatus;
+  }
+}
+
+export class AuthSessionExpiredError extends Error {
+  constructor() {
+    super('登录状态已失效，请重新登录');
+    this.name = 'AuthSessionExpiredError';
   }
 }
 
@@ -81,6 +89,14 @@ export function clearAuthSession(): void {
   window.localStorage.removeItem(AUTH_USER_STORAGE_KEY);
 }
 
+export function notifyAuthSessionExpired(reason: string): void {
+  if (typeof window === 'undefined' || !getAuthToken()) {
+    return;
+  }
+  clearAuthSession();
+  dispatchAppEvent(APP_EVENTS.authSessionExpired, { reason });
+}
+
 export function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const token = getAuthToken();
@@ -134,6 +150,10 @@ instance.interceptors.response.use(
     // 有响应的情况：后端返回了结果（即使是错误）
     if (error.response) {
       const { data, status } = error.response;
+      if (status === 401) {
+        notifyAuthSessionExpired('unauthorized');
+        return Promise.reject(new AuthSessionExpiredError());
+      }
       if (status === 429) {
         return Promise.reject(
           new ApiError('请求过于频繁，请稍等片刻后重试', { httpStatus: status }),
@@ -270,7 +290,10 @@ export function isUnauthorizedError(error: unknown): boolean {
     return error.httpStatus === 401 || error.code === 401 || error.code === '401' || error.code === 'AUTH_REQUIRED';
   }
   if (error instanceof Error) {
-    return /\b401\b/.test(error.message) || error.message.includes('请先登录') || error.message.includes('认证信息无效');
+    return error instanceof AuthSessionExpiredError
+      || error.message.includes('登录状态已失效')
+      || error.message.includes('请先登录')
+      || error.message.includes('认证信息无效');
   }
   return false;
 }

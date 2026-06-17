@@ -1,3 +1,5 @@
+import { AuthSessionExpiredError, notifyAuthSessionExpired } from './request';
+
 interface RawSseEvent {
   event: string;
   data: string;
@@ -61,6 +63,10 @@ export async function streamSse(url: string, options: StreamSseOptions): Promise
     try {
       const response = await fetch(url, options.init);
       if (!response.ok) {
+        if (response.status === 401) {
+          notifyAuthSessionExpired('unauthorized');
+          throw new AuthSessionExpiredError();
+        }
         const statusError = new Error(options.requestFailedMessage(response.status));
         if (RETRYABLE_STATUSES.has(response.status) && attempt < maxRetries) {
           lastError = statusError;
@@ -116,6 +122,10 @@ export async function streamSse(url: string, options: StreamSseOptions): Promise
       return;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      if (error instanceof AuthSessionExpiredError) {
+        options.onError(error);
         return;
       }
       lastError = error instanceof Error ? error : new Error('实时连接执行失败');

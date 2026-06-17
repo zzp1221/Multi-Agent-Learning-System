@@ -276,6 +276,8 @@ public class AppProperties {
     public static class SmartEngineQueue {
         private String streamKey = "zhixue:smart-engine:tasks";
         private String dlqKey = "zhixue:smart-engine:tasks:dlq";
+        private long maxStreamLength = 10_000L;
+        private long dlqMaxStreamLength = 1_000L;
         private String consumerGroup = "smart-engine-python";
         private String cancelKeyPrefix = "zhixue:smart-engine:cancel:";
         private Duration cancelTtl = Duration.ofHours(24);
@@ -294,6 +296,22 @@ public class AppProperties {
 
         public void setDlqKey(String dlqKey) {
             this.dlqKey = dlqKey;
+        }
+
+        public long getMaxStreamLength() {
+            return maxStreamLength;
+        }
+
+        public void setMaxStreamLength(long maxStreamLength) {
+            this.maxStreamLength = maxStreamLength;
+        }
+
+        public long getDlqMaxStreamLength() {
+            return dlqMaxStreamLength;
+        }
+
+        public void setDlqMaxStreamLength(long dlqMaxStreamLength) {
+            this.dlqMaxStreamLength = dlqMaxStreamLength;
         }
 
         public String getConsumerGroup() {

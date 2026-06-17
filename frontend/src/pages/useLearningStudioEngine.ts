@@ -216,108 +216,43 @@ export function useLearningStudioEngine({
       }
       activeTaskMonitorsRef.current[service] = currentTaskId;
       const refs = taskMonitorRefsRef.current[service];
+      const snapshotSetter = <K extends keyof EngineTaskSnapshot>(
+        key: K,
+        currentValue?: (snapshot: EngineTaskSnapshot) => EngineTaskSnapshot[K],
+      ) => (value: SetStateAction<EngineTaskSnapshot[K]>) => {
+        updateServiceSnapshot(service, (current) => {
+          const previousValue = currentValue ? currentValue(current) : current[key];
+          const nextValue = typeof value === 'function'
+            ? (value as (previous: EngineTaskSnapshot[K]) => EngineTaskSnapshot[K])(previousValue)
+            : value;
+          return {
+            ...current,
+            [key]: nextValue,
+          };
+        });
+      };
       const outcome = await runByApiTask({
         service,
         currentTaskId,
         streamQueueRef: refs.streamQueueRef,
         streamFlushTimerRef: refs.streamFlushTimerRef,
         streamRafRef: refs.streamRafRef,
-        setServiceResultLines: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            serviceResultLines: typeof value === 'function' ? value(current.serviceResultLines) : value,
-          }));
-        },
-        setTaskProgress: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            taskProgress: typeof value === 'function' ? value(current.taskProgress) : value,
-          }));
-        },
-        setTaskStatus: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            taskStatus: typeof value === 'function' ? value(current.taskStatus) : value,
-          }));
-        },
-        setTaskSummary: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            taskSummary: typeof value === 'function' ? value(current.taskSummary) : value,
-          }));
-        },
-        setDownloadLinks: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            downloadLinks: typeof value === 'function' ? value(current.downloadLinks) : value,
-          }));
-        },
-        setVideoResult: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            videoResult: typeof value === 'function' ? value(current.videoResult) : value,
-          }));
-        },
-        setInlineResource: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            inlineResource: typeof value === 'function' ? value(current.inlineResource) : value,
-          }));
-        },
-        setInlineResources: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            inlineResources: typeof value === 'function' ? value(getInlineResourcesFromSnapshot(current)) : value,
-          }));
-        },
-        setCompletedResources: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            completedResources: typeof value === 'function' ? value(createCompletedResourcesFromSnapshot(current)) : value,
-          }));
-        },
-        setPracticeBatch: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            practiceBatch: typeof value === 'function' ? value(current.practiceBatch) : value,
-          }));
-        },
-        setJudgeResult: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            judgeResult: typeof value === 'function' ? value(current.judgeResult) : value,
-          }));
-        },
-        setMasteryDiagnosis: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            masteryDiagnosis: typeof value === 'function' ? value(current.masteryDiagnosis) : value,
-          }));
-        },
-        setLearningPlan: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            learningPlan: typeof value === 'function' ? value(current.learningPlan) : value,
-          }));
-        },
-        setResourcePushPlan: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            resourcePushPlan: typeof value === 'function' ? value(current.resourcePushPlan) : value,
-          }));
-        },
-        setCriticReview: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            criticReview: typeof value === 'function' ? value(current.criticReview) : value,
-          }));
-        },
-        setAgentTrace: (value) => {
-          updateServiceSnapshot(service, (current) => ({
-            ...current,
-            agentTrace: typeof value === 'function' ? value(current.agentTrace) : value,
-          }));
-        },
+        setServiceResultLines: snapshotSetter('serviceResultLines'),
+        setTaskProgress: snapshotSetter('taskProgress'),
+        setTaskStatus: snapshotSetter('taskStatus'),
+        setTaskSummary: snapshotSetter('taskSummary'),
+        setDownloadLinks: snapshotSetter('downloadLinks'),
+        setVideoResult: snapshotSetter('videoResult'),
+        setInlineResource: snapshotSetter('inlineResource'),
+        setInlineResources: snapshotSetter('inlineResources', getInlineResourcesFromSnapshot),
+        setCompletedResources: snapshotSetter('completedResources', createCompletedResourcesFromSnapshot),
+        setPracticeBatch: snapshotSetter('practiceBatch'),
+        setJudgeResult: snapshotSetter('judgeResult'),
+        setMasteryDiagnosis: snapshotSetter('masteryDiagnosis'),
+        setLearningPlan: snapshotSetter('learningPlan'),
+        setResourcePushPlan: snapshotSetter('resourcePushPlan'),
+        setCriticReview: snapshotSetter('criticReview'),
+        setAgentTrace: snapshotSetter('agentTrace'),
         taskStreamAbortRef: refs.taskStreamAbortRef,
       });
 

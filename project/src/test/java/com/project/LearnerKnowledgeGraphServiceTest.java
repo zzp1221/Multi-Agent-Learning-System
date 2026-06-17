@@ -44,6 +44,9 @@ class LearnerKnowledgeGraphServiceTest {
         List<Map<String, Object>> rows = List.of(
             node("变量声明", "variable", 0.0, "NOT_STARTED"),
             node("学习主动性：并发编程", "initiative", 0.05, "WEAK"),
+            node("学习主动性 ：并发编程", "initiative_space", 0.05, "WEAK"),
+            node("复盘闭环 - Callable", "review_loop", 0.05, "WEAK"),
+            node("案例迁移—ThreadLocal", "case_transfer", 0.05, "WEAK"),
             node("Callable", "callable", 0.27, "WEAK"),
             node("Callable:回调细节", "callable_detail", 0.33, "WEAK"),
             node("并发编程基础", "concurrency", 0.4, "IN_PROGRESS"),
