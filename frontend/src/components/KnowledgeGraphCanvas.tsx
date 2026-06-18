@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import type { KeyboardEvent } from 'react';
-import type { KnowledgeGraphEdge, KnowledgeGraphNode } from '../api/smartEngine';
+import type { KnowledgeGraphEdge, KnowledgeGraphMetadata, KnowledgeGraphNode } from '../api/smartEngine';
 
-export type GraphLayoutMode = 'path' | 'network' | 'radial';
+export type GraphLayoutMode = 'mindmap' | 'path' | 'network' | 'radial';
 export type NeighborhoodDepth = 0 | 1 | 2;
 
 export interface GraphFilterState {
@@ -38,6 +38,7 @@ interface KnowledgeGraphCanvasProps {
   neighborhoodDepth: NeighborhoodDepth;
   searchQuery: string;
   highlightRecommendedPath: boolean;
+  metadata?: KnowledgeGraphMetadata;
   onSelectNode: (nodeKey: string) => void;
   onResetView?: () => void;
 }
@@ -55,6 +56,11 @@ const GRAPH_HEIGHT = 720;
 const GRAPH_CENTER_X = GRAPH_WIDTH / 2;
 const GRAPH_CENTER_Y = GRAPH_HEIGHT / 2;
 const MIN_NODE_GAP = 102;
+const MINDMAP_ROOT_X = 214;
+const MINDMAP_ROOT_Y = GRAPH_CENTER_Y;
+const NODE_PILL_HEIGHT = 34;
+const NODE_DOT_RADIUS = 7;
+const ROOT_DOT_RADIUS = 11;
 const SPARSE_GRAPH_EDGE_LIMIT = 3;
 const MIN_OVERVIEW_NODE_COUNT = 8;
 const MAX_OVERVIEW_NODE_COUNT = 14;
@@ -107,57 +113,16 @@ function normalizeMastery(value: number): number {
 }
 
 function graphNodeRadius(mastery: number): number {
-  return 36 + normalizeMastery(mastery) * 16;
+  return 10 + normalizeMastery(mastery) * 4;
+}
+
+function nodePillWidth(topic: string, isRoot = false): number {
+  return clamp(72 + [...topic].length * (isRoot ? 9.2 : 8.1), isRoot ? 132 : 116, isRoot ? 220 : 190);
 }
 
 function truncateLabel(label: string, maxLength = 13): string {
   const chars = [...label];
   return chars.length > maxLength ? `${chars.slice(0, maxLength - 1).join('')}...` : label;
-}
-
-function splitNodeLabel(label: string): string[] {
-  const normalized = label
-    .trim()
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ');
-  if (!normalized) {
-    return [];
-  }
-  const words = normalized.split(/\s+/).filter(Boolean);
-  if (words.length > 1) {
-    const lines: string[] = [];
-    let currentLine = '';
-    for (const word of words) {
-      const candidate = currentLine ? `${currentLine} ${word}` : word;
-      if ([...candidate].length <= 12) {
-        currentLine = candidate;
-        continue;
-      }
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-      currentLine = word;
-      if (lines.length === 1) {
-        break;
-      }
-    }
-    if (currentLine) {
-      lines.push(currentLine);
-    }
-    return lines.slice(0, 2).map((line, index) => (
-      index === 1 && lines.length > 2 ? truncateLabel(line, 12) : line
-    ));
-  }
-
-  const chars = [...normalized];
-  if (chars.length <= 9) {
-    return [normalized];
-  }
-  const firstLine = chars.slice(0, 9).join('');
-  const secondLine = chars.length > 18
-    ? `${chars.slice(9, 16).join('')}...`
-    : chars.slice(9).join('');
-  return [firstLine, secondLine].filter(Boolean);
 }
 
 function normalizeSearchText(value: string): string {
@@ -365,9 +330,12 @@ function buildGraphLayout(
   sparseNeighborhoodFallback = false,
 ): Map<string, GraphPoint> {
   if (sparseNeighborhoodFallback && nodes.length > 2) {
-    return buildRadialLayout(nodes, edges, selectedNodeKey, nextRecommended);
+    return buildMindMapLayout(nodes, edges, selectedNodeKey, nextRecommended);
   }
   const effectiveLayout = chooseGraphLayout(layoutMode, edges.length > 0);
+  if (effectiveLayout === 'mindmap') {
+    return buildMindMapLayout(nodes, edges, selectedNodeKey, nextRecommended);
+  }
   if (effectiveLayout === 'network') {
     return buildNetworkLayout(nodes, nextRecommended);
   }
@@ -375,6 +343,111 @@ function buildGraphLayout(
     return buildRadialLayout(nodes, edges, selectedNodeKey, nextRecommended);
   }
   return buildPathLayout(nodes, edges, nextRecommended);
+}
+
+function buildMindMapLayout(
+  nodes: KnowledgeGraphNode[],
+  edges: KnowledgeGraphEdge[],
+  selectedNodeKey: string,
+  nextRecommended: string[],
+): Map<string, GraphPoint> {
+  if (nodes.length <= 1) {
+    return buildSingleNodeLayout(nodes);
+  }
+  const nodeKeys = new Set(nodes.map((node) => node.key));
+  const rootKey = selectedNodeKey && nodeKeys.has(selectedNodeKey)
+    ? selectedNodeKey
+    : nextRecommended.find((key) => nodeKeys.has(key)) ?? nodes[0].key;
+  const rootNode = nodes.find((node) => node.key === rootKey) ?? nodes[0];
+  const pointByKey = new Map<string, GraphPoint>();
+  pointByKey.set(rootNode.key, createPoint(rootNode, MINDMAP_ROOT_X, MINDMAP_ROOT_Y));
+
+  const adjacency = buildAdjacency(edges);
+  const firstHopKeys = adjacency.get(rootNode.key) ?? [];
+  const firstHopNodes = sortMindMapBranchNodes(
+    nodes.filter((node) => firstHopKeys.includes(node.key)),
+    nextRecommended,
+    edges,
+  );
+  const fallbackNodes = sortMindMapBranchNodes(
+    nodes.filter((node) => node.key !== rootNode.key && !firstHopKeys.includes(node.key)),
+    nextRecommended,
+    edges,
+  );
+  const branchNodes = [...firstHopNodes, ...fallbackNodes].slice(0, 8);
+  const branchX = 438;
+  const branchGap = clamp(500 / Math.max(1, branchNodes.length - 1), 58, 92);
+  const branchStartY = MINDMAP_ROOT_Y - ((branchNodes.length - 1) * branchGap) / 2;
+  branchNodes.forEach((node, index) => {
+    pointByKey.set(node.key, createPoint(node, branchX, clamp(branchStartY + index * branchGap, 82, GRAPH_HEIGHT - 92)));
+  });
+
+  const placed = new Set(pointByKey.keys());
+  branchNodes.forEach((branchNode) => {
+    const childKeys = (adjacency.get(branchNode.key) ?? [])
+      .filter((key) => key !== rootNode.key && !placed.has(key));
+    const childNodes = sortMindMapBranchNodes(
+      nodes.filter((node) => childKeys.includes(node.key)),
+      nextRecommended,
+      edges,
+    ).slice(0, 4);
+    const branchPoint = pointByKey.get(branchNode.key);
+    if (!branchPoint) {
+      return;
+    }
+    const childGap = 48;
+    const childStartY = branchPoint.y - ((childNodes.length - 1) * childGap) / 2;
+    childNodes.forEach((node, childIndex) => {
+      placed.add(node.key);
+      pointByKey.set(
+        node.key,
+        createPoint(node, 704, clamp(childStartY + childIndex * childGap, 70, GRAPH_HEIGHT - 76)),
+      );
+    });
+  });
+
+  const unplaced = sortMindMapBranchNodes(
+    nodes.filter((node) => !pointByKey.has(node.key)),
+    nextRecommended,
+    edges,
+  ).slice(0, Math.max(0, 24 - pointByKey.size));
+  unplaced.forEach((node, index) => {
+    pointByKey.set(node.key, createPoint(node, 846, 96 + index * 40));
+  });
+  return pointByKey;
+}
+
+function buildAdjacency(edges: KnowledgeGraphEdge[]): Map<string, string[]> {
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges) {
+    adjacency.set(edge.from, [...(adjacency.get(edge.from) ?? []), edge.to]);
+    adjacency.set(edge.to, [...(adjacency.get(edge.to) ?? []), edge.from]);
+  }
+  return adjacency;
+}
+
+function sortMindMapBranchNodes(
+  nodes: KnowledgeGraphNode[],
+  nextRecommended: string[],
+  edges: KnowledgeGraphEdge[],
+): KnowledgeGraphNode[] {
+  const degree = new Map<string, number>();
+  for (const edge of edges) {
+    degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
+    degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
+  }
+  const recommended = new Set(nextRecommended);
+  return [...nodes].sort((left, right) => {
+    const recommendedDelta = Number(recommended.has(right.key)) - Number(recommended.has(left.key));
+    if (recommendedDelta !== 0) {
+      return recommendedDelta;
+    }
+    const degreeDelta = (degree.get(right.key) ?? 0) - (degree.get(left.key) ?? 0);
+    if (degreeDelta !== 0) {
+      return degreeDelta;
+    }
+    return normalizeMastery(left.mastery) - normalizeMastery(right.mastery);
+  });
 }
 
 function buildPathLayout(
@@ -655,10 +728,12 @@ function edgePath(edge: KnowledgeGraphEdge, pointByKey: Map<string, GraphPoint>)
   const dx = target.x - source.x;
   const dy = target.y - source.y;
   const distance = Math.max(1, Math.hypot(dx, dy));
-  const sourceX = source.x + (dx / distance) * (source.radius + 6);
-  const sourceY = source.y + (dy / distance) * (source.radius + 6);
-  const targetX = target.x - (dx / distance) * (target.radius + 12);
-  const targetY = target.y - (dy / distance) * (target.radius + 12);
+  const sourceOffset = nodePillWidth(source.node.topic) / 2 + 8;
+  const targetOffset = nodePillWidth(target.node.topic) / 2 + 10;
+  const sourceX = source.x + (dx / distance) * sourceOffset;
+  const sourceY = source.y + (dy / distance) * Math.min(sourceOffset, 18);
+  const targetX = target.x - (dx / distance) * targetOffset;
+  const targetY = target.y - (dy / distance) * Math.min(targetOffset, 18);
   const curve = edge.type === 'RELATED' ? 34 : edge.type === 'PART_OF' ? -26 : 0;
   if (curve === 0) {
     return `M ${sourceX.toFixed(1)} ${sourceY.toFixed(1)} L ${targetX.toFixed(1)} ${targetY.toFixed(1)}`;
@@ -713,6 +788,7 @@ export default function KnowledgeGraphCanvas({
   neighborhoodDepth,
   searchQuery,
   highlightRecommendedPath,
+  metadata,
   onSelectNode,
   onResetView,
 }: KnowledgeGraphCanvasProps) {
@@ -757,6 +833,7 @@ export default function KnowledgeGraphCanvas({
   const visibleEdgeCounts = useMemo(() => countEdgesByType(filteredGraph.edges), [filteredGraph.edges]);
   const hasOriginalEdges = edges.length > 0;
   const relationSummary = `真实关系：前置 ${totalEdgeCounts.PREREQUISITE}，相关 ${totalEdgeCounts.RELATED}，属于 ${totalEdgeCounts.PART_OF}`;
+  const sparseState = Boolean(metadata?.sparseState) || filteredGraph.sparseNeighborhoodFallback;
 
   useEffect(() => {
     if (!trimmedSearchQuery || filteredGraph.searchMatches.length === 0) {
@@ -801,7 +878,7 @@ export default function KnowledgeGraphCanvas({
             </div>
             <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
               {relationSummary}
-              {filteredGraph.sparseNeighborhoodFallback ? '；当前为推荐/薄弱概览，连线仍只显示真实关系。' : ''}
+              {sparseState ? '；关系仍在补全，当前只显示已验证连线。' : ''}
             </div>
           </div>
           <button
@@ -841,7 +918,7 @@ export default function KnowledgeGraphCanvas({
             className="absolute inset-0 h-full w-full"
             viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
             role="img"
-            aria-label="知识图谱网络视图"
+            aria-label="知识图谱心智图视图"
           >
             <defs>
               {Object.entries(EDGE_COLORS).map(([type, color]) => (
@@ -906,7 +983,7 @@ export default function KnowledgeGraphCanvas({
               const recommendedEdge = highlightRecommendedPath
                 && filteredGraph.recommendedKeys.has(edge.from)
                 && filteredGraph.recommendedKeys.has(edge.to);
-              const opacity = !hasSelectedNode || connected || recommendedEdge ? 1 : 0.36;
+              const opacity = connected || recommendedEdge ? 1 : 0;
               return (
                 <g
                   key={`${edge.from}:${edge.to}:${edge.type}:${index}:label`}
@@ -947,7 +1024,10 @@ export default function KnowledgeGraphCanvas({
                 && !recommended
                 && !matched;
               const masteryPercent = Math.round(normalizeMastery(point.node.mastery) * 100);
-              const labelLines = splitNodeLabel(point.node.topic);
+              const isRoot = point.key === (selectedNodeKey || filteredGraph.neighborhoodRootKey);
+              const pillWidth = nodePillWidth(point.node.topic, isRoot);
+              const dotRadius = isRoot ? ROOT_DOT_RADIUS : NODE_DOT_RADIUS;
+              const label = truncateLabel(point.node.topic, isRoot ? 16 : 13);
               return (
                 <g
                   key={point.key}
@@ -961,54 +1041,77 @@ export default function KnowledgeGraphCanvas({
                 >
                   <title>{`${point.node.topic} · ${STATUS_LABELS[point.node.status]} · ${masteryPercent}%`}</title>
                   {recommended ? (
-                    <circle
-                      cx={point.x}
-                      cy={point.y}
-                      r={point.radius + 10}
+                    <rect
+                      x={point.x - pillWidth / 2 - 8}
+                      y={point.y - NODE_PILL_HEIGHT / 2 - 8}
+                      width={pillWidth + 16}
+                      height={NODE_PILL_HEIGHT + 16}
+                      rx="18"
                       fill="none"
                       stroke="#2563eb"
-                      strokeWidth="2.5"
+                      strokeWidth="1.8"
                       strokeOpacity="0.42"
                     />
                   ) : null}
                   {matched ? (
-                    <circle
-                      cx={point.x}
-                      cy={point.y}
-                      r={point.radius + 14}
+                    <rect
+                      x={point.x - pillWidth / 2 - 10}
+                      y={point.y - NODE_PILL_HEIGHT / 2 - 10}
+                      width={pillWidth + 20}
+                      height={NODE_PILL_HEIGHT + 20}
+                      rx="20"
                       fill="none"
                       stroke="#f97316"
-                      strokeWidth="2.5"
+                      strokeWidth="1.8"
                       strokeDasharray="5 4"
                     />
                   ) : null}
-                  <circle
-                    cx={point.x}
-                    cy={point.y}
-                    r={point.radius}
+                  <rect
+                    x={point.x - pillWidth / 2}
+                    y={point.y - NODE_PILL_HEIGHT / 2}
+                    width={pillWidth}
+                    height={NODE_PILL_HEIGHT}
+                    rx="10"
+                    fill={selected ? '#0f172a' : '#ffffff'}
+                    stroke={selected ? '#0f172a' : neighbor ? '#60a5fa' : '#dbe4ef'}
+                    strokeWidth={selected ? 2.2 : neighbor ? 2 : 1.3}
+                    className="dark:fill-slate-900"
+                  />
+                  <circle cx={point.x - pillWidth / 2 + 18} cy={point.y} r={dotRadius} fill={STATUS_COLORS[point.node.status]} />
+                  <rect
+                    x={point.x - pillWidth / 2 + 34}
+                    y={point.y + 9}
+                    width={Math.max(28, pillWidth - 54)}
+                    height="3"
+                    rx="1.5"
+                    fill={selected ? '#475569' : '#e2e8f0'}
+                  />
+                  <rect
+                    x={point.x - pillWidth / 2 + 34}
+                    y={point.y + 9}
+                    width={Math.max(3, (pillWidth - 54) * normalizeMastery(point.node.mastery))}
+                    height="3"
+                    rx="1.5"
                     fill={STATUS_COLORS[point.node.status]}
-                    stroke={selected ? '#0f172a' : neighbor ? '#60a5fa' : '#ffffff'}
-                    strokeWidth={selected ? 4 : neighbor ? 3 : 2.4}
                   />
                   <text
-                    x={point.x}
-                    y={point.y + point.radius + 24}
-                    textAnchor="middle"
-                    className="fill-slate-700 text-[16px] font-bold dark:fill-slate-200"
-                    paintOrder="stroke"
-                    stroke="#ffffff"
-                    strokeWidth="5"
+                    x={point.x - pillWidth / 2 + 34}
+                    y={point.y - 2}
+                    textAnchor="start"
+                    className={`text-[13px] font-semibold ${selected ? 'fill-white' : 'fill-slate-700 dark:fill-slate-100'}`}
                   >
-                    {labelLines.map((line, lineIndex) => (
-                      <tspan
-                        key={`${point.key}-label-${lineIndex}`}
-                        x={point.x}
-                        dy={lineIndex === 0 ? 0 : 17}
-                      >
-                        {truncateLabel(line, 12)}
-                      </tspan>
-                    ))}
+                    {label}
                   </text>
+                  {isRoot ? (
+                    <text
+                      x={point.x - pillWidth / 2}
+                      y={point.y - 26}
+                      textAnchor="start"
+                      className="fill-slate-400 text-[11px] font-semibold dark:fill-slate-500"
+                    >
+                      当前焦点
+                    </text>
+                  ) : null}
                 </g>
               );
             })}
@@ -1016,7 +1119,7 @@ export default function KnowledgeGraphCanvas({
         )}
         {filteredGraph.nodes.length > 0 && filteredGraph.edges.length === 0 ? (
           <div className="pointer-events-none absolute right-3 top-3 max-w-[280px] rounded-xl bg-white/92 px-3 py-2 text-xs leading-5 text-slate-500 shadow-sm shadow-slate-200/70 backdrop-blur dark:bg-slate-950/86 dark:text-slate-400 dark:shadow-none">
-            {hasOriginalEdges ? '当前筛选/邻域暂无可见关系，可切到全图或放开关系筛选。' : '当前画像暂无可见关系，刷新画像或生成学习路径后会补全前置/属于/相关。'}
+            {hasOriginalEdges ? '当前筛选/邻域暂无可见关系，可放开关系筛选。' : '当前知识点已沉淀，关系仍在补全。'}
           </div>
         ) : null}
         <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-2 rounded-xl bg-white/88 px-3 py-2 text-xs font-medium text-slate-500 shadow-sm shadow-slate-200/70 backdrop-blur dark:bg-slate-950/82 dark:text-slate-400 dark:shadow-none">

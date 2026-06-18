@@ -16,6 +16,10 @@ from src.ai_modules.memory import (
     LearningPlanStore,
     PostgresLearningPlanStore,
 )
+from src.ai_modules.memory.knowledge_graph_curation import (
+    CandidateKnowledgeNode,
+    KnowledgeGraphCurationService,
+)
 from src.ai_modules.models import (
     LearningPlanPayload,
     ProgressPayload,
@@ -40,6 +44,7 @@ class PathPlanningAgent(PlaceholderAgent):
         learning_plan_store: LearningPlanStore | None = None,
         generator: Any | None = None,
         knowledge_graph_store: LearnerKnowledgeGraphStore | None = None,
+        knowledge_graph_curation: KnowledgeGraphCurationService | None = None,
     ) -> None:
         super().__init__("Path Planning Agent", "path_planning")
         self.llm_client = llm_client
@@ -47,6 +52,9 @@ class PathPlanningAgent(PlaceholderAgent):
         self.fallback_learning_plan_store = InMemoryLearningPlanStore()
         self.generator = generator
         self.knowledge_graph_store = knowledge_graph_store or LearnerKnowledgeGraphStore()
+        self.knowledge_graph_curation = knowledge_graph_curation or KnowledgeGraphCurationService(
+            store=self.knowledge_graph_store
+        )
         self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
@@ -538,32 +546,44 @@ class PathPlanningAgent(PlaceholderAgent):
         return [name for name, score in normalized[:3] if score < 0.75]
 
     async def _sync_plan_to_graph(self, *, user_id: str, plan: LearningPlanPayload) -> None:
-        """把 LLM 生成的学习计划步骤写入用户知识图谱节点和 PREREQUISITE 边。"""
+        """把学习计划中的明确知识点作为候选事实提交给治理门禁。"""
         if not plan.steps:
             LOGGER.warning("_sync_plan_to_graph: plan.steps is empty, skipping user=%s", user_id)
             return
-        LOGGER.info("_sync_plan_to_graph: writing %d steps for user=%s", len(plan.steps), user_id)
+        LOGGER.info("_sync_plan_to_graph: curating target knowledge points from %d steps for user=%s", len(plan.steps), user_id)
         try:
-            prev_key: str | None = None
+            candidate_nodes: list[CandidateKnowledgeNode] = []
             for step in plan.steps:
-                topic = step.title.strip()
-                if not topic:
-                    continue
-                await self.knowledge_graph_store.upsert_node(
-                    user_id=user_id,
-                    canonical_key=topic,
-                    topic=topic,
-                    mastery_score=0.0,
-                    source="PROFILE",
+                evidence = " / ".join(
+                    part
+                    for part in [
+                        step.title.strip(),
+                        step.objective.strip(),
+                        (step.reason or "").strip(),
+                    ]
+                    if part
                 )
-                if prev_key:
-                    await self.knowledge_graph_store.upsert_edge(
-                        user_id=user_id,
-                        from_key=prev_key,
-                        to_key=topic,
-                        relation_type="PREREQUISITE",
+                for topic in step.target_knowledge_points:
+                    topic_text = str(topic).strip()
+                    if not topic_text:
+                        continue
+                    candidate_nodes.append(
+                        CandidateKnowledgeNode(
+                            topic=topic_text,
+                            canonical_key_hint=topic_text,
+                            node_kind="CONCEPT",
+                            mastery=0.0,
+                            source_agent="PathPlanningAgent",
+                            source_event="target_knowledge_points",
+                            evidence_text=evidence[:500],
+                            confidence=0.72,
+                        )
                     )
-                prev_key = topic
+            if candidate_nodes:
+                await self.knowledge_graph_curation.curate_and_write(
+                    user_id=user_id,
+                    candidate_nodes=candidate_nodes,
+                )
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning("_sync_plan_to_graph failed user=%s: %s", user_id, exc)

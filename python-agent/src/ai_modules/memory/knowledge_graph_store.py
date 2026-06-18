@@ -26,6 +26,51 @@ _TOPIC_STAGE_PATTERNS = (
     r"(?:学习)?(?:路径|计划)$",
 )
 
+_NON_KNOWLEDGE_PREFIXES = (
+    "学习主动性",
+    "复盘闭环",
+    "案例迁移",
+)
+
+_PLACEHOLDER_TOPICS = {
+    "当前主题",
+    "核心概念",
+    "基础概念",
+    "综合复盘",
+    "综合练习",
+}
+
+_TASK_STAGE_PREFIXES = (
+    "概念学习",
+    "实践应用",
+    "复盘与巩固",
+    "综合练习",
+    "专项练习",
+)
+
+_TASK_STAGE_SUFFIXES = (
+    "概念学习",
+    "实践应用",
+    "复盘与巩固",
+    "综合练习",
+    "专项练习",
+    "与复盘",
+)
+
+_ACTION_PHRASES = (
+    "建议",
+    "优先",
+    "完成",
+    "进行",
+    "复习",
+    "巩固",
+    "迁移",
+    "路径规划",
+    "学习反馈",
+    "做练习",
+)
+
+
 def _canonicalize(text: str) -> str:
     """规范化知识点 key：去空白、小写、去标点。"""
     normalized = _normalize_topic_label(text)
@@ -40,6 +85,53 @@ def _normalize_topic_label(text: str) -> str:
     for pattern in _TOPIC_STAGE_PATTERNS:
         label = re.sub(pattern, "", label, flags=re.IGNORECASE)
     return label or unicodedata.normalize("NFKC", str(text or "").strip())
+
+
+def reject_reason_for_topic(topic: str) -> str:
+    label = _normalize_topic_label(topic)
+    if not label:
+        return "empty_topic"
+    if label in _PLACEHOLDER_TOPICS:
+        return "placeholder_topic"
+    if any(label == prefix or label.startswith((f"{prefix}:", f"{prefix}：", f"{prefix}-", f"{prefix}—")) for prefix in _NON_KNOWLEDGE_PREFIXES):
+        return "behavior_dimension"
+    if any(label.startswith(prefix) for prefix in _TASK_STAGE_PREFIXES):
+        return "task_stage"
+    if any(label.endswith(suffix) for suffix in _TASK_STAGE_SUFFIXES):
+        return "task_stage"
+    if any(phrase in label for phrase in _ACTION_PHRASES) and not _contains_course_term(label):
+        return "action_sentence"
+    return ""
+
+
+def is_valid_knowledge_topic(topic: str) -> bool:
+    return reject_reason_for_topic(topic) == ""
+
+
+def _contains_course_term(label: str) -> bool:
+    if re.search(r"[A-Za-z][A-Za-z0-9+#.]{1,}", label):
+        return True
+    return any(
+        term in label
+        for term in (
+            "算法",
+            "协议",
+            "机制",
+            "模型",
+            "数据结构",
+            "模式",
+            "索引",
+            "事务",
+            "线程",
+            "锁",
+            "网络",
+            "编译",
+            "内存",
+            "函数",
+            "图",
+            "树",
+        )
+    )
 
 
 def _status_from_mastery(mastery: float) -> str:
@@ -95,6 +187,14 @@ class LearnerKnowledgeGraphStore:
     ) -> None:
         key = _canonicalize(canonical_key) or _canonicalize(topic)
         if not key:
+            return
+        if not is_valid_knowledge_topic(topic):
+            LOGGER.info(
+                "skip non-knowledge graph node user=%s topic=%s reason=%s",
+                user_id,
+                topic,
+                reject_reason_for_topic(topic),
+            )
             return
         score = max(0.0, min(1.0, float(mastery_score)))
         status = _status_from_mastery(score)

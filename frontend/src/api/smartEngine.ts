@@ -160,10 +160,28 @@ export interface KnowledgeGraphEdge {
   weight: number;
 }
 
+export interface KnowledgeGraphMetadata {
+  rootKey?: string;
+  visibleNodeLimit?: number;
+  sparseState?: boolean;
+  orphanNodeCount?: number;
+  curationStats?: {
+    filteredNodeCount?: number;
+    lowConfidenceEdgeCount?: number;
+    suspiciousEdgeCount?: number;
+  };
+  edgeExplanations?: Array<{
+    type: KnowledgeGraphEdge['type'];
+    label: string;
+    description: string;
+  }>;
+}
+
 export interface KnowledgeGraphResponse {
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
   nextRecommended: string[];
+  metadata?: KnowledgeGraphMetadata;
 }
 
 export interface LearningPathCurrentResponse {

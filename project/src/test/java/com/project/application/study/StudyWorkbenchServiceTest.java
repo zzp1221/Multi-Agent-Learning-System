@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.project.api.learningpath.dto.LearningPathCurrentResponse;
 import com.project.api.mistake.dto.MistakeRecordResponse;
 import com.project.api.profile.dto.KnowledgeGraphResponse;
+import com.project.api.profile.dto.KnowledgeGraphResponse.CurationStats;
+import com.project.api.profile.dto.KnowledgeGraphResponse.KnowledgeGraphMetadata;
 import com.project.api.profile.dto.UserProfileResponse;
 import com.project.api.resource.dto.ResourceItemResponse;
 import com.project.api.resource.dto.ResourceSemanticResultResponse;
@@ -272,6 +274,73 @@ class StudyWorkbenchServiceTest {
         assertThat(detail.recommendedNextActions())
             .anyMatch(action -> action.contains("操作系统死锁与银行家算法"))
             .noneMatch(action -> action.contains("Barcode Detection API"));
+    }
+
+    @Test
+    void dailyUsesKnowledgeGraphPageRouteForKnowledgeTasks() {
+        UUID userId = UUID.fromString("61000000-0000-0000-0000-000000000009");
+        JwtAuthenticatedUser currentUser = new JwtAuthenticatedUser(userId, "learner@example.com", "USER");
+
+        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+        LearningPathQueryService pathService = mock(LearningPathQueryService.class);
+        ResourceLibraryService resourceService = mock(ResourceLibraryService.class);
+        LearnerKnowledgeGraphService graphService = mock(LearnerKnowledgeGraphService.class);
+        UserProfileQueryService profileService = mock(UserProfileQueryService.class);
+        when(pathService.getCurrent(userId)).thenReturn(learningPath(userId, 40));
+        when(resourceService.recommendations(userId, 6)).thenReturn(List.of());
+        when(graphService.getGraph(currentUser, userId)).thenReturn(graph());
+        when(profileService.getCurrentProfile(currentUser, userId))
+            .thenReturn(new UserProfileResponse(userId, Map.of(), "", OffsetDateTime.now(), List.of()));
+        when(jdbc.query(anyString(), any(MapSqlParameterSource.class), anyMistakeMapper()))
+            .thenReturn(List.of());
+
+        var response = service(jdbc, pathService, resourceService, graphService, profileService).daily(currentUser);
+
+        assertThat(response.tasks())
+            .filteredOn(task -> "KNOWLEDGE".equals(task.type()))
+            .extracting("actionRoute")
+            .containsExactly("/knowledge-graph?node=loop");
+        assertThat(response.executionPlan().supportItems())
+            .filteredOn(item -> "KNOWLEDGE".equals(item.type()))
+            .extracting("actionRoute")
+            .allMatch(route -> String.valueOf(route).startsWith("/knowledge-graph?node="));
+    }
+
+    @Test
+    void dailyDoesNotPromoteSparseGraphNodeToKnowledgeTask() {
+        UUID userId = UUID.fromString("61000000-0000-0000-0000-000000000010");
+        JwtAuthenticatedUser currentUser = new JwtAuthenticatedUser(userId, "learner@example.com", "USER");
+        KnowledgeGraphResponse sparseGraph = new KnowledgeGraphResponse(
+            List.of(new KnowledgeGraphResponse.KnowledgeNodeDto("isolated", "联合索引", 0.2, "WEAK", "PRACTICE")),
+            List.of(),
+            List.of("isolated"),
+            new KnowledgeGraphMetadata(
+                "isolated",
+                28,
+                true,
+                1,
+                new CurationStats(0, 0, 0),
+                List.of()
+            )
+        );
+
+        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+        LearningPathQueryService pathService = mock(LearningPathQueryService.class);
+        ResourceLibraryService resourceService = mock(ResourceLibraryService.class);
+        LearnerKnowledgeGraphService graphService = mock(LearnerKnowledgeGraphService.class);
+        UserProfileQueryService profileService = mock(UserProfileQueryService.class);
+        when(pathService.getCurrent(userId)).thenReturn(learningPath(userId, 40));
+        when(resourceService.recommendations(userId, 6)).thenReturn(List.of());
+        when(graphService.getGraph(currentUser, userId)).thenReturn(sparseGraph);
+        when(profileService.getCurrentProfile(currentUser, userId))
+            .thenReturn(new UserProfileResponse(userId, Map.of(), "", OffsetDateTime.now(), List.of()));
+        when(jdbc.query(anyString(), any(MapSqlParameterSource.class), anyMistakeMapper()))
+            .thenReturn(List.of());
+
+        var response = service(jdbc, pathService, resourceService, graphService, profileService).daily(currentUser);
+
+        assertThat(response.tasks()).extracting("type").doesNotContain("KNOWLEDGE");
+        assertThat(response.executionPlan().primaryTask().type()).isNotEqualTo("KNOWLEDGE");
     }
 
     @Test

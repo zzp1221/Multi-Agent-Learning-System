@@ -8,7 +8,6 @@ import {
   Play,
   RefreshCw,
   Search,
-  SlidersHorizontal,
 } from 'lucide-react';
 import KnowledgeGraphCanvas, {
   ALL_EDGE_TYPES,
@@ -48,8 +47,8 @@ export default function KnowledgeGraphPage() {
   const [nodeDetailError, setNodeDetailError] = useState('');
   const [practiceGeneratingKey, setPracticeGeneratingKey] = useState('');
   const [viewMode, setViewMode] = useState<'graph' | 'list'>('graph');
-  const [layoutMode, setLayoutMode] = useState<GraphLayoutMode>('network');
-  const [neighborhoodDepth, setNeighborhoodDepth] = useState<NeighborhoodDepth>(0);
+  const [layoutMode, setLayoutMode] = useState<GraphLayoutMode>('mindmap');
+  const [neighborhoodDepth, setNeighborhoodDepth] = useState<NeighborhoodDepth>(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightRecommendedPath, setHighlightRecommendedPath] = useState(true);
   const [statusFilter, setStatusFilter] = useState<Set<KnowledgeGraphNode['status']>>(
@@ -62,6 +61,7 @@ export default function KnowledgeGraphPage() {
   const nodes = knowledgeGraph?.nodes ?? [];
   const edges = knowledgeGraph?.edges ?? [];
   const nextRecommended = knowledgeGraph?.nextRecommended ?? [];
+  const graphMetadata = knowledgeGraph?.metadata;
   const selectedNode = nodes.find((node) => node.key === selectedNodeKey) ?? nodes[0] ?? null;
   const statusCounts = useMemo(() => countNodesByStatus(nodes), [nodes]);
   const edgeCounts = useMemo(() => countEdgesByType(edges), [edges]);
@@ -128,6 +128,18 @@ export default function KnowledgeGraphPage() {
     }
   }, [loadNodeDetail, selectedNodeKey]);
 
+  useEffect(() => {
+    if (selectedNodeKey || !nodes.length) {
+      return;
+    }
+    const rootKey = graphMetadata?.rootKey && nodes.some((node) => node.key === graphMetadata.rootKey)
+      ? graphMetadata.rootKey
+      : nextRecommended.find((key) => nodes.some((node) => node.key === key)) ?? nodes[0]?.key;
+    if (rootKey) {
+      selectKnowledgeNode(rootKey);
+    }
+  }, [graphMetadata?.rootKey, nextRecommended, nodes, selectedNodeKey]);
+
   const selectKnowledgeNode = (nodeKey: string) => {
     const next = new URLSearchParams(searchParams);
     if (nodeKey) {
@@ -139,8 +151,8 @@ export default function KnowledgeGraphPage() {
   };
 
   const resetGraphControls = () => {
-    setLayoutMode('network');
-    setNeighborhoodDepth(0);
+    setLayoutMode('mindmap');
+    setNeighborhoodDepth(1);
     setSearchQuery('');
     setHighlightRecommendedPath(true);
     setStatusFilter(new Set(ALL_NODE_STATUSES));
@@ -248,13 +260,14 @@ export default function KnowledgeGraphPage() {
         </button>
       </header>
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[284px_minmax(0,1fr)]">
-        <KnowledgeGraphSidePanel
+      <div className="space-y-5">
+        <KnowledgeGraphToolbar
           nodes={nodes}
           edges={edges}
           statusCounts={statusCounts}
           edgeCounts={edgeCounts}
           loading={loading}
+          metadata={graphMetadata}
           layoutMode={layoutMode}
           neighborhoodDepth={neighborhoodDepth}
           searchQuery={searchQuery}
@@ -304,6 +317,7 @@ export default function KnowledgeGraphPage() {
                   neighborhoodDepth={neighborhoodDepth}
                   searchQuery={searchQuery}
                   highlightRecommendedPath={highlightRecommendedPath}
+                  metadata={graphMetadata}
                   onSelectNode={selectKnowledgeNode}
                   onResetView={resetGraphControls}
                 />
@@ -333,12 +347,13 @@ export default function KnowledgeGraphPage() {
   );
 }
 
-function KnowledgeGraphSidePanel(props: {
+function KnowledgeGraphToolbar(props: {
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
   statusCounts: NodeStatusCounts;
   edgeCounts: Record<KnowledgeGraphEdge['type'], number>;
   loading: boolean;
+  metadata?: KnowledgeGraphResponse['metadata'];
   layoutMode: GraphLayoutMode;
   neighborhoodDepth: NeighborhoodDepth;
   searchQuery: string;
@@ -354,10 +369,15 @@ function KnowledgeGraphSidePanel(props: {
   onToggleEdgeType: (type: KnowledgeGraphEdge['type']) => void;
 }) {
   return (
-    <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-      <section className="rounded-[18px] border border-slate-100 bg-white/82 p-4 shadow-sm shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-950/44 dark:shadow-none">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-slate-950 dark:text-white">图谱概览</h2>
+    <section className="rounded-[20px] bg-white/76 p-4 shadow-[0_14px_40px_rgba(59,97,155,0.08)] backdrop-blur dark:bg-slate-900/62 dark:shadow-slate-950/20">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="mr-auto grid min-w-[220px] grid-cols-2 gap-2 sm:grid-cols-4">
+          <MetricRow label="知识点" value={props.nodes.length} />
+          <MetricRow label="关系" value={props.edges.length} />
+          <MetricRow label="薄弱" value={props.statusCounts.WEAK} tone="text-amber-600 dark:text-amber-300" />
+          <MetricRow label="孤立" value={props.metadata?.orphanNodeCount ?? 0} tone="text-slate-600 dark:text-slate-300" />
+        </div>
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={props.onRetry}
@@ -368,38 +388,8 @@ function KnowledgeGraphSidePanel(props: {
             {props.loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </button>
         </div>
-        <div className="mt-4 space-y-2">
-          <MetricRow label="知识点总数" value={props.nodes.length} />
-          <MetricRow label="关系总数" value={props.edges.length} />
-          <MetricRow label="薄弱节点" value={props.statusCounts.WEAK} tone="text-amber-600 dark:text-amber-300" />
-          <MetricRow label="已掌握" value={props.statusCounts.MASTERED} tone="text-emerald-600 dark:text-emerald-300" />
-        </div>
-      </section>
-
-      <section className="rounded-[18px] border border-slate-100 bg-white/82 p-4 shadow-sm shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-950/44 dark:shadow-none">
-        <h2 className="text-sm font-semibold text-slate-950 dark:text-white">掌握分布</h2>
-        <div className="mt-3 space-y-2">
-          {ALL_NODE_STATUSES.map((status) => (
-            <StatusDistributionRow
-              key={status}
-              label={STATUS_LABELS[status]}
-              value={props.statusCounts[status]}
-              total={props.nodes.length}
-              active={props.statusFilter.has(status)}
-              onClick={() => props.onToggleStatus(status)}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-[18px] border border-slate-100 bg-white/82 p-4 shadow-sm shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-950/44 dark:shadow-none">
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal className="h-4 w-4 text-slate-500" />
-          <h2 className="text-sm font-semibold text-slate-950 dark:text-white">图谱控制</h2>
-        </div>
-        <label className="mt-4 block">
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">搜索知识点</span>
-          <div className="mt-1 flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-100 dark:border-slate-800 dark:bg-slate-950 dark:focus-within:border-primary-500 dark:focus-within:ring-primary-500/20">
+        <label className="min-w-[220px] flex-1 lg:max-w-xs">
+          <div className="flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-100 dark:border-slate-800 dark:bg-slate-950 dark:focus-within:border-primary-500 dark:focus-within:ring-primary-500/20">
             <Search className="mr-2 h-4 w-4 shrink-0 text-slate-400" />
             <input
               value={props.searchQuery}
@@ -409,13 +399,15 @@ function KnowledgeGraphSidePanel(props: {
             />
           </div>
         </label>
-
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <GraphSegmentedControl
           label="布局"
           options={[
-            { value: 'network', label: '关系网' },
+            { value: 'mindmap', label: '心智图' },
             { value: 'radial', label: '辐射' },
             { value: 'path', label: '路径' },
+            { value: 'network', label: '状态网' },
           ]}
           value={props.layoutMode}
           onChange={props.onLayoutModeChange}
@@ -430,22 +422,27 @@ function KnowledgeGraphSidePanel(props: {
           value={props.neighborhoodDepth}
           onChange={props.onNeighborhoodDepthChange}
         />
-
-        <div className="mt-4 space-y-2">
-          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">关系类型</div>
-          <div className="flex flex-wrap gap-2">
-            {ALL_EDGE_TYPES.map((type) => (
-              <GraphFilterChip
-                key={type}
-                label={`${EDGE_TYPE_LABELS[type]} ${props.edgeCounts[type]}`}
-                active={props.edgeTypeFilter.has(type)}
-                onClick={() => props.onToggleEdgeType(type)}
-              />
-            ))}
-          </div>
+        <div className="flex flex-wrap gap-2">
+          {ALL_EDGE_TYPES.map((type) => (
+            <GraphFilterChip
+              key={type}
+              label={`${EDGE_TYPE_LABELS[type]} ${props.edgeCounts[type]}`}
+              active={props.edgeTypeFilter.has(type)}
+              onClick={() => props.onToggleEdgeType(type)}
+            />
+          ))}
         </div>
-
-        <label className="mt-4 inline-flex h-9 cursor-pointer items-center gap-2 rounded-full bg-slate-50 px-3 text-xs font-semibold text-slate-600 transition hover:bg-primary-50 hover:text-primary-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-primary-500/10 dark:hover:text-primary-200">
+        <div className="flex flex-wrap gap-2">
+          {ALL_NODE_STATUSES.map((status) => (
+            <GraphFilterChip
+              key={status}
+              label={`${STATUS_LABELS[status]} ${props.statusCounts[status]}`}
+              active={props.statusFilter.has(status)}
+              onClick={() => props.onToggleStatus(status)}
+            />
+          ))}
+        </div>
+        <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-full bg-slate-50 px-3 text-xs font-semibold text-slate-600 transition hover:bg-primary-50 hover:text-primary-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-primary-500/10 dark:hover:text-primary-200">
           <input
             type="checkbox"
             checked={props.highlightRecommendedPath}
@@ -454,8 +451,13 @@ function KnowledgeGraphSidePanel(props: {
           />
           高亮推荐路径
         </label>
-      </section>
-    </aside>
+      </div>
+      {props.metadata?.sparseState ? (
+        <p className="mt-3 text-xs font-medium text-amber-700 dark:text-amber-300">
+          当前知识点已沉淀，关系仍在补全。画布只展示已验证关系，孤立知识点可在列表视图查看。
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -465,35 +467,6 @@ function MetricRow({ label, value, tone = 'text-slate-950 dark:text-white' }: { 
       <span className="text-xs text-slate-500 dark:text-slate-400">{label}</span>
       <span className={`text-sm font-semibold ${tone}`}>{value}</span>
     </div>
-  );
-}
-
-function StatusDistributionRow(props: {
-  label: string;
-  value: number;
-  total: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const percent = props.total > 0 ? Math.round((props.value / props.total) * 100) : 0;
-  return (
-    <button
-      type="button"
-      onClick={props.onClick}
-      className={`w-full rounded-xl px-3 py-2 text-left transition ${
-        props.active
-          ? 'bg-slate-50 text-slate-700 dark:bg-slate-900/80 dark:text-slate-200'
-          : 'bg-transparent text-slate-400 opacity-70 hover:bg-slate-50 dark:hover:bg-slate-900/60'
-      }`}
-    >
-      <div className="flex items-center justify-between gap-2 text-xs font-medium">
-        <span>{props.label}</span>
-        <span>{props.value}</span>
-      </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-        <div className="h-full rounded-full bg-primary-500" style={{ width: `${percent}%` }} />
-      </div>
-    </button>
   );
 }
 

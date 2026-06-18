@@ -17,6 +17,10 @@ from src.ai_modules.memory import (
     PostgresProfileStore,
     ProfileStore,
 )
+from src.ai_modules.memory.knowledge_graph_curation import (
+    CandidateKnowledgeNode,
+    KnowledgeGraphCurationService,
+)
 from src.ai_modules.models import (
     LearnerProfileSnapshot,
     ProgressPayload,
@@ -53,6 +57,7 @@ class ProfileAgent(PlaceholderAgent):
         profile_analyzer: Any | None = None,
         heartbeat_interval_seconds: float = 15.0,
         knowledge_graph_store: LearnerKnowledgeGraphStore | None = None,
+        knowledge_graph_curation: KnowledgeGraphCurationService | None = None,
     ) -> None:
         super().__init__("Profile Agent", "profiling")
         self.profile_store = profile_store or PostgresProfileStore()
@@ -62,6 +67,9 @@ class ProfileAgent(PlaceholderAgent):
         self.recovery_engine = RecoveryEngine()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.knowledge_graph_store = knowledge_graph_store or LearnerKnowledgeGraphStore()
+        self.knowledge_graph_curation = knowledge_graph_curation or KnowledgeGraphCurationService(
+            store=self.knowledge_graph_store
+        )
         self.skill_loader = SkillPromptLoader()
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
@@ -765,17 +773,15 @@ class ProfileAgent(PlaceholderAgent):
         if not judge_result:
             if skills:
                 return skills
-            topic = str(practice_batch.get("topic") or "当前主题").strip() or "当前主题"
-            mastery = 0.42
-            skills = {topic: mastery}
             for item in weak_point_details[:3]:
                 skills.setdefault(item.topic, max(0.2, round(1 - item.severity * 0.55, 2)))
             return skills
 
-        topic = str(practice_batch.get("topic") or "当前主题").strip() or "当前主题"
+        topic = str(practice_batch.get("topic") or "").strip()
         accuracy = self._judge_accuracy(judge_result)
         practice_mastery = max(0.05, min(0.92, round(accuracy, 2)))
-        skills[topic] = min(skills.get(topic, 1.0), practice_mastery)
+        if topic:
+            skills[topic] = min(skills.get(topic, 1.0), practice_mastery)
         for item in weak_point_details[:3]:
             degraded_mastery = max(0.05, round(1 - item.severity * 0.75, 2))
             skills[item.topic] = min(skills.get(item.topic, 1.0), degraded_mastery)
@@ -980,8 +986,9 @@ class ProfileAgent(PlaceholderAgent):
         user_id: str,
         skill_mastery: dict[str, Any],
     ) -> None:
-        """把 LLM 分析出的技能掌握度同步更新到知识图谱节点。"""
+        """把技能掌握度作为候选事实提交给图谱治理门禁。"""
         try:
+            candidate_nodes: list[CandidateKnowledgeNode] = []
             for topic, score in skill_mastery.items():
                 topic_str = str(topic).strip()
                 if not topic_str:
@@ -990,12 +997,22 @@ class ProfileAgent(PlaceholderAgent):
                     mastery = max(0.0, min(1.0, float(score)))
                 except (TypeError, ValueError):
                     continue
-                await self.knowledge_graph_store.upsert_node(
+                candidate_nodes.append(
+                    CandidateKnowledgeNode(
+                        topic=topic_str,
+                        canonical_key_hint=topic_str,
+                        node_kind="CONCEPT",
+                        mastery=mastery,
+                        source_agent="ProfileAgent",
+                        source_event="skill_mastery",
+                        evidence_text=f"skillMastery:{topic_str}={mastery:.2f}",
+                        confidence=0.82 if mastery > 0 else 0.68,
+                    )
+                )
+            if candidate_nodes:
+                await self.knowledge_graph_curation.curate_and_write(
                     user_id=user_id,
-                    canonical_key=topic_str,
-                    topic=topic_str,
-                    mastery_score=mastery,
-                    source="PRACTICE",
+                    candidate_nodes=candidate_nodes,
                 )
         except Exception as exc:
             LOGGER.warning("_sync_mastery_to_graph failed user=%s: %s", user_id, exc)

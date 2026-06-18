@@ -542,22 +542,24 @@ public class StudyWorkbenchService {
                 null
             ));
         }
-        graph.nodes().stream()
-            .filter(node -> "WEAK".equals(node.status()) || "IN_PROGRESS".equals(node.status()))
-            .limit(1)
-            .findFirst()
-            .ifPresent(node -> tasks.add(new DailyTaskItem(
-                "knowledge:" + node.key(),
-                "KNOWLEDGE",
-                "补强知识点：" + node.topic(),
-                "当前掌握度 " + Math.round(node.mastery() * 100) + "%，建议先看关联资源再做微练习。",
-                "READY",
-                Math.round((float) node.mastery() * 100),
-                "查看图谱",
-                "/profile?node=" + node.key(),
-                Map.of("nodeKey", node.key(), "topic", node.topic()),
-                null
-            )));
+        if (!isSparseGraph(graph)) {
+            graph.nodes().stream()
+                .filter(node -> "WEAK".equals(node.status()) || "IN_PROGRESS".equals(node.status()))
+                .limit(1)
+                .findFirst()
+                .ifPresent(node -> tasks.add(new DailyTaskItem(
+                    "knowledge:" + node.key(),
+                    "KNOWLEDGE",
+                    "补强知识点：" + node.topic(),
+                    "当前掌握度 " + Math.round(node.mastery() * 100) + "%，建议先看关联资源再做微练习。",
+                    "READY",
+                    Math.round((float) node.mastery() * 100),
+                    "查看图谱",
+                    knowledgeGraphRoute(node.key()),
+                    Map.of("nodeKey", node.key(), "topic", node.topic()),
+                    null
+                )));
+        }
         return tasks;
     }
 
@@ -749,7 +751,7 @@ public class StudyWorkbenchService {
                 "KNOWLEDGE",
                 "薄弱点：" + node.topic(),
                 "当前掌握度约 " + Math.round(node.mastery() * 100) + "%，适合作为补强依据。",
-                "/profile?node=" + node.key()
+                knowledgeGraphRoute(node.key())
             )));
         return items;
     }
@@ -1105,6 +1107,14 @@ public class StudyWorkbenchService {
 
     private String safeString(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private boolean isSparseGraph(KnowledgeGraphResponse graph) {
+        return graph.metadata() != null && graph.metadata().sparseState();
+    }
+
+    private String knowledgeGraphRoute(String nodeKey) {
+        return "/knowledge-graph?node=" + nodeKey;
     }
 
     private String campId(String mistakeType, String knowledgeTag) {
