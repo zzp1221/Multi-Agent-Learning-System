@@ -1,7 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
@@ -66,7 +65,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
     <>
       <div className="qna-markdown prose prose-slate max-w-none dark:prose-invert prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:text-[15px] prose-p:leading-7 prose-pre:my-0 prose-pre:bg-transparent prose-code:text-[13px] prose-code:before:content-none prose-code:after:content-none prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-table:text-sm prose-table:overflow-x-auto prose-img:rounded-xl prose-li:text-[15px]">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
+          remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[rehypeKatex]}
           components={{
             code({ className, children, ...props }) {

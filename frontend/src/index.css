@@ -1284,7 +1284,7 @@
     gap: 10px;
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 16px;
-    background: rgba(248, 250, 252, 0.86);
+    background: #f1f5f9;
     padding: 9px 14px;
     color: #64748b;
     font-weight: 560;
@@ -1319,6 +1319,14 @@
     font-size: 15px;
     line-height: 1.75;
     text-wrap: pretty;
+  }
+
+  .qna-markdown {
+    white-space: pre-wrap;
+  }
+
+  .qna-markdown :where(p, ul, ol, li, pre, blockquote, table, th, td, h1, h2, h3, h4, h5, h6) {
+    white-space: normal;
   }
 
   .qna-markdown > :first-child,
