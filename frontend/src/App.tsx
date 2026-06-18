@@ -11,6 +11,7 @@ const MultiAgentResourceGenerationPage = lazy(() => import('./pages/MultiAgentRe
 const MistakeBookPage = lazy(() => import('./pages/MistakeBookPage'));
 const NotebookPage = lazy(() => import('./pages/NotebookPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const KnowledgeGraphPage = lazy(() => import('./pages/KnowledgeGraphPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 function PageLoader() {
@@ -37,6 +38,7 @@ function App() {
               <Route path="mistakes" element={<MistakeBookPage />} />
               <Route path="notes" element={<NotebookPage />} />
               <Route path="profile" element={<ProfilePage />} />
+              <Route path="knowledge-graph" element={<KnowledgeGraphPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

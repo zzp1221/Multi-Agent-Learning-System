@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpenCheck, ChevronDown, Clock3, Compass, Flame, History, Layers3, Menu, MessageCirclePlus, NotebookPen, Search, Settings, UserRoundSearch } from 'lucide-react';
+import { BookOpenCheck, ChevronDown, Clock3, Compass, Flame, History, Layers3, Menu, MessageCirclePlus, Network, NotebookPen, Search, Settings, UserRoundSearch } from 'lucide-react';
 import AuthModal from './AuthModal';
 import FirstRunOnboardingModal, { type FirstRunOnboardingStep } from './FirstRunOnboardingModal';
 import FloatingVoiceAssistant from './FloatingVoiceAssistant';
@@ -94,6 +94,7 @@ export default function Layout() {
   const inMistakes = location.pathname.startsWith('/mistakes');
   const inNotes = location.pathname.startsWith('/notes');
   const inProfile = location.pathname.startsWith('/profile');
+  const inKnowledgeGraph = location.pathname.startsWith('/knowledge-graph');
   const inSettings = location.pathname.startsWith('/settings');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -293,6 +294,15 @@ export default function Layout() {
     navigate('/profile');
   }, [isAuthenticated, navigate]);
 
+  const handleOpenKnowledgeGraphPage = useCallback(() => {
+    closeSidebar();
+    if (!isAuthenticated) {
+      openAuthModal('login', '登录后查看知识图谱');
+      return;
+    }
+    navigate('/knowledge-graph');
+  }, [isAuthenticated, navigate]);
+
   const handleOpenServicePage = useCallback(() => {
     closeSidebar();
     navigate('/engine');
@@ -392,17 +402,19 @@ export default function Layout() {
   const pageMotionKey = !inChat
     ? inSettings
       ? 'settings-shell'
-      : inProfile
-        ? 'profile-shell'
-        : inNotes
-          ? 'notes-shell'
-          : inMistakes
-            ? 'mistake-shell'
-            : inResources
-              ? 'resource-shell'
-              : inEngine
-                ? 'engine-shell'
-                : 'workbench-shell'
+      : inKnowledgeGraph
+        ? 'knowledge-graph-shell'
+        : inProfile
+          ? 'profile-shell'
+          : inNotes
+            ? 'notes-shell'
+            : inMistakes
+              ? 'mistake-shell'
+              : inResources
+                ? 'resource-shell'
+                : inEngine
+                  ? 'engine-shell'
+                  : 'workbench-shell'
     : 'qna-shell';
 
   const handleCreateNewChat = () => {
@@ -494,7 +506,7 @@ export default function Layout() {
       key: 'dashboard',
       label: '今日工作台',
       icon: <Compass className="h-4 w-4" />,
-      active: !inChat && !inEngine && !inResources && !inMistakes && !inNotes && !inProfile && !inSettings,
+      active: !inChat && !inEngine && !inResources && !inMistakes && !inNotes && !inProfile && !inKnowledgeGraph && !inSettings,
       onClick: handleOpenDashboard,
     },
     {
@@ -533,6 +545,13 @@ export default function Layout() {
       onClick: handleOpenMistakeBook,
     },
     {
+      key: 'knowledge-graph',
+      label: '知识图谱',
+      icon: <Network className="h-4 w-4" />,
+      active: inKnowledgeGraph,
+      onClick: handleOpenKnowledgeGraphPage,
+    },
+    {
       key: 'notes',
       label: 'AI 笔记本',
       icon: <NotebookPen className="h-4 w-4" />,
@@ -554,8 +573,8 @@ export default function Layout() {
       onClick: handleOpenSettings,
     },
   ];
-  const primaryNavItems = navItems.slice(0, 6);
-  const moreNavItems = navItems.slice(6);
+  const primaryNavItems = navItems.slice(0, 7);
+  const moreNavItems = navItems.slice(7);
 
   const conversationHistoryContent = (
     <>
@@ -718,7 +737,7 @@ export default function Layout() {
                 </div>
               </NavLink>
               <div className={`app-breadcrumb min-w-0 xl:hidden ${inSettings ? 'is-settings-breadcrumb' : ''}`}>
-                <span>{inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : inChat ? '问答辅导' : inNotes ? 'AI 笔记本' : '工作台'}</span>
+                <span>{inKnowledgeGraph ? '知识图谱' : inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : inChat ? '问答辅导' : inNotes ? 'AI 笔记本' : '工作台'}</span>
               </div>
             </div>
 
