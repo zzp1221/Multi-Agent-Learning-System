@@ -6,6 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import CodeBlock from './CodeBlock';
 import MermaidDiagram from './MermaidDiagram';
+import { sanitizeMarkdownContent } from '../utils/markdownSanitizer';
 
 interface MarkdownRendererProps {
   content: string;
@@ -39,11 +40,12 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
   const safeContent = useMemo(() => {
     if (!content) return '';
     // 闭合未完成的代码块
-    const ticks = (content.match(/```/g) || []).length;
+    const sanitized = sanitizeMarkdownContent(content);
+    const ticks = (sanitized.match(/```/g) || []).length;
     if (ticks % 2 !== 0) {
-      return isStreaming ? content + '\n```' : content;
+      return isStreaming ? sanitized + '\n```' : sanitized;
     }
-    return content;
+    return sanitized;
   }, [content, isStreaming]);
 
   // 空内容显示思考动画

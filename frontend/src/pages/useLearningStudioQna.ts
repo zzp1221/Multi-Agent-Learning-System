@@ -17,6 +17,7 @@ import {
   readVoiceConversationStreamDetail,
 } from '../utils/voiceConversationBridge';
 import { recordConversationResourceEvent } from './resourceGenerationStore';
+import { sanitizeMarkdownContent } from '../utils/markdownSanitizer';
 import { openPracticeSession } from './practiceSessionStore';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
@@ -834,7 +835,7 @@ export function useLearningStudioQna({
               );
               return;
             }
-            const chunk = readConversationChunk(event.data, event.event);
+            const chunk = sanitizeMarkdownContent(readConversationChunk(event.data, event.event));
             if (!chunk) {
               return;
             }
@@ -1211,15 +1212,23 @@ function stoppedAssistantContent(content: string): string {
 }
 
 function appendReasoningChunk(messages: ChatMessage[], assistantMessageId: string, chunk: string): ChatMessage[] {
+  const normalizedChunk = dedupeReasoningChunk('', chunk);
+  if (!normalizedChunk) {
+    return messages;
+  }
   let updatedAssistant = false;
   const nextMessages = messages.map((item) => {
     if (item.id !== assistantMessageId) {
       return item;
     }
     updatedAssistant = true;
+    const nextChunk = dedupeReasoningChunk(item.reasoningContent ?? '', normalizedChunk);
+    if (!nextChunk) {
+      return item;
+    }
     return {
       ...item,
-      reasoningContent: `${item.reasoningContent ?? ''}${chunk}`,
+      reasoningContent: `${item.reasoningContent ?? ''}${nextChunk}`,
       reasoningState: 'streaming' as const,
     };
   });
@@ -1231,10 +1240,34 @@ function appendReasoningChunk(messages: ChatMessage[], assistantMessageId: strin
         id: assistantMessageId,
         role: 'assistant' as const,
         content: '',
-        reasoningContent: chunk,
+        reasoningContent: normalizedChunk,
         reasoningState: 'streaming' as const,
       },
     ];
+}
+
+function dedupeReasoningChunk(existing: string, chunk: string): string {
+  const trimmedChunk = chunk.trim();
+  if (!trimmedChunk) {
+    return '';
+  }
+  if (existing.includes(trimmedChunk)) {
+    return '';
+  }
+  const existingLines = new Set(
+    existing
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+  const kept = chunk
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      return !trimmed || !existingLines.has(trimmed);
+    })
+    .join('\n');
+  return kept.trim() ? kept : '';
 }
 
 function markReasoningDone(messages: ChatMessage[], assistantMessageId: string): ChatMessage[] {

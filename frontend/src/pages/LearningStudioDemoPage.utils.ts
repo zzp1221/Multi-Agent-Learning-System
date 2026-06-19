@@ -1,6 +1,7 @@
 import { getErrorMessage, isUnauthorizedError } from '../api/request';
 import { smartEngineApi } from '../api/smartEngine';
 import { renderTalkingVideoInBrowser } from '../utils/browserVideoRenderer';
+import { sanitizeMarkdownContent } from '../utils/markdownSanitizer';
 import type {
   EngineService,
   AgentTraceStepView,
@@ -88,7 +89,8 @@ export async function runByApiTask({
   setCriticReview,
   setAgentTrace,
   taskStreamAbortRef,
-}: RunByApiTaskArgs): Promise<'completed' | 'running' | 'waiting_confirmation' | 'failed' | 'aborted' | 'unauthorized'> {
+  onResourceEvent,
+}: RunByApiTaskArgs): Promise<'completed' | 'running' | 'failed' | 'aborted' | 'unauthorized'> {
   const browserRenderState = {
     taskId: currentTaskId,
     started: false,
@@ -173,21 +175,18 @@ export async function runByApiTask({
     onAgentTrace: (items) => {
       setAgentTrace(items);
     },
+    onResourceEvent,
   };
 
   const streamAbortController = new AbortController();
   taskStreamAbortRef.current = streamAbortController;
   let streamErrorMessage = '';
   let streamDone = false;
-  let waitingConfirmation = false;
 
   await smartEngineApi.streamTask(
     currentTaskId,
     {
       onEvent: (event) => {
-        if (event.event === 'done' && readString(event.payload?.status).toUpperCase() === 'WAITING_CONFIRMATION') {
-          waitingConfirmation = true;
-        }
         void consumeTaskStreamEvent(event, handlers, browserRenderState);
       },
       onDone: () => {
@@ -204,11 +203,6 @@ export async function runByApiTask({
   flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
 
   if (streamDone && !streamErrorMessage) {
-    if (waitingConfirmation) {
-      setTaskProgress((prev) => Math.min(prev, 99));
-      setTaskStatus('等待确认');
-      return 'waiting_confirmation';
-    }
     const browserRenderSucceeded = await settleBrowserRender(handlers, browserRenderState);
     if (!browserRenderSucceeded) {
       setTaskStatus('视频生成失败');
@@ -238,11 +232,6 @@ export async function runByApiTask({
       }
       const task = await smartEngineApi.getTask(currentTaskId, { dedupe: false, retry: 2 });
       await applyTaskSnapshot(task, service, handlers, browserRenderState);
-
-      if (isWaitingConfirmationTask(task)) {
-        flushStreamQueue(streamQueueRef, streamFlushTimerRef, streamRafRef, setServiceResultLines);
-        return 'waiting_confirmation';
-      }
 
       if (task.status === 'COMPLETED') {
         const browserRenderSucceeded = await settleBrowserRender(handlers, browserRenderState);
@@ -277,11 +266,6 @@ export async function runByApiTask({
   }
 }
 
-function isWaitingConfirmationTask(task: { currentStage?: string; responseSummary?: Record<string, unknown> }): boolean {
-  return readString(task.currentStage).toLowerCase() === 'waiting_confirmation'
-    || readString(task.responseSummary?.status).toUpperCase() === 'WAITING_CONFIRMATION';
-}
-
 async function consumeTaskStreamEvent(
   event: SmartEngineStreamEvent,
   handlers: TaskRunHandlers,
@@ -294,6 +278,9 @@ async function consumeTaskStreamEvent(
   },
 ): Promise<void> {
   const payload = event.payload;
+  if (isResourceStoreEvent(event.event)) {
+    handlers.onResourceEvent?.(event.event, event);
+  }
 
   if (event.event === 'progress') {
     const progress = readNumeric(payload?.percent) ?? readNumeric(payload?.progress) ?? 0;
@@ -443,15 +430,8 @@ async function consumeTaskStreamEvent(
       ? '任务失败'
       : status === 'PARTIAL_FAILED'
         ? '部分完成'
-        : status === 'WAITING_CONFIRMATION'
-          ? '等待确认'
-          : '任务完成';
-    if (status === 'WAITING_CONFIRMATION') {
-      const currentProgress = readNumeric(payload?.percent) ?? readNumeric(payload?.progress) ?? 99;
-      handlers.onProgress(currentProgress, doneLabel, { allowDecrease: true, maxProgress: 99 });
-    } else {
-      handlers.onProgress(100, doneLabel);
-    }
+        : '任务完成';
+    handlers.onProgress(100, doneLabel);
     if (summary) {
       handlers.onSummary(formatUserFacingTaskMessage(summary));
     }
@@ -459,8 +439,6 @@ async function consumeTaskStreamEvent(
       handlers.onLine(formatUserFacingTaskMessage(summary || '任务执行失败'));
     } else if (doneLabel === '部分完成') {
       handlers.onLine(formatUserFacingTaskMessage(summary || '任务部分完成，部分资源生成失败'));
-    } else if (doneLabel === '等待确认') {
-      handlers.onLine(formatUserFacingTaskMessage(summary || '等待确认后继续生成'));
     }
     return;
   }
@@ -498,7 +476,7 @@ async function applyTaskSnapshot(
     readNumeric(task.progress);
 
   if (progress !== undefined) {
-    handlers.onProgress(progress, toUiTaskStatus(task.status), isWaitingConfirmationTask(task) ? { maxProgress: 99 } : undefined);
+    handlers.onProgress(progress, toUiTaskStatus(task.status));
   }
 
   if (task.responseSummary) {
@@ -1764,6 +1742,15 @@ function isVideoProgressEvent(eventType: SmartEngineStreamEvent['event']): boole
   return eventType.startsWith('video_gen:');
 }
 
+function isResourceStoreEvent(eventType: SmartEngineStreamEvent['event']): boolean {
+  return eventType === 'progress'
+    || eventType === 'resource_file'
+    || eventType === 'question_batch'
+    || eventType === 'done'
+    || eventType === 'error'
+    || eventType.startsWith('video_gen:');
+}
+
 function mapVideoProgressEvent(eventType: SmartEngineStreamEvent['event']): { progress: number; status: string; message: string } {
   switch (eventType) {
     case 'video_gen:start':
@@ -2035,12 +2022,15 @@ function readInlineResource(payload: Record<string, unknown> | undefined): Inlin
     return null;
   }
   const displayMode = readString(payload.displayMode).toUpperCase();
-  const inlineContent = readString(payload.inlineContent);
+  const rawInlineContent = readString(payload.inlineContent);
+  const inlineContent = displayMode === 'INLINE_CODE'
+    ? rawInlineContent.replace(/\r\n/g, '\n')
+    : sanitizeMarkdownContent(rawInlineContent);
   if (!inlineContent) {
     return null;
   }
   const title = readString(payload.title) || '内嵌资源';
-  const summary = readString(payload.summary);
+  const summary = sanitizeMarkdownContent(readString(payload.summary));
   if (displayMode === 'INLINE_CODE') {
     return {
       kind: 'code',
@@ -2450,9 +2440,6 @@ function stringifyCompact(value: unknown): string {
 export function toUiTaskStatus(status?: string): string {
   if (!status) {
     return '执行中';
-  }
-  if (status === 'WAITING_CONFIRMATION') {
-    return '等待确认';
   }
   if (status === 'COMPLETED') {
     return '任务完成';

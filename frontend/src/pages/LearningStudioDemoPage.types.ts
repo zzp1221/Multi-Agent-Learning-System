@@ -400,6 +400,7 @@ export interface TaskRunHandlers {
   onResourcePushPlan: (item: ResourcePushPlanView) => void;
   onCriticReview: (item: CriticReviewView) => void;
   onAgentTrace: (items: AgentTraceStepView[]) => void;
+  onResourceEvent?: (eventName: string, event: SmartEngineStreamEvent) => void;
 }
 
 export interface RunByApiTaskArgs {
@@ -425,6 +426,7 @@ export interface RunByApiTaskArgs {
   setCriticReview: (value: React.SetStateAction<CriticReviewView | null>) => void;
   setAgentTrace: (value: React.SetStateAction<AgentTraceStepView[]>) => void;
   taskStreamAbortRef: React.MutableRefObject<AbortController | null>;
+  onResourceEvent?: (eventName: string, event: SmartEngineStreamEvent) => void;
 }
 
 export interface ServiceFormsPayload {

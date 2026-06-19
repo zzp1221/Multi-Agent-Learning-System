@@ -726,8 +726,6 @@ class PythonAgentSupervisor:
         state.params[PlanningParamKeys.CHECKPOINT_RESOURCE_COVERAGE_RERUN_DONE] = True
         existing_assets = copy.deepcopy(state.params.get("generatedAssets"))
         existing_assets = existing_assets if isinstance(existing_assets, list) else []
-        existing_pending_outlines = copy.deepcopy(state.params.get("pendingSlideOutlines"))
-        existing_pending_outlines = existing_pending_outlines if isinstance(existing_pending_outlines, list) else []
         existing_failures = copy.deepcopy(state.params.get("resourceFailures"))
         existing_failures = existing_failures if isinstance(existing_failures, list) else []
         planned_resource_types = copy.deepcopy(state.params.get(PlanningParamKeys.RESOURCE_TYPES))
@@ -773,10 +771,7 @@ class PythonAgentSupervisor:
             existing_assets,
             final_state.params.get("generatedAssets"),
         )
-        state.params["pendingSlideOutlines"] = self._merge_resource_payload_lists(
-            existing_pending_outlines,
-            final_state.params.get("pendingSlideOutlines"),
-        )
+        state.params.pop("pendingSlideOutlines", None)
         state.params["resourceFailures"] = self._merge_resource_payload_lists(
             existing_failures,
             final_state.params.get("resourceFailures"),
@@ -927,33 +922,12 @@ class PythonAgentSupervisor:
         if not isinstance(agent_trace, list):
             agent_trace = []
         generated_assets = params.get("generatedAssets")
-        pending_slide_outlines = params.get("pendingSlideOutlines")
-        if not isinstance(pending_slide_outlines, list):
-            pending_slide_outlines = []
         resource_failures = params.get("resourceFailures")
         if not isinstance(resource_failures, list):
             resource_failures = []
         def done(**kwargs: Any) -> DonePayload:
             return self._attach_planning_payload(DonePayload(**kwargs), params=params)
 
-        if pending_slide_outlines and (
-            service_type == "RESOURCE_GENERATION"
-            or params.get(PlanningParamKeys.CONVERSATION_TRIGGERED_RESOURCE_GENERATION) is True
-        ):
-            asset_count = len(generated_assets) if isinstance(generated_assets, list) else 0
-            failure_suffix = f"；{len(resource_failures)} 个资源失败" if resource_failures else ""
-            return done(
-                status="WAITING_CONFIRMATION",
-                summary=(
-                    f"已生成 {asset_count} 个资源，PPT 大纲等待确认后生成演示文件{failure_suffix}"
-                    if asset_count
-                    else f"PPT 大纲已生成，等待确认后生成演示文件{failure_suffix}"
-                ),
-                masteryDiagnosis=mastery_diagnosis,
-                learningPlan=learning_plan,
-                criticReview=critic_review,
-                resourceFailures=resource_failures,
-            )
         if service_type == "RESOURCE_GENERATION" and isinstance(generated_assets, list) and generated_assets:
             if resource_failures:
                 failed_types = "、".join(
@@ -1215,13 +1189,6 @@ class PythonAgentSupervisor:
     def _should_review_route(self, *, route_plan: RoutePlan, params: dict) -> bool:
         if "critic" in route_plan.agent_names:
             return False
-        if route_plan.service_type == "RESOURCE_GENERATION":
-            generated_assets = params.get("generatedAssets")
-            pending_slide_outlines = params.get("pendingSlideOutlines")
-            has_generated_assets = isinstance(generated_assets, list) and bool(generated_assets)
-            has_pending_slide_outlines = isinstance(pending_slide_outlines, list) and bool(pending_slide_outlines)
-            if has_pending_slide_outlines and not has_generated_assets:
-                return False
         if route_plan.service_type in REVIEW_REQUIRED_SERVICE_TYPES:
             return True
         return False

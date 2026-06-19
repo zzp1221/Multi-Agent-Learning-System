@@ -4,6 +4,8 @@ import type {
   TempDownloadLink,
   VideoResult,
 } from './LearningStudioDemoPage.types';
+import { AUTH_USER_STORAGE_KEY } from '../api/request';
+import { sanitizeMarkdownContent } from '../utils/markdownSanitizer';
 
 export type GeneratedResourceType = 'DOCUMENT' | 'SLIDES' | 'MINDMAP' | 'QUIZ' | 'READING' | 'VIDEO' | 'CODE';
 export type ResourceGenerationResourceStatus = 'generating' | 'ready' | 'failed';
@@ -21,6 +23,8 @@ export interface ResourceGenerationQuizSummary {
 export interface ResourceGenerationResource {
   id: string;
   type: GeneratedResourceType;
+  resourceType?: GeneratedResourceType;
+  taskId?: string;
   title: string;
   summary?: string;
   status: ResourceGenerationResourceStatus;
@@ -33,6 +37,8 @@ export interface ResourceGenerationResource {
     mimeType: string;
     fileName: string;
   };
+  downloadUrl?: string;
+  expiresAt?: string;
   sourceAgent?: string;
   inline?: InlineResourceView;
   quiz?: ResourceGenerationQuizSummary;
@@ -43,8 +49,16 @@ export interface ResourceGenerationResource {
 
 export interface ResourceGenerationSession {
   conversationId: string;
+  ownerUserId?: string;
+  taskId?: string;
+  resourceType?: GeneratedResourceType;
+  title?: string;
   topic?: string;
   taskStatus: 'idle' | 'running' | 'completed' | 'partial_failed' | 'failed';
+  status?: 'idle' | 'running' | 'completed' | 'partial_failed' | 'failed';
+  summary?: string;
+  downloadUrl?: string;
+  expiresAt?: string;
   conversationTriggered: boolean;
   progress: number;
   statusText: string;
@@ -55,12 +69,15 @@ export interface ResourceGenerationSession {
 
 export const RESOURCE_GENERATION_UPDATED_EVENT = 'app:resource-generation-updated';
 const STORAGE_KEY = 'learning_studio_conversation_resources';
+const LAST_SESSION_STORAGE_KEY = 'learning_studio_last_resource_session';
 const MAX_SESSIONS = 20;
+const ANONYMOUS_OWNER_ID = '__anonymous__';
 
 export function loadResourceGenerationSession(conversationId: string): ResourceGenerationSession {
-  const normalizedId = normalizeConversationId(conversationId);
+  const ownerUserId = currentResourceOwnerId();
+  const normalizedId = resolveConversationIdForLoad(conversationId, ownerUserId);
   const all = loadAllSessions();
-  return all[normalizedId] ?? createEmptySession(normalizedId);
+  return all[sessionStorageKey(ownerUserId, normalizedId)] ?? createEmptySession(normalizedId, ownerUserId);
 }
 
 export function recordConversationResourceEvent(
@@ -68,12 +85,17 @@ export function recordConversationResourceEvent(
   eventName: string,
   data: ConversationStreamEventPayload,
 ): ResourceGenerationSession {
+  const ownerUserId = currentResourceOwnerId();
   const normalizedId = normalizeConversationId(conversationId);
   const all = loadAllSessions();
-  const current = all[normalizedId] ?? createEmptySession(normalizedId);
-  const next = reduceResourceEvent(current, eventName, data);
-  all[normalizedId] = next;
+  const key = sessionStorageKey(ownerUserId, normalizedId);
+  const current = all[key] ?? createEmptySession(normalizedId, ownerUserId);
+  const next = reduceResourceEvent(current, eventName, data, ownerUserId);
+  all[key] = next;
   saveAllSessions(all);
+  if (next.conversationTriggered || next.resources.length > 0) {
+    saveLastSessionPointer(ownerUserId, normalizedId);
+  }
   notifyResourceGenerationUpdated(normalizedId);
   return next;
 }
@@ -84,9 +106,11 @@ export function updateResourceVideoRenderResult(
   videoPatch: Partial<VideoResult>,
   statusText?: string,
 ): ResourceGenerationSession {
+  const ownerUserId = currentResourceOwnerId();
   const normalizedId = normalizeConversationId(conversationId);
   const all = loadAllSessions();
-  const current = all[normalizedId] ?? createEmptySession(normalizedId);
+  const key = sessionStorageKey(ownerUserId, normalizedId);
+  const current = all[key] ?? createEmptySession(normalizedId, ownerUserId);
   const now = Date.now();
   const resources = current.resources.map((resource) => {
     if (resource.id !== resourceIdValue || resource.type !== 'VIDEO') {
@@ -110,11 +134,13 @@ export function updateResourceVideoRenderResult(
   });
   const next = {
     ...current,
+    ownerUserId,
     resources,
     updatedAt: now,
   };
-  all[normalizedId] = next;
+  all[key] = next;
   saveAllSessions(all);
+  saveLastSessionPointer(ownerUserId, normalizedId);
   notifyResourceGenerationUpdated(normalizedId);
   return next;
 }
@@ -123,11 +149,17 @@ function reduceResourceEvent(
   session: ResourceGenerationSession,
   eventName: string,
   data: ConversationStreamEventPayload,
+  ownerUserId: string,
 ): ResourceGenerationSession {
   const payload = data.payload ?? {};
   const now = Date.now();
+  const eventTaskId = readPayloadString(data as unknown as Record<string, unknown>, 'taskId', 'task_id')
+    || readPayloadString(payload, 'taskId', 'task_id')
+    || session.taskId;
   let next: ResourceGenerationSession = {
     ...session,
+    ownerUserId,
+    taskId: eventTaskId,
     updatedAt: now,
   };
 
@@ -145,6 +177,9 @@ function reduceResourceEvent(
       ...next,
       conversationTriggered: true,
       taskStatus: failed ? 'partial_failed' : 'running',
+      status: failed ? 'partial_failed' : 'running',
+      resourceType: artifactType || next.resourceType,
+      title: readPayloadString(payload, 'title') || next.title,
       progress,
       statusText: progressText,
       topic: next.topic || readPayloadString(payload, 'topic'),
@@ -152,6 +187,8 @@ function reduceResourceEvent(
         ? upsertResource(next.resources, {
           id: resourceId(artifactType, readPayloadString(payload, 'title') || resourceLabel(artifactType)),
           type: artifactType,
+          resourceType: artifactType,
+          taskId: eventTaskId,
           title: readPayloadString(payload, 'title') || resourceLabel(artifactType),
           summary: readPayloadString(payload, 'message') || undefined,
           status: failed ? 'failed' : 'generating',
@@ -172,6 +209,8 @@ function reduceResourceEvent(
       ...next,
       conversationTriggered: true,
       taskStatus: 'running',
+      status: 'running',
+      resourceType: 'VIDEO',
       progress,
       statusText: videoProgressText(eventName),
       topic: next.topic || readPayloadString(payload, 'topic'),
@@ -182,6 +221,8 @@ function reduceResourceEvent(
         next.resources = upsertResource(next.resources, {
           id: resourceId('VIDEO', video.title),
           type: 'VIDEO',
+          resourceType: 'VIDEO',
+          taskId: eventTaskId,
           title: video.title,
           summary: readPayloadString(payload, 'message'),
           sourceAgent: readPayloadString(payload, 'agentName', 'agent_name')
@@ -210,6 +251,12 @@ function reduceResourceEvent(
       ...next,
       conversationTriggered: true,
       taskStatus: 'running',
+      status: 'running',
+      resourceType: resource.type,
+      title: resource.title,
+      summary: resource.summary || next.summary,
+      downloadUrl: resource.download?.url || resource.downloadUrl || next.downloadUrl,
+      expiresAt: resource.expiresAt || next.expiresAt,
       progress: next.progress,
       statusText: resource.statusText || `${resourceLabel(resource.type)}已生成`,
       topic: next.topic || readPayloadString(payload, 'topic') || resource.title,
@@ -229,12 +276,18 @@ function reduceResourceEvent(
       ...next,
       conversationTriggered: true,
       taskStatus: 'running',
+      status: 'running',
+      resourceType: 'QUIZ',
+      title: quiz.title,
+      summary: quiz.description || `${quiz.questionCount} 道练习题已生成`,
       progress: next.progress,
       statusText: '练习题已进入答题助手',
       topic: next.topic || quiz.topic,
       resources: upsertResource(next.resources, {
         id: resourceId('QUIZ', quiz.title),
         type: 'QUIZ',
+        resourceType: 'QUIZ',
+        taskId: eventTaskId,
         title: quiz.title,
         summary: quiz.description || `${quiz.questionCount} 道练习题已生成`,
         status: 'ready',
@@ -256,9 +309,11 @@ function reduceResourceEvent(
     return {
       ...next,
       taskStatus: failed ? 'failed' : partial ? 'partial_failed' : 'completed',
+      status: failed ? 'failed' : partial ? 'partial_failed' : 'completed',
       progress: failed ? next.progress : 100,
       statusText: readString(payload.summary)
         || (failed ? '资源生成失败' : partial ? '资源部分完成' : '资源生成完成'),
+      summary: readString(payload.summary) || next.summary,
       completedAt: now,
     };
   }
@@ -270,7 +325,9 @@ function reduceResourceEvent(
     return {
       ...next,
       taskStatus: 'failed',
+      status: 'failed',
       statusText: readString(payload.message) || '资源生成失败',
+      summary: readString(payload.message) || next.summary,
     };
   }
 
@@ -288,12 +345,25 @@ function readResourceFile(payload: Record<string, unknown>, now: number): Resour
   const inline = readInlineResource(payload);
   const displayMode = readPayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
   const isPptistEditor = type === 'SLIDES' && displayMode === 'PPTIST_EDITOR';
+  if (isLegacySlideOutlineResource({
+    type,
+    title,
+    summary,
+    displayMode,
+    inline,
+    downloadUrl,
+    pptistSlides: isPptistEditor ? readPayloadString(payload, 'inlineContent', 'inline_content') || undefined : undefined,
+  })) {
+    return null;
+  }
   const video = type === 'VIDEO' ? readVideoResult(payload) : null;
   const fileName = readPayloadString(payload, 'fileName', 'file_name') || defaultFileName(title, type, inline);
   const mimeType = readString(payload.mimeType) || defaultMimeType(type, inline);
   return {
     id: resourceId(type, title),
     type,
+    resourceType: type,
+    taskId: readPayloadString(payload, 'taskId', 'task_id') || undefined,
     title,
     summary,
     status: 'ready',
@@ -319,6 +389,8 @@ function readResourceFile(payload: Record<string, unknown>, now: number): Resour
         knowledgePoint: readPayloadString(payload, 'knowledgePoint', 'knowledge_point') || undefined,
       }
       : undefined,
+    downloadUrl: downloadUrl || undefined,
+    expiresAt: readPayloadString(payload, 'expiresAt', 'expires_at') || undefined,
     downloadFallback: undefined,
     inline: isPptistEditor ? undefined : inline ?? undefined,
     pptistSlides: isPptistEditor ? readPayloadString(payload, 'inlineContent', 'inline_content') || undefined : undefined,
@@ -328,17 +400,20 @@ function readResourceFile(payload: Record<string, unknown>, now: number): Resour
 }
 
 function readInlineResource(payload: Record<string, unknown>): InlineResourceView | null {
-  const inlineContent = readPayloadString(payload, 'inlineContent', 'inline_content');
-  if (!inlineContent) {
-    return null;
-  }
+  const rawInlineContent = readPayloadString(payload, 'inlineContent', 'inline_content');
   const displayMode = readPayloadString(payload, 'displayMode', 'display_mode').toUpperCase();
   const assetType = normalizeResourceType(readPayloadString(payload, 'assetType', 'asset_type'));
   const mimeType = readPayloadString(payload, 'mimeType', 'mime_type').toLowerCase();
+  const inlineContent = assetType === 'CODE' || mimeType.includes('python') || mimeType.includes('javascript') || mimeType.includes('sql')
+    ? rawInlineContent.replace(/\r\n/g, '\n')
+    : sanitizeMarkdownContent(rawInlineContent);
+  if (!inlineContent) {
+    return null;
+  }
   const title = readPayloadString(payload, 'title') || resourceLabel(assetType || 'DOCUMENT');
   const base = {
     title,
-    summary: readPayloadString(payload, 'summary') || undefined,
+    summary: sanitizeMarkdownContent(readPayloadString(payload, 'summary')) || undefined,
     content: inlineContent,
   };
   if (assetType === 'MINDMAP' || displayMode === 'MERMAID' || inlineContent.trim().toLowerCase().startsWith('mindmap')) {
@@ -459,6 +534,14 @@ function upsertResource(
 }
 
 function loadAllSessions(): Record<string, ResourceGenerationSession> {
+  const ownerUserId = currentResourceOwnerId();
+  return Object.fromEntries(
+    Object.entries(loadStoredSessions(ownerUserId))
+      .filter(([, session]) => session.ownerUserId === ownerUserId),
+  );
+}
+
+function loadStoredSessions(fallbackOwnerUserId: string): Record<string, ResourceGenerationSession> {
   if (typeof window === 'undefined') {
     return {};
   }
@@ -467,46 +550,151 @@ function loadAllSessions(): Record<string, ResourceGenerationSession> {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return {};
     }
-    return Object.fromEntries(
-      Object.entries(parsed).map(([key, session]) => [
-        key,
-        {
-          ...session,
-          conversationTriggered: Boolean(session.conversationTriggered || session.resources?.length),
-          resources: (session.resources ?? [])
-            .map(normalizeStoredResource),
-        },
-      ]),
+    const sessions = Object.fromEntries(
+      Object.entries(parsed)
+        .map(([, session]) => {
+          const normalizedSession = normalizeStoredSession(session, fallbackOwnerUserId);
+          return [sessionStorageKey(normalizedSession.ownerUserId || fallbackOwnerUserId, normalizedSession.conversationId), normalizedSession] as const;
+        })
+        .filter(([_key], index, entries) => entries.findIndex(([otherKey]) => otherKey === _key) === index),
     );
+    if (hasStoredSessionMigration(parsed, sessions)) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(pruneStoredSessions(sessions))));
+    }
+    return sessions;
   } catch {
     return {};
   }
 }
 
+function normalizeStoredSession(
+  session: ResourceGenerationSession,
+  fallbackOwnerUserId: string,
+): ResourceGenerationSession {
+  const ownerUserId = readString(session.ownerUserId) || fallbackOwnerUserId;
+  const conversationId = normalizeConversationId(session.conversationId);
+  const resources = (session.resources ?? [])
+    .map(normalizeStoredResource)
+    .filter((resource) => !isLegacySlideOutlineResource(resource));
+  const taskStatus = normalizeStoredTaskStatus(session.taskStatus || session.status, resources);
+  return {
+    ...session,
+    ownerUserId,
+    conversationId,
+    taskStatus,
+    status: taskStatus,
+    conversationTriggered: Boolean(session.conversationTriggered || resources.length),
+    progress: clampPercent(readNumber(session.progress) ?? (taskStatus === 'completed' ? 100 : 0)),
+    statusText: readString(session.statusText) || defaultSessionStatusText(taskStatus),
+    resources,
+    updatedAt: readNumber(session.updatedAt) ?? Date.now(),
+  };
+}
+
 function normalizeStoredResource(resource: ResourceGenerationResource): ResourceGenerationResource {
-  if (resource.status) {
-    return resource;
+  const type = normalizeResourceType(readString(resource.type || resource.resourceType)) || 'DOCUMENT';
+  const downloadUrl = resource.downloadUrl || resource.download?.url;
+  const normalized = {
+    ...resource,
+    type,
+    resourceType: resource.resourceType || type,
+    downloadUrl,
+    expiresAt: resource.expiresAt || resource.download?.expiresHint,
+  };
+  if (normalized.status) {
+    return normalized;
   }
-  if (resource.quiz || resource.inline || resource.download || resource.video) {
-    return { ...resource, status: 'ready' };
+  if (normalized.quiz || normalized.inline || normalized.download || normalized.video || normalized.downloadUrl || normalized.pptistSlides) {
+    return { ...normalized, status: 'ready' };
   }
-  return { ...resource, status: 'generating' };
+  return { ...normalized, status: 'generating' };
+}
+
+function hasStoredSessionMigration(
+  rawSessions: Record<string, ResourceGenerationSession>,
+  normalizedSessions: Record<string, ResourceGenerationSession>,
+): boolean {
+  const rawResourceCount = Object.values(rawSessions).reduce(
+    (count, session) => count + (Array.isArray(session.resources) ? session.resources.length : 0),
+    0,
+  );
+  const normalizedResourceCount = Object.values(normalizedSessions).reduce(
+    (count, session) => count + session.resources.length,
+    0,
+  );
+  return normalizedResourceCount < rawResourceCount;
+}
+
+function isLegacySlideOutlineResource(resource: {
+  type?: GeneratedResourceType | string;
+  title?: string;
+  summary?: string;
+  statusText?: string;
+  displayMode?: string;
+  inline?: InlineResourceView | null;
+  download?: TempDownloadLink;
+  downloadUrl?: string;
+  pptistSlides?: string;
+}): boolean {
+  const type = normalizeResourceType(readString(resource.type)) || normalizeResourceType(readString((resource as { resourceType?: string }).resourceType));
+  if (type !== 'SLIDES') {
+    return false;
+  }
+  const displayMode = readString(resource.displayMode).toUpperCase();
+  if (displayMode === 'SLIDE_OUTLINE_CONFIRMATION') {
+    return true;
+  }
+  if (resource.pptistSlides || resource.download || resource.downloadUrl) {
+    return false;
+  }
+  const text = [
+    resource.title,
+    resource.summary,
+    resource.statusText,
+    resource.inline?.title,
+    resource.inline?.summary,
+    resource.inline?.content,
+  ].map((value) => readString(value)).join('\n');
+  return /(PPT\s*大纲|PPT大纲|大纲已生成|等待.*确认|确认后.*生成|等待用户确认)/i.test(text);
 }
 
 function saveAllSessions(sessions: Record<string, ResourceGenerationSession>): void {
   if (typeof window === 'undefined') {
     return;
   }
-  const entries = Object.entries(sessions)
-    .sort((left, right) => right[1].updatedAt - left[1].updatedAt)
-    .slice(0, MAX_SESSIONS);
+  const ownerUserId = currentResourceOwnerId();
+  const storedSessions = loadStoredSessions(ownerUserId);
+  const mergedSessions = {
+    ...Object.fromEntries(
+      Object.entries(storedSessions).filter(([, session]) => session.ownerUserId !== ownerUserId),
+    ),
+    ...sessions,
+  };
+  const entries = pruneStoredSessions(mergedSessions);
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
 }
 
-function createEmptySession(conversationId: string): ResourceGenerationSession {
+function pruneStoredSessions(
+  sessions: Record<string, ResourceGenerationSession>,
+): [string, ResourceGenerationSession][] {
+  const grouped = new Map<string, [string, ResourceGenerationSession][]>();
+  for (const entry of Object.entries(sessions)) {
+    const ownerUserId = entry[1].ownerUserId || ANONYMOUS_OWNER_ID;
+    grouped.set(ownerUserId, [...(grouped.get(ownerUserId) ?? []), entry]);
+  }
+  return [...grouped.values()].flatMap((entries) =>
+    entries
+      .sort((left, right) => right[1].updatedAt - left[1].updatedAt)
+      .slice(0, MAX_SESSIONS),
+  );
+}
+
+function createEmptySession(conversationId: string, ownerUserId = currentResourceOwnerId()): ResourceGenerationSession {
   return {
     conversationId,
+    ownerUserId,
     taskStatus: 'idle',
+    status: 'idle',
     conversationTriggered: false,
     progress: 0,
     statusText: '等待在对话中触发资源生成',
@@ -520,6 +708,107 @@ function notifyResourceGenerationUpdated(conversationId: string): void {
     return;
   }
   window.dispatchEvent(new CustomEvent(RESOURCE_GENERATION_UPDATED_EVENT, { detail: { conversationId } }));
+}
+
+function resolveConversationIdForLoad(conversationId: string, ownerUserId: string): string {
+  const normalizedId = conversationId.trim();
+  if (normalizedId) {
+    return normalizeConversationId(normalizedId);
+  }
+  const lastConversationId = loadLastSessionPointer(ownerUserId);
+  if (lastConversationId) {
+    return lastConversationId;
+  }
+  const recentSession = latestNonEmptySession(ownerUserId);
+  return recentSession?.conversationId ?? normalizeConversationId('');
+}
+
+function latestNonEmptySession(ownerUserId: string): ResourceGenerationSession | null {
+  const sessions = Object.values(loadAllSessions())
+    .filter((session) =>
+      session.ownerUserId === ownerUserId
+      && session.conversationTriggered
+      && session.resources.length > 0
+    )
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+  return sessions[0] ?? null;
+}
+
+function loadLastSessionPointer(ownerUserId: string): string {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LAST_SESSION_STORAGE_KEY) || '{}') as Record<string, string>;
+    const conversationId = parsed?.[ownerUserId];
+    return typeof conversationId === 'string' ? normalizeConversationId(conversationId) : '';
+  } catch {
+    return '';
+  }
+}
+
+function saveLastSessionPointer(ownerUserId: string, conversationId: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  let parsed: Record<string, string> = {};
+  try {
+    parsed = JSON.parse(window.localStorage.getItem(LAST_SESSION_STORAGE_KEY) || '{}') as Record<string, string>;
+  } catch {
+    parsed = {};
+  }
+  parsed[ownerUserId] = normalizeConversationId(conversationId);
+  window.localStorage.setItem(LAST_SESSION_STORAGE_KEY, JSON.stringify(parsed));
+}
+
+function currentResourceOwnerId(): string {
+  if (typeof window === 'undefined') {
+    return ANONYMOUS_OWNER_ID;
+  }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(AUTH_USER_STORAGE_KEY) || 'null') as {
+      id?: number | string;
+      userId?: number | string;
+    } | null;
+    const rawId = parsed?.userId ?? parsed?.id;
+    if (rawId !== undefined && rawId !== null && String(rawId).trim()) {
+      return String(rawId).trim();
+    }
+  } catch {
+    return ANONYMOUS_OWNER_ID;
+  }
+  return ANONYMOUS_OWNER_ID;
+}
+
+function sessionStorageKey(ownerUserId: string, conversationId: string): string {
+  return `${ownerUserId}::${normalizeConversationId(conversationId)}`;
+}
+
+function normalizeStoredTaskStatus(
+  value: unknown,
+  resources: ResourceGenerationResource[],
+): ResourceGenerationSession['taskStatus'] {
+  const normalized = readString(value).toLowerCase();
+  if (normalized === 'running' || normalized === 'completed' || normalized === 'partial_failed' || normalized === 'failed') {
+    return normalized;
+  }
+  if (resources.some((resource) => resource.status === 'failed')) {
+    return resources.some((resource) => resource.status === 'ready') ? 'partial_failed' : 'failed';
+  }
+  if (resources.some((resource) => resource.status === 'ready')) {
+    return 'completed';
+  }
+  return 'idle';
+}
+
+function defaultSessionStatusText(status: ResourceGenerationSession['taskStatus']): string {
+  return {
+    idle: '等待在对话中触发资源生成',
+    running: '资源生成中',
+    completed: '资源生成完成',
+    partial_failed: '资源部分完成',
+    failed: '资源生成失败',
+  }[status];
 }
 
 function userFacingProgressText(payload: Record<string, unknown>, artifactType: GeneratedResourceType | ''): string {

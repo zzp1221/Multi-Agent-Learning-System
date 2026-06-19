@@ -83,14 +83,15 @@ class _StreamingTutorClient:
 
     def __init__(self) -> None:
         self.stream_calls = 0
+        self.stream_max_tokens: list[int | None] = []
 
     async def chat_completion(self, **kwargs):
         del kwargs
         raise AssertionError("secondary stream should satisfy the tutor response")
 
     async def chat_completion_stream(self, **kwargs):
-        del kwargs
         self.stream_calls += 1
+        self.stream_max_tokens.append(kwargs.get("max_tokens"))
         for token in ["LLM ", "generated ", "answer"]:
             yield token
 
@@ -108,6 +109,7 @@ class _ReasoningStreamingTutorClient(_StreamingTutorClient):
     async def chat_completion_stream_events(self, **kwargs):
         self.stream_calls += 1
         self.include_reasoning_calls.append(bool(kwargs.get("include_reasoning")))
+        self.stream_max_tokens.append(kwargs.get("max_tokens"))
         yield _StreamChunk("reasoning", "先分析问题")
         yield _StreamChunk("answer", "最终")
         yield _StreamChunk("reasoning", "再检查")
@@ -600,7 +602,7 @@ async def test_tutor_agent_triggers_resource_bundle_from_conversation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tutor_agent_remembers_pending_slide_outline_from_resource_bundle() -> None:
+async def test_tutor_agent_records_legacy_slide_outline_resource_as_generated_asset() -> None:
     runner = _RecordingResourceBundleRunner(display_mode="SLIDE_OUTLINE_CONFIRMATION")
     tutor = TutorAgent(
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
@@ -629,12 +631,13 @@ async def test_tutor_agent_remembers_pending_slide_outline_from_resource_bundle(
     ]
 
     assert events[-1].event == "resource_file"
-    assert params["pendingSlideOutlines"][0]["title"] == "联合索引 resource"
-    assert params["pendingSlideOutlines"][0]["inlineContent"] == "# generated"
+    assert params["generatedAssets"][0]["title"] == "联合索引 resource"
+    assert params["generatedAssets"][0]["inlineContent"] == "# generated"
+    assert "pendingSlideOutlines" not in params
 
 
 @pytest.mark.asyncio
-async def test_tutor_agent_promotes_confirmed_slide_outline_from_learning_context() -> None:
+async def test_tutor_agent_ignores_legacy_confirmed_slide_outline_from_learning_context() -> None:
     runner = _RecordingResourceBundleRunner(display_mode="DOWNLOAD_CARD")
     tutor = TutorAgent(
         compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
@@ -672,8 +675,8 @@ async def test_tutor_agent_promotes_confirmed_slide_outline_from_learning_contex
     assert len(runner.calls) == 1
     runner_params = runner.calls[0]["params"]
     assert runner_params["resourceTypes"] == ["SLIDES"]
-    assert runner_params["confirmedSlideOutline"] == "true"
-    assert runner_params["confirmedSlideOutlineText"] == "# B+ tree indexes\n## Search\n## Range scan"
+    assert "confirmedSlideOutline" not in runner_params
+    assert "confirmedSlideOutlineText" not in runner_params
     assert events[-1].payload.display_mode == "DOWNLOAD_CARD"
     assert "pendingSlideOutlines" not in params
 
@@ -1091,9 +1094,9 @@ def test_tutor_runtime_context_allows_verified_external_links_when_web_search_en
     )
 
     assert "联网搜索状态：已开启" in context
-    assert "可以直接引用以下外部检索结果中的 URL" in context
-    assert "必须写成 Markdown 链接格式" in context
-    assert "[数据结构课程视频](https://example.edu/ds-video)" in context
+    assert "只能引用以下 adoptedExternalSources 中的来源" in context
+    assert "依据对应" in context
+    assert "[S1] 数据结构课程视频 (https://example.edu/ds-video)" in context
     assert "https://example.edu/ds-video" in context
     assert "不得编造未提供的 URL" in context
 

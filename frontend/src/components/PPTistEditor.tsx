@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface PPTistEditorProps {
   slidesJson: string;
@@ -62,7 +63,15 @@ export default function PPTistEditor({ slidesJson, title, onClose }: PPTistEdito
     sendToIframe({ type: 'EXPORT_PPTX' });
   }, [sendToIframe]);
 
-  return (
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  const editor = (
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
@@ -103,4 +112,6 @@ export default function PPTistEditor({ slidesJson, title, onClose }: PPTistEdito
       />
     </div>
   );
+
+  return createPortal(editor, document.body);
 }

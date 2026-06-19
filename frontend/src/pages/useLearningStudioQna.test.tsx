@@ -146,4 +146,32 @@ describe('useLearningStudioQna', () => {
     expect(assistant?.reasoningContent).toBeUndefined();
     expect(assistant?.reasoningState).toBeUndefined();
   });
+
+  it('dedupes repeated deep reasoning chunks line by line', async () => {
+    vi.mocked(conversationApi.streamMessage).mockImplementation(async (_conversationId, _request, handlers) => {
+      handlers.onEvent({
+        event: 'reasoning_chunk',
+        data: { payload: { text: '回答组织：按证据回答\n未采用来源：A：相关性不足\n' } },
+      } as ConversationStreamEvent);
+      handlers.onEvent({
+        event: 'reasoning_chunk',
+        data: { payload: { text: '回答组织：按证据回答\n未采用来源：A：相关性不足\n自检：只引用采用来源\n' } },
+      } as ConversationStreamEvent);
+    });
+    const { result } = renderQnaHook();
+
+    act(() => {
+      result.current.viewProps.onChange('Find current references');
+      result.current.viewProps.onToggleDeepReasoning();
+    });
+    await act(async () => {
+      await result.current.viewProps.onSend();
+    });
+
+    const assistant = result.current.viewProps.qnaMessages.find((message) => message.role === 'assistant' && message.id.startsWith('qna-assistant-'));
+    const reasoning = assistant?.reasoningContent ?? '';
+    expect(reasoning.match(/回答组织/g)).toHaveLength(1);
+    expect(reasoning.match(/未采用来源/g)).toHaveLength(1);
+    expect(reasoning).toContain('自检：只引用采用来源');
+  });
 });

@@ -260,6 +260,7 @@ class ResourceGenerationService:
             sources=sources,
             generated_sections=generated_sections,
         )
+        content = self._sanitize_markdown_text(content)
         file_name = self._scoped_file_name("document_guide", "md", params)
         path = self._write_text(file_name, content)
         return GeneratedAsset(
@@ -471,13 +472,13 @@ class ResourceGenerationService:
             snapshot=generation_snapshot,
             sources=sources,
         )
-        content = "\n".join([f"# {generated_reading.title}", "", generated_reading.body])
+        content = self._sanitize_markdown_text("\n".join([f"# {generated_reading.title}", "", generated_reading.body]))
         file_name = self._scoped_file_name("reading_material", "md", params)
         path = self._write_text(file_name, content)
         return GeneratedAsset(
             assetType="READING",
             title=generated_reading.title,
-            summary=generated_reading.summary,
+            summary=self._sanitize_markdown_text(generated_reading.summary),
             displayMode="MARKDOWN_CARD",
             fileName=file_name,
             localPath=str(path),
@@ -531,18 +532,6 @@ class ResourceGenerationService:
             mimeType="application/json; charset=UTF-8",
             inlineContent=pptist_json,
         )
-
-    @staticmethod
-    def _confirmed_slide_outline_text(params: dict[str, Any] | None) -> str:
-        if not isinstance(params, dict):
-            return ""
-        top_level = str(params.get("confirmedSlideOutlineText") or "").strip()
-        if top_level:
-            return top_level
-        learning_context = params.get("learningContext")
-        if isinstance(learning_context, dict):
-            return str(learning_context.get("confirmedSlideOutlineText") or "").strip()
-        return ""
 
     def _generate_html_ppt_with_omni(
         self,
@@ -616,17 +605,10 @@ class ResourceGenerationService:
                 f"- {s.get('title', 'unknown')}: {s.get('evidence', '')[:200]}"
                 for s in sources[:4]
             )
-            confirmed_outline = self._confirmed_slide_outline_text(params)
-            outline_instruction = (
-                f"\n用户已确认以下 PPT 大纲，请优先按这个结构生成：\n{confirmed_outline}\n"
-                if confirmed_outline
-                else ""
-            )
             prompt = (
                 f"请为教学主题「{topic}」生成一份完整的 PPT 内容，用于 {snapshot.current_course} 课程。\n"
                 f"学生水平: {snapshot.student_level}，学习风格: {snapshot.preferred_style}。\n"
                 f"参考来源:\n{source_texts}\n\n"
-                f"{outline_instruction}"
                 "这些课程、学生画像和来源信息只用于生成判断，最终幻灯片正文不要展示课程、学生水平、学习风格、参考来源或证据说明等元信息。\n"
                 "请以JSON格式输出，包含以下字段：\n"
                 '{{"slides":[{{"slideTitle":"标题","bullets":["要点1","要点2"],"speakerNotes":"讲解备注"}}]}}\n'
@@ -985,13 +967,13 @@ class ResourceGenerationService:
             snapshot=generation_snapshot,
             sources=sources,
         )
-        mermaid = self._render_mindmap_mermaid(generated_mindmap)
+        mermaid = self._sanitize_markdown_text(self._render_mindmap_mermaid(generated_mindmap))
         file_name = self._scoped_file_name("mindmap", "mmd", params)
         path = self._write_text(file_name, mermaid)
         return GeneratedAsset(
             assetType="MINDMAP",
             title=generated_mindmap.title,
-            summary=generated_mindmap.summary,
+            summary=self._sanitize_markdown_text(generated_mindmap.summary),
             displayMode="INLINE_MERMAID",
             fileName=file_name,
             localPath=str(path),
@@ -1042,19 +1024,20 @@ class ResourceGenerationService:
         )
         code_suffix = self._code_file_suffix(generated_code.language)
         file_name = self._scoped_file_name("code_case", code_suffix, params)
-        path = self._write_text(file_name, generated_code.code)
+        code_content = self._normalize_code_text(generated_code.code)
+        path = self._write_text(file_name, code_content)
         return GeneratedAsset(
             assetType="CODE",
             title=generated_code.title,
-            summary=generated_code.summary,
+            summary=self._sanitize_markdown_text(generated_code.summary),
             displayMode="INLINE_CODE",
             fileName=file_name,
             localPath=str(path),
             previewText=generated_code.title,
             mimeType="text/plain; charset=UTF-8",
-            inlineContent=generated_code.code,
+            inlineContent=code_content,
             language=generated_code.language,
-            explanation=generated_code.explanation,
+            explanation=self._sanitize_markdown_text(generated_code.explanation),
         )
 
     def _safe_task_id(self, task_id: str) -> str:
@@ -1105,6 +1088,46 @@ class ResourceGenerationService:
         path = self.sandbox_root / file_name
         path.write_text(content, encoding="utf-8")
         return path
+
+    @classmethod
+    def _sanitize_markdown_text(cls, text: str | None) -> str:
+        if not text:
+            return ""
+        normalized = str(text).replace("\r\n", "\n").replace("\r", "\n")
+        stripped = normalized.strip()
+        match = re.match(r"^```(?:json|JSON)\s*\n([\s\S]*?)\n```$", stripped)
+        if match:
+            body = match.group(1).strip()
+            if body.startswith("{") or body.startswith("["):
+                normalized = body
+        lines: list[str] = []
+        in_fence = False
+        for raw_line in normalized.split("\n"):
+            trimmed = raw_line.strip()
+            if trimmed.startswith("```"):
+                in_fence = not in_fence
+                lines.append(raw_line.rstrip())
+                continue
+            if not in_fence and cls._is_markdown_pollution_line(trimmed):
+                continue
+            lines.append(raw_line.rstrip())
+        return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+    @staticmethod
+    def _normalize_code_text(text: str | None) -> str:
+        return str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+    @staticmethod
+    def _is_markdown_pollution_line(line: str) -> bool:
+        if not line:
+            return False
+        if re.fullmatch(r"(复制|已复制|copy|copied)", line, re.IGNORECASE):
+            return True
+        if re.match(r"(debug|trace|provenance|metadata|internal|resource[_ -]?debug)\s*[:：]", line, re.IGNORECASE):
+            return True
+        if re.fullmatch(r"<!--\s*(debug|trace|metadata|internal).*?-->", line, re.IGNORECASE):
+            return True
+        return False
 
     @staticmethod
     def _code_file_suffix(language: str | None) -> str:

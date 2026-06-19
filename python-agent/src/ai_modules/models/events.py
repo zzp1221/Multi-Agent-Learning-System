@@ -163,7 +163,7 @@ class ResourceFilePayload(BaseModel):
 class DonePayload(BaseModel):
     """Completion payload."""
 
-    status: Literal["SUCCESS", "FAILED", "PARTIAL_FAILED", "WAITING_CONFIRMATION"] = "SUCCESS"
+    status: Literal["SUCCESS", "FAILED", "PARTIAL_FAILED"] = "SUCCESS"
     summary: str
     mastery_diagnosis: dict[str, Any] | None = Field(default=None, alias="masteryDiagnosis")
     learning_path: dict[str, Any] | None = Field(default=None, alias="learningPath")

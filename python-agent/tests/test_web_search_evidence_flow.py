@@ -75,6 +75,7 @@ def test_tutor_uses_only_adopted_external_sources_for_answer_context() -> None:
         "webRetrievalResult": {"enabled": True, "query": "Will TS replace JS?"},
         "adoptedExternalSources": [
             {
+                "citationId": "S1",
                 "id": "ext-1",
                 "title": "TypeScript and JavaScript",
                 "url": "https://example.com/ts-js",
@@ -118,10 +119,14 @@ def test_tutor_uses_only_adopted_external_sources_for_answer_context() -> None:
     reasoning_text = "\n".join(tutor._build_answer_reasoning_chunks(user_query="Will TS replace JS?", params=params))
 
     assert [item["url"] for item in evidence["externalResources"]] == ["https://example.com/ts-js"]
-    assert "adoptedExternalSources 中的 URL" in context
-    assert "[TypeScript and JavaScript](https://example.com/ts-js)" in context
+    assert evidence["externalResources"][0]["citationId"] == "S1"
+    assert "adoptedExternalSources 中的来源" in context
+    assert "[S1] TypeScript and JavaScript (https://example.com/ts-js)" in context
+    assert "依据对应" in context
     assert "Unrelated runtime article [https://example.com/runtime]：相关性不足或未进入融合结果" in context
+    assert "[S1]" in reasoning_text
     assert "https://example.com/ts-js" in reasoning_text
+    assert "Unrelated runtime article：相关性不足或未进入融合结果" in reasoning_text
     assert "https://example.com/runtime" not in reasoning_text
 
 
@@ -193,6 +198,7 @@ def test_retrieval_agent_writes_shared_external_evidence_contract() -> None:
     )
 
     assert contract["adoptedExternalSources"][0]["url"] == "https://example.com/ts-js"
+    assert contract["adoptedExternalSources"][0]["citationId"] == "S1"
     assert contract["evidenceIds"] == ["ext-1"]
     assert contract["externalUrls"] == ["https://example.com/ts-js"]
     assert contract["ignoredExternalSources"][0]["url"] == "https://example.com/runtime"
@@ -265,3 +271,28 @@ def test_deep_reasoning_planner_prompt_payload_includes_web_evidence() -> None:
     assert payload["retrievalResult"]["documents"][0]["url"] == "https://example.com/ts-js"
     assert payload["webRetrievalResult"]["results"][0]["url"] == "https://example.com/ts-js"
     assert payload["externalResources"][0]["url"] == "https://example.com/ts-js"
+
+
+def test_tutor_appends_web_citation_table_when_answer_omits_it() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "webSearchEnabled": True,
+        "adoptedExternalSources": [
+            {
+                "citationId": "S1",
+                "id": "ext-1",
+                "title": "TypeScript and JavaScript",
+                "url": "https://example.com/ts-js",
+                "snippet": "TypeScript extends JavaScript.",
+            }
+        ],
+    }
+
+    answer = tutor._finalize_web_cited_answer("TypeScript will not simply replace JavaScript.", params)
+
+    assert "[S1] TypeScript and JavaScript" in answer
+    assert "依据对应" in answer
+    assert "| 结论 | 来源 |" in answer

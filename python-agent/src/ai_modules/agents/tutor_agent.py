@@ -321,6 +321,7 @@ class TutorAgent(PlaceholderAgent):
         for llm_client in self.llm_clients:
             streamed = False
             emitted_stream_event = False
+            streamed_answer = ""
             if not response_constraints and not self._wiki_tools_enabled(params):
                 try:
                     async for stream_event in self._try_direct_chat_stream(
@@ -345,6 +346,7 @@ class TutorAgent(PlaceholderAgent):
                             )
                         else:
                             streamed = True
+                            streamed_answer += stream_event["text"]
                             yield ResultChunkSSEEvent(
                                 taskId=task_id,
                                 traceId=trace_id,
@@ -354,6 +356,16 @@ class TutorAgent(PlaceholderAgent):
                             )
                         current_seq += 1
                     if streamed:
+                        tail = self._web_citation_completion_tail(streamed_answer, params)
+                        if tail:
+                            yield ResultChunkSSEEvent(
+                                taskId=task_id,
+                                traceId=trace_id,
+                                seq=current_seq,
+                                payload=ResultChunkPayload(text=tail, stage="tutoring"),
+                                dialogState=dialog_state,
+                            )
+                            current_seq += 1
                         self._log_llm_success("direct_stream", llm_client)
                         return
                     details = self._describe_llm_client(llm_client)
@@ -384,6 +396,7 @@ class TutorAgent(PlaceholderAgent):
                     constraints=response_constraints,
                     user_query=user_query,
                 )
+                response_text = self._finalize_web_cited_answer(response_text, params)
                 yield ResultChunkSSEEvent(
                     taskId=task_id,
                     traceId=trace_id,
@@ -701,10 +714,6 @@ class TutorAgent(PlaceholderAgent):
             params["difficulty"] = intent.difficulty_preference
         learning_context = params.get("learningContext", {})
         if isinstance(learning_context, dict):
-            if learning_context.get("confirmedSlideOutline") is not None:
-                params["confirmedSlideOutline"] = learning_context.get("confirmedSlideOutline")
-            if learning_context.get("confirmedSlideOutlineText"):
-                params["confirmedSlideOutlineText"] = learning_context.get("confirmedSlideOutlineText")
             if learning_context.get("questionCount") and not params.get("count"):
                 params["count"] = learning_context.get("questionCount")
             if learning_context.get("questionTypePreference") and not params.get("questionTypePreference"):
@@ -727,20 +736,10 @@ class TutorAgent(PlaceholderAgent):
         payload = model_dump(by_alias=True)
         if not isinstance(payload, dict):
             return
-        if self._is_pending_slide_outline_payload(payload):
-            outlines = params.setdefault("pendingSlideOutlines", [])
-            if isinstance(outlines, list):
-                outlines.append(payload)
-            return
         assets = params.setdefault("generatedAssets", [])
         if isinstance(assets, list):
             assets.append(payload)
         params.setdefault("generatedAsset", payload)
-
-    def _is_pending_slide_outline_payload(self, payload: dict[str, Any]) -> bool:
-        asset_type = str(payload.get("assetType") or payload.get("asset_type") or "").strip().upper()
-        display_mode = str(payload.get("displayMode") or payload.get("display_mode") or "").strip().upper()
-        return asset_type == "SLIDES" and display_mode == "SLIDE_OUTLINE_CONFIRMATION"
 
     def _extract_question_count(self, text: str) -> int:
         match = re.search(r"(\d{1,2}|[一二三四五六七八九十])\s*(?:道|个|题)", text)
@@ -876,6 +875,47 @@ class TutorAgent(PlaceholderAgent):
         )
         message = client.extract_message(response)
         return client.extract_content(message)
+
+    def _finalize_web_cited_answer(self, answer: str, params: dict[str, Any]) -> str:
+        return answer + self._web_citation_completion_tail(answer, params)
+
+    def _web_citation_completion_tail(self, answer: str, params: dict[str, Any]) -> str:
+        if not self._web_search_enabled(params):
+            return ""
+        adopted_sources = self._read_list_param(params, "adoptedExternalSources")
+        adopted_sources = [
+            item for item in adopted_sources
+            if isinstance(item, dict) and str(item.get("url") or "").strip()
+        ]
+        if not adopted_sources:
+            if "未采用到足够相关的联网证据" in answer:
+                return ""
+            return "\n\n未采用到足够相关的联网证据；以上回答主要基于可用本地知识。"
+
+        allowed_urls = {str(item.get("url") or "").strip() for item in adopted_sources}
+        cited_ids = [
+            str(item.get("citationId") or f"S{index}").strip()
+            for index, item in enumerate(adopted_sources, 1)
+        ]
+        has_citation = any(f"[{citation_id}]" in answer for citation_id in cited_ids)
+        has_evidence_table = "依据对应" in answer and "结论" in answer and "来源" in answer
+        forbidden_urls = [
+            url for url in re.findall(r"https?://[^\s)\]]+", answer)
+            if url.rstrip(".,;，。；") not in allowed_urls
+        ]
+        if has_citation and has_evidence_table and not forbidden_urls:
+            return ""
+
+        rows = []
+        for index, item in enumerate(adopted_sources[:3], 1):
+            citation_id = str(item.get("citationId") or f"S{index}").strip()
+            title = str(item.get("title") or item.get("url") or "联网来源").strip()
+            rows.append(f"| 采用了联网来源支持的外部事实 | [{citation_id}] {title} |")
+        table = "\n".join(["", "", "依据对应", "", "| 结论 | 来源 |", "| - | - |", *rows])
+        warning = ""
+        if forbidden_urls:
+            warning = "\n\n未采用到足够相关的联网证据覆盖部分外部链接，已仅保留采用来源作为依据。"
+        return table + warning
 
     async def _try_direct_chat_stream(
         self,
@@ -1027,7 +1067,7 @@ class TutorAgent(PlaceholderAgent):
             parts.append(f"已知薄弱点：{', '.join(known_gaps)}")
         if unresolved:
             parts.append(f"未解决问题：{', '.join(unresolved)}")
-        response_constraints = profile.get("responseConstraints") or {}
+        response_constraints = profile.get("responseConstraints") or params.get("responseConstraints") or {}
         if response_constraints.get("instruction"):
             parts.append(str(response_constraints["instruction"]))
         if teaching_state:
@@ -1076,18 +1116,20 @@ class TutorAgent(PlaceholderAgent):
             if external_resources:
                 parts.append(
                     "联网搜索状态：已开启。用户请求外部资料、媒体或链接时，"
-                    "可以直接引用以下外部检索结果中的 URL；只能引用 adoptedExternalSources 中的 URL；不得编造未提供的 URL。"
-                    "输出给用户时必须写成 Markdown 链接格式：[标题](URL)，便于前端跳转。"
+                    "只能引用以下 adoptedExternalSources 中的来源；不得编造未提供的 URL。"
+                    "涉及外部事实的句子末尾必须标注来源编号，如 [S1]；"
+                    "答案末尾必须包含“依据对应”小表，表头为“结论 | 来源”。"
                 )
                 for i, resource in enumerate(external_resources[:5], 1):
                     if not isinstance(resource, dict):
                         continue
+                    citation_id = str(resource.get("citationId") or f"S{i}").strip()
                     title = str(resource.get("title") or resource.get("sourceTitle") or "外部来源").strip()
                     url = str(resource.get("url") or "").strip()
                     snippet = str(resource.get("snippet") or resource.get("evidence") or "").strip()[:160]
                     if title and url:
                         suffix = f": {snippet}" if snippet else ""
-                        parts.append(f"  {i}. [{title}]({url}){suffix}")
+                        parts.append(f"  [{citation_id}] {title} ({url}){suffix}")
                 if ignored_sources:
                     parts.append("未采用的联网来源：")
                     for item in ignored_sources[:5]:
@@ -1603,15 +1645,24 @@ class TutorAgent(PlaceholderAgent):
             )
             if external_resources:
                 answer_lines.append("可引用的联网证据：")
-                for resource in external_resources[:3]:
+                for index, resource in enumerate(external_resources[:3], 1):
+                    citation_id = str(resource.get("citationId") or f"S{index}").strip()
                     title = evidence_title(resource)
                     url = evidence_url(resource)
                     if title and url:
                         answer_lines.append(
-                            f"- {self._truncate_dialogue_text(title, 80)} | {self._truncate_dialogue_text(url, 120)}"
+                            f"- [{citation_id}] {self._truncate_dialogue_text(title, 80)} | {self._truncate_dialogue_text(url, 120)}"
                         )
                 if ignored_sources:
-                    answer_lines.append(f"未采用联网来源：{len(ignored_sources)} 条，原因见检索筛选记录。")
+                    answer_lines.append("未采用联网来源：")
+                    for item in ignored_sources[:3]:
+                        if not isinstance(item, dict):
+                            continue
+                        title = str(item.get("title") or item.get("url") or "外部来源").strip()
+                        reason = str(item.get("reason") or "相关性不足").strip()
+                        answer_lines.append(
+                            f"- {self._truncate_dialogue_text(title, 60)}：{self._truncate_dialogue_text(reason, 80)}"
+                        )
             else:
                 answer_lines.append("联网证据：未采用外部来源。")
         self_check = (

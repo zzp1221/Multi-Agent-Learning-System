@@ -126,6 +126,9 @@ export default function Layout() {
     }
     currentUserIdRef.current = nextUserId;
     setCurrentUser(user);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('app:resource-generation-updated', { detail: { conversationId: '' } }));
+    }
   }, []);
 
   useEffect(() => {

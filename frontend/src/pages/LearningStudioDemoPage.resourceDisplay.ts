@@ -1,4 +1,5 @@
 import { readString as readSharedString } from '../utils/valueReaders';
+import { sanitizeMarkdownContent } from '../utils/markdownSanitizer';
 import { readNumericRaw } from './LearningStudioDemoPage.taskPayloadReaders';
 import type {
   InlineResourceView,
@@ -242,12 +243,15 @@ export function readInlineResource(payload: Record<string, unknown> | undefined)
     return null;
   }
   const displayMode = readString(payload.displayMode).toUpperCase();
-  const inlineContent = readString(payload.inlineContent);
+  const rawInlineContent = readString(payload.inlineContent);
+  const inlineContent = displayMode === 'INLINE_CODE'
+    ? rawInlineContent.replace(/\r\n/g, '\n')
+    : sanitizeMarkdownContent(rawInlineContent);
   if (!inlineContent) {
     return null;
   }
   const title = readString(payload.title) || '内嵌资源';
-  const summary = readString(payload.summary);
+  const summary = sanitizeMarkdownContent(readString(payload.summary));
   if (displayMode === 'INLINE_CODE') {
     return {
       kind: 'code',

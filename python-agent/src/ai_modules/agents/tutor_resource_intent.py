@@ -229,10 +229,6 @@ def apply_resource_generation_intent(
             params["questionTypePreference"] = learning_context.get("questionTypePreference")
         if learning_context.get("difficultyPreference") and not params.get("difficulty"):
             params["difficulty"] = learning_context.get("difficultyPreference")
-        if learning_context.get("confirmedSlideOutline") is not None:
-            params["confirmedSlideOutline"] = learning_context.get("confirmedSlideOutline")
-        if learning_context.get("confirmedSlideOutlineText"):
-            params["confirmedSlideOutlineText"] = learning_context.get("confirmedSlideOutlineText")
     if "QUIZ" in intent.resource_types and not params.get("count"):
         params["count"] = extract_question_count(str(params.get("originalTutorQuery") or ""))
     params[PlanningParamKeys.CONVERSATION_TRIGGERED_RESOURCE_GENERATION] = True

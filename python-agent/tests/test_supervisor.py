@@ -98,7 +98,7 @@ def test_resource_generation_done_summary_hides_internal_generation_details() ->
     assert "java Bean" not in payload.summary
 
 
-def test_tutoring_resource_generation_done_waits_for_slide_confirmation() -> None:
+def test_tutoring_resource_generation_done_ignores_legacy_pending_slide_outlines() -> None:
     supervisor = PythonAgentSupervisor()
 
     payload = supervisor._build_done_payload(
@@ -112,8 +112,8 @@ def test_tutoring_resource_generation_done_waits_for_slide_confirmation() -> Non
         },
     )
 
-    assert payload.status == "WAITING_CONFIRMATION"
-    assert "等待确认" in payload.summary
+    assert payload.status == "SUCCESS"
+    assert "等待确认" not in payload.summary
 
 
 def test_supervisor_resolves_video_generation_route() -> None:
@@ -1781,5 +1781,5 @@ async def test_supervisor_does_not_commit_partial_param_mutations_when_agent_fai
     }
     assert [event.event for event in events] == ["error", "done"]
     assert events[0].payload.code == "RESOURCE_BUNDLE_FAILED"
-    assert "simulated failure" in events[0].payload.message
+    assert "Resource bundle generation failed" in events[0].payload.message
     assert events[-1].payload.status == "FAILED"

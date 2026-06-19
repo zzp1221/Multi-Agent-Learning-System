@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState,
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowDown, BrainCircuit, ChevronDown, FileImage, Globe2, Paperclip, SendHorizontal, Square, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
-import { normalizeCopyText } from './LearningStudioDemoPage.utils';
+import { normalizeCopyMarkdown } from '../utils/markdownSanitizer';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
 
 interface ChatMessageBubbleProps {
@@ -208,7 +208,7 @@ export const ChatPanel = memo(function ChatPanel({
 
   const handleCopy = async (message: ChatMessage) => {
     try {
-      await navigator.clipboard.writeText(normalizeCopyText(message.content));
+      await navigator.clipboard.writeText(normalizeCopyMarkdown(message.content));
       setCopiedMessageId(message.id);
       window.setTimeout(() => {
         setCopiedMessageId((prev) => (prev === message.id ? null : prev));

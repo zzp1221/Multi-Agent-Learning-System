@@ -423,9 +423,6 @@ public class ConversationService {
             return event;
         }
         Map<String, Object> payload = event.safePayload();
-        if (isPendingSlideOutline(payload)) {
-            return new PythonStreamEvent(event.eventType(), event.stage(), stripSandboxPaths(payload));
-        }
         if (requiresGeneratedResourceProvenance(payload) && !hasRealLlmProvenance(payload)) {
             return new PythonStreamEvent(
                 "error",
@@ -502,11 +499,6 @@ public class ConversationService {
         sanitized.remove("sandboxPath");
         sanitized.remove("localPath");
         return sanitized;
-    }
-
-    private boolean isPendingSlideOutline(Map<String, Object> payload) {
-        return "SLIDES".equalsIgnoreCase(stringValue(payload.get("assetType")))
-            && "SLIDE_OUTLINE_CONFIRMATION".equalsIgnoreCase(stringValue(payload.get("displayMode")));
     }
 
     private boolean requiresGeneratedResourceProvenance(Map<String, Object> payload) {

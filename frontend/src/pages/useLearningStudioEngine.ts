@@ -31,6 +31,7 @@ import {
   syncSnapshotResultRecord,
   type PersistedEngineTaskSnapshot,
 } from './LearningStudioDemoPage.model';
+import { recordConversationResourceEvent } from './resourceGenerationStore';
 
 interface TaskMonitorRefs {
   taskStreamAbortRef: { current: AbortController | null };
@@ -254,6 +255,16 @@ export function useLearningStudioEngine({
         setCriticReview: snapshotSetter('criticReview'),
         setAgentTrace: snapshotSetter('agentTrace'),
         taskStreamAbortRef: refs.taskStreamAbortRef,
+        onResourceEvent: (eventName, event) => {
+          const activeConversationId = conversationIdRef.current.trim()
+            || (typeof window !== 'undefined'
+              ? window.sessionStorage.getItem(ACTIVE_CONVERSATION_ID_STORAGE_KEY)?.trim() ?? ''
+              : '');
+          if (!activeConversationId) {
+            return;
+          }
+          recordConversationResourceEvent(activeConversationId, eventName, event);
+        },
       });
 
       const monitorStillCurrent = activeTaskMonitorsRef.current[service] === currentTaskId;
@@ -299,15 +310,6 @@ export function useLearningStudioEngine({
           serviceResultLines: current.serviceResultLines.includes('任务仍在后台执行，可切换页面，稍后返回继续查看结果。')
             ? current.serviceResultLines
             : [...current.serviceResultLines, '任务仍在后台执行，可切换页面，稍后返回继续查看结果。'],
-        }));
-        return;
-      }
-
-      if (outcome === 'waiting_confirmation') {
-        updateServiceSnapshot(service, (current) => ({
-          ...current,
-          engineState: 'ENGINE_RUNNING',
-          taskStatus: '等待确认',
         }));
         return;
       }

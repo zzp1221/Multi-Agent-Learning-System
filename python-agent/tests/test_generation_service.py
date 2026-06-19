@@ -335,29 +335,17 @@ async def test_generation_service_writes_non_document_assets_from_llm_output(
     monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMiMoClient)
 
     reading_asset = await service.build_asset(asset_type="READING", params=params, snapshot=snapshot)
-    pending_slides_asset = await service.build_asset(asset_type="SLIDES", params=params, snapshot=snapshot)
-    confirmed_params = {
-        **params,
-        "confirmedSlideOutline": True,
-        "confirmedSlideOutlineText": pending_slides_asset.inline_content,
-    }
+    slides_asset = await service.build_asset(asset_type="SLIDES", params=params, snapshot=snapshot)
     mindmap_asset = await service.build_asset(asset_type="MINDMAP", params=params, snapshot=snapshot)
     code_asset = await service.build_asset(asset_type="CODE", params=params, snapshot=snapshot)
 
     assert "这里是百炼生成的阅读正文。" in Path(reading_asset.local_path).read_text(encoding="utf-8")
-    assert pending_slides_asset.display_mode == "SLIDE_OUTLINE_CONFIRMATION"
-    assert pending_slides_asset.local_path is None
-    assert "联合索引PPT大纲" in pending_slides_asset.inline_content
-    slides_asset = await service.build_asset(asset_type="SLIDES", params=confirmed_params, snapshot=snapshot)
-    assert slides_asset.display_mode == "DOWNLOAD_CARD"
-    assert slides_asset.file_name == "slides_task-multi.html"
-    assert slides_asset.mime_type == "text/html; charset=UTF-8"
-    html = Path(slides_asset.local_path).read_text(encoding="utf-8")
-    assert html.startswith("<!DOCTYPE html>")
-    assert 'data-generated-by="zhixue-html-ppt"' in html
-    assert html.count('<section class="slide') >= 9
-    assert "<script" in html
-    assert "application/vnd.openxmlformats" not in slides_asset.mime_type
+    assert slides_asset.display_mode == "PPTIST_EDITOR"
+    assert slides_asset.file_name == "slides_task-multi.json"
+    assert slides_asset.mime_type == "application/json; charset=UTF-8"
+    assert Path(slides_asset.local_path).read_text(encoding="utf-8") == slides_asset.inline_content
+    assert "联合索引PPT课件" in slides_asset.title
+    assert "联合索引概念" in slides_asset.inline_content
     assert mindmap_asset.display_mode == "INLINE_MERMAID"
     assert mindmap_asset.file_name == "mindmap_task-multi.mmd"
     assert Path(mindmap_asset.local_path).exists()
@@ -374,7 +362,10 @@ async def test_generation_service_writes_non_document_assets_from_llm_output(
 
 
 @pytest.mark.asyncio
-async def test_generation_service_requires_confirmed_slide_outline_text(tmp_path: Path) -> None:
+async def test_generation_service_ignores_legacy_confirmed_slide_outline_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     service = ResourceGenerationService(
         sandbox_root=tmp_path,
         content_chain=ContentGenerationChain(primary_generator=FakePrimaryGenerator()),
@@ -396,18 +387,53 @@ async def test_generation_service_requires_confirmed_slide_outline_text(tmp_path
         recent_activities=[],
     )
 
+    class FakeMiMoClient:
+        def omni_chat_sync(self, **kwargs):
+            del kwargs
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"slides":['
+                                '{"slideTitle":"联合索引概念","bullets":["定义","场景","边界"],"speakerNotes":"先讲联合索引的基本概念，再解释多列字段按顺序组织的场景和使用边界。"},'
+                                '{"slideTitle":"最左前缀","bullets":["顺序","条件","截断"],"speakerNotes":"说明最左前缀原则如何约束查询条件，并解释遇到范围条件后的截断现象。"},'
+                                '{"slideTitle":"执行计划","bullets":["索引","过滤","回表"],"speakerNotes":"通过执行计划观察索引使用情况，帮助学生区分索引定位、过滤和回表。"},'
+                                '{"slideTitle":"常见误区","bullets":["跳列","范围","排序"],"speakerNotes":"总结联合索引中跳过前导列、范围查询和排序优化的常见误区。"},'
+                                '{"slideTitle":"实践案例","bullets":["建表","查询","验证"],"speakerNotes":"用建表和查询案例验证不同条件组合下索引是否命中，形成判断流程。"},'
+                                '{"slideTitle":"总结复盘","bullets":["顺序","选择性","验证"],"speakerNotes":"回顾字段顺序、选择性和执行计划验证三条主线，帮助学生迁移到真实查询。"}'
+                                ']}'
+                            )
+                        }
+                    }
+                ]
+            }
+
+        def extract_json(self, response):
+            import json
+
+            return json.loads(response["choices"][0]["message"]["content"])
+
+    monkeypatch.setenv("MIMO_API_KEY", "unit-test-mimo-key")
+    get_settings.cache_clear()
+    monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMiMoClient)
+
     asset = await service.build_asset(
         asset_type="SLIDES",
         params={
             "taskId": "task-confirm-only",
             "query": "联合索引",
             "confirmedSlideOutline": True,
+            "confirmedSlideOutlineText": "# legacy outline should be ignored",
         },
         snapshot=snapshot,
     )
 
-    assert asset.display_mode == "SLIDE_OUTLINE_CONFIRMATION"
-    assert asset.local_path is None
+    assert asset.display_mode == "PPTIST_EDITOR"
+    assert asset.file_name == "slides_task-confirm-only.json"
+    assert Path(asset.local_path).exists()
+    assert "legacy outline should be ignored" not in asset.inline_content
+    get_settings.cache_clear()
 
 
 @pytest.mark.asyncio
@@ -439,8 +465,8 @@ async def test_generation_service_accepts_nested_confirmed_slide_outline(
     class FakeMiMoClient:
         def omni_chat_sync(self, **kwargs):
             prompt = kwargs["messages"][-1]["content"]
-            assert "用户已确认以下 PPT 大纲" in prompt
-            assert "# Java线程创建基础概念学习PPT大纲" in prompt
+            assert "用户已确认以下 PPT 大纲" not in prompt
+            assert "# Java线程创建基础概念学习PPT大纲" not in prompt
             return {
                 "choices": [
                     {
@@ -483,13 +509,14 @@ async def test_generation_service_accepts_nested_confirmed_slide_outline(
         snapshot=snapshot,
     )
 
-    assert asset.display_mode == "DOWNLOAD_CARD"
-    assert asset.file_name == "slides_task-nested-confirm.html"
+    assert asset.display_mode == "PPTIST_EDITOR"
+    assert asset.file_name == "slides_task-nested-confirm.json"
     assert Path(asset.local_path).exists()
-    html = Path(asset.local_path).read_text(encoding="utf-8")
-    assert "<title>Java线程创建基础概念学习PPT大纲</title>" in html
-    assert "线程创建概览" in html
-    assert html.count('<section class="slide') == 9
+    deck_json = Path(asset.local_path).read_text(encoding="utf-8")
+    assert deck_json == asset.inline_content
+    assert "Java线程创建基础概念学习PPT课件" in asset.title
+    assert "线程创建概览" in deck_json
+    assert "# Java线程创建基础概念学习PPT大纲" not in deck_json
     get_settings.cache_clear()
 
 
@@ -567,12 +594,12 @@ async def test_generation_service_normalizes_short_slide_bullets_to_download_car
     def fake_render_deck(self, **kwargs):
         del self
         captured["slides"] = kwargs["slides"]
-        return "<!DOCTYPE html><html><body>deck</body></html>"
+        return "[]"
 
     monkeypatch.setenv("MIMO_API_KEY", "unit-test-mimo-key")
     get_settings.cache_clear()
     monkeypatch.setattr("src.ai_modules.llms.mimo_client.MiMoClient", FakeMiMoClient)
-    monkeypatch.setattr("src.ai_modules.generation.html_ppt_builder.HtmlPptDeckBuilder.render", fake_render_deck)
+    monkeypatch.setattr("src.ai_modules.generation.pptist_builder.PPTistDeckBuilder.render", fake_render_deck)
 
     asset = await service.build_asset(
         asset_type="SLIDES",
@@ -585,8 +612,8 @@ async def test_generation_service_normalizes_short_slide_bullets_to_download_car
         snapshot=snapshot,
     )
 
-    assert asset.display_mode == "DOWNLOAD_CARD"
-    assert asset.file_name == "slides_task-short-bullets.html"
+    assert asset.display_mode == "PPTIST_EDITOR"
+    assert asset.file_name == "slides_task-short-bullets.json"
     assert len(captured["slides"][0]["bullets"]) == 3
     get_settings.cache_clear()
 

@@ -128,7 +128,7 @@
       "additionalProperties": true,
       "required": ["status", "summary"],
       "properties": {
-        "status": { "type": "string", "enum": ["SUCCESS", "FAILED", "PARTIAL_FAILED", "WAITING_CONFIRMATION"] },
+        "status": { "type": "string", "enum": ["SUCCESS", "FAILED", "PARTIAL_FAILED"] },
         "summary": { "type": "string" },
         "learningPath": { "type": ["object", "null"] },
         "resourceFailures": { "type": "array", "items": { "type": "object" } }

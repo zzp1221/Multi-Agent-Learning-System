@@ -1,5 +1,6 @@
 package com.project;
 
+import com.project.application.artifact.ArtifactDownloadDescriptor;
 import com.project.application.artifact.ArtifactDownloadService;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineTaskEventCache;
@@ -7,6 +8,7 @@ import com.project.application.smartengine.TaskEventRecordResult;
 import com.project.application.smartengine.TaskStateMachineService;
 import com.project.application.smartengine.TaskStreamEventPayload;
 import com.project.application.smartengine.VideoGenerationTaskService;
+import com.project.domain.artifact.ResourceType;
 import com.project.domain.task.ServiceType;
 import com.project.domain.task.SmartEngineTask;
 import com.project.domain.task.SmartEngineTaskRepository;
@@ -25,6 +27,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -190,29 +193,49 @@ class TaskStateMachineProvenanceTest {
     }
 
     @Test
-    void pendingSlideOutlineKeepsInlineContentWithoutDownloadSigning() {
+    void slidesResourceFileIsSignedEvenWhenLegacyOutlineDisplayModeAppears() {
+        when(artifactDownloadService.issueDownload(
+            any(SmartEngineTask.class),
+            eq(ResourceType.SLIDES),
+            eq("联合索引 PPT 大纲"),
+            eq("outline.md"),
+            eq("/sandbox/outline.md"),
+            eq("text/markdown")
+        )).thenReturn(new ArtifactDownloadDescriptor("/api/assets/download/slides-outline", 3600, java.time.OffsetDateTime.parse("2026-06-05T10:00:00Z")));
+
         TaskStreamEventPayload result = service.recordPythonEvent(
             taskId,
             new PythonStreamEvent(
                 "resource_file",
                 "slides_outline",
-                Map.of(
-                    "assetType", "SLIDES",
-                    "displayMode", "SLIDE_OUTLINE_CONFIRMATION",
-                    "title", "联合索引 PPT 大纲",
-                    "inlineContent", "# 联合索引 PPT 大纲",
-                    "localPath", "/tmp/outline.md",
-                    "sandboxPath", "/sandbox/outline.md"
+                Map.ofEntries(
+                    Map.entry("assetType", "SLIDES"),
+                    Map.entry("displayMode", "SLIDE_OUTLINE_CONFIRMATION"),
+                    Map.entry("title", "联合索引 PPT 大纲"),
+                    Map.entry("inlineContent", "# 联合索引 PPT 大纲"),
+                    Map.entry("fileName", "outline.md"),
+                    Map.entry("mimeType", "text/markdown"),
+                    Map.entry("localPath", "/tmp/outline.md"),
+                    Map.entry("sandboxPath", "/sandbox/outline.md"),
+                    Map.entry("generatedBy", "LLM"),
+                    Map.entry("contentOrigin", "LLM"),
+                    Map.entry("provider", "unit-provider"),
+                    Map.entry("model", "unit-model"),
+                    Map.entry("agentName", "slide_generator"),
+                    Map.entry("evidenceIds", List.of("doc-1")),
+                    Map.entry("fallback", false),
+                    Map.entry("fromCache", false)
                 )
             )
         );
 
         assertThat(result.event()).isEqualTo("resource_file");
         assertThat(result.payload()).containsEntry("inlineContent", "# 联合索引 PPT 大纲");
-        assertThat(result.payload()).doesNotContainKeys("downloadUrl", "localPath", "sandboxPath");
+        assertThat(result.payload()).containsEntry("downloadUrl", "/api/assets/download/slides-outline");
+        assertThat(result.payload()).doesNotContainKeys("localPath", "sandboxPath");
         assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.RUNNING);
-        assertThat(task.getResponseSummary()).containsEntry("inlineContent", "# 联合索引 PPT 大纲");
-        verify(artifactDownloadService, never()).issueDownload(any(), any(), any(), any(), any(), any());
+        assertThat(task.getResponseSummary()).containsEntry("downloadUrl", "/api/assets/download/slides-outline");
+        verify(artifactDownloadService).issueDownload(any(), eq(ResourceType.SLIDES), eq("联合索引 PPT 大纲"), eq("outline.md"), eq("/sandbox/outline.md"), eq("text/markdown"));
     }
 
     @Test
@@ -237,7 +260,7 @@ class TaskStateMachineProvenanceTest {
     }
 
     @Test
-    void waitingConfirmationDoneKeepsTaskRunningWithoutFakeCompletion() {
+    void legacyWaitingConfirmationDoneNoLongerKeepsTaskRunning() {
         task.setProgressPercent(new java.math.BigDecimal("42"));
 
         TaskStreamEventPayload result = service.recordPythonEvent(
@@ -247,17 +270,16 @@ class TaskStateMachineProvenanceTest {
                 "resource_bundle",
                 Map.of(
                     "status", "WAITING_CONFIRMATION",
-                    "summary", "PPT 大纲已生成，等待确认",
-                    "pendingSlideOutlines", List.of(Map.of("title", "SQL 基础 PPT 大纲"))
+                    "summary", "legacy waiting status is ignored"
                 )
             )
         );
 
         assertThat(result.event()).isEqualTo("done");
-        assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.RUNNING);
-        assertThat(task.getCurrentStage()).isEqualTo("waiting_confirmation");
-        assertThat(task.getProgressPercent()).isEqualByComparingTo("42");
-        assertThat(task.getCompletedAt()).isNull();
+        assertThat(task.getTaskStatus()).isEqualTo(TaskStatus.COMPLETED);
+        assertThat(task.getCurrentStage()).isEqualTo("completed");
+        assertThat(task.getProgressPercent()).isEqualByComparingTo("100");
+        assertThat(task.getCompletedAt()).isNotNull();
         assertThat(task.getResponseSummary()).containsEntry("status", "WAITING_CONFIRMATION");
     }
 

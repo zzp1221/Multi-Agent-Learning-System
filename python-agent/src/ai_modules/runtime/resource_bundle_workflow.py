@@ -65,7 +65,6 @@ class WorkflowGraphState(TypedDict, total=False):
     events: list[SSEEvent]
     resource_types: list[str]
     generated_assets: list[dict[str, Any]]
-    pending_slide_outlines: list[dict[str, Any]]
     resource_results: Annotated[list[ResourceAgentResult], operator.add]
     resource_failures: Annotated[list[dict[str, str]], operator.add]
 
@@ -80,7 +79,6 @@ class WorkflowState(BaseModel):
     events: list[SSEEvent] = Field(default_factory=list)
     resource_types: list[str] = Field(default_factory=list)
     generated_assets: list[dict[str, Any]] = Field(default_factory=list)
-    pending_slide_outlines: list[dict[str, Any]] = Field(default_factory=list)
     resource_results: list[ResourceAgentResult] = Field(default_factory=list)
     resource_failures: list[dict[str, str]] = Field(default_factory=list)
 
@@ -179,7 +177,6 @@ class ResourceBundleWorkflow:
                     state.snapshot = next_state.snapshot
                     state.resource_types = next_state.resource_types
                     state.generated_assets = next_state.generated_assets
-                    state.pending_slide_outlines = next_state.pending_slide_outlines
                     state.resource_results = next_state.resource_results
                     state.resource_failures = next_state.resource_failures
                     for event in new_events:
@@ -192,7 +189,7 @@ class ResourceBundleWorkflow:
                 self._copy_state(initial_state, state)
             self.last_state = state
             raise
-        if state.resource_failures and not state.generated_assets and not state.pending_slide_outlines:
+        if state.resource_failures and not state.generated_assets:
             if initial_state is not None:
                 self._copy_state(initial_state, state)
             self.last_state = state
@@ -339,16 +336,12 @@ class ResourceBundleWorkflow:
         )
 
         generated_assets: list[dict[str, Any]] = []
-        pending_slide_outlines: list[dict[str, Any]] = []
         for result in results:
             state.params = self._merge_agent_params(state.params, result.params)
             for event in result.events:
                 if isinstance(event, ResourceFileSSEEvent):
                     payload = event.payload.model_dump(by_alias=True)
-                    if self._is_pending_slide_outline_payload(payload):
-                        pending_slide_outlines.append(payload)
-                    else:
-                        generated_assets.append(payload)
+                    generated_assets.append(payload)
                 elif isinstance(event, QuestionBatchSSEEvent):
                     payload = event.payload.model_dump(by_alias=True)
                     generated_assets.append({"assetType": "QUIZ", **payload})
@@ -373,10 +366,9 @@ class ResourceBundleWorkflow:
             )
             state.seq += 1
         state.generated_assets = generated_assets
-        state.pending_slide_outlines = pending_slide_outlines
         state.resource_failures = failures
         state.params["generatedAssets"] = generated_assets
-        state.params["pendingSlideOutlines"] = pending_slide_outlines
+        state.params.pop("pendingSlideOutlines", None)
         state.params["resourceFailures"] = failures
         if generated_assets:
             state.params["generatedAsset"] = generated_assets[0]
@@ -538,11 +530,6 @@ class ResourceBundleWorkflow:
 
     def _merge_agent_params(self, base_params: dict[str, Any], agent_params: dict[str, Any]) -> dict[str, Any]:
         merged = copy.deepcopy(base_params)
-        generated_asset = agent_params.get("generatedAsset")
-        skip_generated_content = (
-            isinstance(generated_asset, dict)
-            and self._is_pending_slide_outline_payload(generated_asset)
-        )
         for key in (
             "generatedAsset",
             "generatedContent",
@@ -554,17 +541,9 @@ class ResourceBundleWorkflow:
             "videoGenerationTask",
             "videoSandboxArtifact",
         ):
-            if skip_generated_content and key in {"generatedAsset", "generatedContent"}:
-                continue
             if key in agent_params:
                 merged[key] = agent_params[key]
         return merged
-
-    @staticmethod
-    def _is_pending_slide_outline_payload(payload: dict[str, Any]) -> bool:
-        display_mode = str(payload.get("displayMode") or payload.get("display_mode") or "").strip().upper()
-        asset_type = str(payload.get("assetType") or payload.get("asset_type") or "").strip().upper()
-        return asset_type == "SLIDES" and display_mode == "SLIDE_OUTLINE_CONFIRMATION"
 
     @staticmethod
     def _state_to_dict(state: WorkflowState) -> dict[str, Any]:
@@ -576,7 +555,6 @@ class ResourceBundleWorkflow:
             "events": state.events,
             "resource_types": state.resource_types,
             "generated_assets": state.generated_assets,
-            "pending_slide_outlines": state.pending_slide_outlines,
             "resource_results": state.resource_results,
             "resource_failures": state.resource_failures,
         }
@@ -590,7 +568,6 @@ class ResourceBundleWorkflow:
         target.events = source.events
         target.resource_types = source.resource_types
         target.generated_assets = source.generated_assets
-        target.pending_slide_outlines = source.pending_slide_outlines
         target.resource_results = source.resource_results
         target.resource_failures = source.resource_failures
 

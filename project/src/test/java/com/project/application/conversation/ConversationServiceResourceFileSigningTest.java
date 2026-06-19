@@ -175,8 +175,16 @@ class ConversationServiceResourceFileSigningTest {
     }
 
     @Test
-    void pendingSlideOutlineKeepsInlineContentWithoutDownloadSigning() {
+    void slidesResourceFileIsSignedEvenWhenLegacyOutlineDisplayModeAppears() {
         ArtifactDownloadService downloadService = mock(ArtifactDownloadService.class);
+        when(downloadService.issueDownload(
+            any(SmartEngineTask.class),
+            eq(ResourceType.SLIDES),
+            eq("联合索引 PPT 大纲"),
+            eq("outline.md"),
+            eq("/sandbox/outline.md"),
+            eq("text/markdown")
+        )).thenReturn(new ArtifactDownloadDescriptor("/api/assets/download/slides-outline", 3600, OffsetDateTime.parse("2026-06-05T10:00:00Z")));
         ConversationService service = new ConversationService(
             mock(QnaSessionRepository.class),
             null,
@@ -198,13 +206,23 @@ class ConversationServiceResourceFileSigningTest {
         PythonStreamEvent event = new PythonStreamEvent(
             "resource_file",
             "slides_outline",
-            Map.of(
-                "assetType", "SLIDES",
-                "displayMode", "SLIDE_OUTLINE_CONFIRMATION",
-                "title", "联合索引 PPT 大纲",
-                "inlineContent", "# 联合索引 PPT 大纲",
-                "localPath", "D:/tmp/outline.md",
-                "sandboxPath", "/sandbox/outline.md"
+            Map.ofEntries(
+                Map.entry("assetType", "SLIDES"),
+                Map.entry("displayMode", "SLIDE_OUTLINE_CONFIRMATION"),
+                Map.entry("title", "联合索引 PPT 大纲"),
+                Map.entry("inlineContent", "# 联合索引 PPT 大纲"),
+                Map.entry("fileName", "outline.md"),
+                Map.entry("mimeType", "text/markdown"),
+                Map.entry("localPath", "D:/tmp/outline.md"),
+                Map.entry("sandboxPath", "/sandbox/outline.md"),
+                Map.entry("generatedBy", "LLM"),
+                Map.entry("contentOrigin", "LLM"),
+                Map.entry("provider", "unit-provider"),
+                Map.entry("model", "unit-model"),
+                Map.entry("agentName", "slide_generator"),
+                Map.entry("evidenceIds", List.of("doc-1")),
+                Map.entry("fallback", false),
+                Map.entry("fromCache", false)
             )
         );
 
@@ -218,7 +236,8 @@ class ConversationServiceResourceFileSigningTest {
         Map<String, Object> capturedPayload = signed.safePayload();
         assertThat(signed.eventType()).isEqualTo("resource_file");
         assertThat(capturedPayload).containsEntry("inlineContent", "# 联合索引 PPT 大纲");
-        assertThat(capturedPayload).doesNotContainKeys("downloadUrl", "localPath", "sandboxPath");
-        verify(downloadService, never()).issueDownload(any(), any(), any(), any(), any(), any());
+        assertThat(capturedPayload).containsEntry("downloadUrl", "/api/assets/download/slides-outline");
+        assertThat(capturedPayload).doesNotContainKeys("localPath", "sandboxPath");
+        verify(downloadService).issueDownload(any(SmartEngineTask.class), eq(ResourceType.SLIDES), eq("联合索引 PPT 大纲"), eq("outline.md"), eq("/sandbox/outline.md"), eq("text/markdown"));
     }
 }

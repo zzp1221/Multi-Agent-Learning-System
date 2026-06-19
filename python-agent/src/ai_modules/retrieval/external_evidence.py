@@ -136,6 +136,7 @@ def _build_ignored_sources(
 def _public_source(item: dict[str, Any], index: int) -> dict[str, Any]:
     url = evidence_url(item)
     return {
+        "citationId": f"S{index}",
         "id": str(item.get("id") or f"ext-{index}"),
         "title": evidence_title(item) or url,
         "url": url,
