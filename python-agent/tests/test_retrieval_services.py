@@ -111,14 +111,49 @@ class CountingLegacyAdapter:
         )
 
 
-def test_query_rewrite_service_injects_learning_context() -> None:
+def test_query_rewrite_service_keeps_plain_tutoring_query_as_current_question() -> None:
     service = QueryRewriteService()
 
     result = service.rewrite(
         {
             "query": "联合索引",
             "learningContext": {"course": "数据库原理", "chapter": "索引"},
-        }
+            "profile": {"weakPoints": ["覆盖索引"]},
+        },
+        service_type="TUTORING",
+    )
+
+    assert result.original_query == "联合索引"
+    assert result.rewritten_query == "联合索引"
+    assert result.keywords == ["联合索引"]
+
+
+def test_query_rewrite_service_prefers_message_over_polluted_query_for_plain_tutoring() -> None:
+    service = QueryRewriteService()
+
+    result = service.rewrite(
+        {
+            "query": "Thread.sleep Runnable接口 什么是AVL树",
+            "message": "什么是AVL树",
+            "learningContext": {"course": "Java 程序设计", "chapter": "并发编程"},
+        },
+        service_type="TUTORING",
+    )
+
+    assert result.original_query == "什么是AVL树"
+    assert result.rewritten_query == "什么是AVL树"
+    assert "Thread.sleep" not in result.keywords
+
+
+def test_query_rewrite_service_keeps_learning_context_for_resource_workflows() -> None:
+    service = QueryRewriteService()
+
+    result = service.rewrite(
+        {
+            "query": "联合索引",
+            "learningContext": {"course": "数据库原理", "chapter": "索引"},
+        },
+        service_type="RESOURCE_GENERATION",
     )
 
     assert result.original_query == "联合索引"

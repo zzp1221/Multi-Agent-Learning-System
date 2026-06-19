@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -182,6 +183,70 @@ class SmartEngineOrchestratorServiceTest {
                 .containsKeys("profile", "profileSummary", "learningProgress", "practiceSignals", "resourceSignals");
             return true;
         }));
+    }
+
+    @Test
+    void resourceGenerationSubmissionPreservesChineseParamsInTaskPayloadAndInvocation() {
+        UUID userId = UUID.fromString("30000000-0000-0000-0000-000000000061");
+        UUID conversationId = UUID.fromString("30000000-0000-0000-0000-000000000062");
+        JwtAuthenticatedUser user = new JwtAuthenticatedUser(userId, "learner", "STUDENT");
+
+        TaskStateMachineService taskStateMachineService = mock(TaskStateMachineService.class);
+        SmartEngineQueueService queueService = mock(SmartEngineQueueService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        UserLlmSettingsService userLlmSettingsService = mock(UserLlmSettingsService.class);
+        QnaSessionRepository qnaSessionRepository = mock(QnaSessionRepository.class);
+
+        SmartEngineTask task = pendingTask(userId);
+        task.setServiceType(ServiceType.RESOURCE_GENERATION);
+        when(taskStateMachineService.createTask(any(), eq(userId), any(), eq(ServiceType.RESOURCE_GENERATION), any()))
+            .thenReturn(task);
+        when(queueProvider.getIfAvailable()).thenReturn(queueService);
+        when(queueService.enqueue(any())).thenReturn("stream-record-chinese");
+        when(userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)).thenReturn(true);
+        when(qnaSessionRepository.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.of(mock(QnaSession.class)));
+
+        SmartEngineOrchestratorService service = new SmartEngineOrchestratorService(
+            taskStateMachineService,
+            mock(SseEmitterService.class),
+            queueProvider,
+            mock(IdempotencyService.class),
+            mock(AuditService.class),
+            mock(UserProfileCurrentRepository.class),
+            mock(PersonalizedLearningContextService.class),
+            mock(PersonalizedLearningRefreshService.class),
+            mock(LearningPathProgressService.class),
+            mock(PracticeResultPersistenceService.class),
+            userLlmSettingsService,
+            qnaSessionRepository
+        );
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("course", "\u6570\u636e\u5e93\u7cfb\u7edf");
+        params.put("topic", "\u8054\u5408\u7d22\u5f15\u7684\u6700\u5de6\u5339\u914d");
+        params.put("query", "\u8bf7\u751f\u6210\u8054\u5408\u7d22\u5f15\u5bfc\u5b66\u6587\u6863");
+
+        service.submit(user, new SubmitTaskRequest(
+            conversationId,
+            ServiceType.RESOURCE_GENERATION,
+            params
+        ));
+
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<Map<String, Object>> payloadCaptor = forClass(Map.class);
+        verify(taskStateMachineService).createTask(any(), eq(userId), any(), eq(ServiceType.RESOURCE_GENERATION), payloadCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> storedParams = (Map<String, Object>) payloadCaptor.getValue().get("params");
+        assertThat(storedParams)
+            .containsEntry("course", "\u6570\u636e\u5e93\u7cfb\u7edf")
+            .containsEntry("topic", "\u8054\u5408\u7d22\u5f15\u7684\u6700\u5de6\u5339\u914d")
+            .containsEntry("query", "\u8bf7\u751f\u6210\u8054\u5408\u7d22\u5f15\u5bfc\u5b66\u6587\u6863");
+
+        verify(queueService).enqueue(org.mockito.ArgumentMatchers.argThat(invocation ->
+            "\u6570\u636e\u5e93\u7cfb\u7edf".equals(invocation.params().get("course"))
+                && "\u8054\u5408\u7d22\u5f15\u7684\u6700\u5de6\u5339\u914d".equals(invocation.params().get("topic"))
+                && "\u8bf7\u751f\u6210\u8054\u5408\u7d22\u5f15\u5bfc\u5b66\u6587\u6863".equals(invocation.params().get("query"))
+        ));
     }
 
     @Test

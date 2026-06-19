@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 import httpx
@@ -20,7 +21,13 @@ class TavilySearcher:
 
     def search(self, query: str, top_k: int = 5) -> list[tuple]:
         settings = get_settings()
-        api_key = settings.tavily_api_key.strip()
+        api_key = self._setting_value(settings, "tavily_api_key", env_name="TAVILY_API_KEY")
+        base_url = self._setting_value(
+            settings,
+            "tavily_base_url",
+            env_name="TAVILY_BASE_URL",
+            default="https://api.tavily.com/search",
+        )
         if not api_key or not query.strip():
             return []
 
@@ -34,7 +41,7 @@ class TavilySearcher:
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
                 response = client.post(
-                    settings.tavily_base_url,
+                    base_url,
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
@@ -75,6 +82,12 @@ class TavilySearcher:
                 )
             )
         return normalized
+
+    def _setting_value(self, settings: Any, name: str, *, env_name: str, default: str = "") -> str:
+        value = getattr(settings, name, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return os.getenv(env_name, default).strip()
 
     def _coerce_score(self, value: Any, rank: int) -> float:
         try:

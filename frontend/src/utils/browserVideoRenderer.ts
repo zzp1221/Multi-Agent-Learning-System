@@ -127,13 +127,13 @@ function updateTaskState(taskId: string, nextState: BrowserVideoRenderTaskState)
   publishTaskState(taskId);
 }
 
-export function getBrowserVideoRenderTaskState(taskId: string): BrowserVideoRenderTaskState | null {
+function getBrowserVideoRenderTaskState(taskId: string): BrowserVideoRenderTaskState | null {
   pruneExpiredTaskStates();
   const snapshot = renderTaskStates.get(taskId);
   return snapshot ? { ...snapshot } : null;
 }
 
-export function subscribeBrowserVideoRenderTask(
+function subscribeBrowserVideoRenderTask(
   taskId: string,
   listener: (state: BrowserVideoRenderTaskState) => void,
 ): () => void {
@@ -367,7 +367,7 @@ export async function renderTalkingVideoInBrowser(
   });
 }
 
-export function cancelActiveBrowserVideoRender(message = '视频生成已取消'): void {
+function cancelActiveBrowserVideoRender(message = '视频生成已取消'): void {
   if (!activeJob) {
     return;
   }

@@ -14,7 +14,7 @@ import { smartEngineApi } from '../api/smartEngine';
 import { readStreamMessage, readStreamPayload } from '../api/sse';
 import {
   readPracticeJudgeResult,
-} from './LearningStudioDemoPage.utils';
+} from './LearningStudioDemoPage.taskPayloadReaders';
 import type { JudgeItemResult, PracticeJudgeResult, PracticeQuestion, PracticeQuestionBatch } from './LearningStudioDemoPage.types';
 import {
   clearStageTestSession,

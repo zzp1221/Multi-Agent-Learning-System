@@ -1,11 +1,9 @@
 import { getErrorMessage, isUnauthorizedError } from '../api/request';
-import { readConversationChunk as readConversationChunkFromEnvelope } from '../api/sse';
 import { smartEngineApi } from '../api/smartEngine';
 import { renderTalkingVideoInBrowser } from '../utils/browserVideoRenderer';
 import type {
   EngineService,
   AgentTraceStepView,
-  ConversationStreamEventPayload,
   InlineResourceView,
   CriticReviewView,
   LearningPlanView,
@@ -736,10 +734,6 @@ function responseSummaryToLines(summary: Record<string, unknown>, service: Engin
     .filter((line) => !line.endsWith('：'));
 }
 
-export function readConversationChunk(data: ConversationStreamEventPayload, eventName: string): string {
-  return readConversationChunkFromEnvelope(data, eventName);
-}
-
 function looksLikeTutorChain(text: string): boolean {
   const normalized = text.replace(/\n/g, ' ').trim();
   return normalized.includes('历史摘要')
@@ -1460,7 +1454,7 @@ function flushStreamQueue(
   setServiceResultLines((prev) => [...prev, ...chunks]);
 }
 
-export function cleanupStreamSchedulers(
+function cleanupStreamSchedulers(
   streamFlushTimerRef: RunByApiTaskArgs['streamFlushTimerRef'],
   streamRafRef: RunByApiTaskArgs['streamRafRef'],
 ): void {
@@ -2076,7 +2070,7 @@ function readInlineResource(payload: Record<string, unknown> | undefined): Inlin
   return null;
 }
 
-export function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined): PracticeQuestionBatch | null {
+function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined): PracticeQuestionBatch | null {
   const record = readRecord(payload);
   const source = readRecord(record?.practiceQuestionBatch)
     ?? readRecord(record?.questionBatch)
@@ -2116,7 +2110,7 @@ export function readPracticeQuestionBatch(payload: Record<string, unknown> | und
   };
 }
 
-export function readPracticeJudgeResult(payload: Record<string, unknown> | undefined): PracticeJudgeResult | null {
+function readPracticeJudgeResult(payload: Record<string, unknown> | undefined): PracticeJudgeResult | null {
   const record = readRecord(payload);
   const source = readRecord(record?.judgeResult) ?? record;
   const items = Array.isArray(source?.items) ? source.items : null;

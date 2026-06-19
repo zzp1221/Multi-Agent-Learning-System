@@ -35,10 +35,6 @@ export default function PPTistEditor({ slidesJson, title, onClose }: PPTistEdito
         }
       }
 
-      if (type === 'SLIDES_LOADED') {
-        console.log('PPTist slides loaded:', event.data.slideCount);
-      }
-
       if (type === 'EXPORT_READY') {
         setExporting(false);
         const { blobUrl, fileName } = event.data;

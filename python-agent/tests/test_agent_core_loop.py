@@ -167,6 +167,41 @@ async def test_agent_core_loop_raises_when_iterations_exceeded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_core_loop_iteration_error_keeps_partial_tool_results() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        name="read_retrieval_evidence",
+        fn=lambda tool_input: {"documents": [{"title": "B+ tree"}], **tool_input},
+        permission_level=1,
+        description="Read evidence",
+    )
+    llm = MockLLM(
+        turns=[
+            AssistantTurn(
+                content="read first",
+                tool_calls=[ToolCall(id="call_1", name="read_retrieval_evidence", input={})],
+            ),
+        ]
+    )
+    loop = AgentCoreLoop(
+        llm_client=llm,
+        tool_registry=registry,
+        max_iterations=1,
+        agent_level=1,
+    )
+
+    with pytest.raises(MaxIterationsExceededError) as exc_info:
+        await loop.run(
+            system_prompt="test",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+    assert exc_info.value.tool_results[0].tool_name == "read_retrieval_evidence"
+    assert exc_info.value.tool_results[0].output["documents"][0]["title"] == "B+ tree"
+    assert exc_info.value.messages[-1]["role"] == "tool"
+
+
+@pytest.mark.asyncio
 async def test_knowledge_guard_injects_retrieved_context_into_generation_tool() -> None:
     registry = ToolRegistry()
     registry.register(

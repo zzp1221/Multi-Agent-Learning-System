@@ -494,6 +494,8 @@ class ResourceBundleWorkflow:
         if isinstance(exc, ProvenanceError):
             return True
         message = str(exc).lower()
+        if "critic review blocked resource publication" in message:
+            return False
         return any(
             marker in message
             for marker in (

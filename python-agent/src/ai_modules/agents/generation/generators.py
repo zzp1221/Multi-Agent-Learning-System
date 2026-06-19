@@ -35,6 +35,8 @@ from src.ai_modules.runtime.provenance import build_llm_provenance, validate_llm
 
 LOGGER = logging.getLogger(__name__)
 
+PASSING_CRITIC_VERDICTS = {"PASS", "PASSED", "GOOD", "APPROVED", "OK", "SUCCESS"}
+
 
 class _BaseGenerationAgent(PlaceholderAgent):
     def __init__(
@@ -132,6 +134,22 @@ class _BaseGenerationAgent(PlaceholderAgent):
             )
             return
 
+        if not self._critic_review_passed(critic_review):
+            summary = self._critic_failure_summary(critic_review)
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=next_seq,
+                payload=ResultChunkPayload(text=summary),
+            )
+            yield DoneSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=next_seq + 1,
+                payload=DonePayload(status="FAILED", summary=summary),
+            )
+            return
+
         yield ResultChunkSSEEvent(
             taskId=task_id,
             traceId=trace_id,
@@ -214,6 +232,17 @@ class _BaseGenerationAgent(PlaceholderAgent):
             "criticReview": params["criticReview"],
             "safetyReview": params["safetyReview"],
         })
+
+    @staticmethod
+    def _critic_review_passed(critic_review: Any) -> bool:
+        verdict = str(getattr(critic_review, "verdict", "") or "").strip().upper()
+        return not verdict or verdict in PASSING_CRITIC_VERDICTS
+
+    @staticmethod
+    def _critic_failure_summary(critic_review: Any) -> str:
+        verdict = str(getattr(critic_review, "verdict", "") or "").strip().upper() or "UNKNOWN"
+        summary = str(getattr(critic_review, "summary_text", "") or "").strip()
+        return f"Critic review blocked resource publication: verdict={verdict}; {summary}".rstrip()
 
     def _tool_generate_outline(
         self,
@@ -615,6 +644,22 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                 traceId=trace_id,
                 seq=current_seq + 1,
                 payload=DonePayload(status="FAILED", summary=safety_review.summary_text),
+            )
+            return
+
+        if not self._critic_review_passed(critic_review):
+            summary = self._critic_failure_summary(critic_review)
+            yield ResultChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ResultChunkPayload(text=summary),
+            )
+            yield DoneSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq + 1,
+                payload=DonePayload(status="FAILED", summary=summary),
             )
             return
 

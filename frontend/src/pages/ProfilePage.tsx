@@ -23,7 +23,7 @@ import {
   type ProfileSnapshot,
   type WeakPointRank,
 } from './LearningStudioDemoPage.types';
-import { mapProfileResponse } from './LearningStudioDemoPage.utils';
+import { mapProfileResponse } from './LearningStudioDemoPage.profileMapping';
 
 export default function ProfilePage() {
   const { isAuthenticated, currentUser, openAuthModal } = useOutletContext<LayoutOutletContext>();

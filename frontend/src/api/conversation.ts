@@ -71,6 +71,7 @@ export interface ConversationMessageItem {
   messageId: string;
   role: 'user' | 'assistant';
   content: string;
+  reasoningContent?: string;
   imageUrls?: string[];
   createdAt?: string;
 }

@@ -13,11 +13,11 @@ import {
   type ResourceForm,
 } from './LearningStudioDemoPage.types';
 import {
-  buildServiceParams,
-  cleanupStreamSchedulers,
   runByApiTask,
   toUiTaskStatus,
 } from './LearningStudioDemoPage.utils';
+import { buildServiceParams } from './LearningStudioDemoPage.serviceParams';
+import { cleanupStreamSchedulers } from './LearningStudioDemoPage.streamBuffer';
 import {
   ACTIVE_CONVERSATION_ID_STORAGE_KEY,
   DEFAULT_ENGINE_SERVICE,

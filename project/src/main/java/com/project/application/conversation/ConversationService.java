@@ -187,6 +187,7 @@ public class ConversationService {
         AtomicInteger sequence = new AtomicInteger(0);
         SseStreamSender streamSender = new SseStreamSender(emitter, sequence);
         StringBuilder assistantReply = new StringBuilder();
+        StringBuilder assistantReasoning = new StringBuilder();
         VoiceTurnRef voiceTurn = resolveVoiceTurn(request.voiceContextMap());
         if (voiceTurn.isPresent()) {
             voiceTurnMetricsService.attachConversation(
@@ -218,6 +219,7 @@ public class ConversationService {
                     history,
                     voiceTurn,
                     assistantReply,
+                    assistantReasoning,
                     streamSender,
                     llmStartedAtNanos,
                     firstTokenLogged
@@ -231,8 +233,16 @@ public class ConversationService {
                     assistantReply.length(),
                     ""
                 );
-                if (!assistantReply.isEmpty()) {
-                    appendConversationMessage(conversationId, currentUser.userId(), "assistant", assistantReply.toString(), List.of(), false);
+                if (!assistantReply.isEmpty() || !assistantReasoning.isEmpty()) {
+                    appendConversationMessage(
+                        conversationId,
+                        currentUser.userId(),
+                        "assistant",
+                        assistantReply.toString(),
+                        List.of(),
+                        assistantReasoning.toString(),
+                        false
+                    );
                 }
                 emitter.complete();
             } catch (Exception ex) {
@@ -309,12 +319,14 @@ public class ConversationService {
         List<ConversationMessageItemResponse> history,
         VoiceTurnRef voiceTurn,
         StringBuilder assistantReply,
+        StringBuilder assistantReasoning,
         SseStreamSender streamSender,
         long llmStartedAtNanos,
         java.util.concurrent.atomic.AtomicBoolean firstTokenLogged
     ) {
         java.util.function.Consumer<PythonStreamEvent> eventConsumer = event -> {
             collectAssistantReply(assistantReply, event);
+            collectAssistantReasoning(assistantReasoning, event);
             String chunk = extractVisibleAssistantChunk(event);
             if (!chunk.isEmpty() && firstTokenLogged.compareAndSet(false, true)) {
                 recordVoiceMetric(
@@ -622,6 +634,22 @@ public class ConversationService {
         assistantReply.append(chunk);
     }
 
+    private void collectAssistantReasoning(StringBuilder assistantReasoning, PythonStreamEvent event) {
+        String chunk = extractReasoningChunk(event);
+        if (chunk.isEmpty()) {
+            return;
+        }
+        assistantReasoning.append(chunk);
+    }
+
+    private String extractReasoningChunk(PythonStreamEvent event) {
+        if (!"reasoning_chunk".equals(event.eventType())) {
+            return "";
+        }
+        Object text = event.safePayload().get("text");
+        return text instanceof String value ? value : "";
+    }
+
     private String extractVisibleAssistantChunk(PythonStreamEvent event) {
         if (!"result_chunk".equals(event.eventType())) {
             return "";
@@ -670,7 +698,23 @@ public class ConversationService {
         List<String> imageUrls,
         boolean failOnError
     ) {
-        if ((content == null || content.isBlank()) && (imageUrls == null || imageUrls.isEmpty())) {
+        appendConversationMessage(conversationId, userId, role, content, imageUrls, null, failOnError);
+    }
+
+    private void appendConversationMessage(
+        UUID conversationId,
+        UUID userId,
+        String role,
+        String content,
+        List<String> imageUrls,
+        String reasoningContent,
+        boolean failOnError
+    ) {
+        if (
+            (content == null || content.isBlank())
+                && (imageUrls == null || imageUrls.isEmpty())
+                && (reasoningContent == null || reasoningContent.isBlank())
+        ) {
             return;
         }
         try {
@@ -679,7 +723,8 @@ public class ConversationService {
                 userId,
                 role,
                 content == null ? "" : content.trim(),
-                imageUrls == null ? List.of() : imageUrls
+                imageUrls == null ? List.of() : imageUrls,
+                reasoningContent == null ? "" : reasoningContent.trim()
             );
         } catch (Exception ex) {
             if (failOnError) {

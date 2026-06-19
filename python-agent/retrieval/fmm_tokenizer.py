@@ -90,15 +90,6 @@ class FMMTokenizer:
                 i += 1
         return tokens
 
-    def has_term(self, text: str) -> bool:
-        """Check if an exact term exists in the lexicon."""
-        node = self.root
-        for ch in text:
-            if ch not in node.children:
-                return False
-            node = node.children[ch]
-        return node.is_end
-
     def get_idf(self, term: str) -> Optional[float]:
         """Look up IDF for an exact term."""
         node = self.root

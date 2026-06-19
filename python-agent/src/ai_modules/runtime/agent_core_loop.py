@@ -83,7 +83,18 @@ class SupportsToolCallingLLM(Protocol):
 
 
 class MaxIterationsExceededError(RuntimeError):
-    """当智能体循环超出配置的迭代上限时抛出。"""
+    """Raised when the agent loop exceeds the configured iteration limit."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        messages: list[dict[str, Any]] | None = None,
+        tool_results: list[ToolExecutionResult] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.messages = messages or []
+        self.tool_results = tool_results or []
 
 
 class AgentCoreLoop:
@@ -284,7 +295,9 @@ class AgentCoreLoop:
                 called_tool_names.add(tool_call.name)
 
         raise MaxIterationsExceededError(
-            f"Agent loop exceeded {self.max_iterations} iterations"
+            f"Agent loop exceeded {self.max_iterations} iterations",
+            messages=working_messages,
+            tool_results=tool_results,
         )
 
     def _prepare_messages_for_llm(

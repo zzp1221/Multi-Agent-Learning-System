@@ -118,11 +118,20 @@ class DeepReasoningPlanner(PlaceholderAgent):
         retrieval_result = retrieval_result if isinstance(retrieval_result, dict) else {}
         documents = retrieval_result.get("documents")
         documents = documents if isinstance(documents, list) else []
+        web_retrieval_result = params.get("webRetrievalResult")
+        web_retrieval_result = web_retrieval_result if isinstance(web_retrieval_result, dict) else {}
         return {
             "query": self._first_text(params, "query", "message", "userInput", "question"),
             "rewrittenQuery": self._first_text(params, "rewrittenQuery"),
             "queryClassification": self._safe_dict(params.get("queryClassification")),
             "retrievalStrategy": str(params.get("retrievalStrategy") or ""),
+            "webSearchEnabled": self._web_search_enabled(params),
+            "retrievalResult": self._compact_retrieval_result(retrieval_result),
+            "webRetrievalResult": self._compact_web_retrieval_result(web_retrieval_result),
+            "externalResources": self._collect_external_resources(
+                retrieval_result=retrieval_result,
+                web_retrieval_result=web_retrieval_result,
+            ),
             "retrievalSummary": self._truncate_text(
                 str(params.get("retrievalSummaryText") or retrieval_result.get("sourcesSummary") or ""),
                 1200,
@@ -134,6 +143,124 @@ class DeepReasoningPlanner(PlaceholderAgent):
             "masteryDiagnosis": self._safe_dict(params.get("masteryDiagnosis")),
             "imageAnalysis": self._safe_dict(params.get("imageAnalysisResult")),
         }
+
+    def _web_search_enabled(self, params: dict[str, Any]) -> bool:
+        web_result = params.get("webRetrievalResult")
+        return bool(
+            params.get("webSearchEnabled") is True
+            or params.get("enableWebSearch") is True
+            or params.get("tavilySearchEnabled") is True
+            or (isinstance(web_result, dict) and web_result.get("enabled") is True)
+        )
+
+    def _compact_retrieval_result(self, retrieval_result: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "sourcesSummary": self._truncate_text(str(retrieval_result.get("sourcesSummary") or ""), 1200),
+            "documents": self._compact_documents(
+                retrieval_result.get("documents") if isinstance(retrieval_result.get("documents"), list) else []
+            ),
+        }
+
+    def _compact_web_retrieval_result(self, web_retrieval_result: dict[str, Any]) -> dict[str, Any]:
+        results = web_retrieval_result.get("results")
+        return {
+            "enabled": web_retrieval_result.get("enabled") is True,
+            "query": self._truncate_text(str(web_retrieval_result.get("query") or ""), 300),
+            "results": self._compact_web_items(results if isinstance(results, list) else []),
+        }
+
+    def _collect_external_resources(
+        self,
+        *,
+        retrieval_result: dict[str, Any],
+        web_retrieval_result: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        resources: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+
+        def add_resource(title: Any, url: Any, snippet: Any = "", source_title: Any = "", score: Any = None) -> None:
+            normalized_url = str(url or "").strip()
+            if not normalized_url.startswith(("http://", "https://")):
+                return
+            dedupe_key = normalized_url.lower()
+            if dedupe_key in seen_urls:
+                return
+            seen_urls.add(dedupe_key)
+            resources.append(
+                {
+                    "title": self._truncate_text(str(title or source_title or normalized_url), 160),
+                    "url": self._truncate_text(normalized_url, 240),
+                    "snippet": self._truncate_text(str(snippet or ""), 360),
+                    "sourceTitle": self._truncate_text(str(source_title or title or ""), 160),
+                    "score": self._safe_float(score),
+                }
+            )
+
+        documents = retrieval_result.get("documents")
+        for document in documents if isinstance(documents, list) else []:
+            if not isinstance(document, dict):
+                continue
+            add_resource(
+                document.get("title"),
+                document.get("url"),
+                document.get("snippet") or document.get("evidence"),
+                document.get("sourceTitle"),
+                document.get("score"),
+            )
+
+        results = web_retrieval_result.get("results")
+        for item in results if isinstance(results, list) else []:
+            if isinstance(item, dict):
+                add_resource(
+                    item.get("title") or item.get("sourceTitle"),
+                    item.get("url") or item.get("slug"),
+                    item.get("snippet") or item.get("evidence") or item.get("content"),
+                    item.get("sourceTitle"),
+                    item.get("score"),
+                )
+                continue
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            metadata = next((extra for extra in item[3:] if isinstance(extra, dict)), {})
+            add_resource(
+                item[1],
+                metadata.get("url") or item[0],
+                metadata.get("snippet") or metadata.get("content"),
+                metadata.get("sourceTitle") or item[1],
+                item[2] if len(item) > 2 else None,
+            )
+        return resources[:8]
+
+    def _compact_web_items(self, items: list[Any]) -> list[dict[str, Any]]:
+        compacted: list[dict[str, Any]] = []
+        for index, item in enumerate(items[:8], start=1):
+            if isinstance(item, dict):
+                compacted.append(
+                    {
+                        "id": self._truncate_text(str(item.get("id") or item.get("url") or f"web-{index}"), 180),
+                        "title": self._truncate_text(str(item.get("title") or item.get("sourceTitle") or ""), 160),
+                        "url": self._truncate_text(str(item.get("url") or item.get("slug") or ""), 240),
+                        "snippet": self._truncate_text(
+                            str(item.get("snippet") or item.get("evidence") or item.get("content") or ""),
+                            360,
+                        ),
+                        "score": self._safe_float(item.get("score")),
+                    }
+                )
+                continue
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            metadata = next((extra for extra in item[3:] if isinstance(extra, dict)), {})
+            compacted.append(
+                {
+                    "id": self._truncate_text(str(metadata.get("url") or item[0] or f"web-{index}"), 180),
+                    "title": self._truncate_text(str(item[1] or ""), 160),
+                    "url": self._truncate_text(str(metadata.get("url") or item[0] or ""), 240),
+                    "snippet": self._truncate_text(str(metadata.get("snippet") or metadata.get("content") or ""), 360),
+                    "score": self._safe_float(item[2] if len(item) > 2 else None),
+                }
+            )
+        return compacted
 
     def _normalize_context(self, payload: dict[str, Any], *, params: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
@@ -245,6 +372,13 @@ class DeepReasoningPlanner(PlaceholderAgent):
             if isinstance(value, str) and value.strip():
                 return self._truncate_text(value.strip(), 600)
         return ""
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _safe_dict(value: Any) -> dict[str, Any]:

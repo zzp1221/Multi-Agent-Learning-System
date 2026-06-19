@@ -508,3 +508,105 @@ async def test_document_generator_stops_output_when_safety_blocks(tmp_path: Path
     assert [event.event for event in events] == ["result_chunk", "done"]
     assert events[0].payload.text == "Safety 拦截"
     assert events[1].payload.status == "FAILED"
+
+
+@pytest.mark.asyncio
+async def test_document_generator_blocks_resource_file_when_critic_rejects(tmp_path: Path) -> None:
+    asset_path = tmp_path / "critic-rejected.md"
+    asset_path.write_text("# off-topic", encoding="utf-8")
+
+    class FakeGenerationService:
+        content_chain = type(
+            "FakeContentChain",
+            (),
+            {
+                "primary_generator": type(
+                    "FakeGenerator",
+                    (),
+                    {"provider_name": "test-provider", "model_name": "test-model"},
+                )()
+            },
+        )()
+
+        def _plan_document_sections(self, *, params, snapshot, sources):
+            del params, snapshot, sources
+
+            class _Section:
+                def model_dump(self, *, by_alias):
+                    del by_alias
+                    return {"title": "outline", "objective": "objective"}
+
+            return [_Section()]
+
+        async def build_asset(self, *, asset_type, params, snapshot):
+            del params, snapshot
+            return GeneratedAsset(
+                assetType=asset_type,
+                title="Off topic document",
+                summary="wrong topic",
+                displayMode="MARKDOWN_CARD",
+                fileName="critic-rejected.md",
+                localPath=str(asset_path),
+                previewText="off topic",
+            )
+
+    class RejectingCriticAgent:
+        def system_prompt(self, snapshot):
+            del snapshot
+            return "critic"
+
+        async def review_content(self, *, params, snapshot, system_prompt):
+            del params, snapshot, system_prompt
+            return CriticReviewPayload(
+                verdict="REJECT",
+                factConsistency="UNSUPPORTED",
+                difficultyMatch="MISMATCHED",
+                sourceCoverage="POOR",
+                issues=["wrong topic"],
+                suggestions=["regenerate"],
+                summaryText="Critic rejected the resource",
+            )
+
+    class PassingSafetyAgent:
+        def system_prompt(self, snapshot):
+            del snapshot
+            return "safety"
+
+        async def review_content(self, *, params, snapshot, system_prompt):
+            del params, snapshot, system_prompt
+            return SafetyReviewPayload(
+                allowed=True,
+                riskLevel="LOW",
+                categories=["educational_content"],
+                riskTags=[],
+                blockedReason=None,
+                suggestions=[],
+                summaryText="Safety OK",
+            )
+
+    agent = DocumentGeneratorAgent(
+        generation_service=FakeGenerationService(),
+        llm_client=RuleBasedGenerationLLM(),
+        critic_agent=RejectingCriticAgent(),
+        safety_agent=PassingSafetyAgent(),
+    )
+    params = {"query": "expected topic"}
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-critic-reject",
+            trace_id="trace-critic-reject",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["result_chunk", "done"]
+    assert "verdict=REJECT" in events[0].payload.text
+    assert events[1].payload.status == "FAILED"
+    assert params["criticReview"]["verdict"] == "REJECT"
+    assert params["safetyReview"]["allowed"] is True

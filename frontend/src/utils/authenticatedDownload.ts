@@ -39,7 +39,7 @@ export async function downloadAuthenticatedFile(options: AuthenticatedDownloadOp
   }
 }
 
-export function openDownloadUrl(rawUrl: string): void {
+function openDownloadUrl(rawUrl: string): void {
   const anchor = document.createElement('a');
   anchor.href = rawUrl;
   anchor.target = '_blank';

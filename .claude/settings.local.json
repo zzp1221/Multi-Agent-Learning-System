@@ -214,7 +214,9 @@
       "Bash(npx.cmd tsc *)",
       "Bash(awk '{print $NF}')",
       "WebFetch(domain:undraw.co)",
-      "Bash(docker-compose ps *)"
+      "Bash(docker-compose ps *)",
+      "Bash(pnpm remove *)",
+      "Bash(pnpm add *)"
     ]
   }
 }

@@ -58,9 +58,3 @@ export function addAppEventListener<Name extends AppEventName>(
     window.removeEventListener(name, handler as EventListener);
   };
 }
-
-export function readAppEventDetail<Name extends AppEventName>(
-  event: Event,
-): AppEventDetailMap[Name] {
-  return (event as CustomEvent<AppEventDetailMap[Name]>).detail;
-}

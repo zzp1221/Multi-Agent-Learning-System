@@ -56,8 +56,10 @@ class PythonAgentInternalTokenClientTest {
         UUID conversationId = UUID.randomUUID();
         CountDownLatch received = new CountDownLatch(1);
         AtomicReference<String> tokenHeader = new AtomicReference<>();
+        AtomicReference<String> requestBody = new AtomicReference<>();
         server.createContext("/internal/conversations/" + conversationId + "/messages", exchange -> {
             tokenHeader.set(exchange.getRequestHeaders().getFirst(INTERNAL_TOKEN_HEADER));
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             received.countDown();
             send(exchange, 200, "{\"messageId\":\"message-1\"}");
         });
@@ -72,6 +74,30 @@ class PythonAgentInternalTokenClientTest {
 
         assertThat(received.await(2, TimeUnit.SECONDS)).isTrue();
         assertThat(tokenHeader.get()).isEqualTo(INTERNAL_TOKEN);
+        assertThat(requestBody.get()).contains("\"content\":\"hello\"");
+    }
+
+    @Test
+    void conversationClientSendsReasoningContentWhenPresent() throws Exception {
+        UUID conversationId = UUID.randomUUID();
+        CountDownLatch received = new CountDownLatch(1);
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        server.createContext("/internal/conversations/" + conversationId + "/messages", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            received.countDown();
+            send(exchange, 200, "{\"messageId\":\"message-1\"}");
+        });
+
+        HttpPythonConversationMessageClient client = new HttpPythonConversationMessageClient(
+            new ObjectMapper(),
+            appProperties,
+            internalTokenProvider
+        );
+
+        client.appendMessage(conversationId, UUID.randomUUID(), "assistant", "answer", List.of(), "public reasoning");
+
+        assertThat(received.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(requestBody.get()).contains("\"reasoningContent\":\"public reasoning\"");
     }
 
     @Test

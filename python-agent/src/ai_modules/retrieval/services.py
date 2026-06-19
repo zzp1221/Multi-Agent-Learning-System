@@ -52,6 +52,7 @@ class LegacyHybridRetrieverAdapter:
         query: str,
         *,
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> dict[str, Any]:
         import psycopg2
@@ -63,6 +64,7 @@ class LegacyHybridRetrieverAdapter:
                     cur,
                     query,
                     web_search_enabled=web_search_enabled,
+                    web_search_query=web_search_query,
                     graph_intent=graph_intent,
                 )
 
@@ -71,6 +73,7 @@ class LegacyHybridRetrieverAdapter:
         query: str,
         *,
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> dict[str, Any]:
         import psycopg2
@@ -80,6 +83,7 @@ class LegacyHybridRetrieverAdapter:
             return self.retrieve(
                 query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
         with psycopg2.connect(**self._db_config) as conn:
@@ -89,6 +93,7 @@ class LegacyHybridRetrieverAdapter:
                     cur,
                     query,
                     web_search_enabled=web_search_enabled,
+                    web_search_query=web_search_query,
                     graph_intent=graph_intent,
                 )
 
@@ -106,7 +111,10 @@ class LegacyHybridRetrieverAdapter:
 class QueryRewriteService:
     """检索阶段的低成本确定性查询改写。"""
 
-    def extract_query(self, params: dict[str, Any]) -> str:
+    def extract_query(self, params: dict[str, Any], *, service_type: str | None = None) -> str:
+        if self._is_plain_tutoring(service_type, params):
+            return self._plain_tutoring_current_query(params) or "未提供查询"
+
         explicit_query = self._first_non_empty(
             params.get("query"),
             params.get("userInput"),
@@ -207,8 +215,15 @@ class QueryRewriteService:
             return ""
         return text
 
-    def rewrite(self, params: dict[str, Any]) -> QueryRewriteResult:
-        original_query = self.extract_query(params)
+    def rewrite(self, params: dict[str, Any], *, service_type: str | None = None) -> QueryRewriteResult:
+        original_query = self.extract_query(params, service_type=service_type)
+        if self._is_plain_tutoring(service_type, params):
+            return self.isolate_plain_tutoring_query(params, QueryRewriteResult(
+                originalQuery=original_query,
+                rewrittenQuery=original_query,
+                keywords=self._extract_keywords(original_query),
+            ))
+
         learning_context = params.get("learningContext", {})
         if not isinstance(learning_context, dict):
             learning_context = {}
@@ -232,6 +247,43 @@ class QueryRewriteService:
             originalQuery=original_query,
             rewrittenQuery=rewritten_query,
             keywords=keywords,
+        )
+
+    def isolate_plain_tutoring_query(
+        self,
+        params: dict[str, Any],
+        result: QueryRewriteResult,
+    ) -> QueryRewriteResult:
+        original_query = self.extract_query(params, service_type="TUTORING")
+        if original_query == "未提供查询":
+            original_query = result.original_query
+        return QueryRewriteResult(
+            originalQuery=original_query,
+            rewrittenQuery=original_query,
+            keywords=self._extract_keywords(original_query),
+        )
+
+    def is_plain_tutoring(self, service_type: str | None, params: dict[str, Any]) -> bool:
+        return self._is_plain_tutoring(service_type, params)
+
+    def _is_plain_tutoring(self, service_type: str | None, params: dict[str, Any]) -> bool:
+        normalized = str(service_type or params.get("serviceType") or "").strip().upper()
+        if normalized != "TUTORING":
+            return False
+        resource_types = params.get("resourceTypes")
+        return (
+            params.get("conversationTriggeredResourceGeneration") is not True
+            and not (isinstance(resource_types, list) and bool(resource_types))
+            and not params.get("resourceType")
+        )
+
+    def _plain_tutoring_current_query(self, params: dict[str, Any]) -> str:
+        return self._first_non_empty(
+            params.get("userInput"),
+            params.get("message"),
+            params.get("question"),
+            params.get("prompt"),
+            params.get("query"),
         )
 
     def _context_terms(self, context: dict[str, Any], key: str) -> list[str]:
@@ -281,11 +333,13 @@ class HybridRetrievalService:
         rewritten_query: str,
         keywords: list[str],
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> RetrievalResponse:
         raw_result = self.retrieve_raw(
             rewritten_query,
             web_search_enabled=web_search_enabled,
+            web_search_query=web_search_query,
             graph_intent=graph_intent,
         )
         return self.build_response(
@@ -300,6 +354,7 @@ class HybridRetrievalService:
         rewritten_query: str,
         *,
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> dict[str, Any]:
         cache_key = ""
@@ -307,6 +362,7 @@ class HybridRetrievalService:
             cache_key = self._build_raw_result_cache_key(
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
         if cache_key:
@@ -320,6 +376,7 @@ class HybridRetrievalService:
         raw_result = self._retrieve_raw(
             rewritten_query,
             web_search_enabled=web_search_enabled,
+            web_search_query=web_search_query,
             graph_intent=graph_intent,
         )
         if cache_key and self._is_cacheable_raw_result(raw_result):
@@ -336,6 +393,7 @@ class HybridRetrievalService:
         rewritten_query: str,
         *,
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> dict[str, Any]:
         if self.retriever is not None:
@@ -345,20 +403,24 @@ class HybridRetrievalService:
                     retrieve_grep_first,
                     rewritten_query,
                     web_search_enabled=web_search_enabled,
+                    web_search_query=web_search_query,
                     graph_intent=graph_intent,
                 )
             return self._call_retriever(
                 self.retriever.retrieve,
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
 
         try:
             adapter = self._get_legacy_adapter()
-            return adapter.retrieve_grep_first(
+            return self._call_retriever(
+                adapter.retrieve_grep_first,
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
         except Exception as exc:
@@ -418,6 +480,7 @@ class HybridRetrievalService:
         rewritten_query: str,
         *,
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> dict[str, Any]:
         if self.retriever is not None:
@@ -425,14 +488,17 @@ class HybridRetrievalService:
                 self.retriever.retrieve,
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
 
         try:
             adapter = self._get_legacy_adapter()
-            return adapter.retrieve(
+            return self._call_retriever(
+                adapter.retrieve,
                 rewritten_query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
         except Exception as exc:
@@ -473,6 +539,7 @@ class HybridRetrievalService:
         rewritten_query: str,
         *,
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> str:
         return stable_cache_key(
@@ -482,6 +549,7 @@ class HybridRetrievalService:
                 "domain": self.domain,
                 "query": rewritten_query,
                 "webSearchEnabled": web_search_enabled,
+                "webSearchQuery": web_search_query,
                 "graphIntent": graph_intent,
             },
         )
@@ -492,6 +560,7 @@ class HybridRetrievalService:
         query: str,
         *,
         web_search_enabled: bool | None = None,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
@@ -499,6 +568,8 @@ class HybridRetrievalService:
         accepts_var_kwargs = accepted is None
         if web_search_enabled is not None and (accepts_var_kwargs or "web_search_enabled" in accepted):
             kwargs["web_search_enabled"] = web_search_enabled
+        if web_search_query is not None and (accepts_var_kwargs or "web_search_query" in accepted):
+            kwargs["web_search_query"] = web_search_query
         if graph_intent is not None and (accepts_var_kwargs or "graph_intent" in accepted):
             kwargs["graph_intent"] = graph_intent
         return retrieve_fn(query, **kwargs)

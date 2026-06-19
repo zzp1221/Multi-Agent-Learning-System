@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readPracticeQuestionBatch, readPracticeJudgeResult } from './LearningStudioDemoPage.utils';
+import { readPracticeQuestionBatch, readPracticeJudgeResult } from './LearningStudioDemoPage.taskPayloadReaders';
 
 describe('LearningStudioDemoPage payload readers', () => {
   it('reads practice question batches from nested payloads', () => {

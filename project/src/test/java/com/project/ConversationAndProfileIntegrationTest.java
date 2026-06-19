@@ -68,7 +68,7 @@ class ConversationAndProfileIntegrationTest {
     void createConversationAndStreamMessage() throws Exception {
         CountDownLatch pythonStreamCompleted = new CountDownLatch(1);
         doAnswer(invocation -> List.of()).when(pythonConversationMessageClient).listMessages(any(), any());
-        doAnswer(invocation -> null).when(pythonConversationMessageClient).appendMessage(any(), any(), any(), any(), any());
+        doAnswer(invocation -> null).when(pythonConversationMessageClient).appendMessage(any(), any(), any(), any(), any(), any());
         doAnswer(invocation -> {
             SmartEngineInvocation agentInvocation = invocation.getArgument(0, SmartEngineInvocation.class);
             assertThat(agentInvocation.params()).containsEntry("webSearchEnabled", true);
@@ -156,15 +156,18 @@ class ConversationAndProfileIntegrationTest {
         assertThat(responseBody).contains("event:done");
         assertThat(responseBody).contains(conversationId);
         ArgumentCaptor<String> assistantContent = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> assistantReasoningContent = ArgumentCaptor.forClass(String.class);
         verify(pythonConversationMessageClient).appendMessage(
             eq(UUID.fromString(conversationId)),
             eq(UUID.fromString(authContext.userId())),
             eq("assistant"),
             assistantContent.capture(),
-            eq(List.of())
+            eq(List.of()),
+            assistantReasoningContent.capture()
         );
         assertThat(assistantContent.getValue()).isNotBlank();
         assertThat(assistantContent.getValue()).doesNotContain("raw reasoning");
+        assertThat(assistantReasoningContent.getValue()).contains("raw reasoning");
         assertThat(responseBody).contains("联合索引");
     }
 

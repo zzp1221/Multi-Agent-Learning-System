@@ -12,7 +12,7 @@ import { smartEngineApi } from '../api/smartEngine';
 import { readStreamMessage, readStreamPayload } from '../api/sse';
 import {
   readPracticeJudgeResult,
-} from '../pages/LearningStudioDemoPage.utils';
+} from '../pages/LearningStudioDemoPage.taskPayloadReaders';
 import type { AuthUser } from '../api/auth';
 import type { JudgeItemResult, PracticeJudgeResult, PracticeQuestionBatch } from '../pages/LearningStudioDemoPage.types';
 import {

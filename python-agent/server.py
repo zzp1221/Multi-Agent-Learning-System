@@ -90,6 +90,7 @@ class InternalConversationMessageRequest(BaseModel):
 
     role: str
     content: str
+    reasoning_content: str = Field(default="", alias="reasoningContent")
     image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     user_id: str | None = Field(default=None, alias="userId")
 
@@ -1282,6 +1283,7 @@ async def append_conversation_message(
         userId=request.user_id,
         role=request.role,
         content=request.content,
+        reasoningContent=request.reasoning_content,
         imageUrls=request.image_urls,
     )
     await MESSAGE_STORE.append_message(document)

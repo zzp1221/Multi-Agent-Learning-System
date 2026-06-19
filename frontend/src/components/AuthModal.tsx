@@ -23,7 +23,6 @@ export default function AuthModal(props: AuthModalProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [majorCode, setMajorCode] = useState('');
 
   useEffect(() => {
     if (!props.open) {
@@ -71,7 +70,6 @@ export default function AuthModal(props: AuthModalProps) {
               loginId: normalizedLoginId,
               password,
               fullName: fullName.trim(),
-              majorCode: majorCode.trim() || undefined,
             });
 
       const user = normalizeUser(result);
@@ -206,15 +204,6 @@ export default function AuthModal(props: AuthModalProps) {
                       onChange={(e) => setFullName(e.target.value)}
                       className={inputClass}
                       placeholder="请输入姓名"
-                    />
-                  </label>
-                  <label className="block">
-                    <div className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">专业方向（可选）</div>
-                    <input
-                      value={majorCode}
-                      onChange={(e) => setMajorCode(e.target.value)}
-                      className={inputClass}
-                      placeholder="例如：计算机科学"
                     />
                   </label>
                 </motion.div>

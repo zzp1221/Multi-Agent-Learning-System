@@ -111,6 +111,23 @@ def test_query_classifier_does_not_treat_generic_path_as_prerequisite() -> None:
     assert result.graph_intent == "CROSS_LAYER_RELATION"
 
 
+def test_query_classifier_keeps_web_search_as_evidence_toggle() -> None:
+    result = QueryClassifier().classify(
+        {"query": "Will TS replace JS?", "webSearchEnabled": True}
+    )
+
+    assert result.query_type == "NEW_CONCEPT"
+    assert result.retrieval_strategy == "LOCAL_HYBRID"
+    assert result.reason == "question_signal"
+
+
+def test_query_classifier_routes_latest_version_to_web_augmented() -> None:
+    result = QueryClassifier().classify({"query": "What changed in the latest TypeScript version?"})
+
+    assert result.query_type == "CURRENT_INFO"
+    assert result.retrieval_strategy == "WEB_AUGMENTED"
+
+
 def test_query_classifier_keeps_graph_relation_template_over_comparison_terms() -> None:
     result = QueryClassifier().classify(
         {

@@ -51,14 +51,22 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
     }
 
     @Override
-    public void appendMessage(UUID conversationId, UUID userId, String role, String content, List<String> imageUrls) {
+    public void appendMessage(
+        UUID conversationId,
+        UUID userId,
+        String role,
+        String content,
+        List<String> imageUrls,
+        String reasoningContent
+    ) {
         List<String> normalizedImageUrls = imageUrls == null ? List.of() : imageUrls.stream()
             .filter(item -> item != null && !item.isBlank())
             .map(String::trim)
             .distinct()
             .toList();
         String normalizedContent = content == null ? "" : content.trim();
-        if (normalizedContent.isBlank() && normalizedImageUrls.isEmpty()) {
+        String normalizedReasoningContent = reasoningContent == null ? "" : reasoningContent.trim();
+        if (normalizedContent.isBlank() && normalizedImageUrls.isEmpty() && normalizedReasoningContent.isBlank()) {
             return;
         }
         try {
@@ -67,6 +75,9 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
             payload.put("content", normalizedContent);
             payload.put("imageUrls", normalizedImageUrls);
             payload.put("userId", userId.toString());
+            if (!normalizedReasoningContent.isBlank()) {
+                payload.put("reasoningContent", normalizedReasoningContent);
+            }
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(appProperties.getPythonAgent().getBaseUrl() + "/internal/conversations/" + conversationId + "/messages"))
                 .header("Content-Type", "application/json")
@@ -124,7 +135,8 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
                     payload.role(),
                     payload.content(),
                     payload.imageUrls(),
-                    payload.createdAt()
+                    payload.createdAt(),
+                    payload.reasoningContent()
                 ))
                 .toList();
         } catch (InterruptedException ex) {
@@ -140,7 +152,8 @@ public class HttpPythonConversationMessageClient implements PythonConversationMe
         String role,
         String content,
         List<String> imageUrls,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        String reasoningContent
     ) {
     }
 

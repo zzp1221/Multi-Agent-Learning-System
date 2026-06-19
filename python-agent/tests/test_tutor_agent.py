@@ -9,9 +9,11 @@ from src.ai_modules.memory import (
     MongoConversationSummaryStore,
 )
 from src.ai_modules.runtime import (
+    AssistantTurn,
     ConversationCompactor,
     StructuredConversationSummary,
     SystemSnapshot,
+    ToolCall,
 )
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 from src.ai_modules.models import (
@@ -149,6 +151,28 @@ class _LengthAwareTutorClient:
 class _LengthAwareTutorLLM:
     def __init__(self) -> None:
         self.client = _LengthAwareTutorClient()
+
+
+class _LoopingToolTutorLLM:
+    provider_name = "looping"
+    model_name = "looping-model"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, *, system_prompt, messages, tools):
+        del system_prompt, messages, tools
+        self.calls += 1
+        return AssistantTurn(
+            content="need more tools",
+            tool_calls=[
+                ToolCall(
+                    id=f"call_{self.calls}",
+                    name="read_retrieval_evidence",
+                    input={},
+                )
+            ],
+        )
 
 
 class _RecordingResourceBundleRunner:
@@ -765,13 +789,66 @@ async def test_tutor_agent_streams_raw_reasoning_separately_in_deep_mode() -> No
     assert [event.event for event in events] == [
         "progress",
         "reasoning_chunk",
+        "reasoning_chunk",
+        "reasoning_chunk",
         "result_chunk",
         "reasoning_chunk",
         "result_chunk",
     ]
-    assert "".join(event.payload.text for event in events if event.event == "reasoning_chunk") == "先分析问题再检查"
+    reasoning_text = "".join(event.payload.text for event in events if event.event == "reasoning_chunk")
+    assert "回答组织" in reasoning_text
+    assert "质量自检" in reasoning_text
+    assert "先分析问题再检查" in reasoning_text
     assert "".join(event.payload.text for event in events if event.event == "result_chunk") == "最终答案"
     assert llm.client.include_reasoning_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_emits_public_reasoning_when_provider_has_no_reasoning_stream() -> None:
+    llm = _StreamingTutorLLM()
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=llm,
+        resource_intent_extractor=_FakeResourceIntentExtractor(should_generate=False),
+    )
+    params = {
+        "query": "什么是AVL树",
+        "messages": [{"role": "user", "content": "什么是AVL树"}],
+        "reasoningMode": "DEEP",
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "AVL树",
+                    "channel": "phrase",
+                    "evidence": "AVL树是一种自平衡二叉搜索树。",
+                }
+            ]
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-public-deep-reasoning",
+            trace_id="trace-public-deep-reasoning",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=tutor.system_prompt(_build_snapshot()),
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "reasoning_chunk", "reasoning_chunk", "result_chunk"]
+    reasoning_text = "".join(event.payload.text for event in events if event.event == "reasoning_chunk")
+    assert "回答组织" in reasoning_text
+    assert "质量自检" in reasoning_text
+    assert "什么是AVL树" in reasoning_text
+    assert "AVL树" in reasoning_text
+    assert "LLM generated answer" == "".join(
+        event.payload.text for event in events if event.event == "result_chunk"
+    )
 
 
 def test_tutor_agent_system_prompt_loads_skill_and_context() -> None:
@@ -1156,6 +1233,39 @@ async def test_tutor_agent_tries_fallback_llm_when_primary_stream_and_core_loop_
 
 
 @pytest.mark.asyncio
+async def test_tutor_core_loop_returns_evidence_fallback_when_iterations_exceeded() -> None:
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "query": "How does a B+ tree support range queries?",
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "B+ tree range query",
+                    "channel": "hybrid",
+                    "evidence": "Leaf nodes are linked so scans can continue after the first key match.",
+                }
+            ]
+        },
+    }
+
+    answer = await tutor._run_with_agent_core_loop(
+        llm_client=_LoopingToolTutorLLM(),
+        system_prompt="test",
+        user_query=params["query"],
+        params=params,
+        persisted_summary=None,
+    )
+
+    assert "基于已检索到的证据先给出有限回答" in answer
+    assert "B+ tree range query" in answer
+    assert "工具探索已达到上限" in answer
+
+
+@pytest.mark.asyncio
 async def test_tutor_agent_uses_real_llm_compression_for_explicit_length_limit() -> None:
     llm = _LengthAwareTutorLLM()
     tutor = TutorAgent(
@@ -1207,9 +1317,9 @@ def test_tutor_deep_mode_adds_quality_instruction_without_changing_route() -> No
         params={"reasoningMode": "DEEP"},
     )
 
-    assert "Deep quality mode is enabled" in context
-    assert "normal tutor/resource route" in context
-    assert "self-check" in context
+    assert "深度思考模式已开启" in context
+    assert "正常辅导/资源生成路线" in context
+    assert "自检" in context
 
 
 @pytest.mark.asyncio

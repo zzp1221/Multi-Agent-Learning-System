@@ -11,6 +11,16 @@ public record ConversationMessageItemResponse(
     String role,
     String content,
     List<String> imageUrls,
-    OffsetDateTime createdAt
+    OffsetDateTime createdAt,
+    String reasoningContent
 ) {
+    public ConversationMessageItemResponse(
+        String messageId,
+        String role,
+        String content,
+        List<String> imageUrls,
+        OffsetDateTime createdAt
+    ) {
+        this(messageId, role, content, imageUrls, createdAt, null);
+    }
 }

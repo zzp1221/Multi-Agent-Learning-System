@@ -92,7 +92,7 @@ class QueryClassifier:
             ), deep_quality_mode)
         graph_intent = self._detect_graph_intent(lowered)
         if graph_intent:
-            if self._contains_any(lowered, "currentInfoTerms") or self._web_search_enabled(params):
+            if self._contains_any(lowered, "currentInfoTerms"):
                 return self._apply_deep_quality_mode(self._decision(
                     QUERY_TYPE_CURRENT_INFO,
                     RETRIEVAL_WEB_AUGMENTED,
@@ -107,12 +107,12 @@ class QueryClassifier:
                 f"graph_{graph_intent.lower()}_signal",
                 graph_intent=graph_intent,
             ), deep_quality_mode)
-        if self._contains_any(lowered, "currentInfoTerms") or self._web_search_enabled(params):
+        if self._contains_any(lowered, "currentInfoTerms"):
             return self._apply_deep_quality_mode(self._decision(
                 QUERY_TYPE_CURRENT_INFO,
                 RETRIEVAL_WEB_AUGMENTED,
                 0.84,
-                "current_info_or_web",
+                "current_info_signal",
             ), deep_quality_mode)
         if self._looks_like_error_or_code(lowered):
             return self._apply_deep_quality_mode(self._decision(

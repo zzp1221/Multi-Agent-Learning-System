@@ -15,6 +15,8 @@ from src.ai_modules.models import (
     ProgressPayload,
     ProgressSSEEvent,
     QueryRewriteResult,
+    ReasoningChunkPayload,
+    ReasoningChunkSSEEvent,
     ResultChunkPayload,
     ResultChunkSSEEvent,
     SSEEvent,
@@ -64,9 +66,28 @@ class QueryRewriteAgent(PlaceholderAgent):
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> AsyncIterator[SSEEvent]:
-        del service_type
+        current_seq = seq
+        if self._is_deep_quality_mode(params):
+            original_query = self.service.extract_query(params, service_type=service_type)
+            params["publicReasoningQuestionIntroduced"] = True
+            yield ReasoningChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=current_seq,
+                payload=ReasoningChunkPayload(
+                    text=(
+                        f"理解问题：当前要回答的是「{self._truncate_text(original_query, 120)}」。"
+                        "后续检索和回答都会围绕这个问题展开。\n"
+                    ),
+                    stage="deep_reasoning",
+                    provider="system",
+                    model="public-process",
+                ),
+            )
+            current_seq += 1
         rewrite_result = await self._run_agent_core_loop(
             params=params,
+            service_type=service_type,
             snapshot=snapshot,
             system_prompt=system_prompt,
         )
@@ -77,17 +98,18 @@ class QueryRewriteAgent(PlaceholderAgent):
         yield ProgressSSEEvent(
             taskId=task_id,
             traceId=trace_id,
-            seq=seq,
+            seq=current_seq,
             payload=ProgressPayload(
                 stage=self.stage_name,
                 percent=20,
                 message="查询改写完成",
             ),
         )
+        current_seq += 1
         yield ResultChunkSSEEvent(
             taskId=task_id,
             traceId=trace_id,
-            seq=seq + 1,
+            seq=current_seq,
             payload=ResultChunkPayload(
                 text=(
                     f"原始查询: {rewrite_result.original_query}；"
@@ -101,36 +123,42 @@ class QueryRewriteAgent(PlaceholderAgent):
         self,
         *,
         params: dict[str, Any],
+        service_type: str,
         snapshot: SystemSnapshot,
         system_prompt: str,
     ):
         # 步骤 1: 提取查询上下文（确定性操作）
-        self._tool_extract_query_context(tool_input={}, params=params)
+        self._tool_extract_query_context(tool_input={}, params=params, service_type=service_type)
 
         # 步骤 2: 通过 LLM 改写查询（1 次 LLM 调用）
         try:
             rewritten_payload = await self._tool_rewrite_query(
                 tool_input={},
                 params=params,
+                service_type=service_type,
                 snapshot=snapshot,
                 system_prompt=system_prompt,
             )
         except Exception:
             LOGGER.warning("LLM query rewrite failed, falling back to direct rewrite.", exc_info=True)
-            return self.service.rewrite(params)
+            return self.service.rewrite(params, service_type=service_type)
 
         # 步骤 3: 验证结果（确定性操作）
         try:
-            return self._tool_finalize_rewrite(rewritten_payload)
+            rewrite_result = self._tool_finalize_rewrite(rewritten_payload)
+            if self.service.is_plain_tutoring(service_type, params):
+                return self.service.isolate_plain_tutoring_query(params, rewrite_result)
+            return rewrite_result
         except Exception:
             LOGGER.warning("Query rewrite validation failed, falling back.", exc_info=True)
-            return self.service.rewrite(params)
+            return self.service.rewrite(params, service_type=service_type)
 
     def _tool_extract_query_context(
         self,
         *,
         tool_input: dict[str, Any],
         params: dict[str, Any],
+        service_type: str,
     ) -> dict[str, Any]:
         del tool_input
         learning_context = params.get("learningContext", {})
@@ -138,7 +166,7 @@ class QueryRewriteAgent(PlaceholderAgent):
             learning_context = {}
         diagnosis_context = self._extract_diagnosis_context(params.get("masteryDiagnosis"))
         profile_context = self._extract_profile_context(params.get("profileAnalysis") or params.get("profile"))
-        original_query = self.service.extract_query(params)
+        original_query = self.service.extract_query(params, service_type=service_type)
         context = {
             "originalQuery": original_query,
             "learningContext": {
@@ -159,12 +187,13 @@ class QueryRewriteAgent(PlaceholderAgent):
         *,
         tool_input: dict[str, Any],
         params: dict[str, Any],
+        service_type: str,
         snapshot: SystemSnapshot,
         system_prompt: str,
     ) -> dict[str, Any]:
         del snapshot
         context = params.get("queryRewriteContext") or tool_input
-        original_query = str(context.get("originalQuery") or self.service.extract_query(params))
+        original_query = str(context.get("originalQuery") or self.service.extract_query(params, service_type=service_type))
         try:
             generator = self.llm_generator or QueryRewriteGenerator()
             rewritten = await generator.rewrite(
@@ -174,7 +203,7 @@ class QueryRewriteAgent(PlaceholderAgent):
             )
             payload = rewritten.model_dump(by_alias=True)
         except Exception:
-            payload = self.service.rewrite(params).model_dump(by_alias=True)
+            payload = self.service.rewrite(params, service_type=service_type).model_dump(by_alias=True)
         params["rewrittenQueryPayload"] = payload
         return payload
 
@@ -249,3 +278,15 @@ class QueryRewriteAgent(PlaceholderAgent):
             return int(value)
         except (TypeError, ValueError):
             return default
+
+    def _is_deep_quality_mode(self, params: dict[str, Any]) -> bool:
+        reasoning_mode = params.get("reasoningMode")
+        if isinstance(reasoning_mode, str) and reasoning_mode.strip().upper() == "DEEP":
+            return True
+        return params.get("deepReasoning") is True or params.get("deepQualityMode") is True
+
+    def _truncate_text(self, text: str, max_length: int = 220) -> str:
+        normalized = " ".join(str(text).split())
+        if len(normalized) <= max_length:
+            return normalized
+        return normalized[: max_length - 1].rstrip() + "…"

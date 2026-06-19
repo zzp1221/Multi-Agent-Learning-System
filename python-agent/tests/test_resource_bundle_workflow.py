@@ -7,6 +7,8 @@ from src.ai_modules.agents.practice_agent import PracticeAgent
 from src.ai_modules.agents.query_rewrite_agent import QueryRewriteAgent
 from src.ai_modules.models import (
     CriticReviewPayload,
+    DonePayload,
+    DoneSSEEvent,
     EngineStreamRequest,
     QuestionBatchPayload,
     QuestionBatchSSEEvent,
@@ -166,6 +168,23 @@ class _QualityGateFailingResourceAgent(PlaceholderAgent):
         for event in ():
             yield event
         raise RuntimeError("Critic review LLM failed; heuristic fallback is disabled")
+
+
+class _CriticRejectedResourceAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("critic rejected", "critic_rejected_generation")
+
+    async def run(self, *, task_id, trace_id, seq, **kwargs):
+        del kwargs
+        yield DoneSSEEvent(
+            taskId=task_id,
+            traceId=trace_id,
+            seq=seq,
+            payload=DonePayload(
+                status="FAILED",
+                summary="Critic review blocked resource publication: verdict=REJECT; off topic",
+            ),
+        )
 
 
 class _ResourceStartProbe:
@@ -329,6 +348,32 @@ async def test_resource_bundle_partial_failed_publishes_only_successful_real_out
     assert events[-1].event == "done"
     assert events[-1].payload.status == "PARTIAL_FAILED"
     assert events[-1].payload.resource_failures[0]["resourceType"] == "SLIDES"
+
+
+@pytest.mark.asyncio
+async def test_resource_bundle_treats_critic_reject_as_resource_failure() -> None:
+    supervisor = PythonAgentSupervisor()
+    _install_success_bundle(supervisor)
+    supervisor.agent_registry["slide_generator"] = _CriticRejectedResourceAgent()
+    request = EngineStreamRequest(
+        serviceType="RESOURCE_GENERATION",
+        params={"resourceTypes": ["DOCUMENT", "SLIDES"], "query": "鑱斿悎绱㈠紩"},
+        taskId="task-critic-reject-partial",
+        traceId="trace-critic-reject-partial",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    published = [
+        event.payload.asset_type
+        for event in events
+        if event.event == "resource_file"
+    ]
+    assert published == ["DOCUMENT"]
+    assert events[-1].event == "done"
+    assert events[-1].payload.status == "PARTIAL_FAILED"
+    assert events[-1].payload.resource_failures[0]["resourceType"] == "SLIDES"
+    assert "verdict=REJECT" in events[-1].payload.resource_failures[0]["error"]
 
 
 @pytest.mark.asyncio

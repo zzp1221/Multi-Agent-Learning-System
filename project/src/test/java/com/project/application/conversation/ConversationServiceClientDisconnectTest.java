@@ -114,7 +114,7 @@ class ConversationServiceClientDisconnectTest {
 
         assertThat(emitter).isNotNull();
         verify(pythonAgentClient, never()).stream(any(), any());
-        verify(messageClient, never()).appendMessage(any(), any(), any(), any(), any());
+        verify(messageClient, never()).appendMessage(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -147,7 +147,7 @@ class ConversationServiceClientDisconnectTest {
         assertThat(emitter).isNotNull();
         verify(repository, never()).findByIdAndUserId(any(), any());
         verify(pythonAgentClient, never()).stream(any(), any());
-        verify(messageClient, never()).appendMessage(any(), any(), any(), any(), any());
+        verify(messageClient, never()).appendMessage(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -181,6 +181,6 @@ class ConversationServiceClientDisconnectTest {
         assertThat(emitter).isNotNull();
         verify(repository).findByIdAndUserId(conversationId, userId);
         verify(pythonAgentClient, never()).stream(any(), any());
-        verify(messageClient, never()).appendMessage(any(), any(), any(), any(), any());
+        verify(messageClient, never()).appendMessage(any(), any(), any(), any(), any(), any());
     }
 }

@@ -860,7 +860,7 @@ public class ResourceLibraryService {
             String rawSummary = rs.getString("summary_text");
             Map<String, Object> rawMetadata = parseObject(rs.getString("metadata_json"));
             List<String> tags = displayTags(parseStringList(rs.getString("tags_json")), rawMetadata, rawSummary);
-            Map<String, Object> metadata = displayMetadata(rawMetadata, rawSummary);
+            Map<String, Object> metadata = displayMetadata(rawMetadata);
             String resourceType = rs.getString("resource_type");
             return new ResourceItemResponse(
                 (UUID) rs.getObject("id"),
@@ -1072,7 +1072,7 @@ public class ResourceLibraryService {
         return internalSummary ? "" : summary;
     }
 
-    private Map<String, Object> displayMetadata(Map<String, Object> metadata, String rawSummary) {
+    private Map<String, Object> displayMetadata(Map<String, Object> metadata) {
         if (metadata.isEmpty()) {
             return metadata;
         }

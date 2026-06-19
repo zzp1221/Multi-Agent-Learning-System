@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { conversationApi, type ConversationMessageStreamRequest } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
+import { readConversationChunk } from '../api/sse';
 import { learningPathApi, type LearningPathCurrentResponse } from '../api/smartEngine';
 import type { LayoutOutletContext } from '../components/Layout';
 import {
@@ -10,10 +11,7 @@ import {
   type PendingChatImage,
   type QnaState,
 } from './LearningStudioDemoPage.types';
-import {
-  readConversationChunk,
-  readPracticeQuestionBatch,
-} from './LearningStudioDemoPage.utils';
+import { readPracticeQuestionBatch } from './LearningStudioDemoPage.taskPayloadReaders';
 import {
   VOICE_CONVERSATION_STREAM_EVENT,
   readVoiceConversationStreamDetail,
@@ -1153,7 +1151,12 @@ function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage
     return messages;
   }
   const lastIndex = messages.length - 1;
-  return messages.filter((_, index) => index !== lastIndex);
+  return messages.filter((item, index) => {
+    if (index !== lastIndex) {
+      return true;
+    }
+    return Boolean(item.content.trim() || item.reasoningContent?.trim());
+  });
 }
 
 function stoppedAssistantContent(content: string): string {

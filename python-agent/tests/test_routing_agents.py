@@ -375,6 +375,235 @@ async def test_retrieval_agent_defaults_to_sources_summary_without_llm() -> None
 
 
 @pytest.mark.asyncio
+async def test_retrieval_agent_web_search_emits_reasoning_chunk_for_local_strategy() -> None:
+    class WebAwareRetriever:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def retrieve(
+            self,
+            query: str,
+            *,
+            web_search_enabled: bool = False,
+            graph_intent: str | None = None,
+        ) -> dict:
+            self.calls.append(
+                {
+                    "query": query,
+                    "webSearchEnabled": web_search_enabled,
+                    "graphIntent": graph_intent,
+                }
+            )
+            return {
+                "query": query,
+                "channels": {
+                    "grep": {"priority": [("local-doc", "TS and JS local note", 0.9, ["TS", "JS"])]},
+                    "vector": [],
+                    "graph": [],
+                    "web": [
+                        (
+                            "https://example.com/ts-js",
+                            "TypeScript and JavaScript",
+                            0.82,
+                            {
+                                "url": "https://example.com/ts-js",
+                                "snippet": "TypeScript adds static types on top of JavaScript.",
+                                "sourceTitle": "Example",
+                            },
+                        ),
+                        ("missing-url", "Missing URL result", 0.4, {"snippet": "No URL"}),
+                    ],
+                },
+                "top": [
+                    ("local-doc", "TS and JS local note", 0.9),
+                    ("https://example.com/ts-js", "TypeScript and JavaScript", 0.82),
+                ],
+            }
+
+    retriever = WebAwareRetriever()
+    agent = RetrievalAgent(service=HybridRetrievalService(retriever=retriever))
+    params = {
+        "query": "Will TS replace JS?",
+        "rewrittenQuery": "Will TS replace JS?",
+        "keywords": ["TS", "JS"],
+        "retrievalStrategy": "LOCAL_HYBRID",
+        "webSearchEnabled": True,
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-retrieval-web-toggle",
+            trace_id="trace-retrieval-web-toggle",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert retriever.calls == [
+        {
+            "query": "Will TS replace JS?",
+            "webSearchEnabled": True,
+            "graphIntent": None,
+        }
+    ]
+    assert params["retrievalStrategy"] == "LOCAL_HYBRID"
+    assert params["webRetrievalResult"]["enabled"] is True
+    assert [event.event for event in events] == ["progress", "reasoning_chunk", "result_chunk"]
+    reasoning_text = events[1].payload.text
+    assert "已开启联网搜索，搜索词：Will TS replace JS?" in reasoning_text
+    assert "采用来源：" in reasoning_text
+    assert "https://example.com/ts-js" in reasoning_text
+    assert "忽略来源：" in reasoning_text
+
+
+@pytest.mark.asyncio
+async def test_retrieval_agent_uses_clean_user_query_for_web_search() -> None:
+    class WebAwareRetriever:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def retrieve(
+            self,
+            query: str,
+            *,
+            web_search_enabled: bool = False,
+            web_search_query: str | None = None,
+            graph_intent: str | None = None,
+        ) -> dict:
+            self.calls.append(
+                {
+                    "query": query,
+                    "webSearchEnabled": web_search_enabled,
+                    "webSearchQuery": web_search_query,
+                    "graphIntent": graph_intent,
+                }
+            )
+            return {
+                "query": query,
+                "channels": {
+                    "grep": {"priority": []},
+                    "vector": [],
+                    "graph": [],
+                    "web": [
+                        (
+                            "https://example.com/avl",
+                            "AVL Tree",
+                            0.82,
+                            {
+                                "url": "https://example.com/avl",
+                                "snippet": "AVL tree is a self-balancing binary search tree.",
+                                "sourceTitle": "Example",
+                            },
+                        ),
+                    ],
+                },
+                "top": [("https://example.com/avl", "AVL Tree", 0.82)],
+            }
+
+    retriever = WebAwareRetriever()
+    agent = RetrievalAgent(service=HybridRetrievalService(retriever=retriever))
+    params = {
+        "query": "if-else for循环 Thread.sleep Runnable接口 什么是AVL树",
+        "message": "什么是AVL树",
+        "rewrittenQuery": "if-else for循环 Thread.sleep Runnable接口 什么是AVL树",
+        "keywords": ["if-else", "Thread.sleep", "Runnable接口", "AVL树"],
+        "retrievalStrategy": "LOCAL_HYBRID",
+        "webSearchEnabled": True,
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-clean-web-query",
+            trace_id="trace-clean-web-query",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert retriever.calls == [
+        {
+            "query": "什么是AVL树",
+            "webSearchEnabled": True,
+            "webSearchQuery": "什么是AVL树",
+            "graphIntent": None,
+        }
+    ]
+    assert params["rewrittenQuery"] == "什么是AVL树"
+    assert params["webRetrievalResult"]["query"] == "什么是AVL树"
+    reasoning_text = next(event.payload.text for event in events if event.event == "reasoning_chunk")
+    assert "搜索词：什么是AVL树" in reasoning_text
+    assert "Thread.sleep" not in reasoning_text
+    assert "Runnable" not in reasoning_text
+
+
+@pytest.mark.asyncio
+async def test_retrieval_agent_deep_mode_streams_public_process_and_gates_evidence() -> None:
+    class MixedRelevanceRetriever:
+        def retrieve(
+            self,
+            query: str,
+            *,
+            web_search_enabled: bool = False,
+            web_search_query: str | None = None,
+            graph_intent: str | None = None,
+        ) -> dict:
+            del web_search_enabled, web_search_query, graph_intent
+            return {
+                "query": query,
+                "channels": {
+                    "grep": {"priority": []},
+                    "vector": [],
+                    "graph": [],
+                    "web": [],
+                },
+                "top": [
+                    ("doc-relevant", "注意力机制概览", 0.84),
+                    ("doc-off-topic", "线程调度概览", 0.99),
+                ],
+            }
+
+    agent = RetrievalAgent(service=HybridRetrievalService(retriever=MixedRelevanceRetriever()))
+    params = {
+        "query": "注意力机制是什么",
+        "rewrittenQuery": "学习上下文 注意力机制是什么",
+        "keywords": ["学习上下文", "注意力机制"],
+        "retrievalStrategy": "LOCAL_HYBRID",
+        "reasoningMode": "DEEP",
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-deep-retrieval-process",
+            trace_id="trace-deep-retrieval-process",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    reasoning_chunks = [event.payload.text for event in events if event.event == "reasoning_chunk"]
+    assert len(reasoning_chunks) == 3
+    assert reasoning_chunks[0].startswith("理解问题：")
+    assert reasoning_chunks[1].startswith("检索计划：")
+    assert reasoning_chunks[2].startswith("证据结果：")
+    assert [document["title"] for document in params["retrievalResult"]["documents"]] == [
+        "注意力机制概览"
+    ]
+    assert params["retrievalEvidenceDiagnostics"]["discardedLocalCount"] == 1
+
+
+@pytest.mark.asyncio
 async def test_retrieval_agent_skips_external_retrieval_for_none_strategy() -> None:
     class FailingRetriever:
         def retrieve(self, query: str) -> dict:

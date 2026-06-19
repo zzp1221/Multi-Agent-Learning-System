@@ -33,7 +33,7 @@ import {
 } from '../api/mistakes';
 import type { LayoutOutletContext } from '../components/Layout';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
-import { readPracticeQuestionBatch } from './LearningStudioDemoPage.utils';
+import { readPracticeQuestionBatch } from './LearningStudioDemoPage.taskPayloadReaders';
 import { openPracticeSession } from './practiceSessionStore';
 import {
   VOICE_PAGE_ACTION_EVENT,

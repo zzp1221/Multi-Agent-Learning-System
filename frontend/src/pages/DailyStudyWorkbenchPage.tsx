@@ -32,7 +32,7 @@ import {
 } from '../api/studyWorkbench';
 import { readStreamMessage, readStreamPayload } from '../api/sse';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
-import { readPracticeQuestionBatch } from './LearningStudioDemoPage.utils';
+import { readPracticeQuestionBatch } from './LearningStudioDemoPage.taskPayloadReaders';
 import { openStageTestSession } from './stageTestSessionStore';
 
 type StageGenerationStatus = 'idle' | 'generating' | 'failed';

@@ -20,6 +20,7 @@ class ConversationMessageDocument(BaseModel):
     user_id: str | None = Field(default=None, alias="userId")
     role: Literal["user", "assistant"]
     content: str
+    reasoning_content: str = Field(default="", alias="reasoningContent")
     image_urls: list[str] = Field(default_factory=list, alias="imageUrls")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), alias="createdAt")
     # MongoDB 模式字段 — 从 conversation_id 映射
@@ -44,6 +45,11 @@ class ConversationMessageDocument(BaseModel):
         if isinstance(value, list):
             return [str(item).strip() for item in value if str(item).strip()]
         return []
+
+    @field_validator("reasoning_content", mode="before")
+    @classmethod
+    def _normalize_reasoning_content(cls, value: Any) -> str:
+        return value.strip() if isinstance(value, str) else ""
 
 
 class ConversationMessageStore(Protocol):

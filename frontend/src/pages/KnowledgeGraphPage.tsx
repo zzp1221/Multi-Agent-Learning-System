@@ -30,7 +30,7 @@ import {
 import { studyWorkbenchApi, type KnowledgeNodeDetailResponse } from '../api/studyWorkbench';
 import type { LayoutOutletContext } from '../components/Layout';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
-import { readPracticeQuestionBatch } from './LearningStudioDemoPage.utils';
+import { readPracticeQuestionBatch } from './LearningStudioDemoPage.taskPayloadReaders';
 import { openPracticeSession } from './practiceSessionStore';
 
 type NodeStatusCounts = Record<KnowledgeGraphNode['status'], number>;

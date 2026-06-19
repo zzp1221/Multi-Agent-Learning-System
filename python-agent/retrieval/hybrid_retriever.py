@@ -98,14 +98,16 @@ class HybridRetriever:
         cur,
         query: str,
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> dict:
         """Run all 3 channels and fuse. Returns structured results."""
+        effective_web_query = self._web_query(web_search_query or query)
         try:
             self._init(cur)
         except Exception as exc:
             LOGGER.warning("Local hybrid retrieval init failed for query %r: %s", query, exc)
-            web_results = TavilySearcher().search(self._web_query(query), top_k=5) if web_search_enabled else []
+            web_results = TavilySearcher().search(effective_web_query, top_k=5) if web_search_enabled else []
             fused = RRFFusion().fuse(
                 grep_results={"priority": [], "normal": []},
                 vector_results=[],
@@ -119,6 +121,7 @@ class HybridRetriever:
                 "query": query,
                 "graphIntent": graph_intent,
                 "webSearchEnabled": web_search_enabled,
+                "webSearchQuery": effective_web_query,
                 "channels": {
                     "grep": {"priority": [], "normal_count": 0},
                     "vector": [],
@@ -171,7 +174,7 @@ class HybridRetriever:
             graph_read_ms = 0.0
 
         # Channel D: Web search is strictly opt-in per user turn.
-        web_results = self._web.search(self._web_query(query), top_k=5) if web_search_enabled else []
+        web_results = self._web.search(effective_web_query, top_k=5) if web_search_enabled else []
 
         # RRF Fusion
         fused = self._rrf.fuse(
@@ -217,6 +220,7 @@ class HybridRetriever:
                 },
             },
             "webSearchEnabled": web_search_enabled,
+            "webSearchQuery": effective_web_query,
             "channels": {
                 "grep": {
                     "priority": grep_results.get("priority", []),
@@ -235,14 +239,17 @@ class HybridRetriever:
         cur,
         query: str,
         web_search_enabled: bool = False,
+        web_search_query: str | None = None,
         graph_intent: str | None = None,
     ) -> dict:
         """Run grep first and skip vector/graph when phrase confidence is strong."""
+        effective_web_query = self._web_query(web_search_query or query)
         if self._is_graph_aware_intent(graph_intent):
             raw_result = self.retrieve(
                 cur,
                 query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
             raw_result["retrievalStrategy"] = "LOCAL_GREP_FIRST"
@@ -257,6 +264,7 @@ class HybridRetriever:
                 cur,
                 query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
 
@@ -271,13 +279,14 @@ class HybridRetriever:
                 cur,
                 query,
                 web_search_enabled=web_search_enabled,
+                web_search_query=web_search_query,
                 graph_intent=graph_intent,
             )
             raw_result["retrievalStrategy"] = "LOCAL_GREP_FIRST"
             raw_result["grepFirstPromoted"] = True
             return raw_result
 
-        web_results = self._web.search(self._web_query(query), top_k=5) if web_search_enabled else []
+        web_results = self._web.search(effective_web_query, top_k=5) if web_search_enabled else []
         fused = self._rrf.fuse(grep_results, [], [], web_results, slug_key=safe_slug_key)
         return {
             "query": query,
@@ -285,6 +294,7 @@ class HybridRetriever:
             "retrievalStrategy": "LOCAL_GREP_FIRST",
             "grepFirstPromoted": False,
             "webSearchEnabled": web_search_enabled,
+            "webSearchQuery": effective_web_query,
             "channels": {
                 "grep": {
                     "priority": grep_results.get("priority", []),

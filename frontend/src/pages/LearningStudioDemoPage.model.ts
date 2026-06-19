@@ -59,14 +59,24 @@ const transientAssistantPlaceholders = [
 
 export function mapConversationHistory(history: ConversationMessageItem[]): ChatMessage[] {
   const messages: ChatMessage[] = history
-    .map((item, index) => ({
-      id: item.messageId || `history-${index}`,
-      role: (item.role === 'user' ? 'user' : 'assistant') as ChatMessage['role'],
-      content: item.role === 'user'
-        ? item.content?.trim() ?? ''
-        : sanitizeConversationMessageContent(item.content ?? ''),
-    }))
-    .filter((item) => item.content && !(item.role === 'assistant' && isTransientAssistantPlaceholder(item.content)));
+    .map((item, index) => {
+      const reasoningContent = item.role === 'assistant' ? item.reasoningContent?.trim() ?? '' : '';
+      return {
+        id: item.messageId || `history-${index}`,
+        role: (item.role === 'user' ? 'user' : 'assistant') as ChatMessage['role'],
+        content: item.role === 'user'
+          ? item.content?.trim() ?? ''
+          : sanitizeConversationMessageContent(item.content ?? ''),
+        reasoningContent: reasoningContent || undefined,
+        reasoningState: reasoningContent ? 'done' as const : undefined,
+      };
+    })
+    .filter((item) => {
+      if (item.role === 'assistant' && isTransientAssistantPlaceholder(item.content)) {
+        return false;
+      }
+      return Boolean(item.content || item.reasoningContent);
+    });
 
   return messages.length > 0
     ? messages
@@ -85,8 +95,8 @@ export function pickPreferredConversationMessages(
   if (!cachedMessages || cachedMessages.length === 0) {
     return fetchedMessages;
   }
-  const cachedTextLength = cachedMessages.reduce((sum, item) => sum + item.content.length, 0);
-  const fetchedTextLength = fetchedMessages.reduce((sum, item) => sum + item.content.length, 0);
+  const cachedTextLength = cachedMessages.reduce((sum, item) => sum + item.content.length + (item.reasoningContent?.length ?? 0), 0);
+  const fetchedTextLength = fetchedMessages.reduce((sum, item) => sum + item.content.length + (item.reasoningContent?.length ?? 0), 0);
   if (cachedMessages.length > fetchedMessages.length || cachedTextLength > fetchedTextLength) {
     return cachedMessages;
   }
@@ -107,16 +117,16 @@ export function hasPendingAssistantResponse(messages?: ChatMessage[]): boolean {
     return false;
   }
   const content = lastMessage.content.trim();
-  return !content || isProcessingOnlyAssistantContent(content);
+  return (!content && !lastMessage.reasoningContent?.trim()) || isProcessingOnlyAssistantContent(content);
 }
 
 export function hasResolvedAssistantResponse(messages: ChatMessage[]): boolean {
   const lastMessage = messages[messages.length - 1];
+  const content = lastMessage?.content.trim() ?? '';
   return Boolean(
     lastMessage
       && lastMessage.role === 'assistant'
-      && lastMessage.content.trim()
-      && !isProcessingOnlyAssistantContent(lastMessage.content),
+      && ((content && !isProcessingOnlyAssistantContent(content)) || lastMessage.reasoningContent?.trim()),
   );
 }
 
@@ -577,7 +587,7 @@ export function normalizeRestoredQnaMessages(snapshot: PersistedQnaSnapshot): Ch
 }
 
 export function buildConversationSyncSignature(messages: ChatMessage[]): string {
-  return messages.map((item) => `${item.role}:${item.content}`).join('\u0001');
+  return messages.map((item) => `${item.role}:${item.content}:${item.reasoningContent ?? ''}`).join('\u0001');
 }
 
 function isTransientAssistantPlaceholder(content: string): boolean {
