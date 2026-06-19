@@ -250,6 +250,61 @@ class SmartEngineOrchestratorServiceTest {
     }
 
     @Test
+    void smartEngineInvocationOverwritesClientSuppliedUserId() {
+        UUID userId = UUID.fromString("30000000-0000-0000-0000-000000000071");
+        UUID forgedUserId = UUID.fromString("30000000-0000-0000-0000-000000000072");
+        UUID conversationId = UUID.fromString("30000000-0000-0000-0000-000000000073");
+        JwtAuthenticatedUser user = new JwtAuthenticatedUser(userId, "learner", "STUDENT");
+
+        TaskStateMachineService taskStateMachineService = mock(TaskStateMachineService.class);
+        SmartEngineQueueService queueService = mock(SmartEngineQueueService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<SmartEngineQueueService> queueProvider = mock(ObjectProvider.class);
+        UserLlmSettingsService userLlmSettingsService = mock(UserLlmSettingsService.class);
+        QnaSessionRepository qnaSessionRepository = mock(QnaSessionRepository.class);
+
+        SmartEngineTask task = pendingTask(userId);
+        task.setServiceType(ServiceType.RESOURCE_GENERATION);
+        when(taskStateMachineService.createTask(any(), eq(userId), any(), eq(ServiceType.RESOURCE_GENERATION), any()))
+            .thenReturn(task);
+        when(queueProvider.getIfAvailable()).thenReturn(queueService);
+        when(queueService.enqueue(any())).thenReturn("stream-record-user");
+        when(userLlmSettingsService.isUserLlmReadyOrAllowedFallback(userId)).thenReturn(true);
+        when(qnaSessionRepository.findByIdAndUserId(conversationId, userId)).thenReturn(Optional.of(mock(QnaSession.class)));
+
+        SmartEngineOrchestratorService service = new SmartEngineOrchestratorService(
+            taskStateMachineService,
+            mock(SseEmitterService.class),
+            queueProvider,
+            mock(IdempotencyService.class),
+            mock(AuditService.class),
+            mock(UserProfileCurrentRepository.class),
+            mock(PersonalizedLearningContextService.class),
+            mock(PersonalizedLearningRefreshService.class),
+            mock(LearningPathProgressService.class),
+            mock(PracticeResultPersistenceService.class),
+            userLlmSettingsService,
+            qnaSessionRepository
+        );
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("userId", forgedUserId.toString());
+        params.put("query", "生成联合索引导学文档");
+
+        service.submit(user, new SubmitTaskRequest(
+            conversationId,
+            ServiceType.RESOURCE_GENERATION,
+            params
+        ));
+
+        verify(queueService).enqueue(org.mockito.ArgumentMatchers.argThat(invocation ->
+            userId.equals(invocation.userId())
+                && userId.toString().equals(invocation.params().get("userId"))
+                && !forgedUserId.toString().equals(invocation.params().get("userId"))
+        ));
+    }
+
+    @Test
     void completedStageTestTriggersLearningPathProgressWithoutPracticeRefresh() {
         UUID userId = UUID.fromString("30000000-0000-0000-0000-000000000011");
         UUID taskId = UUID.fromString("30000000-0000-0000-0000-000000000012");

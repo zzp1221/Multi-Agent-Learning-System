@@ -309,15 +309,16 @@ class ResourceBundleWorkflow:
             self._validate_resource_events(result)
             return {"resource_results": [result], "resource_failures": []}
         except Exception as exc:
-            if self._is_quality_gate_failure(exc):
+            if self._is_provenance_failure(exc):
                 raise
+            summary = self._friendly_resource_failure(exc)
             return {
                 "resource_results": [],
                 "resource_failures": [
                     {
                         "resourceType": resource_type,
                         "agentName": agent_name,
-                        "error": f"{type(exc).__name__}: {exc}",
+                        "error": summary,
                     }
                 ],
             }
@@ -490,17 +491,13 @@ class ResourceBundleWorkflow:
             raise RuntimeError(f"{result.agent_name} produced no publishable resource event")
 
     @staticmethod
-    def _is_quality_gate_failure(exc: Exception) -> bool:
+    def _is_provenance_failure(exc: Exception) -> bool:
         if isinstance(exc, ProvenanceError):
             return True
         message = str(exc).lower()
-        if "critic review blocked resource publication" in message:
-            return False
         return any(
             marker in message
             for marker in (
-                "review llm failed",
-                "safety review llm failed",
                 "missing generatedby=llm",
                 "missing contentorigin=llm",
                 "missing llm provider",
@@ -508,6 +505,25 @@ class ResourceBundleWorkflow:
                 "must declare fallback=false",
             )
         )
+
+    @staticmethod
+    def _friendly_resource_failure(exc: Exception) -> str:
+        message = str(exc).strip()
+        lowered = message.lower()
+        if "critic review blocked resource publication" in lowered:
+            return "quality review did not approve this resource; please retry with a clearer topic or more context"
+        if "review llm failed" in lowered or "safety review llm failed" in lowered or "fallback is disabled" in lowered:
+            return "review service was temporarily unavailable; other resources were still generated"
+        if "template fallback is not allowed" in lowered or "llm generation failed" in lowered or "llm unavailable" in lowered:
+            return "generation service was temporarily unavailable; please retry this resource"
+        if "emitted terminal error" in lowered or "emitted terminal done" in lowered:
+            reason = message.split(":", 1)[-1].strip()
+            return reason or "resource generation did not produce a publishable result"
+        if "produced no publishable resource event" in lowered:
+            return "resource generation did not produce a publishable result"
+        if "emitted" in lowered and "requested" in lowered:
+            return "resource generation returned an unexpected artifact type"
+        return message or "resource generation failed"
 
     @staticmethod
     def _terminal_event_reason(event: SSEEvent) -> str:

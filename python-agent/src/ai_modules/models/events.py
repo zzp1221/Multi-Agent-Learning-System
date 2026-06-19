@@ -153,6 +153,7 @@ class ResourceFilePayload(BaseModel):
     model: str | None = None
     agent_name: str | None = Field(default=None, alias="agentName")
     evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds")
+    external_urls: list[str] = Field(default_factory=list, alias="externalUrls")
     fallback: bool | None = None
     from_cache: bool = Field(default=False, alias="fromCache")
 

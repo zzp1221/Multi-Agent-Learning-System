@@ -27,6 +27,7 @@ from src.ai_modules.retrieval.evidence_relevance import (
     evidence_title,
     select_relevant_evidence,
 )
+from src.ai_modules.retrieval.external_evidence import build_external_evidence_contract
 from src.ai_modules.runtime import (
     RecoveryEngine,
     RecoveryFailureType,
@@ -125,6 +126,7 @@ class RetrievalAgent(PlaceholderAgent):
             summary_text = retrieval_response.sources_summary
             params["retrievalResult"] = retrieval_response.model_dump(by_alias=True)
             params["retrievalEvidence"] = self._build_retrieval_evidence(retrieval_response, summary_text)
+            params.update(self._empty_external_evidence_contract())
             params["retrievalSummaryText"] = summary_text
             yield ProgressSSEEvent(
                 taskId=task_id,
@@ -165,6 +167,12 @@ class RetrievalAgent(PlaceholderAgent):
             summary_text = retrieval_response.sources_summary
         params["retrievalResult"] = retrieval_response.model_dump(by_alias=True)
         params["retrievalEvidence"] = self._build_retrieval_evidence(retrieval_response, summary_text)
+        external_contract = self._build_external_evidence_contract(
+            query=web_search_query,
+            retrieval_response=retrieval_response,
+            params=params,
+        ) if web_search_enabled else self._empty_external_evidence_contract()
+        params.update(external_contract)
         params["retrievalEvidenceDiagnostics"] = {
             "discardedLocalCount": discarded_local_count,
             "relevanceGate": "query-term-overlap",
@@ -330,10 +338,14 @@ class RetrievalAgent(PlaceholderAgent):
         retrieval_response: RetrievalResponse,
         params: dict[str, Any],
     ) -> str:
+        contract = self._build_external_evidence_contract(
+            query=query,
+            retrieval_response=retrieval_response,
+            params=params,
+        )
+        adopted = contract["adoptedExternalSources"]
+        ignored = contract["ignoredExternalSources"]
         web_items = self._web_channel_items(params)
-        adopted = self._adopted_web_sources(retrieval_response)
-        adopted_urls = {item["url"].lower() for item in adopted}
-        ignored = self._ignored_web_sources(web_items=web_items, adopted_urls=adopted_urls)
 
         lines = [f"已开启联网搜索，搜索词：{query}"]
         if adopted:
@@ -345,8 +357,8 @@ class RetrievalAgent(PlaceholderAgent):
 
         if ignored:
             lines.append("忽略来源：")
-            for reason, count in ignored[:4]:
-                lines.append(f"- {reason}：{count} 条")
+            for item in ignored[:4]:
+                lines.append(f"- {item['title']} | {item['url']} | {item['reason']}")
         elif web_items:
             lines.append("忽略来源：未发现需要忽略的联网候选。")
         else:
@@ -355,45 +367,26 @@ class RetrievalAgent(PlaceholderAgent):
         lines.append("说明：以上只展示可审计的检索过程，不包含模型内部思维链。")
         return "\n".join(lines) + "\n"
 
-    def _adopted_web_sources(self, retrieval_response: RetrievalResponse) -> list[dict[str, str]]:
-        adopted: list[dict[str, str]] = []
-        seen_urls: set[str] = set()
-        for document in retrieval_response.documents:
-            url = str(document.url or "").strip()
-            if not url.startswith(("http://", "https://")):
-                continue
-            key = url.lower()
-            if key in seen_urls:
-                continue
-            seen_urls.add(key)
-            title = str(document.title or document.source_title or url).strip()
-            channel = str(document.channel or "").strip().lower()
-            reason = "联网通道命中并进入融合结果。" if channel == "web" else "融合结果提供了可验证外部 URL。"
-            adopted.append({"title": title, "url": url, "reason": reason})
-        return adopted
-
-    def _ignored_web_sources(
+    def _build_external_evidence_contract(
         self,
         *,
-        web_items: list[Any],
-        adopted_urls: set[str],
-    ) -> list[tuple[str, int]]:
-        counts: dict[str, int] = {}
-        seen_urls: set[str] = set()
-        for item in web_items:
-            _, url = self._web_item_title_url(item)
-            if not url:
-                counts["无 URL"] = counts.get("无 URL", 0) + 1
-                continue
-            key = url.lower()
-            if key in adopted_urls:
-                continue
-            if key in seen_urls:
-                counts["重复来源"] = counts.get("重复来源", 0) + 1
-                continue
-            seen_urls.add(key)
-            counts["未进入融合结果或相关性不足"] = counts.get("未进入融合结果或相关性不足", 0) + 1
-        return [(reason, count) for reason, count in counts.items()]
+        query: str,
+        retrieval_response: RetrievalResponse,
+        params: dict[str, Any],
+    ) -> dict[str, list[Any]]:
+        return build_external_evidence_contract(
+            query=query,
+            documents=retrieval_response.model_dump(by_alias=True).get("documents", []),
+            web_items=self._web_channel_items(params),
+        )
+
+    def _empty_external_evidence_contract(self) -> dict[str, list[Any]]:
+        return {
+            "adoptedExternalSources": [],
+            "ignoredExternalSources": [],
+            "evidenceIds": [],
+            "externalUrls": [],
+        }
 
     def _web_channel_items(self, params: dict[str, Any]) -> list[Any]:
         web_result = params.get("webRetrievalResult")

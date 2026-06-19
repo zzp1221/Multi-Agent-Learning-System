@@ -1,7 +1,9 @@
 from src.ai_modules.agents.deep_reasoning_planner import DeepReasoningPlanner
+from src.ai_modules.agents.retrieval_agent import RetrievalAgent
 from src.ai_modules.agents.tutor_agent import TutorAgent
 from src.ai_modules.llms import RuleBasedTutorLLM
 from src.ai_modules.memory import InMemoryConversationSummaryStore
+from src.ai_modules.models import RetrievalResponse
 
 
 def test_tutor_deep_web_context_includes_full_retrieval_payloads() -> None:
@@ -60,6 +62,140 @@ def test_tutor_deep_web_context_includes_full_retrieval_payloads() -> None:
     assert "深度思考和联网搜索同时开启" in context
     assert "webRetrievalResult" in context
     assert "不能覆盖或替代用户的实际问题" in context
+
+
+def test_tutor_uses_only_adopted_external_sources_for_answer_context() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "query": "Will TS replace JS?",
+        "webSearchEnabled": True,
+        "webRetrievalResult": {"enabled": True, "query": "Will TS replace JS?"},
+        "adoptedExternalSources": [
+            {
+                "id": "ext-1",
+                "title": "TypeScript and JavaScript",
+                "url": "https://example.com/ts-js",
+                "snippet": "TypeScript extends JavaScript.",
+            }
+        ],
+        "ignoredExternalSources": [
+            {
+                "title": "Unrelated runtime article",
+                "url": "https://example.com/runtime",
+                "reason": "相关性不足或未进入融合结果",
+            }
+        ],
+        "evidenceIds": ["ext-1"],
+        "externalUrls": ["https://example.com/ts-js"],
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "Ignored duplicate should not be the authority",
+                    "channel": "web",
+                    "evidence": "Other content.",
+                    "url": "https://example.com/runtime",
+                    "score": 0.99,
+                }
+            ]
+        },
+    }
+
+    evidence = tutor._tool_read_retrieval_evidence(tool_input={}, params=params)
+    context = tutor._build_enriched_message(
+        user_query="Will TS replace JS?",
+        memory={},
+        context={},
+        evidence=evidence,
+        profile={},
+        image_analysis={},
+        recent_dialogue={},
+        input_mode="clear_question",
+        params=params,
+    )
+    reasoning_text = "\n".join(tutor._build_answer_reasoning_chunks(user_query="Will TS replace JS?", params=params))
+
+    assert [item["url"] for item in evidence["externalResources"]] == ["https://example.com/ts-js"]
+    assert "adoptedExternalSources 中的 URL" in context
+    assert "[TypeScript and JavaScript](https://example.com/ts-js)" in context
+    assert "Unrelated runtime article [https://example.com/runtime]：相关性不足或未进入融合结果" in context
+    assert "https://example.com/ts-js" in reasoning_text
+    assert "https://example.com/runtime" not in reasoning_text
+
+
+def test_tutor_answer_reasoning_declares_no_adopted_external_source() -> None:
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "query": "Will TS replace JS?",
+        "webSearchEnabled": True,
+        "webRetrievalResult": {"enabled": True, "query": "Will TS replace JS?", "results": []},
+        "adoptedExternalSources": [],
+        "ignoredExternalSources": [],
+        "retrievalResult": {"documents": []},
+    }
+
+    reasoning_text = "\n".join(tutor._build_answer_reasoning_chunks(user_query="Will TS replace JS?", params=params))
+
+    assert "联网证据：未采用外部来源。" in reasoning_text
+    assert "http" not in reasoning_text
+
+
+def test_retrieval_agent_writes_shared_external_evidence_contract() -> None:
+    agent = RetrievalAgent()
+    params = {
+        "webRetrievalResult": {
+            "enabled": True,
+            "query": "Will TS replace JS?",
+            "results": [
+                (
+                    "https://example.com/ts-js",
+                    "TypeScript and JavaScript",
+                    0.91,
+                    {"url": "https://example.com/ts-js", "snippet": "TypeScript extends JavaScript."},
+                ),
+                (
+                    "https://example.com/runtime",
+                    "Unrelated runtime article",
+                    0.4,
+                    {"url": "https://example.com/runtime", "snippet": "Runtime internals."},
+                ),
+            ],
+        }
+    }
+    retrieval_response = RetrievalResponse.model_validate(
+        {
+            "query": "Will TS replace JS?",
+            "rewrittenQuery": "Will TS replace JS?",
+            "keywords": ["TypeScript", "JavaScript"],
+            "documents": [
+                {
+                    "slug": "https://example.com/ts-js",
+                    "title": "TypeScript and JavaScript",
+                    "score": 0.91,
+                    "channel": "web",
+                    "evidence": "TypeScript extends JavaScript.",
+                    "url": "https://example.com/ts-js",
+                }
+            ],
+            "sourcesSummary": "web evidence",
+        }
+    )
+
+    contract = agent._build_external_evidence_contract(
+        query="Will TS replace JS?",
+        retrieval_response=retrieval_response,
+        params=params,
+    )
+
+    assert contract["adoptedExternalSources"][0]["url"] == "https://example.com/ts-js"
+    assert contract["evidenceIds"] == ["ext-1"]
+    assert contract["externalUrls"] == ["https://example.com/ts-js"]
+    assert contract["ignoredExternalSources"][0]["url"] == "https://example.com/runtime"
 
 
 def test_tutor_web_context_mentions_fallback_when_external_resources_empty() -> None:

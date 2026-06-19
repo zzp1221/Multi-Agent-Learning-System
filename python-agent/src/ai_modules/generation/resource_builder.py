@@ -55,6 +55,7 @@ class GeneratedAsset(BaseModel):
     model: str | None = None
     agent_name: str | None = Field(default=None, alias="agentName")
     evidence_ids: list[str] = Field(default_factory=list, alias="evidenceIds")
+    external_urls: list[str] = Field(default_factory=list, alias="externalUrls")
     fallback: bool | None = None
     from_cache: bool = Field(default=False, alias="fromCache")
 
@@ -264,7 +265,11 @@ class ResourceGenerationService:
         return GeneratedAsset(
             assetType="DOCUMENT",
             title=title,
-            summary="基于检索证据生成的结构化课程导学文档",
+            summary=(
+                "基于检索证据生成的结构化课程导学文档"
+                if self._has_external_sources(sources)
+                else "结构化课程导学文档"
+            ),
             displayMode="MARKDOWN_CARD",
             fileName=file_name,
             localPath=str(path),
@@ -404,6 +409,17 @@ class ResourceGenerationService:
             f"- [来源{index}] {source_title}"
             for index, source_title in enumerate(source_titles, start=1)
         ]
+
+    @staticmethod
+    def _has_external_sources(sources: Any) -> bool:
+        if not isinstance(sources, list):
+            return False
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            if str(source.get("id") or source.get("url") or source.get("slug") or source.get("title") or "").strip():
+                return True
+        return False
 
     def _build_preview_text(self, section_plans: list[SectionPlan]) -> str:
         if not section_plans:

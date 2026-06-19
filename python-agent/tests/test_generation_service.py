@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -1050,3 +1051,39 @@ async def test_document_generation_retries_invalid_sections_with_llm(monkeypatch
     assert len(calls) == 2
     assert bundle.sections[0].title == "LLM section"
     assert bundle.sections[0].body == "LLM body"
+
+
+@pytest.mark.asyncio
+async def test_document_summary_does_not_claim_retrieval_evidence_without_sources(tmp_path: Path) -> None:
+    class FakeContentChain:
+        generate_document_sections = AsyncMock(
+            return_value=GeneratedSectionBundle.model_validate(
+                {
+                    "sections": [
+                        {
+                            "title": "section",
+                            "body": "body",
+                            "tips": ["tip"],
+                            "citations": [],
+                        }
+                    ]
+                }
+            )
+        )
+
+    service = ResourceGenerationService(sandbox_root=tmp_path, content_chain=FakeContentChain())
+
+    asset = await service._build_document(
+        params={"topic": "topic", "taskId": "no-source", "retrievalResult": {"documents": []}},
+        snapshot=SystemSnapshot(
+            current_course="course",
+            current_chapter="chapter",
+            course_progress=0.2,
+            student_name="student",
+            student_level="BASIC",
+            knowledge_gaps=[],
+        ),
+    )
+
+    assert "检索证据" not in asset.summary
+    assert asset.summary == "结构化课程导学文档"

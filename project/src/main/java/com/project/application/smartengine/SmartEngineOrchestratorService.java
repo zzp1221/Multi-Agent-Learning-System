@@ -198,8 +198,10 @@ public class SmartEngineOrchestratorService {
 
     private Map<String, Object> buildInvocationParams(JwtAuthenticatedUser currentUser, SubmitTaskRequest request) {
         Map<String, Object> invocationParams = new LinkedHashMap<>(request.safeParams());
+        invocationParams.put("userId", currentUser.userId().toString());
         if (request.serviceType() == ServiceType.PERSONALIZED_LEARNING) {
             invocationParams.putAll(personalizedLearningContextService.buildContext(currentUser.userId()));
+            invocationParams.put("userId", currentUser.userId().toString());
             return invocationParams;
         }
 

@@ -8,6 +8,8 @@ import pytest
 from src.ai_modules.agents.generation.generators import SlideGeneratorAgent
 from src.ai_modules.generation.content_chain import GeneratedSectionBundle, OpenAICompatibleStructuredGenerator
 from src.ai_modules.generation.resource_builder import GeneratedAsset
+from src.ai_modules.llms.user_runtime_config import UserLlmRuntimeConfig
+from src.ai_modules.runtime import provenance
 from src.ai_modules.runtime import SystemSnapshot
 
 
@@ -218,3 +220,37 @@ async def test_expand_content_runs_sync_builder_off_event_loop() -> None:
     assert result["asset"]["assetType"] == "SLIDES"
     assert builder_thread is not None
     assert builder_thread != event_loop_thread
+
+
+def test_build_llm_provenance_prefers_user_runtime_generation_config() -> None:
+    runtime_config = UserLlmRuntimeConfig.model_validate(
+        {
+            "enabled": True,
+            "activeProvider": "deepseek",
+            "providers": {
+                "deepseek": {
+                    "provider": "deepseek",
+                    "apiKey": "user-key",
+                    "modelOverrides": {"main_chat_model": "user-deepseek-chat"},
+                }
+            },
+            "componentOverrides": {
+                "generation_llm": {"provider": "deepseek", "model": "main_chat_model"}
+            },
+        }
+    )
+    from src.ai_modules.llms import user_runtime_config
+
+    config_token = user_runtime_config._CURRENT_CONFIG.set(runtime_config)
+    try:
+        payload = provenance.build_llm_provenance(
+            agent_name="document_generation",
+            generator=SimpleNamespace(provider_name="env-provider", model_name="env-model"),
+            params={"retrievalResult": {"documents": [{"id": "doc-1"}]}},
+        )
+    finally:
+        user_runtime_config._CURRENT_CONFIG.reset(config_token)
+
+    assert payload["provider"] == "deepseek"
+    assert payload["model"] == "user-deepseek-chat"
+    assert payload["evidenceIds"] == ["doc-1"]

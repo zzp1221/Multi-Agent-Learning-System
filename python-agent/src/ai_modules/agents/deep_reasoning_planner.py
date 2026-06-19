@@ -120,6 +120,12 @@ class DeepReasoningPlanner(PlaceholderAgent):
         documents = documents if isinstance(documents, list) else []
         web_retrieval_result = params.get("webRetrievalResult")
         web_retrieval_result = web_retrieval_result if isinstance(web_retrieval_result, dict) else {}
+        external_resources = self._safe_list(params.get("adoptedExternalSources"))
+        if not external_resources:
+            external_resources = self._collect_external_resources(
+                retrieval_result=retrieval_result,
+                web_retrieval_result=web_retrieval_result,
+            )
         return {
             "query": self._first_text(params, "query", "message", "userInput", "question"),
             "rewrittenQuery": self._first_text(params, "rewrittenQuery"),
@@ -128,10 +134,11 @@ class DeepReasoningPlanner(PlaceholderAgent):
             "webSearchEnabled": self._web_search_enabled(params),
             "retrievalResult": self._compact_retrieval_result(retrieval_result),
             "webRetrievalResult": self._compact_web_retrieval_result(web_retrieval_result),
-            "externalResources": self._collect_external_resources(
-                retrieval_result=retrieval_result,
-                web_retrieval_result=web_retrieval_result,
-            ),
+            "externalResources": external_resources,
+            "adoptedExternalSources": self._safe_list(params.get("adoptedExternalSources")),
+            "ignoredExternalSources": self._safe_list(params.get("ignoredExternalSources")),
+            "evidenceIds": self._safe_string_list(params.get("evidenceIds")),
+            "externalUrls": self._safe_string_list(params.get("externalUrls")),
             "retrievalSummary": self._truncate_text(
                 str(params.get("retrievalSummaryText") or retrieval_result.get("sourcesSummary") or ""),
                 1200,
@@ -383,6 +390,16 @@ class DeepReasoningPlanner(PlaceholderAgent):
     @staticmethod
     def _safe_dict(value: Any) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _safe_list(value: Any) -> list[Any]:
+        return list(value) if isinstance(value, list) else []
+
+    @staticmethod
+    def _safe_string_list(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
 
     @staticmethod
     def _truncate_text(value: str, max_chars: int) -> str:

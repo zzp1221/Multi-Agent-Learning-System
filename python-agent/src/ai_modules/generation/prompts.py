@@ -31,6 +31,7 @@ def build_document_user_prompt(
 ) -> str:
     """构建结构化文档生成请求的用户提示词。"""
 
+    has_sources = bool(sources[:5])
     source_lines = [
         (
             f"- 标题: {source.get('title', '未知来源')}; "
@@ -39,7 +40,7 @@ def build_document_user_prompt(
             f"片段: {source.get('snippet', '无正文片段')}"
         )
         for source in sources[:5]
-    ] or ["- 暂无稳定来源，请谨慎生成并保持表述保守。"]
+    ] or ["- 暂无外部来源；请基于课程上下文保守生成，不要声明来自检索证据或联网来源。"]
 
     section_lines = [
         (
@@ -67,7 +68,7 @@ def build_document_user_prompt(
             "请按以下大纲生成章节正文:",
             *section_lines,
             "",
-            "可引用来源:",
+            "可引用来源:" if has_sources else "来源状态:",
             *source_lines,
             "",
             "生成要求:",
@@ -78,6 +79,7 @@ def build_document_user_prompt(
             "- citations 必须优先引用给定来源标题。",
             "- body 和 tips 中不要写课程、章节、学生水平、学习风格、参考来源、证据说明等元信息。",
             "- 若来源不足，表述保持保守，避免编造具体事实。",
+            "- 没有外部来源时，正文和摘要不要写“基于联网检索证据”“根据检索来源”等来源声明。",
         ]
     )
 

@@ -41,6 +41,37 @@ def _build_snapshot() -> SystemSnapshot:
     )
 
 
+def test_review_payloads_coerce_scalar_list_fields() -> None:
+    critic = CriticReviewPayload.model_validate(
+        {
+            "verdict": "PASS",
+            "factConsistency": "SUPPORTED",
+            "difficultyMatch": "MATCHED",
+            "sourceCoverage": "GOOD",
+            "issues": "",
+            "suggestions": {"tip": "keep concise"},
+            "summaryText": "ok",
+        }
+    )
+    safety = SafetyReviewPayload.model_validate(
+        {
+            "allowed": True,
+            "riskLevel": "LOW",
+            "categories": "",
+            "riskTags": "education",
+            "blockedReason": None,
+            "suggestions": "",
+            "summaryText": "safe",
+        }
+    )
+
+    assert critic.issues == []
+    assert critic.suggestions == ["keep concise"]
+    assert safety.categories == []
+    assert safety.risk_tags == ["education"]
+    assert safety.suggestions == []
+
+
 @pytest.mark.asyncio
 async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
     class FakeCriticReviewer:
@@ -590,6 +621,7 @@ async def test_document_generator_blocks_resource_file_when_critic_rejects(tmp_p
         critic_agent=RejectingCriticAgent(),
         safety_agent=PassingSafetyAgent(),
     )
+
     params = {"query": "expected topic"}
 
     events = [

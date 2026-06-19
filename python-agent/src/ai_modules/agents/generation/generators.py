@@ -186,6 +186,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
             model=asset.model,
             agentName=asset.agent_name,
             evidenceIds=asset.evidence_ids,
+            externalUrls=asset.external_urls,
             fallback=asset.fallback,
             fromCache=asset.from_cache,
         )
@@ -697,6 +698,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             model=asset.model,
             agentName=asset.agent_name,
             evidenceIds=asset.evidence_ids,
+            externalUrls=asset.external_urls,
             fallback=asset.fallback,
             fromCache=asset.from_cache,
         )
@@ -715,6 +717,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             "model": asset.model,
             "agentName": asset.agent_name,
             "evidenceIds": asset.evidence_ids,
+            "externalUrls": asset.external_urls,
             "fallback": asset.fallback,
             "fromCache": asset.from_cache,
         }

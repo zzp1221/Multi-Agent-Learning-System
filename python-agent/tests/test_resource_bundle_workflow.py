@@ -373,7 +373,9 @@ async def test_resource_bundle_treats_critic_reject_as_resource_failure() -> Non
     assert events[-1].event == "done"
     assert events[-1].payload.status == "PARTIAL_FAILED"
     assert events[-1].payload.resource_failures[0]["resourceType"] == "SLIDES"
-    assert "verdict=REJECT" in events[-1].payload.resource_failures[0]["error"]
+    assert "RuntimeError" not in events[-1].payload.resource_failures[0]["error"]
+    assert "quality review" in events[-1].payload.resource_failures[0]["error"]
+    assert "RuntimeError" not in events[-1].payload.resource_failures[0]["error"]
 
 
 @pytest.mark.asyncio
@@ -405,7 +407,8 @@ async def test_resource_bundle_quiz_llm_failure_is_partial_when_other_resources_
     assert events[-1].event == "done"
     assert events[-1].payload.status == "PARTIAL_FAILED"
     assert events[-1].payload.resource_failures[0]["resourceType"] == "QUIZ"
-    assert "template fallback is not allowed" in events[-1].payload.resource_failures[0]["error"]
+    assert "generation service" in events[-1].payload.resource_failures[0]["error"]
+    assert "RuntimeError" not in events[-1].payload.resource_failures[0]["error"]
 
 
 @pytest.mark.asyncio
@@ -543,7 +546,7 @@ async def test_resource_bundle_fails_without_resource_file_when_llm_unavailable(
 
 
 @pytest.mark.asyncio
-async def test_resource_bundle_quality_gate_failure_fails_whole_task() -> None:
+async def test_resource_bundle_review_llm_failure_is_partial_when_other_resources_succeed() -> None:
     supervisor = PythonAgentSupervisor()
     _install_success_bundle(supervisor)
     supervisor.agent_registry["slide_generator"] = _QualityGateFailingResourceAgent()
@@ -556,10 +559,16 @@ async def test_resource_bundle_quality_gate_failure_fails_whole_task() -> None:
 
     events = [event async for event in supervisor.stream(request)]
 
-    assert events[-2].event == "error"
-    assert events[-2].payload.code == "RESOURCE_BUNDLE_FAILED"
+    published = [
+        event.payload.asset_type
+        for event in events
+        if event.event == "resource_file"
+    ]
+    assert published == ["DOCUMENT"]
     assert events[-1].event == "done"
-    assert events[-1].payload.status == "FAILED"
+    assert events[-1].payload.status == "PARTIAL_FAILED"
+    assert events[-1].payload.resource_failures[0]["resourceType"] == "SLIDES"
+    assert "review service" in events[-1].payload.resource_failures[0]["error"]
     assert [event.seq for event in events] == sorted({event.seq for event in events})
 
 

@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _normalize_text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = value.strip()
+        return [value] if value else []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, dict):
+        return [str(item).strip() for item in value.values() if str(item).strip()]
+    return [str(value).strip()] if str(value).strip() else []
 
 
 class CriticReviewPayload(BaseModel):
@@ -21,6 +36,11 @@ class CriticReviewPayload(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    @field_validator("issues", "suggestions", mode="before")
+    @classmethod
+    def _coerce_text_lists(cls, value: Any) -> list[str]:
+        return _normalize_text_list(value)
+
 
 class SafetyReviewPayload(BaseModel):
     """Structured output returned by the Safety Agent."""
@@ -34,3 +54,8 @@ class SafetyReviewPayload(BaseModel):
     summary_text: str = Field(alias="summaryText")
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @field_validator("categories", "risk_tags", "suggestions", mode="before")
+    @classmethod
+    def _coerce_text_lists(cls, value: Any) -> list[str]:
+        return _normalize_text_list(value)

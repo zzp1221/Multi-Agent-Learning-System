@@ -433,7 +433,7 @@ export function InputPanel(props: {
               ) : (
                 <button
                   type="button"
-                  onClick={props.onSend}
+                  onClick={() => props.onSend()}
                   disabled={!props.value.trim() && props.pendingImages.every((item) => !item.uploadedUrl)}
                   className="qna-send-button"
                   title="发送"

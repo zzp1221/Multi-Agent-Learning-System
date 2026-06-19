@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.ai_modules.config import get_settings
+from src.ai_modules.llms.user_runtime_config import current_user_llm_config
+
 
 class ProvenanceError(RuntimeError):
     """Raised when a generated artifact does not prove its LLM origin."""
@@ -11,6 +14,12 @@ class ProvenanceError(RuntimeError):
 
 def evidence_ids_from_params(params: dict[str, Any]) -> list[str]:
     """Extract stable evidence identifiers from retrieval results."""
+
+    existing = params.get("evidenceIds")
+    if isinstance(existing, list):
+        normalized = [str(item).strip() for item in existing if str(item).strip()]
+        if normalized:
+            return normalized
 
     retrieval_result = params.get("retrievalResult", {})
     documents = retrieval_result.get("documents", []) if isinstance(retrieval_result, dict) else []
@@ -29,6 +38,28 @@ def evidence_ids_from_params(params: dict[str, Any]) -> list[str]:
         if value:
             evidence_ids.append(value)
     return evidence_ids
+
+
+def external_urls_from_params(params: dict[str, Any]) -> list[str]:
+    """Extract adopted external URLs from the shared evidence contract."""
+
+    existing = params.get("externalUrls")
+    if isinstance(existing, list):
+        return [
+            str(item).strip()
+            for item in existing
+            if str(item).strip().startswith(("http://", "https://"))
+        ]
+    adopted = params.get("adoptedExternalSources")
+    urls: list[str] = []
+    if isinstance(adopted, list):
+        for item in adopted:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or "").strip()
+            if url.startswith(("http://", "https://")):
+                urls.append(url)
+    return urls
 
 
 def generator_metadata(generator: Any) -> tuple[str, str]:
@@ -59,6 +90,18 @@ def build_llm_provenance(
     """Build the required provenance payload for a real LLM artifact."""
 
     provider, model = generator_metadata(generator)
+    user_config = current_user_llm_config()
+    if user_config is not None:
+        override = user_config.component_override("generation_llm")
+        runtime_provider = user_config.runtime_provider_name("")
+        provider = (override.provider if override and override.provider else runtime_provider) or provider
+        if provider:
+            provider_config = user_config.routing_config(get_settings().build_default_model_routing_config()).providers.get(provider)
+            if provider_config is not None:
+                logical_model = override.model if override and override.model else "main_chat_model"
+                runtime_model = provider_config.models.get(logical_model, logical_model)
+                if runtime_model:
+                    model = runtime_model
     return {
         "generatedBy": "LLM",
         "contentOrigin": "LLM",
@@ -66,6 +109,7 @@ def build_llm_provenance(
         "model": model,
         "agentName": agent_name,
         "evidenceIds": evidence_ids_from_params(params),
+        "externalUrls": external_urls_from_params(params),
         "fallback": False,
         "fromCache": from_cache,
     }

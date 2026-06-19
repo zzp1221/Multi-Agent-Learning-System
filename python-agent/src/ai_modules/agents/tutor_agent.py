@@ -1068,10 +1068,15 @@ class TutorAgent(PlaceholderAgent):
             else []
         )
         if evidence.get("webSearchEnabled") is True:
+            ignored_sources = (
+                evidence.get("ignoredExternalSources", [])
+                if isinstance(evidence.get("ignoredExternalSources"), list)
+                else []
+            )
             if external_resources:
                 parts.append(
                     "联网搜索状态：已开启。用户请求外部资料、媒体或链接时，"
-                    "可以直接引用以下外部检索结果中的 URL；不得编造未提供的 URL。"
+                    "可以直接引用以下外部检索结果中的 URL；只能引用 adoptedExternalSources 中的 URL；不得编造未提供的 URL。"
                     "输出给用户时必须写成 Markdown 链接格式：[标题](URL)，便于前端跳转。"
                 )
                 for i, resource in enumerate(external_resources[:5], 1):
@@ -1083,6 +1088,15 @@ class TutorAgent(PlaceholderAgent):
                     if title and url:
                         suffix = f": {snippet}" if snippet else ""
                         parts.append(f"  {i}. [{title}]({url}){suffix}")
+                if ignored_sources:
+                    parts.append("未采用的联网来源：")
+                    for item in ignored_sources[:5]:
+                        if not isinstance(item, dict):
+                            continue
+                        title = str(item.get("title") or item.get("url") or "外部来源").strip()
+                        url = str(item.get("url") or "").strip()
+                        reason = str(item.get("reason") or "未进入采用来源列表").strip()
+                        parts.append(f"  - {title} [{url}]：{reason}")
             else:
                 parts.append(
                     "联网搜索状态：已开启，但当前检索证据没有可验证外部 URL。"
@@ -1505,27 +1519,36 @@ class TutorAgent(PlaceholderAgent):
         query = str(params.get("query") or "").strip()
         selected = select_relevant_evidence(query=query, documents=documents, limit=8)
         documents = selected.adopted
+        if self._resolve_graph_intent_from_params(params) and not documents:
+            raw_documents = retrieval_result.get("documents", [])
+            documents = raw_documents if isinstance(raw_documents, list) else []
         web_search_enabled = self._web_search_enabled(params)
         web_retrieval_result = params.get("webRetrievalResult")
         if not isinstance(web_retrieval_result, dict):
             web_retrieval_result = {}
+        external_resources = self._collect_external_resources(
+            params=params,
+            documents=documents,
+        ) if web_search_enabled else []
+        graph_evidence_pack = self._build_graph_evidence_pack(
+            params=params,
+            documents=documents,
+        )
         return {
             "query": params.get("query"),
             "rewrittenQuery": params.get("rewrittenQuery"),
-            "retrievalResult": retrieval_result,
-            "webRetrievalResult": web_retrieval_result,
             "documents": documents,
+            "webSearchEnabled": web_search_enabled,
+            "externalResources": external_resources,
+            "graphEvidencePack": graph_evidence_pack,
+            "adoptedExternalSources": self._read_list_param(params, "adoptedExternalSources"),
+            "ignoredExternalSources": self._read_list_param(params, "ignoredExternalSources"),
+            "evidenceIds": self._read_string_list_param(params, "evidenceIds"),
+            "externalUrls": self._read_string_list_param(params, "externalUrls"),
             "discardedLocalEvidenceCount": selected.discarded_count,
             "sourcesSummary": retrieval_result.get("sourcesSummary", ""),
-            "webSearchEnabled": web_search_enabled,
-            "externalResources": self._collect_external_resources(
-                params=params,
-                documents=documents,
-            ) if web_search_enabled else [],
-            "graphEvidencePack": self._build_graph_evidence_pack(
-                params=params,
-                documents=documents,
-            ),
+            "retrievalResult": retrieval_result,
+            "webRetrievalResult": web_retrieval_result,
             "wikiTraversal": self._build_wiki_traversal_diagnostics(params),
         }
 
@@ -1573,6 +1596,11 @@ class TutorAgent(PlaceholderAgent):
             web_query = str(web_result.get("query") or params.get("webSearchQuery") or "").strip()
             if web_query:
                 answer_lines.append(f"联网搜索词：{self._truncate_dialogue_text(web_query, 120)}")
+            ignored_sources = (
+                evidence.get("ignoredExternalSources")
+                if isinstance(evidence.get("ignoredExternalSources"), list)
+                else []
+            )
             if external_resources:
                 answer_lines.append("可引用的联网证据：")
                 for resource in external_resources[:3]:
@@ -1582,11 +1610,13 @@ class TutorAgent(PlaceholderAgent):
                         answer_lines.append(
                             f"- {self._truncate_dialogue_text(title, 80)} | {self._truncate_dialogue_text(url, 120)}"
                         )
+                if ignored_sources:
+                    answer_lines.append(f"未采用联网来源：{len(ignored_sources)} 条，原因见检索筛选记录。")
             else:
-                answer_lines.append("联网证据：未采用到足够相关且带 URL 的来源。")
+                answer_lines.append("联网证据：未采用外部来源。")
         self_check = (
             "质量自检：最终回答需要直接回应当前问题，说明关键概念、边界和易混淆点；"
-            "不会把历史画像、低相关检索候选或未验证链接写成结论。\n"
+            "只引用已采用来源，不会把历史画像、低相关检索候选或未验证链接写成结论。\n"
         )
         return ["\n".join(answer_lines) + "\n", self_check]
 
@@ -1833,6 +1863,15 @@ class TutorAgent(PlaceholderAgent):
         params: dict[str, Any],
         documents: list[Any],
     ) -> list[dict[str, Any]]:
+        adopted_sources = self._read_list_param(params, "adoptedExternalSources")
+        if adopted_sources:
+            return [
+                item
+                for item in adopted_sources
+                if isinstance(item, dict)
+                and str(item.get("url") or "").strip().startswith(("http://", "https://"))
+            ][:8]
+
         resources: list[dict[str, Any]] = []
         seen_urls: set[str] = set()
 
@@ -1856,6 +1895,7 @@ class TutorAgent(PlaceholderAgent):
                 {
                     "title": str(title or source_title or normalized_url).strip(),
                     "url": normalized_url,
+                    "evidence": str(snippet or "").strip(),
                     "snippet": str(snippet or "").strip(),
                     "sourceTitle": str(source_title or title or "").strip(),
                     "publishedDate": str(published_date or "").strip(),
@@ -1897,9 +1937,17 @@ class TutorAgent(PlaceholderAgent):
                 published_date=metadata.get("publishedDate"),
                 score=item[2] if len(item) > 2 else None,
             )
-        query = str(params.get("query") or params.get("webSearchQuery") or "").strip()
-        selection = select_relevant_evidence(query=query, documents=resources, limit=8)
-        return selection.adopted
+        return resources[:8]
+
+    def _read_list_param(self, params: dict[str, Any], key: str) -> list[Any]:
+        value = params.get(key)
+        return list(value) if isinstance(value, list) else []
+
+    def _read_string_list_param(self, params: dict[str, Any], key: str) -> list[str]:
+        value = params.get(key)
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()]
 
     def _iter_web_retrieval_items(self, params: dict[str, Any]) -> list[Any]:
         web_result = params.get("webRetrievalResult")

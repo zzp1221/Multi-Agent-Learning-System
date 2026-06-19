@@ -46,6 +46,11 @@ interface QnaSendOverride {
   text: string;
 }
 
+interface QnaSendOptions {
+  deepReasoningEnabled?: boolean;
+  webSearchEnabled?: boolean;
+}
+
 interface QnaLearningContext {
   voiceContext?: QnaVoiceContext;
 }
@@ -104,6 +109,8 @@ export function useLearningStudioQna({
   const [qnaImageError, setQnaImageError] = useState('');
   const [qnaWebSearchEnabled, setQnaWebSearchEnabled] = useState(false);
   const [deepReasoningEnabled, setDeepReasoningEnabled] = useState(false);
+  const qnaWebSearchEnabledRef = useRef(false);
+  const deepReasoningEnabledRef = useRef(false);
   const qnaBusy = qnaState === 'QNA_STREAMING';
   const hasStartedConversation = Boolean(conversationId)
     || qnaMessages.length > 1
@@ -198,6 +205,7 @@ export function useLearningStudioQna({
     setQnaMessages(nextMessages);
     setQnaInput(nextInput);
     setQnaWebSearchEnabled(false);
+    qnaWebSearchEnabledRef.current = false;
     setQnaStateView('QNA_IDLE');
     clearPersistedQnaSnapshot();
     if (typeof window !== 'undefined') {
@@ -214,6 +222,12 @@ export function useLearningStudioQna({
     qnaInputRef.current = qnaInput;
     qnaDraftsRef.current[conversationIdRef.current || '__new__'] = qnaInput;
   }, [conversationIdRef, qnaInput]);
+
+  const handleQnaInputChange = useCallback((value: string) => {
+    qnaInputRef.current = value;
+    qnaDraftsRef.current[conversationIdRef.current || '__new__'] = value;
+    setQnaInput(value);
+  }, [conversationIdRef]);
 
   useEffect(() => {
     qnaStateRef.current = qnaState;
@@ -685,9 +699,10 @@ export function useLearningStudioQna({
     };
   }, [updateQnaConversationMessages]);
 
-  const handleQnaSend = async (override?: QnaSendOverride): Promise<boolean> => {
-    const text = (override?.text ?? qnaInput).trim();
-    const uploadedImageUrls = override
+  const handleQnaSend = async (override?: QnaSendOverride, options: QnaSendOptions = {}): Promise<boolean> => {
+    const hasOverride = isQnaSendOverride(override);
+    const text = (hasOverride ? override.text : qnaInputRef.current).trim();
+    const uploadedImageUrls = hasOverride
       ? []
       : pendingQnaImages
         .filter((item) => item.uploadStatus === 'uploaded' && item.uploadedUrl)
@@ -702,9 +717,9 @@ export function useLearningStudioQna({
 
     const assistantMessageId = `qna-assistant-${Date.now()}`;
     const userMessageId = `qna-user-${Date.now()}`;
-    const pendingPreviewUrls = override ? [] : pendingQnaImages.map((item) => item.previewUrl);
-    const useWebSearch = override ? false : qnaWebSearchEnabled;
-    const useDeepReasoning = override ? false : deepReasoningEnabled;
+    const pendingPreviewUrls = hasOverride ? [] : pendingQnaImages.map((item) => item.previewUrl);
+    const useWebSearch = hasOverride ? false : options.webSearchEnabled ?? qnaWebSearchEnabledRef.current;
+    const useDeepReasoning = hasOverride ? false : options.deepReasoningEnabled ?? deepReasoningEnabledRef.current;
     const qnaLearningContext = await buildQnaLearningContext();
     const pendingMessages: ChatMessage[] = [
       ...qnaMessagesRef.current,
@@ -723,6 +738,7 @@ export function useLearningStudioQna({
     qnaMessagesRef.current = pendingMessages;
     setQnaInput('');
     setQnaWebSearchEnabled(false);
+    qnaWebSearchEnabledRef.current = false;
     setQnaImageError('');
     setQnaMessages(pendingMessages);
     setPendingQnaImages([]);
@@ -804,6 +820,9 @@ export function useLearningStudioQna({
               handleConversationQuestionBatch(event.data.payload);
             }
             if (event.event === 'reasoning_chunk') {
+              if (!useDeepReasoning) {
+                return;
+              }
               const reasoningChunk = readReasoningChunk(event.data.payload);
               if (!reasoningChunk) {
                 return;
@@ -866,7 +885,7 @@ export function useLearningStudioQna({
             if (activeQnaStreamRef.current?.abortController === abortController) {
               activeQnaStreamRef.current = null;
             }
-            const message = getErrorMessage(error);
+            const message = toQnaFriendlyErrorMessage(getErrorMessage(error));
             updateQnaConversationMessages(
               currentConversationId,
               (messages) =>
@@ -911,7 +930,7 @@ export function useLearningStudioQna({
         markQnaStreamStopped(stoppedConversationId, assistantMessageId);
         return false;
       }
-      const message = getErrorMessage(error);
+      const message = toQnaFriendlyErrorMessage(getErrorMessage(error));
       const targetConversationId = streamConversationId || (
         conversationIdRef.current === originConversationId
           ? conversationIdRef.current
@@ -961,6 +980,18 @@ export function useLearningStudioQna({
     activeQnaStreamRef.current = null;
     markQnaStreamStopped(targetConversationId, activeStream.assistantMessageId);
     window.dispatchEvent(new Event('app:conversation-updated'));
+  }, []);
+
+  const handleToggleDeepReasoning = useCallback(() => {
+    const nextValue = !deepReasoningEnabledRef.current;
+    deepReasoningEnabledRef.current = nextValue;
+    setDeepReasoningEnabled(nextValue);
+  }, []);
+
+  const handleToggleWebSearch = useCallback(() => {
+    const nextValue = !qnaWebSearchEnabledRef.current;
+    qnaWebSearchEnabledRef.current = nextValue;
+    setQnaWebSearchEnabled(nextValue);
   }, []);
 
   async function buildQnaLearningContext(): Promise<QnaLearningContext> {
@@ -1080,11 +1111,11 @@ export function useLearningStudioQna({
       imageErrorMessage: qnaImageError,
       deepReasoningEnabled,
       webSearchEnabled: qnaWebSearchEnabled,
-      onChange: setQnaInput,
+      onChange: handleQnaInputChange,
       onSend: handleQnaSend,
       onStop: handleQnaStop,
-      onToggleDeepReasoning: () => setDeepReasoningEnabled((prev) => !prev),
-      onToggleWebSearch: () => setQnaWebSearchEnabled((prev) => !prev),
+      onToggleDeepReasoning: handleToggleDeepReasoning,
+      onToggleWebSearch: handleToggleWebSearch,
       onPickImages: handlePickQnaImages,
       onRemoveImage: handleRemovePendingQnaImage,
     },
@@ -1159,6 +1190,15 @@ function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage
   });
 }
 
+function isQnaSendOverride(value: unknown): value is QnaSendOverride {
+  return Boolean(
+    value
+      && typeof value === 'object'
+      && 'text' in value
+      && typeof (value as QnaSendOverride).text === 'string',
+  );
+}
+
 function stoppedAssistantContent(content: string): string {
   const value = content ?? '';
   if (!value.trim()) {
@@ -1204,6 +1244,17 @@ function markReasoningDone(messages: ChatMessage[], assistantMessageId: string):
     }
     return { ...item, reasoningState: 'done' as const };
   });
+}
+
+function toQnaFriendlyErrorMessage(message: string): string {
+  const normalized = message.trim();
+  if (!normalized) {
+    return '服务暂时不可用，请稍后重试。';
+  }
+  if (/RuntimeError|Traceback|SUPERVISOR_FAILED|ValidationError|AxiosError|traceId|taskId|agentName/i.test(normalized)) {
+    return '服务处理时遇到问题，请稍后重试；如果正在生成资源，可以换个问题或减少生成范围。';
+  }
+  return normalized;
 }
 
 function readReasoningChunk(payload: Record<string, unknown> | undefined): string {

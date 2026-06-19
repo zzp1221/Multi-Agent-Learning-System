@@ -489,7 +489,7 @@ class PythonAgentSupervisor:
             if final_state is None:
                 raise RuntimeError("Resource bundle workflow finished without final state")
         except Exception as exc:
-            message = f"Resource bundle generation failed: {type(exc).__name__}: {exc}"
+            message = self._resource_bundle_error_message(exc)
             LOGGER.exception(message)
             state.seq = workflow.last_state.seq if workflow.last_state is not None else state.seq
             raise SupervisorExecutionError(code="RESOURCE_BUNDLE_FAILED", message=message) from exc
@@ -542,10 +542,22 @@ class PythonAgentSupervisor:
             if final_state is None:
                 raise RuntimeError("Resource bundle workflow finished without final state")
         except Exception as exc:
-            message = f"Resource bundle generation failed: {type(exc).__name__}: {exc}"
+            message = self._resource_bundle_error_message(exc)
             LOGGER.exception(message)
             raise SupervisorExecutionError(code="RESOURCE_BUNDLE_FAILED", message=message) from exc
         params.update(final_state.params)
+
+    @staticmethod
+    def _resource_bundle_error_message(exc: Exception) -> str:
+        message = str(exc).strip()
+        lowered = message.lower()
+        if "resource bundle generation failed" in lowered:
+            return "Resource bundle generation failed: no requested resource could be generated; please retry with a clearer topic or fewer resource types"
+        if "no supported resource types requested" in lowered:
+            return "Resource bundle generation failed: no supported resource types were requested"
+        if "cancelled" in lowered or "鍙栨秷" in message:
+            return "Resource bundle generation was cancelled"
+        return "Resource bundle generation failed; please retry later"
 
     def _prepare_resource_bundle_params(self, params: dict[str, Any]) -> None:
         if not isinstance(params.get("learningPath"), dict):

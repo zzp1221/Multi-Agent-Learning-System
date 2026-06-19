@@ -271,6 +271,13 @@ class Settings(BaseSettings):
         alias="KNOWLEDGE_EMBEDDING_RETRY_BACKOFF_SECONDS",
     )
     sandbox_root: str = Field(default="sandbox-temp", alias="SANDBOX_ROOT")
+    web_search_provider: str = Field(default="builtin", alias="WEB_SEARCH_PROVIDER")
+    web_search_api_key: str = Field(default="", alias="WEB_SEARCH_API_KEY")
+    web_search_base_url: str = Field(default="", alias="WEB_SEARCH_BASE_URL")
+    web_search_timeout_seconds: float = Field(default=10.0, alias="WEB_SEARCH_TIMEOUT_SECONDS")
+    web_search_cache_ttl_seconds: int = Field(default=300, alias="WEB_SEARCH_CACHE_TTL_SECONDS")
+    web_fetch_timeout_seconds: float = Field(default=10.0, alias="WEB_FETCH_TIMEOUT_SECONDS")
+    web_fetch_max_bytes: int = Field(default=1_000_000, alias="WEB_FETCH_MAX_BYTES")
     tavily_api_key: str = Field(default="", alias="TAVILY_API_KEY")
     tavily_base_url: str = Field(default="https://api.tavily.com/search", alias="TAVILY_BASE_URL")
 
