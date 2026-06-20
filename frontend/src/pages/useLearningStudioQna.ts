@@ -1195,7 +1195,7 @@ function removePendingAssistantPlaceholder(messages: ChatMessage[]): ChatMessage
     if (index !== lastIndex) {
       return true;
     }
-    return Boolean(item.content.trim() || item.reasoningContent?.trim());
+    return Boolean(item.content.trim() || item.reasoningContent?.trim() || item.agentTraceItems?.length);
   });
 }
 
@@ -1351,7 +1351,7 @@ function upsertAgentTraceItem(
     return {
       ...item,
       agentTraceItems: nextItems,
-      collaborationState: traceItem.status === 'FAILED' ? 'stopped' as const : 'streaming' as const,
+      collaborationState: 'streaming' as const,
     };
   });
   return updatedAssistant
@@ -1363,7 +1363,7 @@ function upsertAgentTraceItem(
         role: 'assistant' as const,
         content: '',
         agentTraceItems: [traceItem],
-        collaborationState: traceItem.status === 'FAILED' ? 'stopped' as const : 'streaming' as const,
+        collaborationState: 'streaming' as const,
       },
     ];
 }

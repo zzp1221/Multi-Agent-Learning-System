@@ -186,6 +186,77 @@ describe('useLearningStudioQna', () => {
     expect(assistant?.collaborationState).toBe('streaming');
   });
 
+  it('keeps collaboration streaming when one public trace item fails', async () => {
+    vi.mocked(conversationApi.streamMessage).mockImplementation(async (_conversationId, _request, handlers) => {
+      handlers.onEvent({
+        event: 'reasoning_chunk',
+        data: {
+          payload: {
+            text: 'Slides Agent 生成失败，资源包将继续处理其他资源。',
+            stage: 'resource_generation',
+            publicTrace: true,
+            agentName: 'Slides',
+            artifactType: 'SLIDES',
+            phase: 'failed',
+            status: 'FAILED',
+          },
+        },
+      } as ConversationStreamEvent);
+    });
+    const { result } = renderQnaHook();
+
+    act(() => {
+      result.current.viewProps.onChange('生成一个资料包');
+    });
+    await act(async () => {
+      await result.current.viewProps.onSend();
+    });
+
+    const assistant = result.current.viewProps.qnaMessages.find((message) => message.role === 'assistant' && message.id.startsWith('qna-assistant-'));
+
+    expect(assistant?.agentTraceItems?.[0]).toMatchObject({
+      agentName: 'Slides',
+      phase: 'failed',
+      status: 'FAILED',
+    });
+    expect(assistant?.collaborationState).toBe('streaming');
+  });
+
+  it('keeps public trace message visible after done even before text content', async () => {
+    vi.mocked(conversationApi.streamMessage).mockImplementation(async (_conversationId, _request, handlers) => {
+      handlers.onEvent({
+        event: 'reasoning_chunk',
+        data: {
+          payload: {
+            text: 'Resource Bundle 正在汇总已完成资源。',
+            stage: 'resource_generation',
+            publicTrace: true,
+            agentName: 'Resource Bundle',
+            phase: 'publish',
+            status: 'SUCCESS',
+            percent: 96,
+          },
+        },
+      } as ConversationStreamEvent);
+      handlers.onDone();
+    });
+    const { result } = renderQnaHook();
+
+    act(() => {
+      result.current.viewProps.onChange('生成一个资料包');
+    });
+    await act(async () => {
+      await result.current.viewProps.onSend();
+    });
+
+    const assistant = result.current.viewProps.qnaMessages.find((message) => message.role === 'assistant' && message.id.startsWith('qna-assistant-'));
+
+    expect(assistant).toBeDefined();
+    expect(assistant?.agentTraceItems).toHaveLength(1);
+    expect(assistant?.content).toBe('');
+    expect(assistant?.collaborationState).toBe('done');
+  });
+
   it('dedupes repeated deep reasoning chunks line by line', async () => {
     vi.mocked(conversationApi.streamMessage).mockImplementation(async (_conversationId, _request, handlers) => {
       handlers.onEvent({

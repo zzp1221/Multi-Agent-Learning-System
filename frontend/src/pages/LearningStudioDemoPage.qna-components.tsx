@@ -104,23 +104,22 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
   const [expanded, setExpanded] = useState(isStreaming || hasTrace);
 
   useEffect(() => {
-    if ((isStreaming && (hasContent || hasTrace)) || (hasTrace && collaborationState === 'streaming')) {
+    if (hasTrace || (isStreaming && hasContent)) {
       setExpanded(true);
       return;
     }
-    if (!isStreaming && (reasoningState || collaborationState) && (hasContent || hasTrace)) {
+    if (!isStreaming && reasoningState && hasContent) {
       setExpanded(false);
     }
-  }, [collaborationState, hasContent, hasTrace, isStreaming, reasoningState]);
+  }, [hasContent, hasTrace, isStreaming, reasoningState]);
 
   if (!hasContent && !hasTrace) {
     return null;
   }
 
-  const hasFailedTrace = traceItems.some((item) => item.status === 'FAILED');
   const hasPartialCompletion = traceItems.some((item) => item.status === 'PARTIAL_FAILED');
   const title = hasTrace
-    ? collaborationState === 'stopped' || (hasFailedTrace && !hasPartialCompletion)
+    ? collaborationState === 'stopped'
       ? '协作已中止'
       : isStreaming || collaborationState === 'streaming'
         ? '多 Agent 协作中'
@@ -144,8 +143,8 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
         <ChevronDown className="qna-reasoning-chevron h-4 w-4" />
       </button>
       {expanded ? (
-        <div className="qna-reasoning-content">
-          {hasTrace ? <AgentTraceTimeline items={traceItems} /> : null}
+        <div className={`qna-reasoning-content ${hasTrace ? 'has-agent-trace' : ''}`}>
+          {hasTrace ? <AgentTraceTimeline items={traceItems} collaborationState={collaborationState} /> : null}
           {hasTrace && !isStreaming && collaborationState === 'done' ? (
             <div className="qna-agent-trace-complete">
               {hasPartialCompletion ? '部分资源已完成生成' : '资源已完成生成'}
@@ -162,32 +161,44 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
   );
 });
 
-const AgentTraceTimeline = memo(function AgentTraceTimeline({ items }: { items: AgentCollaborationTraceItem[] }) {
+const AgentTraceTimeline = memo(function AgentTraceTimeline({
+  items,
+  collaborationState,
+}: {
+  items: AgentCollaborationTraceItem[];
+  collaborationState?: ChatMessage['collaborationState'];
+}) {
   return (
     <div className="qna-agent-trace-list">
       {items.map((item) => {
         const Icon = agentTraceIcon(item);
+        const status = item.status;
+        const displayStatus = collaborationState === 'done' && status === 'RUNNING' ? 'SUCCESS' : status;
+        const showStatus = displayStatus && !(item.phase === 'failed' && displayStatus === 'FAILED');
+        const displayPercent = collaborationState === 'done' && displayStatus === 'SUCCESS' ? 100 : item.percent;
+        const phaseText = phaseLabel(item.phase);
         return (
-          <div key={item.id} className={`qna-agent-trace-item is-${(item.status ?? 'RUNNING').toLowerCase()}`}>
+          <div key={item.id} className={`qna-agent-trace-item is-${(displayStatus ?? 'RUNNING').toLowerCase()}`}>
             <div className="qna-agent-trace-avatar">
               <Icon className="h-3.5 w-3.5" />
             </div>
             <div className="qna-agent-trace-body">
               <div className="qna-agent-trace-head">
                 <span className="qna-agent-trace-agent">{item.agentName}</span>
-                <span className="qna-agent-trace-phase">{phaseLabel(item.phase)}</span>
-                {item.status ? <span className="qna-agent-trace-status">{statusLabel(item.status)}</span> : null}
+                <span className="qna-agent-trace-phase">{phaseText}</span>
+                {showStatus ? <span className="qna-agent-trace-status">{statusLabel(displayStatus)}</span> : null}
               </div>
               <div className="qna-agent-trace-text">{item.text}</div>
-              {typeof item.percent === 'number' ? (
+              {typeof displayPercent === 'number' ? (
                 <div
                   className="qna-agent-progress"
                   role="progressbar"
+                  aria-label={`${item.agentName} ${phaseText}进度`}
                   aria-valuemin={0}
                   aria-valuemax={100}
-                  aria-valuenow={item.percent}
+                  aria-valuenow={displayPercent}
                 >
-                  <span style={{ width: `${item.percent}%` }} />
+                  <span style={{ width: `${displayPercent}%` }} />
                 </div>
               ) : null}
             </div>

@@ -1287,15 +1287,22 @@
     background: #f1f5f9;
     padding: 9px 14px;
     color: #64748b;
+    cursor: pointer;
     font-weight: 560;
     line-height: 1;
-    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
   }
 
   .qna-reasoning-toggle:hover {
     border-color: rgba(99, 102, 241, 0.24);
     background: rgba(241, 245, 249, 0.96);
     color: #475569;
+  }
+
+  .qna-reasoning-toggle:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.38);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
   }
 
   .qna-reasoning-chevron {
@@ -1308,8 +1315,9 @@
 
   .qna-reasoning-content {
     margin: 10px 0 0;
-    max-height: 360px;
-    overflow: auto;
+    max-height: min(60dvh, 520px);
+    overflow-y: auto;
+    overflow-x: hidden;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     border-left: 2px solid rgba(148, 163, 184, 0.28);
@@ -1321,19 +1329,38 @@
     text-wrap: pretty;
   }
 
+  .qna-reasoning-content.has-agent-trace {
+    max-height: none;
+    overflow: visible;
+  }
+
   .qna-agent-trace-list {
     display: grid;
-    gap: 10px;
+    gap: 8px;
   }
 
   .qna-agent-trace-item {
+    position: relative;
     display: grid;
     grid-template-columns: 28px minmax(0, 1fr);
     gap: 10px;
     align-items: start;
   }
 
+  .qna-agent-trace-item:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    left: 13px;
+    top: 32px;
+    bottom: -8px;
+    width: 2px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.22);
+  }
+
   .qna-agent-trace-avatar {
+    position: relative;
+    z-index: 1;
     display: inline-flex;
     height: 28px;
     width: 28px;
@@ -1588,6 +1615,10 @@
     color: #cbd5e1;
   }
 
+  .dark .qna-agent-trace-item:not(:last-child)::after {
+    background: rgba(71, 85, 105, 0.5);
+  }
+
   .dark .qna-agent-trace-body {
     border-color: rgba(71, 85, 105, 0.42);
     background: rgba(15, 23, 42, 0.48);
@@ -1600,6 +1631,11 @@
   .dark .qna-agent-trace-phase {
     background: rgba(51, 65, 85, 0.82);
     color: #cbd5e1;
+  }
+
+  .dark .qna-agent-trace-status {
+    background: rgba(37, 99, 235, 0.22);
+    color: #bfdbfe;
   }
 
   .dark .qna-agent-trace-text {
