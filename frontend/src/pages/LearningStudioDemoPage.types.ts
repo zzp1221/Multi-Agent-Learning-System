@@ -24,10 +24,36 @@ export interface ChatMessage {
   content: string;
   reasoningContent?: string;
   reasoningState?: 'streaming' | 'done' | 'stopped';
+  agentTraceItems?: AgentCollaborationTraceItem[];
+  collaborationState?: 'streaming' | 'done' | 'stopped';
   imageUrls?: string[];
   localImagePreviews?: string[];
   webSearchEnabled?: boolean;
   deepReasoningEnabled?: boolean;
+}
+
+export type AgentCollaborationPhase =
+  | 'intent'
+  | 'rewrite'
+  | 'retrieve'
+  | 'select'
+  | 'generate'
+  | 'review'
+  | 'safety'
+  | 'publish'
+  | 'done'
+  | 'failed';
+
+export type AgentCollaborationStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'PARTIAL_FAILED';
+
+export interface AgentCollaborationTraceItem {
+  id: string;
+  agentName: string;
+  phase: AgentCollaborationPhase;
+  text: string;
+  artifactType?: string;
+  status?: AgentCollaborationStatus;
+  percent?: number;
 }
 
 export interface PendingChatImage {

@@ -215,6 +215,18 @@ class _RecordingResourceBundleRunner:
         )
 
 
+def _public_resource_trace_events(events):
+    return [
+        event
+        for event in events
+        if event.event == "reasoning_chunk" and getattr(event.payload, "public_trace", False)
+    ]
+
+
+def _result_text(events) -> str:
+    return "".join(event.payload.text for event in events if event.event == "result_chunk")
+
+
 class _FakeResourceIntentExtractor:
     def __init__(
         self,
@@ -469,7 +481,8 @@ async def test_tutor_agent_uses_active_learning_step_for_topicless_resource_requ
     assert len(runner.calls) == 1
     assert runner.calls[0]["params"]["topic"] == "联合索引"
     assert runner.calls[0]["params"]["resourceTypes"] == ["SLIDES"]
-    assert [event.event for event in events] == ["progress", "result_chunk", "progress", "resource_file"]
+    assert _public_resource_trace_events(events)
+    assert events[-1].event == "resource_file"
 
 
 @pytest.mark.asyncio
@@ -508,8 +521,8 @@ async def test_tutor_agent_ignores_generic_explicit_topic_when_active_step_exist
     assert len(runner.calls) == 1
     assert runner.calls[0]["params"]["topic"] == "Java线程创建基础概念学习"
     assert runner.calls[0]["params"]["resourceTypes"] == ["SLIDES"]
-    assert "Java线程创建基础概念学习" in events[1].payload.text
-    assert "一份" not in events[1].payload.text
+    assert "Java线程创建基础概念学习" in _result_text(events)
+    assert "一份" not in _result_text(events)
 
 
 @pytest.mark.asyncio
@@ -550,8 +563,8 @@ async def test_tutor_agent_uses_current_stage_for_resource_bundle_prompt() -> No
 
     assert len(runner.calls) == 1
     assert runner.calls[0]["params"]["topic"] == "Java并发编程基础：线程创建与休眠"
-    assert "Java并发编程基础：线程创建与休眠" in events[1].payload.text
-    assert "根据我当前学习阶段" not in events[1].payload.text
+    assert "Java并发编程基础：线程创建与休眠" in _result_text(events)
+    assert "根据我当前学习阶段" not in _result_text(events)
 
 
 @pytest.mark.asyncio
@@ -596,8 +609,9 @@ async def test_tutor_agent_triggers_resource_bundle_from_conversation() -> None:
         "VIDEO",
         "CODE",
     ]
-    assert [event.event for event in events] == ["progress", "result_chunk", "progress", "resource_file"]
-    assert "资源生成需求" in events[1].payload.text
+    public_traces = _public_resource_trace_events(events)
+    assert [event.payload.agent_name for event in public_traces[:3]] == ["Tutor", "Tutor", "Tutor"]
+    assert "资源生成需求" in _result_text(events)
     assert events[-1].payload.asset_type == "DOCUMENT"
 
 
@@ -723,7 +737,8 @@ async def test_tutor_agent_applies_llm_quiz_parameter_intent() -> None:
     assert runner_params["count"] == 12
     assert runner_params["questionTypePreference"] == "SINGLE_CHOICE"
     assert runner_params["difficulty"] == "BASIC"
-    assert [event.event for event in events] == ["progress", "result_chunk", "progress", "resource_file"]
+    assert _public_resource_trace_events(events)
+    assert events[-1].event == "resource_file"
 
 
 @pytest.mark.asyncio

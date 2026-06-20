@@ -18,6 +18,8 @@ from src.ai_modules.models import (
     ProgressPayload,
     ProgressSSEEvent,
     QuestionBatchSSEEvent,
+    ReasoningChunkPayload,
+    ReasoningChunkSSEEvent,
     ResourceFileSSEEvent,
     SSEEvent,
 )
@@ -45,6 +47,15 @@ RESOURCE_NODE_BY_TYPE: dict[str, str] = {
     "QUIZ": "practice_agent",
     "CODE": "code_case_agent",
     "VIDEO": "video_agent",
+}
+
+RESOURCE_AGENT_DISPLAY_NAME_BY_TYPE: dict[str, str] = {
+    "DOCUMENT": "Document",
+    "SLIDES": "Slides",
+    "MINDMAP": "MindMap",
+    "QUIZ": "Practice",
+    "CODE": "Code",
+    "VIDEO": "Video",
 }
 
 
@@ -251,6 +262,17 @@ class ResourceBundleWorkflow:
             raise RuntimeError("No supported resource types requested")
         state.resource_types = resource_types
         state.events.append(
+            self._public_trace_event(
+                state=state,
+                agent_name="Resource Bundle",
+                phase="select",
+                text=f"已确认需要生成 {len(resource_types)} 类资源，准备分派给对应 Agent。",
+                status="RUNNING",
+                percent=48,
+            )
+        )
+        state.seq += 1
+        state.events.append(
             ProgressSSEEvent(
                 taskId=state.request.task_id,
                 traceId=state.request.trace_id,
@@ -277,8 +299,22 @@ class ResourceBundleWorkflow:
         if resource_type not in state.resource_types:
             return {"resource_results": [], "resource_failures": []}
         agent_name = RESOURCE_AGENT_BY_TYPE[resource_type]
+        display_agent_name = RESOURCE_AGENT_DISPLAY_NAME_BY_TYPE.get(resource_type, agent_name)
         writer = get_stream_writer()
         try:
+            writer(
+                {
+                    "event": self._public_trace_event(
+                        state=state,
+                        agent_name=display_agent_name,
+                        phase="generate",
+                        text=f"{display_agent_name} Agent 已接收 {resource_type} 资源生成任务。",
+                        artifact_type=resource_type,
+                        status="RUNNING",
+                        percent=58,
+                    )
+                }
+            )
             writer(
                 {
                     "event": ProgressSSEEvent(
@@ -349,6 +385,18 @@ class ResourceBundleWorkflow:
         for failure in failures:
             resource_type = str(failure.get("resourceType") or "UNKNOWN")
             state.events.append(
+                self._public_trace_event(
+                    state=state,
+                    agent_name=str(failure.get("agentName") or "Resource Bundle"),
+                    phase="failed",
+                    text=f"{resource_type} 资源未能完成，已记录为失败项。",
+                    artifact_type=resource_type,
+                    status="FAILED",
+                    percent=90,
+                )
+            )
+            state.seq += 1
+            state.events.append(
                 ProgressSSEEvent(
                     taskId=state.request.task_id,
                     traceId=state.request.trace_id,
@@ -372,6 +420,18 @@ class ResourceBundleWorkflow:
         state.params["resourceFailures"] = failures
         if generated_assets:
             state.params["generatedAsset"] = generated_assets[0]
+            status = "PARTIAL_FAILED" if failures else "SUCCESS"
+            state.events.append(
+                self._public_trace_event(
+                    state=state,
+                    agent_name="Resource Bundle",
+                    phase="done",
+                    text="资源包已完成汇总，正在发布可用资源。",
+                    status=status,
+                    percent=96,
+                )
+            )
+            state.seq += 1
         else:
             state.params.pop("generatedAsset", None)
             state.params.pop("generatedContent", None)
@@ -558,6 +618,35 @@ class ResourceBundleWorkflow:
             "resource_results": state.resource_results,
             "resource_failures": state.resource_failures,
         }
+
+    @staticmethod
+    def _public_trace_event(
+        *,
+        state: WorkflowState,
+        agent_name: str,
+        phase: str,
+        text: str,
+        artifact_type: str | None = None,
+        status: str | None = None,
+        percent: int | None = None,
+    ) -> ReasoningChunkSSEEvent:
+        return ReasoningChunkSSEEvent(
+            taskId=state.request.task_id,
+            traceId=state.request.trace_id,
+            seq=state.seq,
+            payload=ReasoningChunkPayload(
+                text=text,
+                stage="resource_generation",
+                publicTrace=True,
+                agentName=agent_name,
+                phase=phase,
+                artifactType=artifact_type,
+                status=status,
+                percent=percent,
+                provider="system",
+                model="public-trace",
+            ),
+        )
 
     @staticmethod
     def _copy_state(target: WorkflowState, source: WorkflowState) -> None:

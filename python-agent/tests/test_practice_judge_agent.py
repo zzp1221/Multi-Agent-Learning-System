@@ -9,6 +9,10 @@ from src.ai_modules.runtime import SystemSnapshot
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
 
 
+def _question_batch_event(events):
+    return next(event for event in events if event.event == "question_batch")
+
+
 def _build_snapshot() -> SystemSnapshot:
     return SystemSnapshot(
         current_course="数据库原理",
@@ -186,11 +190,11 @@ async def test_practice_agent_generates_question_batch() -> None:
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert _question_batch_event(events).event == "question_batch"
     assert params["practiceQuestionBatch"]["topic"] == "联合索引"
     assert len(params["practiceQuestionBatch"]["questions"]) == 5
     assert "practiceSetId" in params["practicePersistence"]
-    assert events[1].payload.questions[0].stem == "LLM 生成题目 1"
+    assert _question_batch_event(events).payload.questions[0].stem == "LLM 生成题目 1"
 
 
 @pytest.mark.asyncio
@@ -262,8 +266,8 @@ async def test_practice_agent_conversation_triggered_batch_persists_without_task
 
     assert practice_store.saved_task_id is None
     assert params["practicePersistence"]["taskId"] is None
-    assert [event.event for event in events] == ["progress", "question_batch"]
-    assert events[1].payload.topic == "联合索引"
+    assert _question_batch_event(events).event == "question_batch"
+    assert _question_batch_event(events).payload.topic == "联合索引"
 
 
 @pytest.mark.asyncio
@@ -322,7 +326,7 @@ async def test_practice_agent_passes_question_type_preference_to_generator() -> 
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert _question_batch_event(events).event == "question_batch"
     assert captured["question_type_preference"] == "SINGLE_CHOICE"
     assert {question["questionType"] for question in params["practiceQuestionBatch"]["questions"]} == {"SINGLE_CHOICE"}
 
@@ -365,7 +369,7 @@ async def test_practice_agent_normalizes_single_question_object_from_llm() -> No
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert _question_batch_event(events).event == "question_batch"
     assert params["practiceQuestionBatch"]["topic"] == "联合索引"
     assert params["practiceQuestionBatch"]["questions"][0]["questionId"] == "single-q1"
 
@@ -416,7 +420,7 @@ async def test_practice_agent_normalizes_question_array_from_llm() -> None:
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert _question_batch_event(events).event == "question_batch"
     assert [item["questionId"] for item in params["practiceQuestionBatch"]["questions"]] == [
         "array-q1",
         "array-q2",
@@ -470,12 +474,12 @@ async def test_practice_agent_reuses_existing_question_batch() -> None:
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "question_batch"]
-    assert events[1].payload.title == "并发编程 练习题"
-    assert events[1].payload.assessment_dimension is None
-    assert events[1].payload.submit_label is None
-    assert events[1].payload.questions[0].question_id == "initiative-q1"
-    assert events[1].payload.questions[0].knowledge_tags == ["并发编程", "学习主动性"]
+    assert _question_batch_event(events).event == "question_batch"
+    assert _question_batch_event(events).payload.title == "并发编程 练习题"
+    assert _question_batch_event(events).payload.assessment_dimension is None
+    assert _question_batch_event(events).payload.submit_label is None
+    assert _question_batch_event(events).payload.questions[0].question_id == "initiative-q1"
+    assert _question_batch_event(events).payload.questions[0].knowledge_tags == ["并发编程", "学习主动性"]
     assert params["practiceQuestionBatch"]["title"] == "并发编程 练习题"
     assert params["practiceQuestionBatch"]["assessmentDimension"] is None
 
@@ -555,7 +559,7 @@ async def test_practice_agent_golden_eval_preserves_question_batch_contract() ->
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "question_batch"]
+    assert _question_batch_event(events).event == "question_batch"
     batch = params["practiceQuestionBatch"]
     assert batch["title"] == "联合索引 练习题"
     assert batch["topic"] == "联合索引"
@@ -644,7 +648,7 @@ async def test_judge_agent_scores_answers_and_marks_profile_source() -> None:
             system_prompt="test",
         )
     ]
-    assert practice_events[1].event == "question_batch"
+    assert _question_batch_event(practice_events).event == "question_batch"
 
     params["answers"] = {
         "q1": "C",

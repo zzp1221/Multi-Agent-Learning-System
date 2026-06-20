@@ -18,6 +18,8 @@ from src.ai_modules.llms import GenerationToolLLMClientFactory
 from src.ai_modules.models import (
     DonePayload,
     DoneSSEEvent,
+    ReasoningChunkPayload,
+    ReasoningChunkSSEEvent,
     ResourceFilePayload,
     ResourceFileSSEEvent,
     ResultChunkPayload,
@@ -73,6 +75,9 @@ class _BaseGenerationAgent(PlaceholderAgent):
         del service_type
         next_seq = seq
         final_output: dict[str, Any] | None = None
+        for trace_event in self._generation_start_trace_events(task_id, trace_id, next_seq):
+            yield trace_event
+            next_seq += 1
         final_output_task = asyncio.create_task(
             self._run_agent_core_loop(
                 task_id=task_id,
@@ -120,6 +125,16 @@ class _BaseGenerationAgent(PlaceholderAgent):
         safety_review = final_output["safetyReview"]
 
         if not safety_review.allowed:
+            yield self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=next_seq,
+                phase="safety",
+                text=f"{self._trace_agent_name()} Agent 安全审核未通过，已中止发布。",
+                status="FAILED",
+                percent=88,
+            )
+            next_seq += 1
             yield ResultChunkSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
@@ -136,6 +151,16 @@ class _BaseGenerationAgent(PlaceholderAgent):
 
         if not self._critic_review_passed(critic_review):
             summary = self._critic_failure_summary(critic_review)
+            yield self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=next_seq,
+                phase="review",
+                text=f"{self._trace_agent_name()} Agent 质量复核未通过，已中止发布。",
+                status="FAILED",
+                percent=86,
+            )
+            next_seq += 1
             yield ResultChunkSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
@@ -163,6 +188,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
                 )
             ),
         )
+        next_seq += 1
         resource_payload = ResourceFilePayload(
             assetType=asset.asset_type,
             title=asset.title,
@@ -191,10 +217,20 @@ class _BaseGenerationAgent(PlaceholderAgent):
             fromCache=asset.from_cache,
         )
         validate_llm_provenance(resource_payload, artifact_label=f"{self.stage_name}:{asset.asset_type}")
+        yield self._public_trace_event(
+            task_id=task_id,
+            trace_id=trace_id,
+            seq=next_seq,
+            phase="publish",
+            text=f"{self._trace_agent_name()} Agent 已通过复核，正在发布资源文件。",
+            status="SUCCESS",
+            percent=92,
+        )
+        next_seq += 1
         yield ResourceFileSSEEvent(
             taskId=task_id,
             traceId=trace_id,
-            seq=next_seq + 1,
+            seq=next_seq,
             payload=resource_payload,
         )
 
@@ -342,6 +378,71 @@ class _BaseGenerationAgent(PlaceholderAgent):
 
     def _wire_agent_name(self) -> str:
         return self.stage_name
+
+    def _trace_agent_name(self) -> str:
+        return {
+            "DOCUMENT": "Document",
+            "SLIDES": "Slides",
+            "MINDMAP": "MindMap",
+            "CODE": "Code",
+            "READING": "Reading",
+            "VIDEO": "Video",
+        }.get(self.asset_type, self.agent_name)
+
+    def _generation_start_trace_events(
+        self,
+        task_id: str,
+        trace_id: str,
+        seq: int,
+    ) -> list[ReasoningChunkSSEEvent]:
+        messages = [
+            ("select", "正在规划资源大纲。", "RUNNING", 62),
+            ("generate", "正在生成主体内容。", "RUNNING", 70),
+            ("review", "正在进行质量复核。", "RUNNING", 82),
+            ("safety", "正在进行安全审核。", "RUNNING", 86),
+        ]
+        return [
+            self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=seq + index,
+                phase=phase,
+                text=f"{self._trace_agent_name()} Agent {message}",
+                status=status,
+                percent=percent,
+            )
+            for index, (phase, message, status, percent) in enumerate(messages)
+        ]
+
+    def _public_trace_event(
+        self,
+        *,
+        task_id: str,
+        trace_id: str,
+        seq: int,
+        phase: str,
+        text: str,
+        status: str,
+        percent: int,
+        artifact_type: str | None = None,
+    ) -> ReasoningChunkSSEEvent:
+        return ReasoningChunkSSEEvent(
+            taskId=task_id,
+            traceId=trace_id,
+            seq=seq,
+            payload=ReasoningChunkPayload(
+                text=text,
+                stage="resource_generation",
+                publicTrace=True,
+                agentName=self._trace_agent_name(),
+                phase=phase,
+                artifactType=artifact_type or self.asset_type,
+                status=status,
+                percent=percent,
+                provider="system",
+                model="public-trace",
+            ),
+        )
 
     def _resolve_topic(self, params: dict[str, Any]) -> str:
         resolver = getattr(self.generation_service, "_display_topic", None)
@@ -579,6 +680,9 @@ class VideoGenerationAgent(_BaseGenerationAgent):
     ) -> AsyncIterator[SSEEvent]:
         topic = self._resolve_topic(params)
         current_seq = seq
+        for trace_event in self._video_start_trace_events(task_id, trace_id, current_seq):
+            yield trace_event
+            current_seq += 1
         yield VideoProgressSSEEvent(
             event="video_gen:start",
             taskId=task_id,
@@ -634,6 +738,16 @@ class VideoGenerationAgent(_BaseGenerationAgent):
         safety_review = final_output["safetyReview"]
 
         if not safety_review.allowed:
+            yield self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=current_seq,
+                phase="safety",
+                text="Video Agent 安全审核未通过，已中止发布。",
+                status="FAILED",
+                percent=88,
+            )
+            current_seq += 1
             yield ResultChunkSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
@@ -650,6 +764,16 @@ class VideoGenerationAgent(_BaseGenerationAgent):
 
         if not self._critic_review_passed(critic_review):
             summary = self._critic_failure_summary(critic_review)
+            yield self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=current_seq,
+                phase="review",
+                text="Video Agent 质量复核未通过，已中止发布。",
+                status="FAILED",
+                percent=86,
+            )
+            current_seq += 1
             yield ResultChunkSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
@@ -703,6 +827,16 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             fromCache=asset.from_cache,
         )
         validate_llm_provenance(resource_payload, artifact_label=f"{self.stage_name}:{asset.asset_type}")
+        yield self._public_trace_event(
+            task_id=task_id,
+            trace_id=trace_id,
+            seq=current_seq,
+            phase="publish",
+            text="Video Agent 已通过复核，正在发布视频资源。",
+            status="SUCCESS",
+            percent=92,
+        )
+        current_seq += 1
         yield ResourceFileSSEEvent(
             taskId=task_id,
             traceId=trace_id,
@@ -735,6 +869,17 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             browser_avatar_data_url = str(video_artifact_payload.get("avatarDataUrl") or browser_avatar_data_url)
 
         if isinstance(script_payload, dict):
+            yield self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=current_seq,
+                phase="generate",
+                text="Video Agent 已生成视频脚本。",
+                status="SUCCESS",
+                percent=25,
+                artifact_type="VIDEO_SCRIPT",
+            )
+            current_seq += 1
             yield VideoProgressSSEEvent(
                 event="video_gen:script",
                 taskId=task_id,
@@ -757,6 +902,17 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             current_seq += 1
 
         if browser_audio_base64:
+            yield self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=current_seq,
+                phase="generate",
+                text="Video Agent 已完成语音合成。",
+                status="SUCCESS",
+                percent=50,
+                artifact_type="VIDEO_AUDIO",
+            )
+            current_seq += 1
             yield VideoProgressSSEEvent(
                 event="video_gen:speech",
                 taskId=task_id,
@@ -781,6 +937,17 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             )
             current_seq += 1
 
+        yield self._public_trace_event(
+            task_id=task_id,
+            trace_id=trace_id,
+            seq=current_seq,
+            phase="generate",
+            text="Video Agent 已准备好浏览器渲染素材。",
+            status="SUCCESS",
+            percent=75,
+            artifact_type="VIDEO_MATERIAL",
+        )
+        current_seq += 1
         yield VideoProgressSSEEvent(
             event="video_gen:avatar",
             taskId=task_id,
@@ -834,6 +1001,16 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             complete_payload["videoSandboxArtifact"] = video_artifact_payload
             complete_payload["audioPath"] = video_artifact_payload.get("audioPath")
             complete_payload["thumbnailPath"] = video_artifact_payload.get("thumbnailPath", asset.thumbnail_path)
+        yield self._public_trace_event(
+            task_id=task_id,
+            trace_id=trace_id,
+            seq=current_seq,
+            phase="done",
+            text="Video Agent 已完成视频脚本、语音和素材发布。",
+            status="SUCCESS",
+            percent=100,
+        )
+        current_seq += 1
         yield VideoCompleteSSEEvent(
             taskId=task_id,
             traceId=trace_id,
@@ -854,3 +1031,28 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                 )
             ),
         )
+
+    def _video_start_trace_events(
+        self,
+        task_id: str,
+        trace_id: str,
+        seq: int,
+    ) -> list[ReasoningChunkSSEEvent]:
+        messages = [
+            ("rewrite", "Video Agent 正在规划视频脚本。", "RUNNING", 18),
+            ("generate", "Video Agent 正在生成语音与素材。", "RUNNING", 38),
+            ("review", "Video Agent 正在进行质量复核。", "RUNNING", 82),
+            ("safety", "Video Agent 正在进行安全审核。", "RUNNING", 86),
+        ]
+        return [
+            self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=seq + index,
+                phase=phase,
+                text=text,
+                status=status,
+                percent=percent,
+            )
+            for index, (phase, text, status, percent) in enumerate(messages)
+        ]

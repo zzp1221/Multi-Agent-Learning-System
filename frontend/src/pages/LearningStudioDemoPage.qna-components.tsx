@@ -1,9 +1,9 @@
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, BrainCircuit, ChevronDown, FileImage, Globe2, Paperclip, SendHorizontal, Square, X, XCircle } from 'lucide-react';
+import { ArrowDown, Bot, BrainCircuit, ChevronDown, FileCode2, FileImage, FileText, Globe2, GraduationCap, Layers3, ListChecks, Paperclip, Presentation, Route, SendHorizontal, ShieldCheck, Square, Video, X, XCircle } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { normalizeCopyMarkdown } from '../utils/markdownSanitizer';
-import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
+import type { AgentCollaborationTraceItem, ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -56,9 +56,11 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
           </div>
         ) : (
           <div className={`qna-assistant-message ${assistantIsPending ? 'is-pending' : ''}`}>
-            <ReasoningPanel
+            <AgentCollaborationPanel
               content={message.reasoningContent ?? ''}
-              state={message.reasoningState}
+              reasoningState={message.reasoningState}
+              traceItems={message.agentTraceItems ?? []}
+              collaborationState={message.collaborationState}
               isStreaming={isStreaming}
             />
             {message.content ? (
@@ -84,37 +86,50 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
   );
 });
 
-const ReasoningPanel = memo(function ReasoningPanel({
+const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
   content,
-  state,
+  reasoningState,
+  traceItems,
+  collaborationState,
   isStreaming,
 }: {
   content: string;
-  state?: ChatMessage['reasoningState'];
+  reasoningState?: ChatMessage['reasoningState'];
+  traceItems: AgentCollaborationTraceItem[];
+  collaborationState?: ChatMessage['collaborationState'];
   isStreaming: boolean;
 }) {
   const hasContent = Boolean(content.trim());
-  const [expanded, setExpanded] = useState(isStreaming);
+  const hasTrace = traceItems.length > 0;
+  const [expanded, setExpanded] = useState(isStreaming || hasTrace);
 
   useEffect(() => {
-    if (isStreaming && hasContent) {
+    if ((isStreaming && (hasContent || hasTrace)) || (hasTrace && collaborationState === 'streaming')) {
       setExpanded(true);
       return;
     }
-    if (!isStreaming && state && hasContent) {
+    if (!isStreaming && (reasoningState || collaborationState) && (hasContent || hasTrace)) {
       setExpanded(false);
     }
-  }, [hasContent, isStreaming, state]);
+  }, [collaborationState, hasContent, hasTrace, isStreaming, reasoningState]);
 
-  if (!hasContent) {
+  if (!hasContent && !hasTrace) {
     return null;
   }
 
-  const title = state === 'stopped'
-    ? '深度思考已停止'
-    : isStreaming || state === 'streaming'
-      ? '深度思考中'
-      : '深度思考已完成';
+  const hasFailedTrace = traceItems.some((item) => item.status === 'FAILED');
+  const hasPartialCompletion = traceItems.some((item) => item.status === 'PARTIAL_FAILED');
+  const title = hasTrace
+    ? collaborationState === 'stopped' || (hasFailedTrace && !hasPartialCompletion)
+      ? '协作已中止'
+      : isStreaming || collaborationState === 'streaming'
+        ? '多 Agent 协作中'
+        : '多 Agent 协作已完成'
+    : reasoningState === 'stopped'
+      ? '深度思考已停止'
+      : isStreaming || reasoningState === 'streaming'
+        ? '深度思考中'
+        : '深度思考已完成';
 
   return (
     <div className={`qna-reasoning-panel ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
@@ -124,18 +139,103 @@ const ReasoningPanel = memo(function ReasoningPanel({
         aria-expanded={expanded}
         onClick={() => setExpanded((prev) => !prev)}
       >
-        <BrainCircuit className="h-4 w-4" />
+        {hasTrace ? <Route className="h-4 w-4" /> : <BrainCircuit className="h-4 w-4" />}
         <span>{title}</span>
         <ChevronDown className="qna-reasoning-chevron h-4 w-4" />
       </button>
       {expanded ? (
         <div className="qna-reasoning-content">
-          <MarkdownRenderer content={content} isStreaming={isStreaming} />
+          {hasTrace ? <AgentTraceTimeline items={traceItems} /> : null}
+          {hasTrace && !isStreaming && collaborationState === 'done' ? (
+            <div className="qna-agent-trace-complete">
+              {hasPartialCompletion ? '部分资源已完成生成' : '资源已完成生成'}
+            </div>
+          ) : null}
+          {hasContent ? (
+            <div className={hasTrace ? 'qna-reasoning-legacy' : undefined}>
+              <MarkdownRenderer content={content} isStreaming={isStreaming} />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 });
+
+const AgentTraceTimeline = memo(function AgentTraceTimeline({ items }: { items: AgentCollaborationTraceItem[] }) {
+  return (
+    <div className="qna-agent-trace-list">
+      {items.map((item) => {
+        const Icon = agentTraceIcon(item);
+        return (
+          <div key={item.id} className={`qna-agent-trace-item is-${(item.status ?? 'RUNNING').toLowerCase()}`}>
+            <div className="qna-agent-trace-avatar">
+              <Icon className="h-3.5 w-3.5" />
+            </div>
+            <div className="qna-agent-trace-body">
+              <div className="qna-agent-trace-head">
+                <span className="qna-agent-trace-agent">{item.agentName}</span>
+                <span className="qna-agent-trace-phase">{phaseLabel(item.phase)}</span>
+                {item.status ? <span className="qna-agent-trace-status">{statusLabel(item.status)}</span> : null}
+              </div>
+              <div className="qna-agent-trace-text">{item.text}</div>
+              {typeof item.percent === 'number' ? (
+                <div
+                  className="qna-agent-progress"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={item.percent}
+                >
+                  <span style={{ width: `${item.percent}%` }} />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+function agentTraceIcon(item: AgentCollaborationTraceItem) {
+  const key = `${item.agentName} ${item.artifactType ?? ''}`.toLowerCase();
+  if (key.includes('tutor')) return GraduationCap;
+  if (key.includes('retrieval')) return Globe2;
+  if (key.includes('bundle')) return Layers3;
+  if (key.includes('slide')) return Presentation;
+  if (key.includes('document')) return FileText;
+  if (key.includes('mind')) return Route;
+  if (key.includes('code')) return FileCode2;
+  if (key.includes('practice') || key.includes('quiz')) return ListChecks;
+  if (key.includes('video')) return Video;
+  if (key.includes('safety')) return ShieldCheck;
+  return Bot;
+}
+
+function phaseLabel(phase: AgentCollaborationTraceItem['phase']): string {
+  return {
+    intent: '意图',
+    rewrite: '改写',
+    retrieve: '检索',
+    select: '选择',
+    generate: '生成',
+    review: '复核',
+    safety: '安全',
+    publish: '发布',
+    done: '完成',
+    failed: '失败',
+  }[phase];
+}
+
+function statusLabel(status: NonNullable<AgentCollaborationTraceItem['status']>): string {
+  return {
+    RUNNING: '进行中',
+    SUCCESS: '完成',
+    FAILED: '失败',
+    PARTIAL_FAILED: '部分完成',
+  }[status];
+}
 
 export const ChatPanel = memo(function ChatPanel({
   busy,

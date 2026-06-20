@@ -18,6 +18,8 @@ from src.ai_modules.models import (
     PracticeQuestion,
     QuestionBatchPayload,
     QuestionBatchSSEEvent,
+    ReasoningChunkPayload,
+    ReasoningChunkSSEEvent,
     SSEEvent,
 )
 from src.ai_modules.prompts import build_practice_system_prompt
@@ -68,6 +70,9 @@ class PracticeAgent(PlaceholderAgent):
         user_id = str(params.get("userId") or "00000000-0000-0000-0000-000000000001")
         next_seq = seq
         question_batch: dict[str, Any] | None = None
+        for trace_event in self._practice_trace_events(task_id, trace_id, next_seq):
+            yield trace_event
+            next_seq += 1
         question_batch_task = asyncio.create_task(
             self._run_agent_core_loop(
                 params=params,
@@ -125,10 +130,21 @@ class PracticeAgent(PlaceholderAgent):
                 message="已生成练习题批次",
             ),
         )
+        next_seq += 1
+        yield self._public_trace_event(
+            task_id=task_id,
+            trace_id=trace_id,
+            seq=next_seq,
+            phase="publish",
+            text="Practice Agent 已完成练习题发布。",
+            status="SUCCESS",
+            percent=92,
+        )
+        next_seq += 1
         yield QuestionBatchSSEEvent(
             taskId=task_id,
             traceId=trace_id,
-            seq=next_seq + 1,
+            seq=next_seq,
             payload=QuestionBatchPayload.model_validate(question_batch),
         )
 
@@ -343,6 +359,59 @@ class PracticeAgent(PlaceholderAgent):
         except (TypeError, ValueError):
             return True
         return "question_type_preference" in signature.parameters
+
+    def _practice_trace_events(
+        self,
+        task_id: str,
+        trace_id: str,
+        seq: int,
+    ) -> list[ReasoningChunkSSEEvent]:
+        messages = [
+            ("generate", "Practice Agent 正在生成练习题。", "RUNNING", 62),
+            ("review", "Practice Agent 正在校验题目结构与答案。", "RUNNING", 76),
+            ("publish", "Practice Agent 正在保存题批并准备发布。", "RUNNING", 86),
+        ]
+        return [
+            self._public_trace_event(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=seq + index,
+                phase=phase,
+                text=text,
+                status=status,
+                percent=percent,
+            )
+            for index, (phase, text, status, percent) in enumerate(messages)
+        ]
+
+    def _public_trace_event(
+        self,
+        *,
+        task_id: str,
+        trace_id: str,
+        seq: int,
+        phase: str,
+        text: str,
+        status: str,
+        percent: int,
+    ) -> ReasoningChunkSSEEvent:
+        return ReasoningChunkSSEEvent(
+            taskId=task_id,
+            traceId=trace_id,
+            seq=seq,
+            payload=ReasoningChunkPayload(
+                text=text,
+                stage="resource_generation",
+                publicTrace=True,
+                agentName="Practice",
+                phase=phase,
+                artifactType="QUIZ",
+                status=status,
+                percent=percent,
+                provider="system",
+                model="public-trace",
+            ),
+        )
 
     async def _safe_save_question_batch(
         self,

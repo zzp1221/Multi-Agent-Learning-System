@@ -93,7 +93,7 @@ class ConversationAndProfileIntegrationTest {
                 "reasoning_chunk",
                 "reasoning",
                 Map.of(
-                    "text", "raw reasoning",
+                    "text", "raw reasoning C:\\Users\\demo\\agent.py /app/src/agent.py taskId=task-debug traceId=trace-debug sk-testsecret123456 Traceback (most recent call last): internal stack",
                     "provider", "test-provider",
                     "model", "test-model"
                 )
@@ -152,6 +152,12 @@ class ConversationAndProfileIntegrationTest {
 
         String responseBody = asyncResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(responseBody).contains("event:reasoning_chunk");
+        assertThat(responseBody).doesNotContain("C:\\Users\\demo\\agent.py");
+        assertThat(responseBody).doesNotContain("/app/src/agent.py");
+        assertThat(responseBody).doesNotContain("taskId=task-debug");
+        assertThat(responseBody).doesNotContain("traceId=trace-debug");
+        assertThat(responseBody).doesNotContain("sk-testsecret123456");
+        assertThat(responseBody).doesNotContain("Traceback (most recent call last)");
         assertThat(responseBody).contains("event:result_chunk");
         assertThat(responseBody).contains("event:done");
         assertThat(responseBody).contains(conversationId);
@@ -168,6 +174,12 @@ class ConversationAndProfileIntegrationTest {
         assertThat(assistantContent.getValue()).isNotBlank();
         assertThat(assistantContent.getValue()).doesNotContain("raw reasoning");
         assertThat(assistantReasoningContent.getValue()).contains("raw reasoning");
+        assertThat(assistantReasoningContent.getValue()).doesNotContain("C:\\Users\\demo\\agent.py");
+        assertThat(assistantReasoningContent.getValue()).doesNotContain("/app/src/agent.py");
+        assertThat(assistantReasoningContent.getValue()).doesNotContain("taskId=task-debug");
+        assertThat(assistantReasoningContent.getValue()).doesNotContain("traceId=trace-debug");
+        assertThat(assistantReasoningContent.getValue()).doesNotContain("sk-testsecret123456");
+        assertThat(assistantReasoningContent.getValue()).doesNotContain("Traceback (most recent call last)");
         assertThat(responseBody).contains("联合索引");
     }
 

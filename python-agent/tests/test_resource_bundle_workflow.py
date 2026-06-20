@@ -322,6 +322,32 @@ async def test_resource_bundle_publishes_only_provenance_checked_outputs() -> No
 
 
 @pytest.mark.asyncio
+async def test_resource_bundle_emits_public_trace_before_resource_file() -> None:
+    supervisor = PythonAgentSupervisor()
+    _install_success_bundle(supervisor)
+    request = EngineStreamRequest(
+        serviceType="RESOURCE_GENERATION",
+        params={"resourceTypes": ["DOCUMENT"], "query": "联合索引"},
+        taskId="task-public-trace-bundle",
+        traceId="trace-public-trace-bundle",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    first_resource_index = next(index for index, event in enumerate(events) if event.event == "resource_file")
+    trace_events = [
+        event for event in events[:first_resource_index]
+        if event.event == "reasoning_chunk" and event.payload.public_trace is True
+    ]
+    trace_agents = {event.payload.agent_name for event in trace_events}
+
+    assert "Resource Bundle" in trace_agents
+    assert "Document" in trace_agents
+    assert any(event.payload.phase == "select" for event in trace_events)
+    assert any(event.payload.phase == "generate" for event in trace_events)
+
+
+@pytest.mark.asyncio
 async def test_resource_bundle_partial_failed_publishes_only_successful_real_outputs() -> None:
     supervisor = PythonAgentSupervisor()
     _install_success_bundle(supervisor)

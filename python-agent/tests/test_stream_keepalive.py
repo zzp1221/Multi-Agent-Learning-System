@@ -91,7 +91,7 @@ async def test_document_generator_agent_emits_keepalive_progress_when_generation
         event.event == "progress" and event.payload.message == "资源生成仍在执行中，请稍候"
         for event in events
     )
-    assert events[-2].event == "result_chunk"
+    assert any(event.event == "result_chunk" for event in events)
     assert events[-1].event == "resource_file"
 
 

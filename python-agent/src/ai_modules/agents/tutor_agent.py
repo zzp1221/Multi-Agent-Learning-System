@@ -237,6 +237,15 @@ class TutorAgent(PlaceholderAgent):
         current_seq = seq + 1
         if resource_intent and self.resource_bundle_runner is not None:
             self._apply_resource_generation_intent(params=params, intent=resource_intent)
+            for trace_event in self._resource_intent_trace_events(
+                task_id=task_id,
+                trace_id=trace_id,
+                seq=current_seq,
+                intent=resource_intent,
+                dialog_state=dialog_state,
+            ):
+                yield trace_event
+                current_seq += 1
             yield ResultChunkSSEEvent(
                 taskId=task_id,
                 traceId=trace_id,
@@ -248,29 +257,6 @@ class TutorAgent(PlaceholderAgent):
                 dialogState=dialog_state,
             )
             current_seq += 1
-
-            # Emit reasoning chunks for PPT generation to show thinking process
-            if params.get("emitResourceReasoningChunks") is True and "SLIDES" in resource_intent.resource_types:
-                topic = params.get("topic") or params.get("explicitUserTopic") or "主题"
-                reasoning_messages = [
-                    f"正在分析「{topic}」的教学目标和知识点结构...",
-                    "构思 PPT 大纲：标题页、核心概念、实例演示、总结...",
-                    "规划每页内容的要点和讲解备注...",
-                ]
-                for msg in reasoning_messages:
-                    yield ReasoningChunkSSEEvent(
-                        taskId=task_id,
-                        traceId=trace_id,
-                        seq=current_seq,
-                        payload=ReasoningChunkPayload(
-                            text=msg + "\n",
-                            stage="resource_generation",
-                            provider="system",
-                            model="planning",
-                        ),
-                        dialogState=dialog_state,
-                    )
-                    current_seq += 1
 
             async for event in self.resource_bundle_runner(
                 task_id=task_id,
@@ -767,6 +753,42 @@ class TutorAgent(PlaceholderAgent):
     def _resource_intent_acknowledgement(self, intent: ResourceGenerationIntent) -> str:
         labels = [self._resource_type_label(item) for item in intent.resource_types]
         return f"我已识别到资源生成需求，正在围绕「{intent.topic}」生成{ '、'.join(labels) }。"
+
+    def _resource_intent_trace_events(
+        self,
+        *,
+        task_id: str,
+        trace_id: str,
+        seq: int,
+        intent: ResourceGenerationIntent,
+        dialog_state: DialogState,
+    ) -> list[ReasoningChunkSSEEvent]:
+        labels = "、".join(self._resource_type_label(item) for item in intent.resource_types)
+        messages = [
+            ("intent", "Tutor Agent 已识别到资源生成请求。", "RUNNING", 24),
+            ("rewrite", f"Tutor Agent 已解析生成主题：{intent.topic}。", "RUNNING", 28),
+            ("select", f"Tutor Agent 已确认资源类型：{labels}。", "SUCCESS", 32),
+        ]
+        return [
+            ReasoningChunkSSEEvent(
+                taskId=task_id,
+                traceId=trace_id,
+                seq=seq + index,
+                payload=ReasoningChunkPayload(
+                    text=text,
+                    stage="resource_generation",
+                    publicTrace=True,
+                    agentName="Tutor",
+                    phase=phase,
+                    status=status,
+                    percent=percent,
+                    provider="system",
+                    model="public-trace",
+                ),
+                dialogState=dialog_state,
+            )
+            for index, (phase, text, status, percent) in enumerate(messages)
+        ]
 
     def _resource_type_label(self, resource_type: str) -> str:
         return {

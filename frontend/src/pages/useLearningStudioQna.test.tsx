@@ -147,6 +147,45 @@ describe('useLearningStudioQna', () => {
     expect(assistant?.reasoningState).toBeUndefined();
   });
 
+  it('shows public resource trace in NORMAL reasoning mode', async () => {
+    vi.mocked(conversationApi.streamMessage).mockImplementation(async (_conversationId, _request, handlers) => {
+      handlers.onEvent({
+        event: 'reasoning_chunk',
+        data: {
+          payload: {
+            text: 'Tutor Agent 已识别到资源生成请求。',
+            stage: 'resource_generation',
+            publicTrace: true,
+            agentName: 'Tutor',
+            phase: 'intent',
+            status: 'RUNNING',
+            percent: 24,
+          },
+        },
+      } as ConversationStreamEvent);
+    });
+    const { result } = renderQnaHook();
+
+    act(() => {
+      result.current.viewProps.onChange('生成一份联合索引 PPT');
+    });
+    await act(async () => {
+      await result.current.viewProps.onSend();
+    });
+
+    const assistant = result.current.viewProps.qnaMessages.find((message) => message.role === 'assistant' && message.id.startsWith('qna-assistant-'));
+
+    expect(assistant?.reasoningContent).toBeUndefined();
+    expect(assistant?.agentTraceItems).toHaveLength(1);
+    expect(assistant?.agentTraceItems?.[0]).toMatchObject({
+      agentName: 'Tutor',
+      phase: 'intent',
+      status: 'RUNNING',
+      percent: 24,
+    });
+    expect(assistant?.collaborationState).toBe('streaming');
+  });
+
   it('dedupes repeated deep reasoning chunks line by line', async () => {
     vi.mocked(conversationApi.streamMessage).mockImplementation(async (_conversationId, _request, handlers) => {
       handlers.onEvent({

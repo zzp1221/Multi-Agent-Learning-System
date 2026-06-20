@@ -7,6 +7,8 @@ import type { LayoutOutletContext } from '../components/Layout';
 import {
   QNA_GREETING,
   QNA_STREAM_STOPPED_MESSAGE,
+  type AgentCollaborationStatus,
+  type AgentCollaborationTraceItem,
   type ChatMessage,
   type PendingChatImage,
   type QnaState,
@@ -821,16 +823,21 @@ export function useLearningStudioQna({
               handleConversationQuestionBatch(event.data.payload);
             }
             if (event.event === 'reasoning_chunk') {
-              if (!useDeepReasoning) {
-                return;
-              }
+              const traceItem = readAgentTraceItem(event.data.payload);
               const reasoningChunk = readReasoningChunk(event.data.payload);
-              if (!reasoningChunk) {
+              if (!traceItem && (!useDeepReasoning || !reasoningChunk)) {
                 return;
               }
               updateQnaConversationMessages(
                 currentConversationId,
-                (messages) => appendReasoningChunk(messages, assistantMessageId, reasoningChunk),
+                (messages) => {
+                  const withTrace = traceItem
+                    ? upsertAgentTraceItem(messages, assistantMessageId, traceItem)
+                    : messages;
+                  return useDeepReasoning && reasoningChunk
+                    ? appendReasoningChunk(withTrace, assistantMessageId, reasoningChunk)
+                    : withTrace;
+                },
                 { qnaState: 'QNA_STREAMING' },
               );
               return;
@@ -870,7 +877,7 @@ export function useLearningStudioQna({
             }
             updateQnaConversationMessages(
               currentConversationId,
-              (messages) => markReasoningDone(removePendingAssistantPlaceholder(messages), assistantMessageId),
+              (messages) => markAssistantProcessDone(removePendingAssistantPlaceholder(messages), assistantMessageId),
               { qnaState: 'QNA_IDLE' },
             );
             window.dispatchEvent(new Event('app:conversation-updated'));
@@ -1134,6 +1141,7 @@ export function useLearningStudioQna({
           ...item,
           content: stoppedAssistantContent(item.content),
           reasoningState: item.reasoningContent?.trim() ? 'stopped' as const : item.reasoningState,
+          collaborationState: item.agentTraceItems?.length ? 'stopped' as const : item.collaborationState,
         };
       });
       if (updatedAssistant) {
@@ -1270,12 +1278,16 @@ function dedupeReasoningChunk(existing: string, chunk: string): string {
   return kept.trim() ? kept : '';
 }
 
-function markReasoningDone(messages: ChatMessage[], assistantMessageId: string): ChatMessage[] {
+function markAssistantProcessDone(messages: ChatMessage[], assistantMessageId: string): ChatMessage[] {
   return messages.map((item) => {
-    if (item.id !== assistantMessageId || !item.reasoningContent?.trim()) {
+    if (item.id !== assistantMessageId) {
       return item;
     }
-    return { ...item, reasoningState: 'done' as const };
+    return {
+      ...item,
+      reasoningState: item.reasoningContent?.trim() ? 'done' as const : item.reasoningState,
+      collaborationState: item.agentTraceItems?.length ? 'done' as const : item.collaborationState,
+    };
   });
 }
 
@@ -1296,6 +1308,99 @@ function readReasoningChunk(payload: Record<string, unknown> | undefined): strin
   }
   const text = payload.text;
   return typeof text === 'string' ? text : '';
+}
+
+function readAgentTraceItem(payload: Record<string, unknown> | undefined): AgentCollaborationTraceItem | null {
+  if (!payload || payload.publicTrace !== true || payload.stage !== 'resource_generation') {
+    return null;
+  }
+  const agentName = readLooseString(payload.agentName) || 'Agent';
+  const phase = normalizeTracePhase(payload.phase);
+  const text = readLooseString(payload.text);
+  if (!phase || !text) {
+    return null;
+  }
+  const artifactType = readLooseString(payload.artifactType);
+  return {
+    id: `${agentName}:${artifactType || 'bundle'}:${phase}`,
+    agentName,
+    phase,
+    text,
+    artifactType: artifactType || undefined,
+    status: normalizeTraceStatus(payload.status),
+    percent: readTracePercent(payload.percent),
+  };
+}
+
+function upsertAgentTraceItem(
+  messages: ChatMessage[],
+  assistantMessageId: string,
+  traceItem: AgentCollaborationTraceItem,
+): ChatMessage[] {
+  let updatedAssistant = false;
+  const nextMessages = messages.map((item) => {
+    if (item.id !== assistantMessageId) {
+      return item;
+    }
+    updatedAssistant = true;
+    const items = item.agentTraceItems ?? [];
+    const existingIndex = items.findIndex((candidate) => candidate.id === traceItem.id);
+    const nextItems = existingIndex >= 0
+      ? items.map((candidate, index) => (index === existingIndex ? { ...candidate, ...traceItem } : candidate))
+      : [...items, traceItem];
+    return {
+      ...item,
+      agentTraceItems: nextItems,
+      collaborationState: traceItem.status === 'FAILED' ? 'stopped' as const : 'streaming' as const,
+    };
+  });
+  return updatedAssistant
+    ? nextMessages
+    : [
+      ...messages,
+      {
+        id: assistantMessageId,
+        role: 'assistant' as const,
+        content: '',
+        agentTraceItems: [traceItem],
+        collaborationState: traceItem.status === 'FAILED' ? 'stopped' as const : 'streaming' as const,
+      },
+    ];
+}
+
+function normalizeTracePhase(value: unknown): AgentCollaborationTraceItem['phase'] | null {
+  const phase = readLooseString(value).toLowerCase();
+  if (
+    phase === 'intent'
+    || phase === 'rewrite'
+    || phase === 'retrieve'
+    || phase === 'select'
+    || phase === 'generate'
+    || phase === 'review'
+    || phase === 'safety'
+    || phase === 'publish'
+    || phase === 'done'
+    || phase === 'failed'
+  ) {
+    return phase;
+  }
+  return null;
+}
+
+function normalizeTraceStatus(value: unknown): AgentCollaborationStatus | undefined {
+  const status = readLooseString(value).toUpperCase();
+  if (status === 'RUNNING' || status === 'SUCCESS' || status === 'FAILED' || status === 'PARTIAL_FAILED') {
+    return status;
+  }
+  return undefined;
+}
+
+function readTracePercent(value: unknown): number | undefined {
+  const numeric = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(100, Math.round(numeric)));
 }
 
 function appendAssistantResourceLink(messages: ChatMessage[], assistantMessageId: string, linkMarkdown: string): ChatMessage[] {

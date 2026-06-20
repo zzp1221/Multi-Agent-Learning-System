@@ -10,6 +10,7 @@
         "message",
         "progress",
         "result_chunk",
+        "reasoning_chunk",
         "resource_file",
         "question_batch",
         "judge_result",
@@ -69,6 +70,41 @@
       "required": ["text"],
       "properties": {
         "text": { "type": "string" }
+      }
+    },
+    "ReasoningChunkPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" },
+        "stage": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "publicTrace": { "type": ["boolean", "null"] },
+        "agentName": { "type": ["string", "null"] },
+        "phase": {
+          "type": ["string", "null"],
+          "enum": [
+            "intent",
+            "rewrite",
+            "retrieve",
+            "select",
+            "generate",
+            "review",
+            "safety",
+            "publish",
+            "done",
+            "failed",
+            null
+          ]
+        },
+        "artifactType": { "type": ["string", "null"] },
+        "status": {
+          "type": ["string", "null"],
+          "enum": ["RUNNING", "SUCCESS", "FAILED", "PARTIAL_FAILED", null]
+        },
+        "percent": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 }
       }
     },
     "ResourceFilePayload": {
@@ -148,16 +184,7 @@
       "additionalProperties": true
     },
     "Payload": {
-      "oneOf": [
-        { "$ref": "#/definitions/ProgressPayload" },
-        { "$ref": "#/definitions/ResultChunkPayload" },
-        { "$ref": "#/definitions/ResourceFilePayload" },
-        { "$ref": "#/definitions/QuestionBatchPayload" },
-        { "$ref": "#/definitions/JudgeResultPayload" },
-        { "$ref": "#/definitions/DonePayload" },
-        { "$ref": "#/definitions/ErrorPayload" },
-        { "$ref": "#/definitions/VideoGenerationPayload" }
-      ]
+      "type": "object"
     }
   },
   "type": "object",
@@ -170,5 +197,55 @@
     "seq": { "type": "integer", "minimum": 0 },
     "payload": { "$ref": "#/definitions/Payload" },
     "dialogState": { "$ref": "#/definitions/DialogState" }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "progress" } } },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/ProgressPayload" } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "result_chunk" } } },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/ResultChunkPayload" } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "reasoning_chunk" } } },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/ReasoningChunkPayload" } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "resource_file" } } },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/ResourceFilePayload" } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "question_batch" } } },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/QuestionBatchPayload" } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "judge_result" } } },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/JudgeResultPayload" } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "done" } } },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/DonePayload" } } }
+    },
+    {
+      "if": { "properties": { "event": { "const": "error" } } },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/ErrorPayload" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "enum": [
+              "video_gen:start",
+              "video_gen:script",
+              "video_gen:speech",
+              "video_gen:avatar",
+              "video_gen:complete"
+            ]
+          }
+        }
+      },
+      "then": { "properties": { "payload": { "$ref": "#/definitions/VideoGenerationPayload" } } }
+    }
+  ]
 }

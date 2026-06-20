@@ -1321,6 +1321,122 @@
     text-wrap: pretty;
   }
 
+  .qna-agent-trace-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .qna-agent-trace-item {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  .qna-agent-trace-avatar {
+    display: inline-flex;
+    height: 28px;
+    width: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    background: #ffffff;
+    color: #475569;
+  }
+
+  .qna-agent-trace-body {
+    min-width: 0;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    padding: 8px 10px;
+  }
+
+  .qna-agent-trace-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.25;
+  }
+
+  .qna-agent-trace-agent {
+    color: #334155;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .qna-agent-trace-phase,
+  .qna-agent-trace-status {
+    border-radius: 999px;
+    background: #e2e8f0;
+    padding: 2px 7px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .qna-agent-trace-status {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .qna-agent-trace-item.is-success .qna-agent-trace-status {
+    background: #dcfce7;
+    color: #15803d;
+  }
+
+  .qna-agent-trace-item.is-failed .qna-agent-trace-status {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  .qna-agent-trace-item.is-partial_failed .qna-agent-trace-status {
+    background: #fef3c7;
+    color: #a16207;
+  }
+
+  .qna-agent-trace-text {
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  .qna-agent-progress {
+    margin-top: 7px;
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e2e8f0;
+  }
+
+  .qna-agent-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+    transition: width 0.2s ease;
+  }
+
+  .qna-agent-trace-complete {
+    margin-top: 10px;
+    border-radius: 8px;
+    background: #ecfdf5;
+    padding: 8px 10px;
+    color: #047857;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .qna-reasoning-legacy {
+    margin-top: 12px;
+    border-top: 1px solid rgba(148, 163, 184, 0.24);
+    padding-top: 10px;
+  }
+
   .qna-markdown {
     white-space: pre-wrap;
   }
@@ -1464,6 +1580,39 @@
   .dark .qna-reasoning-content {
     border-left-color: rgba(71, 85, 105, 0.62);
     color: #94a3b8;
+  }
+
+  .dark .qna-agent-trace-avatar {
+    border-color: rgba(71, 85, 105, 0.5);
+    background: rgba(15, 23, 42, 0.72);
+    color: #cbd5e1;
+  }
+
+  .dark .qna-agent-trace-body {
+    border-color: rgba(71, 85, 105, 0.42);
+    background: rgba(15, 23, 42, 0.48);
+  }
+
+  .dark .qna-agent-trace-agent {
+    color: #e2e8f0;
+  }
+
+  .dark .qna-agent-trace-phase {
+    background: rgba(51, 65, 85, 0.82);
+    color: #cbd5e1;
+  }
+
+  .dark .qna-agent-trace-text {
+    color: #94a3b8;
+  }
+
+  .dark .qna-agent-progress {
+    background: rgba(51, 65, 85, 0.9);
+  }
+
+  .dark .qna-agent-trace-complete {
+    background: rgba(6, 78, 59, 0.32);
+    color: #86efac;
   }
 
   .dark .qna-message-action-button {

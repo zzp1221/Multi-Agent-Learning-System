@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from src.ai_modules.models import (
     DonePayload,
@@ -18,6 +19,8 @@ from src.ai_modules.models import (
     ErrorSSEEvent,
     ProgressPayload,
     ProgressSSEEvent,
+    ReasoningChunkPayload,
+    ReasoningChunkSSEEvent,
     ResourceFilePayload,
     ResourceFileSSEEvent,
     ResultChunkPayload,
@@ -25,6 +28,50 @@ from src.ai_modules.models import (
     VideoCompleteSSEEvent,
     VideoProgressSSEEvent,
 )
+
+
+def _schema_definitions() -> dict:
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "contracts" / "sse-events.schema.json"
+        if candidate.exists():
+            return json.loads(candidate.read_text(encoding="utf-8"))["definitions"]
+    raise AssertionError("contracts/sse-events.schema.json not found")
+
+
+def _validate_contract_subset(event_data: dict) -> None:
+    """Minimal local validator for the event-aware shared SSE contract."""
+
+    definitions = _schema_definitions()
+    payload_by_event = {
+        "progress": "ProgressPayload",
+        "result_chunk": "ResultChunkPayload",
+        "reasoning_chunk": "ReasoningChunkPayload",
+        "resource_file": "ResourceFilePayload",
+        "question_batch": "QuestionBatchPayload",
+        "judge_result": "JudgeResultPayload",
+        "done": "DonePayload",
+        "error": "ErrorPayload",
+        "video_gen:start": "VideoGenerationPayload",
+        "video_gen:script": "VideoGenerationPayload",
+        "video_gen:speech": "VideoGenerationPayload",
+        "video_gen:avatar": "VideoGenerationPayload",
+        "video_gen:complete": "VideoGenerationPayload",
+    }
+    required_top_level = {"event", "taskId", "traceId", "seq", "payload"}
+    assert required_top_level.issubset(event_data), f"Missing top-level fields: {required_top_level - set(event_data)}"
+    assert event_data["event"] in definitions["EventType"]["enum"]
+    payload_definition = definitions[payload_by_event[event_data["event"]]]
+    payload = event_data["payload"]
+    for field in payload_definition.get("required", []):
+        assert field in payload, f"Missing required payload field {field} for {event_data['event']}"
+    if event_data["event"] == "reasoning_chunk":
+        phase = payload.get("phase")
+        status = payload.get("status")
+        percent = payload.get("percent")
+        assert phase in payload_definition["properties"]["phase"]["enum"]
+        assert status in payload_definition["properties"]["status"]["enum"]
+        if percent is not None:
+            assert 0 <= percent <= 100
 
 
 def parse_sse_wire(wire: str) -> tuple[str, dict]:
@@ -83,6 +130,52 @@ class TestSseEventContracts:
         assert_common_fields(data, "result_chunk", min_seq=2)
         assert data["payload"]["text"] == "这是第一段生成内容"
         assert data["payload"]["stage"] == "tutoring"
+
+    def test_public_trace_reasoning_chunk_event_wire_format(self) -> None:
+        event = ReasoningChunkSSEEvent(
+            taskId=self.TASK_ID,
+            traceId=self.TRACE_ID,
+            seq=3,
+            payload=ReasoningChunkPayload(
+                text="Tutor Agent 已识别到资源生成请求。",
+                stage="resource_generation",
+                publicTrace=True,
+                agentName="Tutor",
+                phase="intent",
+                status="RUNNING",
+                percent=24,
+            ),
+        )
+        wire = event.to_sse()
+        evt_type, data = parse_sse_wire(wire)
+        assert evt_type == "reasoning_chunk"
+        assert_common_fields(data, "reasoning_chunk", min_seq=3)
+        assert data["payload"]["publicTrace"] is True
+        assert data["payload"]["stage"] == "resource_generation"
+        assert data["payload"]["agentName"] == "Tutor"
+        _validate_contract_subset(data)
+
+    def test_normal_reasoning_chunk_event_wire_format(self) -> None:
+        event = ReasoningChunkSSEEvent(
+            taskId=self.TASK_ID,
+            traceId=self.TRACE_ID,
+            seq=4,
+            payload=ReasoningChunkPayload(
+                text="理解问题：用户正在询问检索策略。",
+                stage="reasoning",
+                provider="test-provider",
+                model="test-model",
+            ),
+        )
+
+        wire = event.to_sse()
+        evt_type, data = parse_sse_wire(wire)
+
+        assert evt_type == "reasoning_chunk"
+        assert_common_fields(data, "reasoning_chunk", min_seq=4)
+        assert data["payload"]["publicTrace"] is False
+        assert data["payload"]["stage"] == "reasoning"
+        _validate_contract_subset(data)
 
     def test_resource_file_event_wire_format(self) -> None:
         event = ResourceFileSSEEvent(
@@ -224,13 +317,14 @@ class TestSseEventContracts:
         typed_events = {
             "progress": ProgressSSEEvent,
             "result_chunk": ResultChunkSSEEvent,
+            "reasoning_chunk": ReasoningChunkSSEEvent,
             "resource_file": ResourceFileSSEEvent,
             "done": DoneSSEEvent,
             "error": ErrorSSEEvent,
         }
         # Also covered: video_gen:* via VideoProgressSSEEvent / VideoCompleteSSEEvent
         known_events = {
-            "message", "progress", "result_chunk", "resource_file",
+            "message", "progress", "result_chunk", "reasoning_chunk", "resource_file",
             "question_batch", "judge_result", "done", "error",
             "video_gen:start", "video_gen:script", "video_gen:speech",
             "video_gen:avatar", "video_gen:complete",

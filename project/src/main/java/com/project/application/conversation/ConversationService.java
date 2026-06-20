@@ -46,6 +46,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 /**
  * 管理会话元数据与流式消息转发。
@@ -59,6 +60,11 @@ public class ConversationService {
     private static final int DEFAULT_CONVERSATION_PAGE = 0;
     private static final int DEFAULT_CONVERSATION_SIZE = 12;
     private static final int DEFAULT_MESSAGE_SIZE = 50;
+    private static final Pattern TRACEBACK_PATTERN = Pattern.compile("(?is)traceback \\(most recent call last\\):.*");
+    private static final Pattern WINDOWS_PATH_PATTERN = Pattern.compile("(?i)([a-z]:\\\\(?:[^\\s<>:\"|?*]+\\\\)*[^\\s<>:\"|?*]*)");
+    private static final Pattern UNIX_PATH_PATTERN = Pattern.compile("(?<![\\w:/.-])/(?:app|tmp|var|home|workspace|data|mnt|opt|usr)/(?:[^\\s`'\"<>]+)");
+    private static final Pattern DEBUG_ID_PATTERN = Pattern.compile("(?i)\\b(?:taskId|traceId)\\s*[:=]\\s*[\\w.-]+");
+    private static final Pattern SECRET_PATTERN = Pattern.compile("(?i)\\b(?:sk-[A-Za-z0-9_-]{12,}|[A-Za-z0-9_]*api[_-]?key[A-Za-z0-9_]*\\s*[:=]\\s*[^\\s,;]+|bearer\\s+[A-Za-z0-9._~+/=-]{12,})");
 
     private final QnaSessionRepository qnaSessionRepository;
     private final PythonAgentClient pythonAgentClient;
@@ -573,7 +579,7 @@ public class ConversationService {
         UUID conversationId,
         PythonStreamEvent event
     ) {
-        Map<String, Object> payload = new LinkedHashMap<>(event.safePayload());
+        Map<String, Object> payload = sanitizeOutboundPayload(event);
         String eventStage = event.stage();
         if (eventStage != null && !eventStage.isBlank() && !payload.containsKey("stage")) {
             payload.put("stage", eventStage);
@@ -590,6 +596,17 @@ public class ConversationService {
             ),
             payload
         ));
+    }
+
+    private Map<String, Object> sanitizeOutboundPayload(PythonStreamEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>(event.safePayload());
+        if ("reasoning_chunk".equals(event.eventType())) {
+            Object text = payload.get("text");
+            if (text instanceof String value) {
+                payload.put("text", sanitizeReasoningText(value));
+            }
+        }
+        return payload;
     }
 
     private boolean sendErrorEvent(
@@ -639,7 +656,17 @@ public class ConversationService {
             return "";
         }
         Object text = event.safePayload().get("text");
-        return text instanceof String value ? value : "";
+        return text instanceof String value ? sanitizeReasoningText(value) : "";
+    }
+
+    private String sanitizeReasoningText(String text) {
+        String sanitized = text == null ? "" : text.replace("\r\n", "\n");
+        sanitized = TRACEBACK_PATTERN.matcher(sanitized).replaceAll("[已隐藏内部错误堆栈]");
+        sanitized = WINDOWS_PATH_PATTERN.matcher(sanitized).replaceAll("[已隐藏本地路径]");
+        sanitized = UNIX_PATH_PATTERN.matcher(sanitized).replaceAll("[已隐藏本地路径]");
+        sanitized = DEBUG_ID_PATTERN.matcher(sanitized).replaceAll("[已隐藏调试标识]");
+        sanitized = SECRET_PATTERN.matcher(sanitized).replaceAll("[已隐藏密钥]");
+        return sanitized;
     }
 
     private String extractVisibleAssistantChunk(PythonStreamEvent event) {

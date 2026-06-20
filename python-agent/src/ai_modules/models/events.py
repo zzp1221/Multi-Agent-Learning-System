@@ -121,6 +121,25 @@ class ReasoningChunkPayload(BaseModel):
     stage: str | None = "reasoning"
     provider: str | None = None
     model: str | None = None
+    public_trace: bool = Field(default=False, alias="publicTrace")
+    agent_name: str | None = Field(default=None, alias="agentName")
+    phase: Literal[
+        "intent",
+        "rewrite",
+        "retrieve",
+        "select",
+        "generate",
+        "review",
+        "safety",
+        "publish",
+        "done",
+        "failed",
+    ] | None = None
+    artifact_type: str | None = Field(default=None, alias="artifactType")
+    status: Literal["RUNNING", "SUCCESS", "FAILED", "PARTIAL_FAILED"] | None = None
+    percent: int | None = Field(default=None, ge=0, le=100)
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ResourceFilePayload(BaseModel):
