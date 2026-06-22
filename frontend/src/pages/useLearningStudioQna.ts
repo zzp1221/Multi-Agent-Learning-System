@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
-import { conversationApi, type ConversationMessageStreamRequest } from '../api/conversation';
+import { ConversationStreamError, conversationApi, type ConversationMessageStreamRequest } from '../api/conversation';
 import { getErrorMessage } from '../api/request';
 import { readConversationChunk } from '../api/sse';
 import { learningPathApi, type LearningPathCurrentResponse } from '../api/smartEngine';
@@ -18,7 +18,7 @@ import {
   VOICE_CONVERSATION_STREAM_EVENT,
   readVoiceConversationStreamDetail,
 } from '../utils/voiceConversationBridge';
-import { recordConversationResourceEvent } from './resourceGenerationStore';
+import { recordConversationResourceEvent, seedConversationResourceRequest } from './resourceGenerationStore';
 import { sanitizeMarkdownContent } from '../utils/markdownSanitizer';
 import { openPracticeSession } from './practiceSessionStore';
 import {
@@ -786,6 +786,14 @@ export function useLearningStudioQna({
         abortController,
         streamToken,
       };
+      seedConversationResourceRequest(currentConversationId, {
+        query: text,
+        topic: text,
+        message: text,
+        webSearchEnabled: useWebSearch,
+        reasoningMode: useDeepReasoning ? 'DEEP' : 'NORMAL',
+        voiceContext: qnaLearningContext.voiceContext,
+      });
       await conversationApi.streamMessage(
         currentConversationId,
         {
@@ -821,6 +829,19 @@ export function useLearningStudioQna({
             }
             if (event.event === 'question_batch') {
               handleConversationQuestionBatch(event.data.payload);
+            }
+            if (event.event === 'error' || event.event === 'done') {
+              const failureText = formatResourceFailureMessage(event.data.payload);
+              if (failureText) {
+                updateQnaConversationMessages(
+                  currentConversationId,
+                  (messages) => appendAssistantResourceLink(messages, assistantMessageId, failureText),
+                  { qnaState: 'QNA_STREAMING' },
+                );
+              }
+              if (event.event === 'error') {
+                return;
+              }
             }
             if (event.event === 'reasoning_chunk') {
               const traceItem = readAgentTraceItem(event.data.payload);
@@ -893,7 +914,7 @@ export function useLearningStudioQna({
             if (activeQnaStreamRef.current?.abortController === abortController) {
               activeQnaStreamRef.current = null;
             }
-            const message = toQnaFriendlyErrorMessage(getErrorMessage(error));
+            const message = toQnaFriendlyErrorMessage(getErrorMessage(error), error);
             updateQnaConversationMessages(
               currentConversationId,
               (messages) =>
@@ -938,7 +959,7 @@ export function useLearningStudioQna({
         markQnaStreamStopped(stoppedConversationId, assistantMessageId);
         return false;
       }
-      const message = toQnaFriendlyErrorMessage(getErrorMessage(error));
+      const message = toQnaFriendlyErrorMessage(getErrorMessage(error), error);
       const targetConversationId = streamConversationId || (
         conversationIdRef.current === originConversationId
           ? conversationIdRef.current
@@ -1291,10 +1312,13 @@ function markAssistantProcessDone(messages: ChatMessage[], assistantMessageId: s
   });
 }
 
-function toQnaFriendlyErrorMessage(message: string): string {
+function toQnaFriendlyErrorMessage(message: string, error?: unknown): string {
   const normalized = message.trim();
   if (!normalized) {
     return '服务暂时不可用，请稍后重试。';
+  }
+  if (error instanceof ConversationStreamError && error.code?.startsWith('LLM_')) {
+    return normalized;
   }
   if (/RuntimeError|Traceback|SUPERVISOR_FAILED|ValidationError|AxiosError|traceId|taskId|agentName/i.test(normalized)) {
     return '服务处理时遇到问题，请稍后重试；如果正在生成资源，可以换个问题或减少生成范围。';
@@ -1439,6 +1463,34 @@ function formatConversationResourceLink(payload: Record<string, unknown> | undef
   return details
     ? `- [${title}](${rawUrl})\n  ${details}`
     : `- [${title}](${rawUrl})`;
+}
+
+function formatResourceFailureMessage(payload: Record<string, unknown> | undefined): string {
+  if (!payload) {
+    return '';
+  }
+  const status = readLooseString(payload.status).toUpperCase();
+  const hasFailures = Array.isArray(payload.resourceFailures) && payload.resourceFailures.length > 0;
+  if (status !== 'FAILED' && status !== 'ERROR' && status !== 'PARTIAL_FAILED' && !hasFailures) {
+    return '';
+  }
+  const failures = Array.isArray(payload.resourceFailures)
+    ? payload.resourceFailures.filter((item): item is Record<string, unknown> =>
+      Boolean(item && typeof item === 'object' && !Array.isArray(item)),
+    )
+    : [];
+  const details = failures
+    .map((failure) => {
+      const type = readLooseString(failure.resourceType) || readLooseString(failure.assetType) || 'RESOURCE';
+      const reason = readLooseString(failure.summary)
+        || readLooseString(failure.error)
+        || readLooseString(failure.message)
+        || readLooseString((failure.criticReview as Record<string, unknown> | undefined)?.summaryText);
+      return reason ? `${type}: ${reason}` : type;
+    })
+    .filter(Boolean);
+  const summary = details.join('\n') || readLooseString(payload.message) || readLooseString(payload.summary);
+  return summary ? `资源生成未完全完成：\n${summary}` : '';
 }
 
 function escapeMarkdownLinkText(value: string): string {

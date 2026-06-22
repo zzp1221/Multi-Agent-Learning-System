@@ -245,16 +245,16 @@ class CriticAgent(PlaceholderAgent):
         target_points = self._diagnosis_points(diagnosis)
         step_points = self._step_target_points(steps)
         if not target_points:
-            score = 1.0 if steps else 0.0
+            score = 1.0 if steps else None
             missing_points: list[str] = []
         else:
             covered_points = [point for point in target_points if point in step_points]
             score = len(covered_points) / len(target_points)
             missing_points = [point for point in target_points if point not in step_points]
-        status = "GOOD" if score >= 0.8 else "LIMITED"
+        status = "GOOD" if score is not None and score >= 0.8 else "LIMITED"
         return {
-            "status": status,
-            "score": round(score, 2),
+            "status": status if score is not None else "NOT_APPLICABLE",
+            "score": round(score, 2) if score is not None else None,
             "issues": [f"学习路径未覆盖诊断知识点：{', '.join(missing_points[:3])}"] if missing_points else [],
             "evidence": {
                 "diagnosisPointCount": len(target_points),
@@ -265,15 +265,20 @@ class CriticAgent(PlaceholderAgent):
     def _tool_review_path_order(self, *, params: dict[str, Any]) -> dict[str, Any]:
         learning_path = self._safe_dict(params.get("learningPath")) or {}
         steps = self._learning_path_steps(learning_path)
+        if not steps:
+            return {
+                "status": "NOT_APPLICABLE",
+                "score": None,
+                "issues": [],
+                "evidence": {"stepCount": 0, "orders": []},
+            }
         orders = [self._safe_int(step.get("order")) for step in steps]
         numeric_orders = [order for order in orders if order is not None]
         expected_orders = list(range(1, len(steps) + 1))
         has_duplicate = len(set(numeric_orders)) != len(numeric_orders)
         is_ordered = numeric_orders == sorted(numeric_orders) and not has_duplicate
         is_complete = len(numeric_orders) == len(steps) and sorted(numeric_orders) == expected_orders
-        if not steps:
-            score = 0.0
-        elif is_complete:
+        if is_complete:
             score = 1.0
         elif is_ordered:
             score = 0.75
@@ -298,6 +303,18 @@ class CriticAgent(PlaceholderAgent):
         if not isinstance(coverage_gaps, list):
             coverage_gaps = []
         step_count = len([item for item in step_resources if isinstance(item, dict)])
+        if step_count == 0 and not coverage_gaps:
+            return {
+                "status": "NOT_APPLICABLE",
+                "score": None,
+                "issues": [],
+                "evidence": {
+                    "stepCount": 0,
+                    "matchedStepCount": 0,
+                    "resourceCount": 0,
+                    "gapCount": 0,
+                },
+            }
         matched_step_count = 0
         matched_resource_count = 0
         for item in step_resources:

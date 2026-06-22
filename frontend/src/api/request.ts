@@ -16,7 +16,7 @@ interface Result<T = unknown> {
 
 const SUCCESS_CODES = new Set<ResultCode>([0, 200, '0', '200', 'SUCCESS']);
 
-class ApiError extends Error {
+export class ApiError extends Error {
   readonly code: ResultCode;
   readonly traceId?: string;
   readonly httpStatus?: number;
@@ -262,10 +262,17 @@ export const request = {
  * 获取错误信息
  */
 export function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && isUserActionableLlmError(error.code)) {
+    return error.message.trim() || '模型服务暂时不可用，请稍后重试';
+  }
   if (error instanceof Error) {
     return toUserFacingErrorMessage(error.message);
   }
   return '未知错误';
+}
+
+function isUserActionableLlmError(code: ResultCode | undefined): boolean {
+  return typeof code === 'string' && code.startsWith('LLM_');
 }
 
 function toUserFacingErrorMessage(message: string): string {

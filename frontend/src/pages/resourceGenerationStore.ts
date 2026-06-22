@@ -31,6 +31,8 @@ export interface ResourceGenerationResource {
   statusText?: string;
   progress?: number;
   failureReason?: string;
+  criticReview?: Record<string, unknown>;
+  retryParams?: Record<string, unknown>;
   download?: TempDownloadLink;
   downloadFallback?: {
     content: string;
@@ -54,6 +56,7 @@ export interface ResourceGenerationSession {
   resourceType?: GeneratedResourceType;
   title?: string;
   topic?: string;
+  requestParams?: Record<string, unknown>;
   taskStatus: 'idle' | 'running' | 'completed' | 'partial_failed' | 'failed';
   status?: 'idle' | 'running' | 'completed' | 'partial_failed' | 'failed';
   summary?: string;
@@ -96,6 +99,31 @@ export function recordConversationResourceEvent(
   if (next.conversationTriggered || next.resources.length > 0) {
     saveLastSessionPointer(ownerUserId, normalizedId);
   }
+  notifyResourceGenerationUpdated(normalizedId);
+  return next;
+}
+
+export function seedConversationResourceRequest(
+  conversationId: string,
+  params: Record<string, unknown>,
+): ResourceGenerationSession {
+  const ownerUserId = currentResourceOwnerId();
+  const normalizedId = normalizeConversationId(conversationId);
+  const all = loadAllSessions();
+  const key = sessionStorageKey(ownerUserId, normalizedId);
+  const current = all[key] ?? createEmptySession(normalizedId, ownerUserId);
+  const next = {
+    ...current,
+    ownerUserId,
+    requestParams: params,
+    topic: readString(params.topic) || readString(params.explicitUserTopic) || current.topic,
+    conversationTriggered: true,
+    taskStatus: current.taskStatus === 'idle' ? 'running' as const : current.taskStatus,
+    status: current.status === 'idle' ? 'running' as const : current.status,
+    updatedAt: Date.now(),
+  };
+  all[key] = next;
+  saveAllSessions(all);
   notifyResourceGenerationUpdated(normalizedId);
   return next;
 }
@@ -160,6 +188,7 @@ function reduceResourceEvent(
     ...session,
     ownerUserId,
     taskId: eventTaskId,
+    requestParams: readRequestParams(payload) || session.requestParams,
     updatedAt: now,
   };
 
@@ -260,6 +289,7 @@ function reduceResourceEvent(
       progress: next.progress,
       statusText: resource.statusText || `${resourceLabel(resource.type)}已生成`,
       topic: next.topic || readPayloadString(payload, 'topic') || resource.title,
+      requestParams: readRequestParams(payload) || next.requestParams,
       resources: upsertResource(next.resources, resource),
     };
   }
@@ -306,6 +336,7 @@ function reduceResourceEvent(
     const status = readString(payload.status).toUpperCase();
     const failed = status === 'FAILED' || status === 'ERROR';
     const partial = status === 'PARTIAL_FAILED';
+    const failureResources = readResourceFailures(payload, now, eventTaskId, next);
     return {
       ...next,
       taskStatus: failed ? 'failed' : partial ? 'partial_failed' : 'completed',
@@ -314,6 +345,10 @@ function reduceResourceEvent(
       statusText: readString(payload.summary)
         || (failed ? '资源生成失败' : partial ? '资源部分完成' : '资源生成完成'),
       summary: readString(payload.summary) || next.summary,
+      resources: failureResources.reduce(
+        (resources, resource) => upsertResource(resources, resource),
+        next.resources,
+      ),
       completedAt: now,
     };
   }
@@ -394,8 +429,58 @@ function readResourceFile(payload: Record<string, unknown>, now: number): Resour
     downloadFallback: undefined,
     inline: isPptistEditor ? undefined : inline ?? undefined,
     pptistSlides: isPptistEditor ? readPayloadString(payload, 'inlineContent', 'inline_content') || undefined : undefined,
+    criticReview: readRecord(payload.criticReview) ?? undefined,
     video: video ?? undefined,
     updatedAt: now,
+  };
+}
+
+function readResourceFailures(
+  payload: Record<string, unknown>,
+  now: number,
+  eventTaskId: string | undefined,
+  session: ResourceGenerationSession,
+): ResourceGenerationResource[] {
+  const failures = Array.isArray(payload.resourceFailures) ? payload.resourceFailures : [];
+  return failures
+    .map((item) => readRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((failure) => {
+      const type = normalizeResourceType(readPayloadString(failure, 'resourceType', 'resource_type')) || session.resourceType || 'DOCUMENT';
+      const title = readPayloadString(failure, 'title') || resourceLabel(type);
+      const reason = failureMessage(failure);
+      const retryParams = buildRetryParams(session, type);
+      return {
+        id: resourceId(type, title),
+        type,
+        resourceType: type,
+        taskId: eventTaskId,
+        title,
+        summary: reason,
+        status: 'failed' as const,
+        statusText: reason,
+        failureReason: reason,
+        criticReview: readRecord(failure.criticReview) ?? undefined,
+        retryParams,
+        sourceAgent: readPayloadString(failure, 'agentName', 'agent_name') || undefined,
+        updatedAt: now,
+      };
+    });
+}
+
+function failureMessage(failure: Record<string, unknown>): string {
+  return readPayloadString(failure, 'summary')
+    || readPayloadString(failure, 'error')
+    || readPayloadString(failure, 'message')
+    || '生成失败';
+}
+
+function buildRetryParams(session: ResourceGenerationSession, type: GeneratedResourceType): Record<string, unknown> {
+  const base = readRecord(session.requestParams) ?? {};
+  return {
+    ...base,
+    topic: readString(base.topic) || readString(base.query) || session.topic || session.title || resourceLabel(type),
+    resourceTypes: [type],
   };
 }
 
@@ -526,6 +611,9 @@ function upsertResource(
     download: Object.prototype.hasOwnProperty.call(item, 'download') ? item.download : next[index].download,
     downloadFallback: Object.prototype.hasOwnProperty.call(item, 'downloadFallback') ? item.downloadFallback : next[index].downloadFallback,
     sourceAgent: item.sourceAgent ?? next[index].sourceAgent,
+    failureReason: item.failureReason ?? next[index].failureReason,
+    criticReview: item.criticReview ?? next[index].criticReview,
+    retryParams: item.retryParams ?? next[index].retryParams,
     inline: Object.prototype.hasOwnProperty.call(item, 'inline') ? item.inline : next[index].inline,
     quiz: Object.prototype.hasOwnProperty.call(item, 'quiz') ? item.quiz : next[index].quiz,
     video: Object.prototype.hasOwnProperty.call(item, 'video') ? item.video : next[index].video,
@@ -892,6 +980,19 @@ function readPayloadString(payload: Record<string, unknown>, ...keys: string[]):
     }
   }
   return '';
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function readRequestParams(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  return readRecord(payload.params)
+    || readRecord(payload.requestParams)
+    || readRecord(payload.generationParams)
+    || undefined;
 }
 
 function readNumber(value: unknown): number | undefined {

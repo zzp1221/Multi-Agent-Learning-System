@@ -2,7 +2,7 @@
 
 > **AI 驱动的个性化计算机学习系统** -- 多智能体协作、RAG 知识检索、学习画像闭环
 >
-> 最后更新：2026-06-15
+> 最后更新：2026-06-21
 
 ---
 
@@ -101,7 +101,7 @@ flowchart TB
 
 ## 快速开始
 
-> **注意**：联调/演示环境只允许 `docker cp` 热更新，禁止 `docker compose build` 或 `--force-recreate`。以下命令仅用于全新空环境部署。
+> **注意**：联调/演示环境只允许 `docker cp` 热更新，禁止 `docker compose build`、`docker compose up --build`、`--force-recreate` 和重建容器。以下命令仅用于全新空环境部署。
 
 ### 第 1 步：配置环境变量
 
@@ -127,7 +127,7 @@ docker compose up -d --build
 ### 第 3 步：验证
 
 ```bash
-docker compose ps                              # 全部 6 个服务 healthy
+docker compose ps                              # 数据服务/Python healthy，app/frontend Up
 curl -s http://localhost:8081/api/health       # Java 控制平面 → 200
 curl -s http://localhost:8000/health           # Python Agent → 200
 ```
@@ -174,6 +174,19 @@ uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
+## 开发与联调约束
+
+| 约束 | 要求 |
+|---|---|
+| Java 唯一入口 | 前端只访问 `/api/*`，不得直连 Python `/internal/*` |
+| SSE 协议 | Wire format 固定为 `event:` + `data:`，新增事件需同步 `contracts/sse-events.schema.json`、Java 转发和前端解析 |
+| 热更新 | 联调/演示环境只允许 `docker cp`，不得 build、recreate 或修改 Compose 拓扑 |
+| 向量维度 | Embedding/RAG 向量维度固定 1024 |
+| LLM Key | 正式用户/演示任务使用设置页保存的用户 Key 和模型；系统/环境 Key 只用于测试和联调 |
+| 缓存与清理 | Redis key、取消标记、运行时缓存必须带 TTL；生成文件写入 sandbox 并由清理循环回收 |
+
+---
+
 ## 项目结构
 
 ```text
@@ -183,14 +196,19 @@ zhixue-engine/
 ├── frontend/                      # React + Vite + Tailwind 前端
 │   └── src/
 │       ├── api/                   # API 客户端封装
-│       ├── components/            # 通用组件（Markdown 渲染、语音助手等）
-│       └── pages/                 # 页面（问答、引擎任务、错题本、画像）
+│       ├── components/            # 通用组件（Layout、Markdown、语音助手、PPTist 等）
+│       ├── pages/                 # 页面与页面级 hooks/store
+│       ├── utils/                 # 下载、事件总线、语音桥接、Markdown 清洗
+│       └── test/                  # Vitest 测试配置
 ├── migrations/                    # 数据库迁移脚本
 ├── project/                       # Java Spring Boot 控制平面
 │   └── src/main/java/com/project/
+│       ├── api/                   # REST 控制器与 DTO
 │       ├── application/           # 业务逻辑（对话、任务、画像、错题本）
-│       ├── infrastructure/        # 基础设施（安全、配置、SSE）
-│       └── interfaces/            # REST 控制器
+│       ├── config/                # Spring Security、CORS、Redis、WebSocket 配置
+│       ├── domain/                # JPA 领域模型与 Repository
+│       ├── infrastructure/        # Python/语音/限流/设置等基础设施适配器
+│       └── security/              # JWT、内部 Token、认证用户解析
 ├── python-agent/                  # Python FastAPI + 多智能体运行时
 │   └── src/ai_modules/
 │       ├── agents/                # 18 个专职 Agent 实现
@@ -334,7 +352,9 @@ RRF_score(item) = Σ weight × priority_boost × slug_penalty / (k + rank + 1)
 | `/mistakes` | 错题本 | 错题浏览与间隔重复复习 |
 | `/notes` | AI 笔记本 | Markdown/Mermaid 笔记与版本管理 |
 | `/profile` | 学习画像 | 知识掌握图谱与学习分析 |
+| `/knowledge-graph` | 知识图谱 | 知识节点、依赖关系与节点详情 |
 | `/settings` | 用户设置 | LLM API Key 与模型路由配置 |
+| `/dashboard` | 重定向 | 兼容旧入口，重定向到 `/` |
 
 ### Java 对外 API
 
@@ -347,7 +367,11 @@ RRF_score(item) = Σ weight × priority_boost × slug_penalty / (k + rank + 1)
 | SmartEngine | `POST /api/smart-engine/submit` `GET /api/smart-engine/tasks/{taskId}` `GET /api/smart-engine/tasks/{taskId}/stream` `POST /api/smart-engine/tasks/{taskId}/cancel` | 长任务提交、查询、SSE 订阅、取消 |
 | 下载 | `GET /api/assets/download/{token}` | 生成资源下载（签名 token，30 分钟过期） |
 | 错题本 | `GET /api/mistakes` `PATCH /api/mistakes/{id}` `POST /api/mistakes/review` | 错题管理与复习 |
+| 笔记 | `GET/POST /api/notes` `GET /api/notes/search/semantic` `POST /api/notes/{id}/ai/analyze` | 笔记 CRUD、版本、AI 分析与语义搜索 |
+| 资源库 | `GET /api/resources` `GET /api/resources/search/semantic` `POST /api/resources/{id}/favorite` | 资源浏览、收藏、进度、推荐与语义搜索 |
 | 画像 | `GET /api/users/{userId}/profile/current` `GET /api/users/{userId}/profile/analytics` `GET /api/users/{userId}/knowledge-graph` | 学习画像与知识图谱 |
+| 学习工作台 | `GET /api/study-workbench/daily` `POST /api/study-workbench/daily/refresh` | 每日学习任务与刷新 |
+| 设置 | `GET /api/settings/llm` `POST /api/settings/llm/test` `POST /api/settings/llm/models` | 用户 LLM Provider、模型列表与连通性测试 |
 
 ### Python 内部 API（仅供 Java 调用）
 
@@ -358,6 +382,10 @@ RRF_score(item) = Σ weight × priority_boost × slug_penalty / (k + rank + 1)
 | `POST /internal/smart-engine/{taskId}/cancel` | 取消运行中任务 |
 | `POST /internal/conversations/{conversationId}/messages` | 写入会话消息 |
 | `GET /internal/conversations/{conversationId}/messages` | 读取会话历史 |
+| `GET /internal/resources/search/semantic` | 资源库 RAG 语义搜索，必要时补充 Tavily 外部候选 |
+| `POST /internal/notes/analyze` | 笔记摘要、关键词和待办分析 |
+| `POST /internal/notes/index` | 将用户笔记写入 pgvector 资源分片 |
+| `GET /internal/notes/search/semantic` | 用户笔记语义搜索 |
 
 ### SSE 事件契约
 
@@ -370,7 +398,7 @@ data: <json>
 
 事件类型定义在 `contracts/sse-events.schema.json`：
 
-`message` | `progress` | `result_chunk` | `resource_file` | `question_batch` | `judge_result` | `done` | `error` | `video_gen:start` | `video_gen:script` | `video_gen:speech` | `video_gen:avatar` | `video_gen:complete`
+`message` | `progress` | `result_chunk` | `reasoning_chunk` | `resource_file` | `question_batch` | `judge_result` | `done` | `error` | `video_gen:start` | `video_gen:script` | `video_gen:speech` | `video_gen:avatar` | `video_gen:complete`
 
 ---
 

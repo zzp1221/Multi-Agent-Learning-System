@@ -13,6 +13,12 @@ import httpx
 from opentelemetry import trace
 
 from src.ai_modules.config import get_settings
+from src.ai_modules.llms.errors import (
+    llm_timeout_error,
+    llm_transport_error,
+    missing_llm_config_error,
+    raise_for_llm_status,
+)
 from src.ai_modules.llms.json_utils import dumps_json
 from src.ai_modules.runtime import AssistantTurn, ToolCall
 
@@ -165,7 +171,7 @@ class OpenAICompatibleClient:
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
-            raise RuntimeError("missing openai-compatible api key")
+            raise missing_llm_config_error(provider=self.provider_name, model=model_name or self.model_name)
 
         payload: dict[str, Any] = {
             "model": model_name or self.model_name,
@@ -188,12 +194,17 @@ class OpenAICompatibleClient:
         }
         with TRACER.start_as_current_span("openai_compatible.chat_completion"):
             client = await self._get_client()
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
+            try:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+            except httpx.TimeoutException as exc:
+                raise llm_timeout_error(provider=self.provider_name, model=model_name or self.model_name) from exc
+            except httpx.TransportError as exc:
+                raise llm_transport_error(provider=self.provider_name, model=model_name or self.model_name) from exc
+            raise_for_llm_status(response, provider=self.provider_name, model=model_name or self.model_name)
             data = response.json()
             self._record_usage(data)
 
@@ -232,7 +243,7 @@ class OpenAICompatibleClient:
         include_reasoning: bool = False,
     ) -> AsyncIterator[ChatStreamChunk]:
         if not self.api_key:
-            raise RuntimeError("missing openai-compatible api key")
+            raise missing_llm_config_error(provider=self.provider_name, model=model_name or self.model_name)
 
         resolved_model = model_name or self.model_name
         reasoning_config = (
@@ -262,22 +273,27 @@ class OpenAICompatibleClient:
         }
         with TRACER.start_as_current_span("openai_compatible.chat_completion_stream"):
             client = await self._get_client()
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    for chunk in self._extract_stream_line_chunks(
-                        line,
-                        include_reasoning=reasoning_config is not None,
-                        reasoning_stream_fields=reasoning_config.stream_fields if reasoning_config else [],
-                        reasoning_message_fields=reasoning_config.message_fields if reasoning_config else [],
-                        model_name=resolved_model,
-                    ):
-                        yield chunk
+            try:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                ) as response:
+                    raise_for_llm_status(response, provider=self.provider_name, model=resolved_model)
+                    async for line in response.aiter_lines():
+                        for chunk in self._extract_stream_line_chunks(
+                            line,
+                            include_reasoning=reasoning_config is not None,
+                            reasoning_stream_fields=reasoning_config.stream_fields if reasoning_config else [],
+                            reasoning_message_fields=reasoning_config.message_fields if reasoning_config else [],
+                            model_name=resolved_model,
+                        ):
+                            yield chunk
+            except httpx.TimeoutException as exc:
+                raise llm_timeout_error(provider=self.provider_name, model=resolved_model) from exc
+            except httpx.TransportError as exc:
+                raise llm_transport_error(provider=self.provider_name, model=resolved_model) from exc
 
     def extract_message(self, response_json: dict[str, Any]) -> dict[str, Any]:
         choices = response_json.get("choices", [])

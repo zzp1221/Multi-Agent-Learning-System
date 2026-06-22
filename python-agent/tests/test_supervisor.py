@@ -20,6 +20,7 @@ from src.ai_modules.models import (
     VideoProgressSSEEvent,
 )
 from src.ai_modules.memory import InMemoryLearningLoopStore, ResilientLearningLoopStore
+from src.ai_modules.llms.errors import LLMServiceError
 from src.ai_modules.runtime import SystemSnapshot
 from src.ai_modules.runtime.autonomous_planning import LearningLoopOrchestrator, PlanningCheckpointManager
 from src.ai_modules.runtime.resource_bundle_workflow import RESOURCE_AGENT_BY_TYPE
@@ -352,6 +353,24 @@ class _StubTutorAgent(PlaceholderAgent):
             traceId=trace_id,
             seq=seq + 1,
             payload=ResultChunkPayload(text="联合索引需要先理解最左匹配规则。"),
+        )
+
+
+class _FailingLlmTutorAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("failing tutor", "tutoring")
+
+    async def run(self, **kwargs):
+        del kwargs
+        if False:
+            yield
+        raise LLMServiceError(
+            code="LLM_RATE_LIMITED",
+            message="模型服务当前限流，请稍后再试，或切换到其他模型。",
+            http_status=429,
+            provider="openai_compatible",
+            model="mimo-v2.5",
+            retryable=True,
         )
 
 
@@ -1571,6 +1590,28 @@ async def test_supervisor_fails_when_critic_fails_after_key_result() -> None:
     assert [event.event for event in events][-2:] == ["error", "done"]
     assert events[-2].payload.code == "SUPERVISOR_FAILED"
     assert events[-1].payload.status == "FAILED"
+
+
+@pytest.mark.asyncio
+async def test_supervisor_preserves_classified_llm_error() -> None:
+    supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["tutor"] = _FailingLlmTutorAgent()
+    request = EngineStreamRequest(
+        serviceType="TUTORING",
+        params={"query": "解释联合索引"},
+        taskId="task-llm-rate-limited",
+        traceId="trace-llm-rate-limited",
+    )
+
+    events = [event async for event in supervisor.stream(request)]
+
+    assert [event.event for event in events][-2:] == ["error", "done"]
+    assert events[-2].payload.code == "LLM_RATE_LIMITED"
+    assert events[-2].payload.message == "模型服务当前限流，请稍后再试，或切换到其他模型。"
+    assert events[-2].payload.http_status == 429
+    assert events[-2].payload.provider == "openai_compatible"
+    assert events[-2].payload.model == "mimo-v2.5"
+    assert events[-2].payload.retryable is True
 
 
 @pytest.mark.asyncio

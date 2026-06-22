@@ -72,6 +72,22 @@ def test_review_payloads_coerce_scalar_list_fields() -> None:
     assert safety.suggestions == []
 
 
+def test_review_payload_normalizes_soft_pass_verdict() -> None:
+    critic = CriticReviewPayload.model_validate(
+        {
+            "verdict": "pass with issues",
+            "factConsistency": "SUPPORTED",
+            "difficultyMatch": "MATCHED",
+            "sourceCoverage": "LIMITED",
+            "issues": ["source coverage can improve"],
+            "suggestions": ["add citations"],
+            "summaryText": "Publishable with minor issues",
+        }
+    )
+
+    assert critic.verdict == "PASS_WITH_ISSUES"
+
+
 @pytest.mark.asyncio
 async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
     class FakeCriticReviewer:
@@ -154,6 +170,39 @@ async def test_critic_agent_returns_llm_review_via_agent_core_loop() -> None:
     assert params["criticReview"]["pathOrderScore"] == 1.0
     assert params["criticReview"]["resourceMatchScore"] == 1.0
     assert events[1].payload.text.startswith("LLM Critic：")
+
+
+@pytest.mark.asyncio
+async def test_critic_agent_omits_planning_scores_without_planning_context() -> None:
+    class FakeCriticReviewer:
+        async def review(self, *, system_prompt, context_payload):
+            del system_prompt
+            assert context_payload["reviewSignals"]["learningPathCoverage"]["status"] == "NOT_APPLICABLE"
+            assert context_payload["reviewSignals"]["pathOrder"]["status"] == "NOT_APPLICABLE"
+            assert context_payload["reviewSignals"]["resourceMatch"]["status"] == "NOT_APPLICABLE"
+            return CriticReviewPayload(
+                verdict="PASS",
+                factConsistency="SUPPORTED",
+                difficultyMatch="MATCHED",
+                sourceCoverage="LIMITED",
+                issues=[],
+                suggestions=[],
+                summaryText="Critic OK",
+            )
+
+    agent = CriticAgent(reviewer=FakeCriticReviewer())
+    review = await agent.review_content(
+        params={
+            "generatedContent": "A complete generated document without learning-path context.",
+            "retrievalResult": {"documents": []},
+        },
+        snapshot=_build_snapshot(),
+        system_prompt="test",
+    )
+
+    assert review.coverage_score is None
+    assert review.path_order_score is None
+    assert review.resource_match_score is None
 
 
 @pytest.mark.asyncio
@@ -446,12 +495,112 @@ async def test_document_generator_runs_reviews_before_emitting_resource_file(
         )
     ]
 
-    assert [event.event for event in events] == ["result_chunk", "resource_file"]
-    assert "Critic OK" in events[0].payload.text
-    assert "Safety OK" in events[0].payload.text
+    result_event = next(event for event in events if event.event == "result_chunk")
+    assert "Critic OK" in result_event.payload.text
+    assert "Safety OK" in result_event.payload.text
+    assert any(event.event == "resource_file" for event in events)
     assert params["generationOutline"]["assetType"] == "DOCUMENT"
     assert params["criticReview"]["verdict"] == "PASS"
     assert params["safetyReview"]["allowed"] is True
+
+
+@pytest.mark.asyncio
+async def test_document_generator_publishes_resource_when_critic_soft_passes(tmp_path: Path) -> None:
+    asset_path = tmp_path / "soft-pass.md"
+    asset_path.write_text("# useful resource", encoding="utf-8")
+
+    class FakeGenerationService:
+        content_chain = type(
+            "FakeContentChain",
+            (),
+            {
+                "primary_generator": type(
+                    "FakeGenerator",
+                    (),
+                    {"provider_name": "test-provider", "model_name": "test-model"},
+                )()
+            },
+        )()
+
+        def _plan_document_sections(self, *, params, snapshot, sources):
+            del params, snapshot, sources
+
+            class _Section:
+                def model_dump(self, *, by_alias):
+                    del by_alias
+                    return {"title": "outline", "objective": "objective"}
+
+            return [_Section()]
+
+        async def build_asset(self, *, asset_type, params, snapshot):
+            del params, snapshot
+            return GeneratedAsset(
+                assetType=asset_type,
+                title="Soft pass document",
+                summary="publishable with issues",
+                displayMode="MARKDOWN_CARD",
+                fileName="soft-pass.md",
+                localPath=str(asset_path),
+                previewText="useful resource",
+            )
+
+    class SoftPassingCriticAgent:
+        def system_prompt(self, snapshot):
+            del snapshot
+            return "critic"
+
+        async def review_content(self, *, params, snapshot, system_prompt):
+            del params, snapshot, system_prompt
+            return CriticReviewPayload(
+                verdict="PASS_WITH_ISSUES",
+                factConsistency="SUPPORTED",
+                difficultyMatch="MATCHED",
+                sourceCoverage="LIMITED",
+                issues=["add citations"],
+                suggestions=["add one more source"],
+                summaryText="Publishable with minor issues",
+            )
+
+    class PassingSafetyAgent:
+        def system_prompt(self, snapshot):
+            del snapshot
+            return "safety"
+
+        async def review_content(self, *, params, snapshot, system_prompt):
+            del params, snapshot, system_prompt
+            return SafetyReviewPayload(
+                allowed=True,
+                riskLevel="LOW",
+                categories=["educational_content"],
+                riskTags=[],
+                blockedReason=None,
+                suggestions=[],
+                summaryText="Safety OK",
+            )
+
+    agent = DocumentGeneratorAgent(
+        generation_service=FakeGenerationService(),
+        llm_client=RuleBasedGenerationLLM(),
+        critic_agent=SoftPassingCriticAgent(),
+        safety_agent=PassingSafetyAgent(),
+    )
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-soft-pass",
+            trace_id="trace-soft-pass",
+            seq=1,
+            service_type="RESOURCE_GENERATION",
+            params={"query": "expected topic"},
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert "resource_file" in [event.event for event in events]
+    resource_event = next(event for event in events if event.event == "resource_file")
+    assert resource_event.payload.critic_review["verdict"] == "PASS_WITH_ISSUES"
 
 
 @pytest.mark.asyncio
@@ -536,9 +685,10 @@ async def test_document_generator_stops_output_when_safety_blocks(tmp_path: Path
         )
     ]
 
-    assert [event.event for event in events] == ["result_chunk", "done"]
-    assert events[0].payload.text == "Safety 拦截"
-    assert events[1].payload.status == "FAILED"
+    result_event = next(event for event in events if event.event == "result_chunk")
+    done_event = next(event for event in events if event.event == "done")
+    assert result_event.payload.text == "Safety 拦截"
+    assert done_event.payload.status == "FAILED"
 
 
 @pytest.mark.asyncio
@@ -637,8 +787,9 @@ async def test_document_generator_blocks_resource_file_when_critic_rejects(tmp_p
         )
     ]
 
-    assert [event.event for event in events] == ["result_chunk", "done"]
-    assert "verdict=REJECT" in events[0].payload.text
-    assert events[1].payload.status == "FAILED"
+    result_event = next(event for event in events if event.event == "result_chunk")
+    done_event = next(event for event in events if event.event == "done")
+    assert "verdict=REJECT" in result_event.payload.text
+    assert done_event.payload.status == "FAILED"
     assert params["criticReview"]["verdict"] == "REJECT"
     assert params["safetyReview"]["allowed"] is True

@@ -26,6 +26,7 @@ import psycopg2.extras
 
 from src.ai_modules.config import get_settings
 from src.ai_modules.generation.content_chain import OpenAICompatibleStructuredGenerator
+from src.ai_modules.llms.errors import LLMServiceError
 from src.ai_modules.llms.openai_compatible import OpenAICompatibleClient
 from src.ai_modules.llms.user_runtime_config import user_llm_runtime_context
 from src.ai_modules.memory import ConversationMessageDocument, MongoConversationMessageStore
@@ -1095,8 +1096,18 @@ async def _sandbox_cleanup_loop() -> None:
 app = FastAPI(title=SETTINGS.app_name, lifespan=lifespan)
 
 
-def _public_error_message(_: Exception) -> str:
+def _public_error_message(exc: Exception) -> str:
+    llm_error = LLMServiceError.from_exception(exc)
+    if llm_error is not None:
+        return llm_error.message
     return "Python Agent 执行失败，请稍后重试"
+
+
+def _public_error_payload(exc: Exception) -> ErrorPayload:
+    llm_error = LLMServiceError.from_exception(exc)
+    if llm_error is not None:
+        return ErrorPayload(**llm_error.payload_kwargs())
+    return ErrorPayload(code="PYTHON_AGENT_ERROR", message=_public_error_message(exc))
 
 
 async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> AsyncIterator[str]:
@@ -1154,10 +1165,7 @@ async def _supervisor_event_stream(engine_request: EngineStreamRequest) -> Async
                         taskId=engine_request.task_id,
                         traceId=engine_request.trace_id,
                         seq=seq,
-                        payload=ErrorPayload(
-                            code="PYTHON_AGENT_ERROR",
-                            message=_public_error_message(exc),
-                        ),
+                        payload=_public_error_payload(exc),
                     ).to_sse()
                 )
                 await queue.put(

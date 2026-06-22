@@ -1,6 +1,9 @@
 package com.project.infrastructure.python;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.project.application.smartengine.PythonAgentStreamException;
+import com.project.application.smartengine.SmartEngineInvocation;
+import com.project.domain.task.ServiceType;
 import com.project.config.AppProperties;
 import com.project.security.InternalTokenProvider;
 import com.sun.net.httpserver.HttpExchange;
@@ -22,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PythonAgentInternalTokenClientTest {
 
@@ -120,6 +124,85 @@ class PythonAgentInternalTokenClientTest {
 
         assertThat(received.await(2, TimeUnit.SECONDS)).isTrue();
         assertThat(tokenHeader.get()).isEqualTo(INTERNAL_TOKEN);
+    }
+
+    @Test
+    void streamingClientPreservesStructuredPythonLlmError() {
+        server.createContext("/internal/smart-engine/stream", exchange -> send(exchange, 400, """
+            {
+              "event": "error",
+              "payload": {
+                "code": "LLM_AUTH_INVALID",
+                "message": "API Key 无效或已过期，请在设置页重新保存模型配置。",
+                "httpStatus": 401,
+                "retryable": false
+              }
+            }
+            """));
+        appProperties.getPythonAgent().setMaxRetries(0);
+        HttpStreamingPythonAgentClient client = new HttpStreamingPythonAgentClient(
+            new ObjectMapper(),
+            appProperties,
+            internalTokenProvider
+        );
+
+        assertThatThrownBy(() -> client.stream(new SmartEngineInvocation(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "trace-1",
+            UUID.randomUUID(),
+            ServiceType.TUTORING,
+            java.util.Map.of("message", "hello")
+        ), ignored -> {
+        }))
+            .isInstanceOf(PythonAgentStreamException.class)
+            .satisfies(error -> {
+                PythonAgentStreamException ex = (PythonAgentStreamException) error;
+                assertThat(ex.getCode()).isEqualTo("LLM_AUTH_INVALID");
+                assertThat(ex.getMessage()).isEqualTo("API Key 无效或已过期，请在设置页重新保存模型配置。");
+                assertThat(ex.getHttpStatus()).isEqualTo(401);
+                assertThat(ex.isRetryable()).isFalse();
+            });
+    }
+
+    @Test
+    void streamingClientPreservesRetryableStructuredPythonLlmErrorAfterRetries() {
+        server.createContext("/internal/smart-engine/stream", exchange -> send(exchange, 429, """
+            {
+              "event": "error",
+              "payload": {
+                "code": "LLM_RATE_LIMITED",
+                "message": "模型服务当前限流，请稍后再试，或切换到其他模型。",
+                "httpStatus": 429,
+                "retryable": true
+              }
+            }
+            """));
+        appProperties.getPythonAgent().setMaxRetries(1);
+        appProperties.getPythonAgent().setRetryBackoff(Duration.ZERO);
+        HttpStreamingPythonAgentClient client = new HttpStreamingPythonAgentClient(
+            new ObjectMapper(),
+            appProperties,
+            internalTokenProvider
+        );
+
+        assertThatThrownBy(() -> client.stream(new SmartEngineInvocation(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "trace-1",
+            UUID.randomUUID(),
+            ServiceType.TUTORING,
+            java.util.Map.of("message", "hello")
+        ), ignored -> {
+        }))
+            .isInstanceOf(PythonAgentStreamException.class)
+            .satisfies(error -> {
+                PythonAgentStreamException ex = (PythonAgentStreamException) error;
+                assertThat(ex.getCode()).isEqualTo("LLM_RATE_LIMITED");
+                assertThat(ex.getMessage()).isEqualTo("模型服务当前限流，请稍后再试，或切换到其他模型。");
+                assertThat(ex.getHttpStatus()).isEqualTo(429);
+                assertThat(ex.isRetryable()).isTrue();
+            });
     }
 
     @Test

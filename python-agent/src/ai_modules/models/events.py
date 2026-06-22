@@ -175,6 +175,7 @@ class ResourceFilePayload(BaseModel):
     external_urls: list[str] = Field(default_factory=list, alias="externalUrls")
     fallback: bool | None = None
     from_cache: bool = Field(default=False, alias="fromCache")
+    critic_review: dict[str, Any] | None = Field(default=None, alias="criticReview")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -205,6 +206,12 @@ class ErrorPayload(BaseModel):
 
     code: str
     message: str
+    http_status: int | None = Field(default=None, alias="httpStatus")
+    provider: str | None = None
+    model: str | None = None
+    retryable: bool | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class SSEEvent(BaseModel):

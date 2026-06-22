@@ -1,7 +1,9 @@
 package com.project.infrastructure.python;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.project.application.smartengine.PythonAgentClient;
+import com.project.application.smartengine.PythonAgentStreamException;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
 import com.project.application.streaming.PythonSseEventDecoder;
@@ -35,6 +37,8 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
 
     private static final String INTERNAL_TOKEN_HEADER = "X-Zhixue-Internal-Token";
     private static final Logger LOGGER = LoggerFactory.getLogger(HttpStreamingPythonAgentClient.class);
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
+    };
 
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
@@ -78,6 +82,9 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
                 return;
             } catch (RetryableStreamException ex) {
                 if (attempt == maxRetries) {
+                    if (ex.structuredError() != null) {
+                        throw ex.structuredError();
+                    }
                     throw new IllegalStateException(
                         "Python agent stream failed after " + (maxRetries + 1) + " attempts: " + ex.getMessage(), ex);
                 }
@@ -103,12 +110,23 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
 
             if (response.statusCode() >= 500 || response.statusCode() == 429) {
                 String body = readBodySafely(response);
+                PythonAgentStreamException structuredError = parseStructuredError(body);
+                if (structuredError != null && !structuredError.isRetryable()) {
+                    throw structuredError;
+                }
                 throw new RetryableStreamException(
-                    "Python agent returned status " + response.statusCode() + ": " + body);
+                    "Python agent returned status " + response.statusCode() + ": " + body,
+                    structuredError,
+                    structuredError
+                );
             }
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 String body = readBodySafely(response);
+                PythonAgentStreamException structuredError = parseStructuredError(body);
+                if (structuredError != null) {
+                    throw structuredError;
+                }
                 LOGGER.warn(
                     "Python agent rejected request status={} traceId={} taskId={} body={}",
                     response.statusCode(), invocation.traceId(), invocation.taskId(), body);
@@ -225,6 +243,56 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
         }
     }
 
+    private PythonAgentStreamException parseStructuredError(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> root = objectMapper.readValue(body, MAP_TYPE);
+            Object payloadCandidate = root.get("payload");
+            Map<String, Object> payload = payloadCandidate instanceof Map<?, ?> rawPayload
+                ? stringifyMap(rawPayload)
+                : root;
+            String code = stringValue(payload.get("code"));
+            String message = stringValue(payload.get("message"));
+            if (code == null || code.isBlank() || message == null || message.isBlank()) {
+                return null;
+            }
+            return new PythonAgentStreamException(
+                code,
+                message,
+                integerValue(payload.get("httpStatus")),
+                Boolean.TRUE.equals(payload.get("retryable"))
+            );
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    private Map<String, Object> stringifyMap(Map<?, ?> source) {
+        Map<String, Object> target = new LinkedHashMap<>();
+        source.forEach((key, value) -> target.put(String.valueOf(key), value));
+        return target;
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private Integer integerValue(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Integer.parseInt(text.trim());
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     private void dispatch(
         PythonSseEventDecoder decoder,
         String eventType,
@@ -238,12 +306,27 @@ public class HttpStreamingPythonAgentClient implements PythonAgentClient {
      * 表示可重试故障（5xx、限流、连接错误）的异常。
      */
     private static class RetryableStreamException extends Exception {
+        private final PythonAgentStreamException structuredError;
+
         RetryableStreamException(String message) {
-            super(message);
+            this(message, null, null);
         }
 
         RetryableStreamException(String message, Throwable cause) {
+            this(message, cause, null);
+        }
+
+        RetryableStreamException(
+            String message,
+            Throwable cause,
+            PythonAgentStreamException structuredError
+        ) {
             super(message, cause);
+            this.structuredError = structuredError;
+        }
+
+        PythonAgentStreamException structuredError() {
+            return structuredError;
         }
     }
 }

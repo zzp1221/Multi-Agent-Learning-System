@@ -27,6 +27,13 @@ from src.ai_modules.generation.prompts import (
     build_video_script_user_prompt,
 )
 from src.ai_modules.models.video import VideoScriptPayload
+from src.ai_modules.llms.errors import (
+    LLMServiceError,
+    llm_timeout_error,
+    llm_transport_error,
+    missing_llm_config_error,
+    raise_for_llm_status,
+)
 from src.ai_modules.llms.openai_compatible import extract_json_object_from_text
 from src.ai_modules.runtime.skill_loader import append_user_skill_to_prompt
 
@@ -263,7 +270,7 @@ class OpenAICompatibleStructuredGenerator:
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
-            raise RuntimeError(f"missing {self.provider_name} api key")
+            raise missing_llm_config_error(provider=self.provider_name, model=self.model_name)
         client = self._get_client()
         payload: dict[str, Any] = {
             "model": self.model_name,
@@ -275,15 +282,20 @@ class OpenAICompatibleStructuredGenerator:
             payload["max_tokens"] = max_tokens
         if response_format is not None:
             payload["response_format"] = response_format
-        response = client.post(
-            f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-        response.raise_for_status()
+        try:
+            response = client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+        except httpx.TimeoutException as exc:
+            raise llm_timeout_error(provider=self.provider_name, model=self.model_name) from exc
+        except httpx.TransportError as exc:
+            raise llm_transport_error(provider=self.provider_name, model=self.model_name) from exc
+        raise_for_llm_status(response, provider=self.provider_name, model=self.model_name)
         data = response.json()
         self._record_usage(data)
         return data
@@ -297,7 +309,7 @@ class OpenAICompatibleStructuredGenerator:
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
-            raise RuntimeError(f"missing {self.provider_name} api key")
+            raise missing_llm_config_error(provider=self.provider_name, model=self.model_name)
         client = self._get_async_client()
         payload: dict[str, Any] = {
             "model": self.model_name,
@@ -309,15 +321,20 @@ class OpenAICompatibleStructuredGenerator:
             payload["max_tokens"] = max_tokens
         if response_format is not None:
             payload["response_format"] = response_format
-        response = await client.post(
-            f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-        response.raise_for_status()
+        try:
+            response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+        except httpx.TimeoutException as exc:
+            raise llm_timeout_error(provider=self.provider_name, model=self.model_name) from exc
+        except httpx.TransportError as exc:
+            raise llm_transport_error(provider=self.provider_name, model=self.model_name) from exc
+        raise_for_llm_status(response, provider=self.provider_name, model=self.model_name)
         data = response.json()
         self._record_usage(data)
         return data
@@ -589,6 +606,8 @@ class OpenAICompatibleStructuredGenerator:
                         max_tokens=max_tokens,
                         response_format=self._structured_response_format(model_type),
                     )
+            except LLMServiceError:
+                raise
             except (RuntimeError, ValueError, httpx.HTTPError) as exc:
                 LOGGER.warning(
                     "%s structured generation request attempt %s/%s failed: %s",
@@ -666,6 +685,8 @@ class OpenAICompatibleStructuredGenerator:
                         max_tokens=max_tokens,
                         response_format=self._structured_response_format(model_type),
                     )
+            except LLMServiceError:
+                raise
             except (RuntimeError, ValueError, httpx.HTTPError) as exc:
                 LOGGER.warning(
                     "%s structured generation request attempt %s/%s failed: %s",
@@ -781,6 +802,8 @@ class OpenAICompatibleStructuredGenerator:
                     user_prompt=user_prompt,
                     max_tokens=max_tokens,
                 )
+            except LLMServiceError:
+                raise
             except (ValidationError, ValueError, RuntimeError, KeyError, TypeError, httpx.HTTPError) as exc:
                 last_error = exc
                 LOGGER.warning(
@@ -820,6 +843,8 @@ class OpenAICompatibleStructuredGenerator:
                     )
                 payload = self._extract_message_content(response)
                 return self._extract_json(payload)
+            except LLMServiceError:
+                raise
             except (ValidationError, ValueError, RuntimeError, KeyError, TypeError, httpx.HTTPError) as exc:
                 last_error = exc
                 LOGGER.warning(
@@ -857,6 +882,8 @@ class OpenAICompatibleStructuredGenerator:
                         max_tokens=max_tokens,
                     )
                 return self._extract_message_content(response)
+            except LLMServiceError:
+                raise
             except (RuntimeError, KeyError, TypeError, httpx.HTTPError) as exc:
                 last_error = exc
                 LOGGER.warning(

@@ -12,6 +12,7 @@ def build_critic_system_prompt(snapshot: SystemSnapshot) -> str:
             "你是 Critic Agent，负责复核教学资源内容质量。",
             "输出必须是 JSON，字段为 verdict、factConsistency、difficultyMatch、sourceCoverage、issues、suggestions、summaryText。",
             "请重点核对事实一致性、难度匹配度、来源覆盖度，并给出简洁可执行建议。",
+            "Use verdict only from: PASS, PASS_WITH_ISSUES, NEEDS_MINOR_REVISION, REVISE, REJECT. PASS means publishable; PASS_WITH_ISSUES and NEEDS_MINOR_REVISION mean publishable with improvement suggestions; REVISE and REJECT mean do not publish.",
             context,
         ]
     )

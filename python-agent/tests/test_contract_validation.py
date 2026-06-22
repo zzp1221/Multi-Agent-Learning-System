@@ -249,13 +249,24 @@ class TestSseEventContracts:
             taskId=self.TASK_ID,
             traceId=self.TRACE_ID,
             seq=5,
-            payload=ErrorPayload(code="LLM_TIMEOUT", message="模型调用超时"),
+            payload=ErrorPayload(
+                code="LLM_TIMEOUT",
+                message="模型调用超时",
+                httpStatus=504,
+                provider="openai_compatible",
+                model="mimo-v2.5",
+                retryable=True,
+            ),
         )
         wire = event.to_sse()
         evt_type, data = parse_sse_wire(wire)
         assert evt_type == "error"
         assert_common_fields(data, "error")
         assert data["payload"]["code"] == "LLM_TIMEOUT"
+        assert data["payload"]["httpStatus"] == 504
+        assert data["payload"]["provider"] == "openai_compatible"
+        assert data["payload"]["model"] == "mimo-v2.5"
+        assert data["payload"]["retryable"] is True
 
     def test_video_gen_progress_event_wire_format(self) -> None:
         event = VideoProgressSSEEvent(

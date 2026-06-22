@@ -55,7 +55,7 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
             {message.content ? <div>{message.content}</div> : <div className="text-white/80">[图片提问]</div>}
           </div>
         ) : (
-          <div className={`qna-assistant-message ${assistantIsPending ? 'is-pending' : ''}`}>
+          <div className={`qna-assistant-message ${assistantIsPending ? 'is-pending' : ''} ${isStreaming ? 'is-streaming' : ''}`}>
             <AgentCollaborationPanel
               content={message.reasoningContent ?? ''}
               reasoningState={message.reasoningState}
@@ -261,6 +261,7 @@ export const ChatPanel = memo(function ChatPanel({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const previousMessageListKeyRef = useRef('');
 
   const lastMessage = messages[messages.length - 1];
   const isStreaming = Boolean(busy && lastMessage && lastMessage.role === 'assistant');
@@ -282,10 +283,22 @@ export const ChatPanel = memo(function ChatPanel({
   }, [autoFollow]);
 
   useLayoutEffect(() => {
-    autoFollowRef.current = true;
-    setAutoFollow(true);
-    scrollToBottom();
-  }, [messageListKey, scrollToBottom]);
+    const previousMessageListKey = previousMessageListKeyRef.current;
+    previousMessageListKeyRef.current = messageListKey;
+    if (!messageListKey) {
+      return;
+    }
+    const shouldForceFollow = !previousMessageListKey || lastMessage?.role === 'user';
+    if (shouldForceFollow) {
+      autoFollowRef.current = true;
+      setAutoFollow(true);
+      scrollToBottom();
+      return;
+    }
+    if (autoFollowRef.current) {
+      scrollToBottom();
+    }
+  }, [lastMessage?.role, messageListKey, scrollToBottom]);
 
   useEffect(() => {
     if (!autoFollow) return;

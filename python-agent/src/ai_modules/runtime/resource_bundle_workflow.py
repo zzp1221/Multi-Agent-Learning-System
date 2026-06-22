@@ -68,6 +68,22 @@ class ResourceAgentResult:
     published_at_ns: int
 
 
+class ResourceAgentTerminalError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        agent_name: str,
+        event_name: str,
+        reason: str,
+        payload: dict[str, Any],
+    ) -> None:
+        super().__init__(f"{agent_name} emitted terminal {event_name}: {reason}")
+        self.agent_name = agent_name
+        self.event_name = event_name
+        self.reason = reason
+        self.payload = payload
+
+
 class WorkflowGraphState(TypedDict, total=False):
     request: EngineStreamRequest
     params: dict[str, Any]
@@ -77,7 +93,7 @@ class WorkflowGraphState(TypedDict, total=False):
     resource_types: list[str]
     generated_assets: list[dict[str, Any]]
     resource_results: Annotated[list[ResourceAgentResult], operator.add]
-    resource_failures: Annotated[list[dict[str, str]], operator.add]
+    resource_failures: Annotated[list[dict[str, Any]], operator.add]
 
 
 class WorkflowState(BaseModel):
@@ -91,7 +107,7 @@ class WorkflowState(BaseModel):
     resource_types: list[str] = Field(default_factory=list)
     generated_assets: list[dict[str, Any]] = Field(default_factory=list)
     resource_results: list[ResourceAgentResult] = Field(default_factory=list)
-    resource_failures: list[dict[str, str]] = Field(default_factory=list)
+    resource_failures: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -344,14 +360,14 @@ class ResourceBundleWorkflow:
         except Exception as exc:
             if self._is_provenance_failure(exc):
                 raise
-            summary = self._friendly_resource_failure(exc)
+            failure_detail = self._friendly_resource_failure(exc)
             return {
                 "resource_results": [],
                 "resource_failures": [
                     {
                         "resourceType": resource_type,
                         "agentName": agent_name,
-                        "error": summary,
+                        **failure_detail,
                     }
                 ],
             }
@@ -482,8 +498,11 @@ class ResourceBundleWorkflow:
             system_prompt=system_prompt,
         ):
             if event.event in {"done", "error"}:
-                raise RuntimeError(
-                    f"{agent_name} emitted terminal {event.event}: {self._terminal_event_reason(event)}"
+                raise ResourceAgentTerminalError(
+                    agent_name=agent_name,
+                    event_name=event.event,
+                    reason=self._terminal_event_reason(event),
+                    payload=self._terminal_event_payload(event),
                 )
             if isinstance(event, ResourceFileSSEEvent):
                 if event.payload.asset_type != resource_type:
@@ -559,23 +578,80 @@ class ResourceBundleWorkflow:
         )
 
     @staticmethod
-    def _friendly_resource_failure(exc: Exception) -> str:
+    def _friendly_resource_failure(exc: Exception) -> dict[str, Any]:
+        if isinstance(exc, ResourceAgentTerminalError):
+            detail = ResourceBundleWorkflow._terminal_failure_detail(exc)
+            if detail:
+                return detail
+            return {"error": exc.reason or "resource generation did not produce a publishable result"}
         message = str(exc).strip()
         lowered = message.lower()
         if "critic review blocked resource publication" in lowered:
-            return "quality review did not approve this resource; please retry with a clearer topic or more context"
+            detail = ResourceBundleWorkflow._critic_failure_detail(message)
+            return {
+                "error": detail.get("error")
+                or "quality review did not approve this resource; please retry with a clearer topic or more context",
+                **detail,
+            }
         if "review llm failed" in lowered or "safety review llm failed" in lowered or "fallback is disabled" in lowered:
-            return "review service was temporarily unavailable; other resources were still generated"
+            return {"error": "review service was temporarily unavailable; other resources were still generated"}
         if "template fallback is not allowed" in lowered or "llm generation failed" in lowered or "llm unavailable" in lowered:
-            return "generation service was temporarily unavailable; please retry this resource"
+            return {"error": "generation service was temporarily unavailable; please retry this resource"}
         if "emitted terminal error" in lowered or "emitted terminal done" in lowered:
             reason = message.split(":", 1)[-1].strip()
-            return reason or "resource generation did not produce a publishable result"
+            return {"error": reason or "resource generation did not produce a publishable result"}
         if "produced no publishable resource event" in lowered:
-            return "resource generation did not produce a publishable result"
+            return {"error": "resource generation did not produce a publishable result"}
         if "emitted" in lowered and "requested" in lowered:
-            return "resource generation returned an unexpected artifact type"
-        return message or "resource generation failed"
+            return {"error": "resource generation returned an unexpected artifact type"}
+        return {"error": message or "resource generation failed"}
+
+    @staticmethod
+    def _terminal_failure_detail(exc: ResourceAgentTerminalError) -> dict[str, Any]:
+        payload = exc.payload if isinstance(exc.payload, dict) else {}
+        failures = payload.get("resourceFailures")
+        if isinstance(failures, list) and failures:
+            first = failures[0]
+            if isinstance(first, dict):
+                detail = dict(first)
+                detail.pop("resourceType", None)
+                detail.pop("agentName", None)
+                if not detail.get("error"):
+                    detail["error"] = (
+                        str(detail.get("summary") or "").strip()
+                        or exc.reason
+                        or "resource generation did not produce a publishable result"
+                    )
+                return detail
+        critic_review = payload.get("criticReview")
+        if isinstance(critic_review, dict):
+            summary = str(critic_review.get("summaryText") or "").strip()
+            verdict = str(critic_review.get("verdict") or "").strip()
+            if verdict or summary:
+                return {
+                    "error": summary or exc.reason,
+                    "verdict": verdict,
+                    "summary": summary,
+                    "issues": critic_review.get("issues") if isinstance(critic_review.get("issues"), list) else [],
+                    "suggestions": critic_review.get("suggestions") if isinstance(critic_review.get("suggestions"), list) else [],
+                    "criticReview": critic_review,
+                }
+        return {}
+
+    @staticmethod
+    def _critic_failure_detail(message: str) -> dict[str, Any]:
+        detail: dict[str, Any] = {}
+        if "verdict=" in message:
+            tail = message.split("verdict=", 1)[1]
+            verdict, _, summary = tail.partition(";")
+            verdict = verdict.strip()
+            if verdict:
+                detail["verdict"] = verdict
+            summary = summary.strip()
+            if summary:
+                detail["summary"] = summary
+                detail["error"] = summary
+        return detail
 
     @staticmethod
     def _terminal_event_reason(event: SSEEvent) -> str:
@@ -587,6 +663,14 @@ class ResourceBundleWorkflow:
         if isinstance(payload, dict):
             return str(payload.get("message") or payload.get("summary") or "")
         return ""
+
+    @staticmethod
+    def _terminal_event_payload(event: SSEEvent) -> dict[str, Any]:
+        payload = event.payload
+        if hasattr(payload, "model_dump"):
+            dumped = payload.model_dump(by_alias=True)
+            return dumped if isinstance(dumped, dict) else {}
+        return payload if isinstance(payload, dict) else {}
 
     def _merge_agent_params(self, base_params: dict[str, Any], agent_params: dict[str, Any]) -> dict[str, Any]:
         merged = copy.deepcopy(base_params)

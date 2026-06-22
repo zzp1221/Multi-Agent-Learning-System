@@ -12,6 +12,12 @@ import httpx
 from opentelemetry import trace
 
 from src.ai_modules.config import get_settings
+from src.ai_modules.llms.errors import (
+    llm_timeout_error,
+    llm_transport_error,
+    missing_llm_config_error,
+    raise_for_llm_status,
+)
 
 LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
@@ -74,7 +80,7 @@ class MiMoClient:
     ) -> bytes:
         """调用 MiMo-V2.5-TTS 并返回原始音频字节。"""
         if not self.api_key:
-            raise RuntimeError("missing mimo api key for tts")
+            raise missing_llm_config_error(provider="mimo", model="mimo-v2.5-tts")
 
         payload: dict[str, Any] = {
             "model": "mimo-v2.5-tts",
@@ -87,12 +93,17 @@ class MiMoClient:
 
         with TRACER.start_as_current_span("mimo.tts.synthesize"):
             client = await self._get_client()
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=self._headers(),
-                json=payload,
-            )
-            response.raise_for_status()
+            try:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                )
+            except httpx.TimeoutException as exc:
+                raise llm_timeout_error(provider="mimo", model="mimo-v2.5-tts") from exc
+            except httpx.TransportError as exc:
+                raise llm_transport_error(provider="mimo", model="mimo-v2.5-tts") from exc
+            raise_for_llm_status(response, provider="mimo", model="mimo-v2.5-tts")
             data = response.json()
 
         choices = data.get("choices", [])
@@ -115,7 +126,7 @@ class MiMoClient:
     ) -> dict[str, Any]:
         """调用 MiMo-V2-Omni 进行多模态生成。"""
         if not self.api_key:
-            raise RuntimeError("missing mimo api key for omni")
+            raise missing_llm_config_error(provider="mimo", model="mimo-v2-omni")
 
         payload: dict[str, Any] = {
             "model": "mimo-v2-omni",
@@ -130,12 +141,17 @@ class MiMoClient:
 
         with TRACER.start_as_current_span("mimo.omni.chat"):
             client = await self._get_client()
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=self._headers(),
-                json=payload,
-            )
-            response.raise_for_status()
+            try:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                )
+            except httpx.TimeoutException as exc:
+                raise llm_timeout_error(provider="mimo", model="mimo-v2-omni") from exc
+            except httpx.TransportError as exc:
+                raise llm_transport_error(provider="mimo", model="mimo-v2-omni") from exc
+            raise_for_llm_status(response, provider="mimo", model="mimo-v2-omni")
             data = response.json()
 
         choices = data.get("choices", [])
@@ -154,7 +170,7 @@ class MiMoClient:
     ) -> dict[str, Any]:
         """使用 httpx.Client 的 omni_chat 同步封装。"""
         if not self.api_key:
-            raise RuntimeError("missing mimo api key for omni")
+            raise missing_llm_config_error(provider="mimo", model="mimo-v2-omni")
 
         payload: dict[str, Any] = {
             "model": "mimo-v2-omni",
@@ -167,12 +183,17 @@ class MiMoClient:
 
         with TRACER.start_as_current_span("mimo.omni.chat_sync"):
             client = self._get_sync_client()
-            response = client.post(
-                f"{self.base_url}/chat/completions",
-                headers=self._headers(),
-                json=payload,
-            )
-            response.raise_for_status()
+            try:
+                response = client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                )
+            except httpx.TimeoutException as exc:
+                raise llm_timeout_error(provider="mimo", model="mimo-v2-omni") from exc
+            except httpx.TransportError as exc:
+                raise llm_transport_error(provider="mimo", model="mimo-v2-omni") from exc
+            raise_for_llm_status(response, provider="mimo", model="mimo-v2-omni")
             data = response.json()
 
         choices = data.get("choices", [])
@@ -223,7 +244,7 @@ class MiMoClient:
         - "done": 流结束，chunk_data 为完整响应 dict
         """
         if not self.api_key:
-            raise RuntimeError("missing mimo api key for omni stream")
+            raise missing_llm_config_error(provider="mimo", model="mimo-v2-omni")
 
         payload: dict[str, Any] = {
             "model": "mimo-v2-omni",
@@ -236,52 +257,57 @@ class MiMoClient:
 
         with TRACER.start_as_current_span("mimo.omni.chat_stream"):
             client = await self._get_client()
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers=self._headers(),
-                json=payload,
-                timeout=self.timeout_seconds,
-            ) as response:
-                response.raise_for_status()
-                accumulated_content = ""
-                async for line in response.aiter_lines():
-                    if not line.strip() or line.strip() == "data: [DONE]":
-                        continue
-                    if line.startswith("data: "):
-                        line = line[6:]
-                    try:
-                        chunk = json.loads(line)
-                        choices = chunk.get("choices", [])
-                        if not choices:
+            try:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=self.timeout_seconds,
+                ) as response:
+                    raise_for_llm_status(response, provider="mimo", model="mimo-v2-omni")
+                    accumulated_content = ""
+                    async for line in response.aiter_lines():
+                        if not line.strip() or line.strip() == "data: [DONE]":
                             continue
-                        delta = choices[0].get("delta", {})
+                        if line.startswith("data: "):
+                            line = line[6:]
+                        try:
+                            chunk = json.loads(line)
+                            choices = chunk.get("choices", [])
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta", {})
 
-                        # 检查是否有 reasoning 字段（深度思考）
-                        if "reasoning" in delta:
-                            reasoning_text = delta.get("reasoning", "")
-                            if reasoning_text:
-                                yield ("reasoning", reasoning_text)
+                            # 检查是否有 reasoning 字段（深度思考）
+                            if "reasoning" in delta:
+                                reasoning_text = delta.get("reasoning", "")
+                                if reasoning_text:
+                                    yield ("reasoning", reasoning_text)
 
-                        # 检查是否有 content 字段（最终内容）
-                        if "content" in delta:
-                            content_text = delta.get("content", "")
-                            if content_text:
-                                accumulated_content += content_text
-                                yield ("content", content_text)
+                            # 检查是否有 content 字段（最终内容）
+                            if "content" in delta:
+                                content_text = delta.get("content", "")
+                                if content_text:
+                                    accumulated_content += content_text
+                                    yield ("content", content_text)
 
-                        # 检查是否流结束
-                        finish_reason = choices[0].get("finish_reason")
-                        if finish_reason:
-                            # 构造完整响应格式
-                            full_response = {
-                                "choices": [{
-                                    "message": {"content": accumulated_content},
-                                    "finish_reason": finish_reason,
-                                }]
-                            }
-                            yield ("done", full_response)
-                            return
-                    except json.JSONDecodeError:
-                        LOGGER.warning(f"failed to parse SSE chunk: {line[:100]}")
-                        continue
+                            # 检查是否流结束
+                            finish_reason = choices[0].get("finish_reason")
+                            if finish_reason:
+                                # 构造完整响应格式
+                                full_response = {
+                                    "choices": [{
+                                        "message": {"content": accumulated_content},
+                                        "finish_reason": finish_reason,
+                                    }]
+                                }
+                                yield ("done", full_response)
+                                return
+                        except json.JSONDecodeError:
+                            LOGGER.warning(f"failed to parse SSE chunk: {line[:100]}")
+                            continue
+            except httpx.TimeoutException as exc:
+                raise llm_timeout_error(provider="mimo", model="mimo-v2-omni") from exc
+            except httpx.TransportError as exc:
+                raise llm_transport_error(provider="mimo", model="mimo-v2-omni") from exc

@@ -16,6 +16,7 @@ from src.ai_modules.config import get_settings
 from src.ai_modules.generation import ResourceGenerationService
 from src.ai_modules.llms import GenerationToolLLMClientFactory
 from src.ai_modules.models import (
+    CriticReviewPayload,
     DonePayload,
     DoneSSEEvent,
     ReasoningChunkPayload,
@@ -30,14 +31,13 @@ from src.ai_modules.models import (
     VideoCompleteSSEEvent,
     VideoProgressSSEEvent,
 )
+from src.ai_modules.models.review import is_publishable_critic_verdict, normalize_critic_verdict
 from src.ai_modules.runtime import (
     SystemSnapshot,
 )
 from src.ai_modules.runtime.provenance import build_llm_provenance, validate_llm_provenance
 
 LOGGER = logging.getLogger(__name__)
-
-PASSING_CRITIC_VERDICTS = {"PASS", "PASSED", "GOOD", "APPROVED", "OK", "SUCCESS"}
 
 
 class _BaseGenerationAgent(PlaceholderAgent):
@@ -151,6 +151,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
 
         if not self._critic_review_passed(critic_review):
             summary = self._critic_failure_summary(critic_review)
+            failure = self._critic_failure_payload(critic_review)
             yield self._public_trace_event(
                 task_id=task_id,
                 trace_id=trace_id,
@@ -171,7 +172,12 @@ class _BaseGenerationAgent(PlaceholderAgent):
                 taskId=task_id,
                 traceId=trace_id,
                 seq=next_seq + 1,
-                payload=DonePayload(status="FAILED", summary=summary),
+                payload=DonePayload(
+                    status="FAILED",
+                    summary=summary,
+                    criticReview=critic_review.model_dump(by_alias=True),
+                    resourceFailures=[failure],
+                ),
             )
             return
 
@@ -215,6 +221,7 @@ class _BaseGenerationAgent(PlaceholderAgent):
             externalUrls=asset.external_urls,
             fallback=asset.fallback,
             fromCache=asset.from_cache,
+            criticReview=critic_review.model_dump(by_alias=True),
         )
         validate_llm_provenance(resource_payload, artifact_label=f"{self.stage_name}:{asset.asset_type}")
         yield self._public_trace_event(
@@ -272,14 +279,26 @@ class _BaseGenerationAgent(PlaceholderAgent):
 
     @staticmethod
     def _critic_review_passed(critic_review: Any) -> bool:
-        verdict = str(getattr(critic_review, "verdict", "") or "").strip().upper()
-        return not verdict or verdict in PASSING_CRITIC_VERDICTS
+        return is_publishable_critic_verdict(getattr(critic_review, "verdict", ""))
 
     @staticmethod
     def _critic_failure_summary(critic_review: Any) -> str:
-        verdict = str(getattr(critic_review, "verdict", "") or "").strip().upper() or "UNKNOWN"
+        verdict = normalize_critic_verdict(getattr(critic_review, "verdict", "")) or "UNKNOWN"
         summary = str(getattr(critic_review, "summary_text", "") or "").strip()
         return f"Critic review blocked resource publication: verdict={verdict}; {summary}".rstrip()
+
+    def _critic_failure_payload(self, critic_review: CriticReviewPayload) -> dict[str, Any]:
+        verdict = normalize_critic_verdict(critic_review.verdict) or "UNKNOWN"
+        return {
+            "resourceType": self.asset_type,
+            "agentName": self.stage_name,
+            "error": self._critic_failure_summary(critic_review),
+            "verdict": verdict,
+            "summary": critic_review.summary_text,
+            "issues": list(critic_review.issues),
+            "suggestions": list(critic_review.suggestions),
+            "criticReview": critic_review.model_dump(by_alias=True),
+        }
 
     def _tool_generate_outline(
         self,
@@ -357,6 +376,9 @@ class _BaseGenerationAgent(PlaceholderAgent):
         for key in ("videoGenerationTask", "videoSandboxArtifact", "tts_audio_bytes"):
             if key in build_params:
                 params[key] = build_params[key]
+        review_content = build_params.get("generatedReviewContent")
+        if isinstance(review_content, str) and review_content.strip():
+            draft["generatedContent"] = review_content
         params["generatedAsset"] = draft["asset"]
         params["generatedContent"] = draft["generatedContent"]
         return draft
@@ -764,6 +786,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
 
         if not self._critic_review_passed(critic_review):
             summary = self._critic_failure_summary(critic_review)
+            failure = self._critic_failure_payload(critic_review)
             yield self._public_trace_event(
                 task_id=task_id,
                 trace_id=trace_id,
@@ -784,7 +807,12 @@ class VideoGenerationAgent(_BaseGenerationAgent):
                 taskId=task_id,
                 traceId=trace_id,
                 seq=current_seq + 1,
-                payload=DonePayload(status="FAILED", summary=summary),
+                payload=DonePayload(
+                    status="FAILED",
+                    summary=summary,
+                    criticReview=critic_review.model_dump(by_alias=True),
+                    resourceFailures=[failure],
+                ),
             )
             return
 
@@ -825,6 +853,7 @@ class VideoGenerationAgent(_BaseGenerationAgent):
             externalUrls=asset.external_urls,
             fallback=asset.fallback,
             fromCache=asset.from_cache,
+            criticReview=critic_review.model_dump(by_alias=True),
         )
         validate_llm_provenance(resource_payload, artifact_label=f"{self.stage_name}:{asset.asset_type}")
         yield self._public_trace_event(

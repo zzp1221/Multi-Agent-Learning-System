@@ -2,7 +2,7 @@
 
 > 本文档为"智学引擎"全栈项目的完整部署手册，覆盖全新部署、本地开发、热更新及运维全流程。
 >
-> 最后更新：2026-06-13
+> 最后更新：2026-06-21
 
 ---
 
@@ -114,9 +114,9 @@ sequenceDiagram
     participant P as Python Agent
     participant L as LLM API
 
-    U->>N: POST /api/conversations/{id}/messages
+    U->>N: POST /api/conversations/{id}/messages/stream
     N->>J: 转发请求
-    J->>P: POST /internal/chat/stream
+    J->>P: POST /internal/smart-engine/stream
     P->>L: LLM 流式调用
     L-->>P: SSE chunks
     P-->>J: SSE chunks
@@ -141,6 +141,8 @@ sequenceDiagram
 ## 3. 快速部署（三步启动）
 
 适用于全新空环境，最快路径让系统跑起来。
+
+> **部署模式边界**：本节和第 4 节的 `docker compose up -d --build` 只用于全新空环境或明确维护窗口。当前联调/演示环境必须走第 9 节热更新流程，只允许 `docker cp` 同步文件，禁止 build、recreate 或修改 Compose 拓扑。
 
 ### 第一步：克隆代码并配置环境变量
 
@@ -255,7 +257,7 @@ docker compose ps
 | `APP_JWT_SECRET` | JWT 签名密钥 | 无（必须配置） | 至少 32 字节随机字符串 |
 | `PYTHON_AGENT_INTERNAL_TOKEN` | Java/Python 内部通信密钥 | 无（必须配置） | 两端必须一致，Compose 自动注入两个服务 |
 | `AI_OPENAI_COMPATIBLE_API_KEY` | LLM API Key | 无（必须配置） | 支持 OpenAI-compatible 接口 |
-| `EMBEDDING_API_KEY` | Embedding API Key | 无（必须配置） | 与 `DASHSCOPE_API_KEY` 互为别名 |
+| `EMBEDDING_API_KEY` | Embedding API Key | 无（必须配置） | 与 `DASHSCOPE_API_KEY` 互为别名；向量维度固定 1024 |
 
 ### 5.2 可选变量 -- 端口配置
 
@@ -282,10 +284,15 @@ docker compose ps
 | 变量名 | 说明 | 默认值 |
 |---|---|---|
 | `AI_OPENAI_COMPATIBLE_BASE_URL` | LLM API 端点 | https://token-plan-cn.xiaomimimo.com/v1 |
+| `MODEL_PROVIDER` / `ACTIVE_PROVIDER` | Python Agent 默认 Provider 选择 | openai_compatible |
+| `MODEL_NAME` / `FAST_MODEL_NAME` / `REASONING_MODEL_NAME` | 主模型、快速模型、推理模型 | qwen3.6-plus / qwen3.6-flash / qwen3.6-max-preview |
+| `MODEL_ROUTING_CONFIG_PATH` | 可选模型路由 YAML | 空 |
 | `DASHSCOPE_API_KEY` | Embedding API Key（别名） | 空 |
 | `MIMO_API_KEY` | MiMo 专用 Key | 空 |
 | `MIMO_BASE_URL` | MiMo API 端点 | https://api.xiaomimimo.com/v1 |
 | `TAVILY_API_KEY` | Tavily 联网检索 Key | 空 |
+
+用户在前端设置页保存的 LLM Provider、API Key 和模型配置会写入 `app.user_llm_config` 并由 Java/Python 运行时加载。正式用户/演示任务必须使用用户配置；系统/环境 Key 只作为测试、测试账号和自动化联调默认值。
 
 ### 5.5 可选变量 -- 语音助手
 
@@ -314,6 +321,14 @@ docker compose ps
 | `KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS` | Embedding 超时(秒) | 10 |
 | `KNOWLEDGE_EMBEDDING_MAX_RETRIES` | Embedding 最大重试次数 | 2 |
 
+前端构建期可选变量：
+
+| 变量名 | 说明 | 推荐值 |
+|---|---|---|
+| `VITE_API_BASE_URL` | 前端 API baseURL | 生产留空走同源 `/api`；本地可直接设为 `http://localhost:8081` |
+
+生产容器通常不需要设置 `VITE_API_BASE_URL`，因为 `frontend/nginx.conf` 已将 `/api/*` 反向代理到 Java。设置为跨源地址时，需要确保 `CORS_ALLOWED_ORIGINS` 包含对应前端源。
+
 ---
 
 ## 6. 端口与服务入口
@@ -340,26 +355,16 @@ docker compose ps
 ### 7.1 一键验证脚本
 
 ```bash
-echo "=== 1. 容器状态 ==="
 docker compose ps
-
-echo "=== 2. Java 健康检查 ==="
 curl -s http://localhost:8081/api/health
-
-echo "=== 3. Python Agent 健康检查 ==="
 curl -s http://localhost:8000/health
-
-echo "=== 4. 前端可达性 ==="
 curl -sI http://localhost/ | head -1
-
-echo "=== 5. 前端类型检查 ==="
-cd frontend && npx tsc --noEmit && cd ..
-
-echo "=== 6. RAG 检索测试 ==="
-cd python-agent && pytest tests/ -k rag -v && cd ..
-
-echo "=== 验证完成 ==="
+cd frontend && npx tsc --noEmit && npx vite build
+cd ../project && mvn test
+cd ../python-agent && pytest tests/ -k rag -v
 ```
+
+Windows PowerShell 下没有 `head` 时可改用 `curl.exe -I http://localhost/` 或 `Invoke-WebRequest -Method Head http://localhost/`。
 
 ### 7.2 验证 Checklist
 
@@ -376,6 +381,8 @@ echo "=== 验证完成 ==="
 | 流式对话 | 浏览器操作：发起对话 | SSE 逐字渲染，Console 无报错 |
 | >5min 长任务 | 浏览器操作：发起资源生成任务 | 任务完成，不被 nginx/SSE 截断 |
 | 前端 Console 无报错 | 浏览器 F12 | 无 CORS / 401 / ERR_CONNECTION_REFUSED |
+
+联调前必须再走一次浏览器链路：登录 → JWT 写入 localStorage → 对话 SSE 逐字渲染 → SmartEngine 任务 SSE 推动进度 → `resource_file.downloadUrl` 可下载 → 长任务不被 Nginx/SSE 截断。
 
 ### 7.3 语音助手专项验收
 
@@ -461,6 +468,18 @@ uvicorn server:app --reload --port 8000
 
 > **重要约束**：当前联调/演示环境只允许 `docker cp` 同步文件，**禁止** `docker compose build`、`docker compose up --build`、`--force-recreate` 和重建容器。以下命令仅用于热更新场景。
 
+### 9.0 热更新决策表
+
+| 改动类型 | 当前联调/演示环境 | 全新部署/维护窗口 |
+|---|---|---|
+| 前端 TS/CSS/静态资源 | `npx vite build` 后 `docker cp dist/.` 到 `zhixue-frontend` | 可重新 build 前端镜像 |
+| Java 业务代码 | 本地打包 JAR，`docker cp` 到 `zhixue-app` 后重启 app 容器 | 可 rebuild app 镜像 |
+| Python Agent 源码 | `docker cp server.py/src/skills` 后重启 Python 容器 | 可 rebuild python-agent 镜像 |
+| Nginx 配置 | `docker cp frontend/nginx.conf` 到容器并 `nginx -s reload` | 可 rebuild frontend 镜像 |
+| `.env` 新增变量 | 不适合热更；除少量 Spring 外置配置外，等待维护窗口 | 重建相关容器以注入新环境变量 |
+| `docker-compose.yml` 拓扑/卷/端口 | 禁止 | 维护窗口执行 recreate |
+| 数据库 schema / init.sql | 禁止直接重建数据容器；使用迁移脚本 | 全新环境由 init 自动执行，已有环境走 migrations |
+
 ### 9.1 前端热更新
 
 ```bash
@@ -510,6 +529,8 @@ docker restart zhixue-python-agent
 | 只改前端展示 | 前端 | Java、Python |
 | 只改 Java 后端 | Java | 前端、Python |
 | 只改 Python Agent | Python | 前端、Java |
+| 改 SSE 事件字段 | 对应生产者 + 消费者 + `contracts/sse-events.schema.json` | 无关页面 |
+| 改下载/资源产物字段 | Python 生成、Java 签名校验、前端展示三层同步 | 数据服务 |
 
 **任何场景都不要执行 build/recreate 类命令。**
 

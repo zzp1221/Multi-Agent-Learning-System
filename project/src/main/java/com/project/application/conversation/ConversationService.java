@@ -9,6 +9,7 @@ import com.project.application.common.ClientDisconnectDetector;
 import com.project.application.artifact.ArtifactDownloadDescriptor;
 import com.project.application.artifact.ArtifactDownloadService;
 import com.project.application.smartengine.PythonAgentClient;
+import com.project.application.smartengine.PythonAgentStreamException;
 import com.project.application.smartengine.PythonStreamEvent;
 import com.project.application.smartengine.SmartEngineInvocation;
 import com.project.application.settings.UserLlmSettingsService;
@@ -266,11 +267,12 @@ public class ConversationService {
                     assistantReply.length(),
                     ex.getClass().getSimpleName()
                 );
+                String publicErrorMessage = publicConversationErrorMessage(ex);
                 if (assistantReply.isEmpty()) {
-                    appendConversationMessage(conversationId, currentUser.userId(), "assistant", "抱歉，处理过程中遇到了问题，请稍后重试。", List.of(), false);
+                    appendConversationMessage(conversationId, currentUser.userId(), "assistant", publicErrorMessage, List.of(), false);
                 }
                 LOGGER.warn("Conversation stream failed conversationId={}", conversationId, ex);
-                if (sendErrorEvent(streamSender, conversationId, "会话流式调用失败，请稍后重试")) {
+                if (sendErrorEvent(streamSender, conversationId, ex, publicErrorMessage)) {
                     safeComplete(emitter);
                 }
             }
@@ -612,19 +614,58 @@ public class ConversationService {
     private boolean sendErrorEvent(
         SseStreamSender streamSender,
         UUID conversationId,
+        Exception ex,
         String message
     ) {
+        PythonAgentStreamException pythonError = findPythonAgentStreamException(ex);
+        Map<String, Object> payload = pythonError != null && isClassifiedLlmError(pythonError.getCode())
+            ? classifiedPythonErrorPayload(pythonError)
+            : SseStreamSender.errorPayload(message, "会话流式调用失败");
         boolean sent = streamSender.sendError(nextSeq -> new ConversationStreamEventPayload(
             "error",
             nextSeq,
             OffsetDateTime.now(),
             new ConversationDialogState(conversationId, "turn_" + nextSeq, "CORRECT", "END_SESSION"),
-            SseStreamSender.errorPayload(message, "会话流式调用失败")
+            payload
         ));
         if (!sent) {
             LOGGER.debug("Skip sending conversation error because client is unavailable conversationId={}", conversationId);
         }
         return sent;
+    }
+
+    private Map<String, Object> classifiedPythonErrorPayload(PythonAgentStreamException pythonError) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("code", pythonError.getCode());
+        payload.put("message", pythonError.getMessage());
+        payload.put("retryable", pythonError.isRetryable());
+        if (pythonError.getHttpStatus() != null) {
+            payload.put("httpStatus", pythonError.getHttpStatus());
+        }
+        return payload;
+    }
+
+    private String publicConversationErrorMessage(Exception ex) {
+        PythonAgentStreamException pythonError = findPythonAgentStreamException(ex);
+        if (pythonError != null && isClassifiedLlmError(pythonError.getCode())) {
+            return pythonError.getMessage();
+        }
+        return "会话流式调用失败，请稍后重试";
+    }
+
+    private PythonAgentStreamException findPythonAgentStreamException(Throwable ex) {
+        Throwable current = ex;
+        while (current != null) {
+            if (current instanceof PythonAgentStreamException pythonError) {
+                return pythonError;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    private boolean isClassifiedLlmError(String code) {
+        return code != null && code.startsWith("LLM_");
     }
 
     private void safeComplete(SseEmitter emitter) {

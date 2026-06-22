@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.ai_modules.memory import ResilientLearningLoopStore
 from src.ai_modules.memory.profile_feature_registry import FEATURE_DIMENSION_SPECS
 from src.ai_modules.models.profile import LearnerProfileDimensions
+from src.ai_modules.models.review import PUBLISHABLE_CRITIC_VERDICTS
 from src.ai_modules.retrieval.query_classifier import (
     QUERY_TYPE_ANSWER_PREVIOUS,
     QUERY_TYPE_CURRENT_INFO,
@@ -365,7 +366,7 @@ class PlanningCheckpointManager:
         self.min_resource_types = _rules_int(("resourceCoverage", "minTypeCount"), 5)
         self.passing_verdicts = {
             str(item).strip().upper()
-            for item in _rules_list(("critic", "passingVerdicts"), ["PASS", "PASSED", "GOOD", "APPROVED", "OK", "SUCCESS"])
+            for item in _rules_list(("critic", "passingVerdicts"), sorted(PUBLISHABLE_CRITIC_VERDICTS))
         }
         self.min_critic_score = _rules_float(("critic", "minScore"), 0.8)
 
@@ -814,7 +815,7 @@ class GoalCritic:
         self.min_mastery = _rules_float(("critic", "minMastery"), 0.6)
         self.passing_verdicts = {
             str(item).strip().upper()
-            for item in _rules_list(("critic", "passingVerdicts"), ["PASS", "PASSED", "GOOD", "APPROVED", "OK", "SUCCESS"])
+            for item in _rules_list(("critic", "passingVerdicts"), sorted(PUBLISHABLE_CRITIC_VERDICTS))
         }
 
     def verdict(self, *, params: dict[str, Any]) -> dict[str, Any]:

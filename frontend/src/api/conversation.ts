@@ -90,6 +90,16 @@ export interface ConversationStreamEvent {
   data: ConversationStreamEventPayload;
 }
 
+export class ConversationStreamError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'ConversationStreamError';
+    this.code = code;
+  }
+}
+
 export const conversationApi = {
   async listRecentConversations(): Promise<ConversationHistoryItem[]> {
     return request.get<ConversationHistoryItem[]>('/api/conversations', {
@@ -166,7 +176,8 @@ export const conversationApi = {
         }
         if (parsed.event === 'error') {
           const message = readStreamMessage(parsed.data.payload) || '会话流执行失败';
-          handlers.onError(new Error(message));
+          const code = typeof parsed.data.payload?.code === 'string' ? parsed.data.payload.code : undefined;
+          handlers.onError(new ConversationStreamError(message, code));
           return true;
         }
         return false;

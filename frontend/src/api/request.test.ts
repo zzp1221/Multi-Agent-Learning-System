@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_EVENTS, addAppEventListener } from '../utils/appEvents';
 import {
   AUTH_USER_STORAGE_KEY,
+  ApiError,
   getAuthToken,
+  getErrorMessage,
   isUnauthorizedError,
   notifyAuthSessionExpired,
   persistAuthSession,
@@ -45,5 +47,11 @@ describe('auth session expiration notification', () => {
     expect(
       isUnauthorizedError(new Error("Client error '401 Unauthorized' for url 'https://api.xiaomimimo.com/v1/chat/completions'")),
     ).toBe(false);
+  });
+
+  it('does not generalize classified LLM errors', () => {
+    expect(
+      getErrorMessage(new ApiError('API Key 无效或已过期，请在设置页重新保存模型配置。', { code: 'LLM_AUTH_INVALID' })),
+    ).toBe('API Key 无效或已过期，请在设置页重新保存模型配置。');
   });
 });

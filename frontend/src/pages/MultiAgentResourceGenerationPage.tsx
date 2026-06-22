@@ -15,8 +15,10 @@ import {
   MessageSquareText,
   Network,
   Presentation,
+  RotateCw,
   Sparkles,
 } from 'lucide-react';
+import { smartEngineApi } from '../api/smartEngine';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import MermaidDiagram from '../components/MermaidDiagram';
 import VideoCard from '../components/VideoCard';
@@ -30,6 +32,7 @@ import {
   loadResourceGenerationSession,
   resourceLabel,
   updateResourceVideoRenderResult,
+  recordConversationResourceEvent,
   type GeneratedResourceType,
   type ResourceGenerationQuizSummary,
   type ResourceGenerationResource,
@@ -271,11 +274,11 @@ export default function MultiAgentResourceGenerationPage() {
           {visibleResources.length > 0 ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {visibleResources.map((resource) => (
-                <ResourceCard key={resource.id} resource={resource} />
+                <ResourceCard key={resource.id} resource={resource} session={session} />
               ))}
             </div>
           ) : (
-            <EmptyState selectedType={selectedType} conversationId={conversationId} />
+            <EmptyState selectedType={selectedType} conversationId={conversationId} session={session} />
           )}
 
           {session.taskStatus === 'completed' || session.taskStatus === 'partial_failed' ? (
@@ -339,7 +342,7 @@ function AgentStepCard({
   );
 }
 
-function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
+function ResourceCard({ resource, session }: { resource: ResourceGenerationResource; session: ResourceGenerationSession }) {
   const meta = RESOURCE_META[resource.type];
   const Icon = meta.icon;
   const downloadable = Boolean(resource.download);
@@ -388,6 +391,9 @@ function ResourceCard({ resource }: { resource: ResourceGenerationResource }) {
             {downloadUnavailableReason(resource)}
           </div>
         )}
+        {resource.status === 'failed' ? (
+          <ResourceRetryButton resource={resource} session={session} />
+        ) : null}
       </div>
     </article>
   );
@@ -442,6 +448,106 @@ function ResourceDownloadButton({
   }
 
   return null;
+}
+
+function buildResourceRetryParams(
+  resource: ResourceGenerationResource,
+  session: ResourceGenerationSession,
+): Record<string, unknown> {
+  const base = session.requestParams || {};
+  return {
+    ...base,
+    topic: readText(base.topic) || session.topic || session.title || resource.title,
+    query: readText(base.query) || session.topic || resource.title,
+    resourceTypes: [resource.type],
+  };
+}
+
+function readText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function ResourceRetryButton({
+  resource,
+  session,
+}: {
+  resource: ResourceGenerationResource;
+  session: ResourceGenerationSession;
+}) {
+  const [retrying, setRetrying] = useState(false);
+  const retryParams = resource.retryParams || buildResourceRetryParams(resource, session);
+  const canRetry = Boolean(session.conversationId);
+
+  const handleRetry = async () => {
+    if (retrying || !canRetry) {
+      return;
+    }
+    setRetrying(true);
+    try {
+      const response = await smartEngineApi.submit({
+        conversationId: session.conversationId,
+        serviceType: 'RESOURCE_GENERATION',
+        params: retryParams,
+      });
+      await smartEngineApi.streamTask(response.taskId, {
+        onEvent: (event) => {
+          recordConversationResourceEvent(session.conversationId, event.event, {
+            event: event.event,
+            seq: event.envelope.seq ?? 0,
+            payload: {
+              ...(event.payload ?? {}),
+              taskId: response.taskId,
+              params: retryParams,
+            },
+          });
+        },
+        onDone: () => undefined,
+        onError: (error) => {
+          recordConversationResourceEvent(session.conversationId, 'error', {
+            event: 'error',
+            seq: 0,
+            payload: {
+              taskId: response.taskId,
+              message: error.message,
+              resourceFailures: [{
+                resourceType: resource.type,
+                title: resource.title,
+                error: error.message,
+              }],
+            },
+          });
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '重新生成失败';
+      recordConversationResourceEvent(session.conversationId, 'error', {
+        event: 'error',
+        seq: 0,
+        payload: {
+          message,
+          resourceFailures: [{
+            resourceType: resource.type,
+            title: resource.title,
+            error: message,
+          }],
+        },
+      });
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => { void handleRetry(); }}
+      disabled={!canRetry || retrying}
+      className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl bg-rose-50 px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"
+    >
+      {retrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+      重新生成
+    </button>
+  );
 }
 
 function PPTistEditorButton({ resource }: { resource: ResourceGenerationResource }) {
@@ -602,7 +708,66 @@ function FilterButton({
   );
 }
 
-function EmptyState({ selectedType, conversationId }: { selectedType: ResourceFilter; conversationId: string }) {
+function EmptyState({
+  selectedType,
+  conversationId,
+  session,
+}: {
+  selectedType: ResourceFilter;
+  conversationId: string;
+  session: ResourceGenerationSession;
+}) {
+  if (session.taskStatus === 'running') {
+    const activeStep = AGENT_STEPS[Math.max(0, activeAgentStepIndex(session))] ?? AGENT_STEPS[0];
+    const progress = Math.min(96, Math.max(8, session.progress || 8));
+    const skeletonLabels = selectedType === 'ALL'
+      ? ['文档资源', '课件资源', '练习资源']
+      : [`${resourceLabel(selectedType)}资源`, '内容预览', '下载链接'];
+    return (
+      <div className="resource-generation-stream-empty rounded-2xl bg-primary-50/40 p-5 dark:bg-primary-500/10">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-primary-700 shadow-sm dark:bg-slate-900/70 dark:text-primary-200">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {activeStep.label}
+            </div>
+            <h3 className="mt-3 text-base font-bold text-slate-900 dark:text-white">
+              多 Agent 正在生成资源
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+              {session.statusText || activeStep.description}
+            </p>
+          </div>
+          <div className="w-full md:w-56">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span>当前进度</span>
+              <span className="text-primary-700 dark:text-primary-200">{progress}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white shadow-inner dark:bg-slate-900">
+              <div className="h-full rounded-full bg-primary-600 transition-all duration-500" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          {skeletonLabels.map((label, index) => (
+            <div key={label} className="rounded-2xl bg-white/76 p-4 shadow-sm dark:bg-slate-950/35">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-200">
+                  {index + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="h-3 w-24 rounded-full bg-slate-200/90 dark:bg-slate-700/70" />
+                  <div className="mt-2 h-2 w-32 rounded-full bg-slate-100 dark:bg-slate-800" />
+                </div>
+              </div>
+              <p className="mt-4 text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-[260px] items-center justify-center rounded-2xl bg-blue-50/40 px-5 py-10 text-center dark:bg-slate-950/35">
       <div className="max-w-[520px]">
@@ -707,6 +872,9 @@ function getResourceStatusMeta(resource: ResourceGenerationResource) {
 }
 
 function resourceSubtitle(resource: ResourceGenerationResource): string {
+  if (resource.status === 'failed' && resource.failureReason) {
+    return resource.failureReason;
+  }
   if (resource.status === 'ready') {
     return resource.pptistSlides ? '可在线编辑' : resource.download ? '可下载' : '可在线预览';
   }
@@ -730,6 +898,9 @@ function estimateRemainingTime(session: ResourceGenerationSession): string {
 }
 
 function downloadUnavailableReason(resource: ResourceGenerationResource): string {
+  if (resource.status === 'failed' && resource.failureReason) {
+    return resource.failureReason;
+  }
   if (resource.status === 'failed') {
     return '资源生成失败，可在对话中重新生成。';
   }

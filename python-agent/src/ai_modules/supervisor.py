@@ -35,6 +35,7 @@ from src.ai_modules.agents import (
 )
 from src.ai_modules.models import DonePayload, DoneSSEEvent, EngineStreamRequest, ErrorPayload, ErrorSSEEvent, SSEEvent
 from src.ai_modules.models import ProgressPayload, ProgressSSEEvent
+from src.ai_modules.llms.errors import LLMServiceError
 from src.ai_modules.retrieval.query_classifier import (
     QUERY_TYPE_ANSWER_PREVIOUS,
     QUERY_TYPE_FOLLOW_UP,
@@ -362,18 +363,25 @@ class PythonAgentSupervisor:
                 ),
             )
         except Exception as exc:
-            code = exc.code if isinstance(exc, SupervisorExecutionError) else "SUPERVISOR_FAILED"
-            message = (
-                exc.message
-                if isinstance(exc, SupervisorExecutionError)
-                else f"Supervisor execution failed: {type(exc).__name__}: {exc}"
-            )
+            llm_error = LLMServiceError.from_exception(exc)
+            if llm_error is not None:
+                code = llm_error.code
+                message = llm_error.message
+                error_payload = ErrorPayload(**llm_error.payload_kwargs())
+            elif isinstance(exc, SupervisorExecutionError):
+                code = exc.code
+                message = exc.message
+                error_payload = ErrorPayload(code=code, message=message)
+            else:
+                code = "SUPERVISOR_FAILED"
+                message = f"Supervisor execution failed: {type(exc).__name__}: {exc}"
+                error_payload = ErrorPayload(code=code, message=message)
             LOGGER.exception(message)
             yield ErrorSSEEvent(
                 taskId=request.task_id,
                 traceId=request.trace_id,
                 seq=state.seq,
-                payload=ErrorPayload(code=code, message=message),
+                payload=error_payload,
             )
             state.seq += 1
             yield DoneSSEEvent(

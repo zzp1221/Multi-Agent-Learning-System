@@ -151,6 +151,67 @@ describe('resourceGenerationStore', () => {
     expect(loadResourceGenerationSession('conversation-1').resources).toHaveLength(0);
   });
 
+  it('records failed resources from done resourceFailures with retry params', () => {
+    window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify({ id: 'user-1' }));
+
+    recordConversationResourceEvent('conversation-1', 'resource_file', {
+      event: 'resource_file',
+      seq: 1,
+      payload: {
+        ...llmProvenance,
+        taskId: 'task-partial',
+        assetType: 'DOCUMENT',
+        title: '索引讲义',
+        displayMode: 'MARKDOWN_CARD',
+        fileName: 'guide.md',
+        downloadUrl: '/api/assets/download/guide',
+        params: {
+          topic: '数据库索引',
+          resourceTypes: ['DOCUMENT', 'SLIDES'],
+        },
+      },
+    });
+    recordConversationResourceEvent('conversation-1', 'done', {
+      event: 'done',
+      seq: 2,
+      payload: {
+        taskId: 'task-partial',
+        status: 'PARTIAL_FAILED',
+        summary: '部分完成',
+        resourceFailures: [
+          {
+            resourceType: 'SLIDES',
+            agentName: 'slide_generator',
+            error: 'off topic',
+            verdict: 'REJECT',
+            issues: ['off topic'],
+            suggestions: ['regenerate'],
+            criticReview: {
+              verdict: 'REJECT',
+              summaryText: 'off topic',
+              issues: ['off topic'],
+              suggestions: ['regenerate'],
+            },
+          },
+        ],
+      },
+    });
+
+    const session = loadResourceGenerationSession('conversation-1');
+    expect(session.taskStatus).toBe('partial_failed');
+    expect(session.resources).toHaveLength(2);
+    expect(session.resources[1]).toMatchObject({
+      type: 'SLIDES',
+      status: 'failed',
+      failureReason: 'off topic',
+      retryParams: {
+        topic: '数据库索引',
+        resourceTypes: ['SLIDES'],
+      },
+    });
+    expect(session.resources[1].criticReview?.verdict).toBe('REJECT');
+  });
+
   it('migrates stored legacy slide outlines while keeping final PPTist decks', () => {
     window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify({ id: 'user-1' }));
     window.localStorage.setItem('learning_studio_last_resource_session', JSON.stringify({ 'user-1': 'conversation-1' }));

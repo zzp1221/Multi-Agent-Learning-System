@@ -216,7 +216,8 @@
       "WebFetch(domain:undraw.co)",
       "Bash(docker-compose ps *)",
       "Bash(pnpm remove *)",
-      "Bash(pnpm add *)"
+      "Bash(pnpm add *)",
+      "Bash(dir \"D:\\\\软件杯\\\\比赛\\\\python-agent\\\\src\\\\ai_modules\\\\\" 2>/dev/null)"
     ]
   }
 }

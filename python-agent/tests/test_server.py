@@ -6,6 +6,7 @@ import pytest
 
 import server
 from src.ai_modules.config import Settings
+from src.ai_modules.llms.errors import LLMServiceError
 from src.ai_modules.llms import user_runtime_config
 from src.ai_modules.llms.user_runtime_config import RuntimeProvider, UserLlmRuntimeConfig
 from src.ai_modules.models import EngineStreamRequest
@@ -42,6 +43,26 @@ def test_health_endpoint(client) -> None:
         "stopped",
         "error",
     }
+
+
+def test_public_error_payload_preserves_classified_llm_error() -> None:
+    llm_error = LLMServiceError(
+        code="LLM_QUOTA_EXHAUSTED",
+        message="当前模型额度不足，请检查 API Key 额度或更换模型配置。",
+        http_status=400,
+        provider="openai_compatible",
+        model="mimo-v2.5",
+    )
+    wrapped = RuntimeError("outer failure")
+    wrapped.__cause__ = llm_error
+
+    payload = server._public_error_payload(wrapped)
+
+    assert payload.code == "LLM_QUOTA_EXHAUSTED"
+    assert payload.message == "当前模型额度不足，请检查 API Key 额度或更换模型配置。"
+    assert payload.http_status == 400
+    assert payload.provider == "openai_compatible"
+    assert payload.model == "mimo-v2.5"
 
 
 @pytest.mark.asyncio

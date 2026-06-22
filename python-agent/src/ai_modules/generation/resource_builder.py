@@ -518,6 +518,11 @@ class ResourceGenerationService:
         pptist_json = PPTistDeckBuilder().render(
             title=title, topic=topic, course=str(snapshot.current_course), slides=slides
         )
+        params["generatedReviewContent"] = self._render_slide_review_outline(
+            title=title,
+            topic=topic,
+            slides=slides,
+        )
         slide_count = len(slides)
         file_name = self._scoped_file_name("slides", "json", params)
         path = self._write_text(file_name, pptist_json)
@@ -532,6 +537,23 @@ class ResourceGenerationService:
             mimeType="application/json; charset=UTF-8",
             inlineContent=pptist_json,
         )
+
+    @staticmethod
+    def _render_slide_review_outline(*, title: str, topic: str, slides: list[dict[str, Any]]) -> str:
+        lines = [f"# {title}", "", f"Topic: {topic}", ""]
+        for index, slide in enumerate(slides, start=1):
+            slide_title = str(slide.get("slideTitle") or slide.get("title") or "").strip()
+            bullets = slide.get("bullets") if isinstance(slide.get("bullets"), list) else []
+            notes = str(slide.get("speakerNotes") or slide.get("speaker_notes") or "").strip()
+            lines.extend([f"## Slide {index}: {slide_title}", "Bullets:"])
+            for bullet in bullets:
+                bullet_text = str(bullet).strip()
+                if bullet_text:
+                    lines.append(f"- {bullet_text}")
+            if notes:
+                lines.extend(["Speaker notes:", notes])
+            lines.append("")
+        return "\n".join(lines).strip()
 
     def _generate_html_ppt_with_omni(
         self,

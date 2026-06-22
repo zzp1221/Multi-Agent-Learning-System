@@ -183,6 +183,26 @@ class _CriticRejectedResourceAgent(PlaceholderAgent):
             payload=DonePayload(
                 status="FAILED",
                 summary="Critic review blocked resource publication: verdict=REJECT; off topic",
+                criticReview={
+                    "verdict": "REJECT",
+                    "factConsistency": "UNSUPPORTED",
+                    "difficultyMatch": "MISMATCHED",
+                    "sourceCoverage": "POOR",
+                    "issues": ["off topic"],
+                    "suggestions": ["regenerate"],
+                    "summaryText": "off topic",
+                },
+                resourceFailures=[
+                    {
+                        "resourceType": "SLIDES",
+                        "agentName": "slide_generator",
+                        "error": "off topic",
+                        "verdict": "REJECT",
+                        "summary": "off topic",
+                        "issues": ["off topic"],
+                        "suggestions": ["regenerate"],
+                    }
+                ],
             ),
         )
 
@@ -400,8 +420,11 @@ async def test_resource_bundle_treats_critic_reject_as_resource_failure() -> Non
     assert events[-1].payload.status == "PARTIAL_FAILED"
     assert events[-1].payload.resource_failures[0]["resourceType"] == "SLIDES"
     assert "RuntimeError" not in events[-1].payload.resource_failures[0]["error"]
-    assert "quality review" in events[-1].payload.resource_failures[0]["error"]
+    assert events[-1].payload.resource_failures[0]["error"] == "off topic"
     assert "RuntimeError" not in events[-1].payload.resource_failures[0]["error"]
+    assert events[-1].payload.resource_failures[0]["verdict"] == "REJECT"
+    assert events[-1].payload.resource_failures[0]["issues"] == ["off topic"]
+    assert events[-1].payload.resource_failures[0]["suggestions"] == ["regenerate"]
 
 
 @pytest.mark.asyncio

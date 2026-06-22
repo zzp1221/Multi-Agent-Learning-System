@@ -51,10 +51,11 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, isStreaming }
   // 空内容显示思考动画
   if (!safeContent.trim() && isStreaming) {
     return (
-      <div className="flex items-center gap-2 py-1">
-        <span className="inline-block h-2 w-2 rounded-full bg-primary-400 animate-pulse" style={{ animationDelay: '0ms' }} />
-        <span className="inline-block h-2 w-2 rounded-full bg-primary-400 animate-pulse" style={{ animationDelay: '150ms' }} />
-        <span className="inline-block h-2 w-2 rounded-full bg-primary-400 animate-pulse" style={{ animationDelay: '300ms' }} />
+      <div className="qna-streaming-placeholder" aria-live="polite">
+        <span className="qna-streaming-dot" style={{ animationDelay: '0ms' }} />
+        <span className="qna-streaming-dot" style={{ animationDelay: '140ms' }} />
+        <span className="qna-streaming-dot" style={{ animationDelay: '280ms' }} />
+        <span className="qna-streaming-placeholder-text">正在生成回答</span>
       </div>
     );
   }
