@@ -80,6 +80,8 @@ app:
     enabled: ${APP_RATE_LIMIT_ENABLED:true}
     user-requests-per-minute: ${APP_RATE_LIMIT_USER_PER_MINUTE:240}
     ip-requests-per-minute: ${APP_RATE_LIMIT_IP_PER_MINUTE:600}
+    login-requests-per-minute: ${APP_RATE_LIMIT_LOGIN_PER_MINUTE:5}
+    register-requests-per-hour: ${APP_RATE_LIMIT_REGISTER_PER_HOUR:3}
   user-llm:
     enabled: ${APP_USER_LLM_ENABLED:true}
     encryption-key: ${APP_USER_LLM_ENCRYPTION_KEY:${APP_JWT_SECRET:}}

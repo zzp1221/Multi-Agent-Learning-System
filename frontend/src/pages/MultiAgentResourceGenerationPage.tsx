@@ -407,6 +407,7 @@ function ResourceDownloadButton({
   iconOnly?: boolean;
 }) {
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
 
   const download = resource.download;
   if (download) {
@@ -416,6 +417,7 @@ function ResourceDownloadButton({
         return;
       }
       setDownloading(true);
+      setDownloadError('');
       try {
         await downloadAuthenticatedFile({
           url: download.url,
@@ -423,13 +425,14 @@ function ResourceDownloadButton({
           title: resource.title,
         });
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : '下载失败，请稍后重试');
+        setDownloadError(error instanceof Error ? error.message : '下载失败，请稍后重试');
       } finally {
         setDownloading(false);
       }
     };
 
     return (
+      <>
       <button
         type="button"
         onClick={() => { void handleDownload(); }}
@@ -444,6 +447,8 @@ function ResourceDownloadButton({
         {iconOnly ? null : '下载资源'}
         {iconOnly || internalDownload ? null : <ExternalLink className="h-3.5 w-3.5" />}
       </button>
+      {downloadError && !iconOnly ? <div className="mt-2 text-xs text-red-500 dark:text-red-300">{downloadError}</div> : null}
+      </>
     );
   }
 

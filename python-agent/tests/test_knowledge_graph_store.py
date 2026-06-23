@@ -50,6 +50,25 @@ class FakeConnection:
         self.committed = True
 
 
+class FakePool:
+    def __init__(self) -> None:
+        self.connection = FakeConnection()
+        self.get_count = 0
+        self.put_count = 0
+        self.closed = False
+
+    def getconn(self):
+        self.get_count += 1
+        return self.connection
+
+    def putconn(self, conn) -> None:
+        assert conn is self.connection
+        self.put_count += 1
+
+    def closeall(self) -> None:
+        self.closed = True
+
+
 def test_canonicalize_merges_learning_stage_suffixes() -> None:
     assert _canonicalize("Go语言基础语法入门") == _canonicalize("Go语言基础语法")
     assert _canonicalize("Java并发编程基础巩固") == _canonicalize("Java并发编程")
@@ -77,6 +96,23 @@ def test_upsert_node_keeps_best_mastery_on_conflict() -> None:
     assert params[2] == "Go语言基础语法"
     assert "GREATEST(app.learner_knowledge_node.mastery_score, EXCLUDED.mastery_score)" in sql
     assert "WHEN GREATEST(app.learner_knowledge_node.mastery_score, EXCLUDED.mastery_score) >= 0.4 THEN 'IN_PROGRESS'" in sql
+
+
+def test_get_conn_returns_connection_to_pool() -> None:
+    pool = FakePool()
+    store = LearnerKnowledgeGraphStore(db_config={"host": "db"})
+    store._pool = pool
+
+    with store._get_conn() as conn:
+        assert conn is pool.connection
+
+    assert pool.get_count == 1
+    assert pool.put_count == 1
+
+    store.close()
+
+    assert pool.closed is True
+    assert store._pool is None
 
 
 def test_deduplicate_user_graph_merges_stage_nodes() -> None:

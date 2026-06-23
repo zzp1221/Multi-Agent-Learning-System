@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { BookOpen, ExternalLink, FileText, Sparkles } from 'lucide-react';
 import CodeBlock from '../components/CodeBlock';
 import {
@@ -350,6 +350,7 @@ export function TaskResultPanel(props: {
   practiceBatch: PracticeQuestionBatch | null;
   onSelectResultTask: (taskId: string) => void;
 }) {
+  const [downloadError, setDownloadError] = useState('');
   const selectedRecord = props.resultHistory.find((item) => item.taskId === props.selectedResultTaskId) ?? null;
   const selectedRecordUsesCurrentSnapshot = !selectedRecord || selectedRecord.taskId === props.taskId;
   const activeInlineResources = props.inlineResources.length
@@ -426,6 +427,7 @@ export function TaskResultPanel(props: {
   const standaloneCoverageGaps = visibleResourcePushPlan?.coverageGaps.filter((gap) => !resourcesByLearningStep(visibleLearningPlan, gap.stepId)) ?? [];
 
   const handleDownload = async (item: TempDownloadLink) => {
+    setDownloadError('');
     try {
       await downloadAuthenticatedFile({
         url: item.url,
@@ -433,7 +435,7 @@ export function TaskResultPanel(props: {
         title: item.title,
       });
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : '下载失败，请稍后重试');
+      setDownloadError(error instanceof Error ? error.message : '下载失败，请稍后重试');
     }
   };
 
@@ -441,13 +443,14 @@ export function TaskResultPanel(props: {
     if (!item.downloadUrl) {
       return;
     }
+    setDownloadError('');
     try {
       await downloadAuthenticatedFile({
         url: item.downloadUrl,
         title: item.title,
       });
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : '下载失败，请稍后重试');
+      setDownloadError(error instanceof Error ? error.message : '下载失败，请稍后重试');
     }
   };
 
@@ -470,6 +473,11 @@ export function TaskResultPanel(props: {
 
   return (
     <div className="space-y-5">
+      {downloadError ? (
+        <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-300">
+          {downloadError}
+        </div>
+      ) : null}
       {props.resultHistory.length > 1 ? (
         <div className="modern-card overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3">

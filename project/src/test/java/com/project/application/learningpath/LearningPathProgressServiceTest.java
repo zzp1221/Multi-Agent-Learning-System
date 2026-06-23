@@ -84,6 +84,55 @@ class LearningPathProgressServiceTest {
     }
 
     @Test
+    void stageTestJudgeTaskWithAnswersAndScoreAdvancesCurrentStep() throws Exception {
+        NamedParameterJdbcTemplate jdbcTemplate = mockJdbcWithPlan(Map.of(
+            "steps", List.of(
+                Map.of("stepId", "step-1", "title", "SQL 基础"),
+                Map.of("stepId", "step-2", "title", "联合索引")
+            )
+        ));
+        SmartEngineTask task = stageTestTask("step-1", 0.0);
+        task.setRequestPayload(Map.of(
+            "params", Map.of(
+                "purpose", "STAGE_TEST",
+                "answers", Map.of("q1", "A"),
+                "learningContext", Map.of("activeLearningStepId", "step-1")
+            )
+        ));
+        task.setResponseSummary(Map.of("judgeResult", Map.of(
+            "accuracy", 0.9,
+            "totalScore", 95,
+            "items", List.of(Map.of("questionId", "q1"))
+        )));
+        SmartEngineTaskRepository taskRepository = mockTaskRepository(task);
+        LearningPathProgressService service = new LearningPathProgressService(jdbcTemplate, taskRepository, objectMapper);
+
+        boolean handled = service.handleStageTestResult(USER_ID, UUID.randomUUID());
+
+        assertThat(handled).isTrue();
+        List<Map<String, Object>> steps = steps(capturedUpdatedPlan(jdbcTemplate));
+        assertThat(steps.get(0))
+            .containsEntry("status", "COMPLETED")
+            .containsEntry("lastTestScore", 0.9);
+        assertThat(steps.get(1)).containsEntry("status", "IN_PROGRESS");
+    }
+
+    @Test
+    void stageTestQuestionGenerationTaskDoesNotTouchLearningPlan() {
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        SmartEngineTask task = stageTestTask("step-1", 0.9);
+        task.setResponseSummary(Map.of("questionBatch", Map.of("questions", List.of(Map.of("questionId", "q1")))));
+        SmartEngineTaskRepository taskRepository = mockTaskRepository(task);
+        LearningPathProgressService service = new LearningPathProgressService(jdbcTemplate, taskRepository, objectMapper);
+
+        boolean handled = service.handleStageTestResult(USER_ID, UUID.randomUUID());
+
+        assertThat(handled).isTrue();
+        verify(jdbcTemplate, never()).query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class));
+        verify(jdbcTemplate, never()).update(anyString(), any(MapSqlParameterSource.class));
+    }
+
+    @Test
     void stageTestFailRecordsScoreWithoutAdvancing() throws Exception {
         NamedParameterJdbcTemplate jdbcTemplate = mockJdbcWithPlan(Map.of(
             "steps", List.of(

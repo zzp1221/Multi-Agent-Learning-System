@@ -90,6 +90,29 @@ class ResourceLibraryServiceTest {
     }
 
     @Test
+    void listResourcesEscapesLikeWildcardsInKeyword() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000101");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ResourceSemanticSearchClient semanticClient = mock(ResourceSemanticSearchClient.class);
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class)))
+            .thenReturn(0L);
+
+        ResourceLibraryService service = service(jdbcTemplate, semanticClient);
+        service.listResources(userId, "100%_path\\test", null, null, null, null, null, null, false, "latest", 0, 12);
+
+        verify(jdbcTemplate).query(
+            org.mockito.ArgumentMatchers.argThat((String sql) -> sql.contains("ESCAPE '\\'")),
+            org.mockito.ArgumentMatchers.<SqlParameterSource>argThat(params ->
+                params instanceof MapSqlParameterSource source
+                    && "%100\\%\\_path\\\\test%".equals(source.getValue("keyword"))
+            ),
+            any(RowMapper.class)
+        );
+    }
+
+    @Test
     void listResourcesPrioritizesCurrentStageSemanticRankForDefaultComprehensiveSort() {
         UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000011");
         UUID resourceId = UUID.fromString("70000000-0000-0000-0000-000000000011");

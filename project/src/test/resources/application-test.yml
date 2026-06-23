@@ -37,3 +37,6 @@ app:
   security:
     jwt:
       secret: test-secret-key-for-integration-suite-32-bytes
+  rate-limit:
+    login-requests-per-minute: 1000
+    register-requests-per-hour: 1000

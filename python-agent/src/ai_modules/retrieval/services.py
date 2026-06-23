@@ -105,7 +105,15 @@ class LegacyHybridRetrieverAdapter:
             return
         with self._init_lock:
             if not self._is_initialized():
-                self._retriever._init(cur)
+                self._initialize_retriever(cur)
+
+    def _initialize_retriever(self, cur: Any) -> None:
+        initialize = getattr(self._retriever, "initialize", None)
+        if callable(initialize):
+            initialize(cur)
+            return
+        initialize = getattr(self._retriever, "initialize")
+        initialize(cur)
 
 
 class QueryRewriteService:
@@ -230,13 +238,24 @@ class QueryRewriteService:
         query_context = params.get("queryRewriteContext")
         if not isinstance(query_context, dict):
             query_context = {}
-        prefixes = [
-            learning_context.get("course", ""),
+        context_terms = [
             learning_context.get("chapter", ""),
             *self._context_terms(query_context, "diagnosisWeaknesses"),
             *self._context_terms(query_context, "diagnosisFocus"),
             *self._context_terms(query_context, "profileWeakPoints"),
         ]
+        if self._should_preserve_explicit_topic(params, original_query):
+            prefixes = [
+                prefix
+                for prefix in context_terms
+                if self._shares_query_keyword(original_query, prefix)
+            ]
+        else:
+            prefixes = [
+                learning_context.get("course", ""),
+                learning_context.get("chapter", ""),
+                *context_terms,
+            ]
         rewritten_query = original_query
         for prefix in prefixes:
             if prefix and prefix not in rewritten_query:
@@ -299,6 +318,59 @@ class QueryRewriteService:
             for text in (self._clean_query_term(item) for item in values)
             if text
         ][:4]
+
+    def _should_preserve_explicit_topic(self, params: dict[str, Any], original_query: str) -> bool:
+        if not self._is_explicit_query_field(params, original_query):
+            return False
+        return self._is_specific_topic_query(original_query)
+
+    def _is_explicit_query_field(self, params: dict[str, Any], original_query: str) -> bool:
+        normalized_query = re.sub(r"\s+", " ", str(original_query or "")).strip()
+        if not normalized_query:
+            return False
+        for key in ("query", "userInput", "message", "topic", "prompt", "question", "resourceTopic"):
+            value = params.get(key)
+            if isinstance(value, str) and re.sub(r"\s+", " ", value).strip() == normalized_query:
+                return True
+        return False
+
+    def _is_specific_topic_query(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", str(text or "")).strip().lower()
+        if len(normalized) < 2:
+            return False
+        generic_phrases = {
+            "推荐资源",
+            "学习资源",
+            "生成资源",
+            "推荐资料",
+            "学习资料",
+            "帮我推荐",
+            "帮我生成",
+            "给我资源",
+            "给我资料",
+        }
+        if normalized in generic_phrases:
+            return False
+        generic_terms = {
+            "推荐",
+            "资源",
+            "资料",
+            "学习",
+            "复习",
+            "生成",
+            "帮我",
+            "learn",
+            "study",
+            "resource",
+            "resources",
+        }
+        terms = self._extract_keywords(text)
+        return any(term.strip().lower() not in generic_terms for term in terms)
+
+    def _shares_query_keyword(self, query: str, context: str) -> bool:
+        query_terms = {term.lower() for term in self._extract_keywords(query)}
+        context_terms = {term.lower() for term in self._extract_keywords(context)}
+        return bool(query_terms & context_terms)
 
     def _extract_keywords(self, text: str) -> list[str]:
         raw_terms = re.findall(r"[A-Za-z0-9+\-#_.]{2,}|[\u4e00-\u9fff]{2,}", text)

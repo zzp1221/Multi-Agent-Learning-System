@@ -27,6 +27,7 @@ import java.util.Map;
 public class IpRateLimitFilter extends OncePerRequestFilter {
 
     static final Duration WINDOW = Duration.ofMinutes(1);
+    private static final Duration REGISTER_WINDOW = Duration.ofHours(1);
 
     private final AppProperties appProperties;
     private final RateLimiter rateLimiter;
@@ -57,6 +58,19 @@ public class IpRateLimitFilter extends OncePerRequestFilter {
         }
 
         String ip = resolveClientIp(request);
+        String requestUri = request.getRequestURI();
+        if (isPost(request) && requestUri.equals("/api/auth/login")
+            && !rateLimiter.allow("auth:login:ip:" + ip, appProperties.getRateLimit().getLoginRequestsPerMinute(), WINDOW)) {
+            auditService.log("SAFETY", "MEDIUM", "登录限流命中", null, null, Map.of("ip", ip, "path", requestUri));
+            writeTooManyRequests(response);
+            return;
+        }
+        if (isPost(request) && requestUri.equals("/api/auth/register")
+            && !rateLimiter.allow("auth:register:ip:" + ip, appProperties.getRateLimit().getRegisterRequestsPerHour(), REGISTER_WINDOW)) {
+            auditService.log("SAFETY", "MEDIUM", "注册限流命中", null, null, Map.of("ip", ip, "path", requestUri));
+            writeTooManyRequests(response);
+            return;
+        }
         if (!rateLimiter.allow("ip:" + ip, appProperties.getRateLimit().getIpRequestsPerMinute(), WINDOW)) {
             auditService.log("SAFETY", "MEDIUM", "IP 限流命中", null, null, Map.of("ip", ip, "path", request.getRequestURI()));
             writeTooManyRequests(response);
@@ -64,6 +78,10 @@ public class IpRateLimitFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isPost(HttpServletRequest request) {
+        return "POST".equalsIgnoreCase(request.getMethod());
     }
 
     private void writeTooManyRequests(HttpServletResponse response) throws IOException {

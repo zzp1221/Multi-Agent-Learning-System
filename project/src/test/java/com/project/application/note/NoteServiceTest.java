@@ -219,6 +219,32 @@ class NoteServiceTest {
                 .contains("active_notes.user_id = n.user_id"));
     }
 
+    @Test
+    void listNotesEscapesLikeWildcardsInKeyword() {
+        UUID userId = UUID.fromString("60000000-0000-0000-0000-000000000104");
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        NoteService service = new NoteService(
+            jdbcTemplate,
+            new ObjectMapper(),
+            mock(NotePythonClient.class),
+            mock(ResourceLibraryService.class),
+            new CapturingTaskExecutor()
+        );
+        when(jdbcTemplate.query(anyString(), any(MapSqlParameterSource.class), any(RowMapper.class)))
+            .thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(Long.class))).thenReturn(0L);
+
+        service.listNotes(userId, "100%_path\\test", null, null, 0, 10);
+
+        verify(jdbcTemplate).query(
+            org.mockito.ArgumentMatchers.argThat((String sql) -> sql.contains("ESCAPE '\\'")),
+            org.mockito.ArgumentMatchers.<MapSqlParameterSource>argThat(params ->
+                "%100\\%\\_path\\\\test%".equals(params.getValue("keyword"))
+            ),
+            any(RowMapper.class)
+        );
+    }
+
     private static final class CapturingTaskExecutor implements TaskExecutor {
         private final Queue<Runnable> tasks = new ArrayDeque<>();
 

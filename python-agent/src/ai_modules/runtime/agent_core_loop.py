@@ -145,7 +145,7 @@ class AgentCoreLoop:
         working_messages = [message.copy() for message in messages]
         tool_results: list[ToolExecutionResult] = []
         called_tool_names: set[str] = set()
-        all_registered_tools = set(self.tool_registry._tools.keys())
+        all_registered_tools = set(self.tool_registry.names())
         tool_schemas = self.tool_registry.list_tool_schemas(self.agent_level)
 
         for iteration in range(1, self.max_iterations + 1):

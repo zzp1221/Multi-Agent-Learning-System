@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Check, Copy } from 'lucide-react';
 
@@ -60,12 +60,25 @@ interface CodeBlockProps {
 
 export default function CodeBlock({ language, children }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
+  const clearCopiedTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (clearCopiedTimerRef.current !== null) {
+      window.clearTimeout(clearCopiedTimerRef.current);
+    }
+  }, []);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(children);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (clearCopiedTimerRef.current !== null) {
+        window.clearTimeout(clearCopiedTimerRef.current);
+      }
+      clearCopiedTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        clearCopiedTimerRef.current = null;
+      }, 2000);
     } catch (err) {
       console.error('复制失败:', err);
     }

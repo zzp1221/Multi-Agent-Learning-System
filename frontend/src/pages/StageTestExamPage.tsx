@@ -26,6 +26,7 @@ import {
   updateStageTestAnswer,
   type StageTestSessionState,
 } from './stageTestSessionStore';
+import { dispatchStageTestCompleted, type StageTestCompletedDetail } from './stageTestEvents';
 
 const PASS_SCORE = 80;
 
@@ -89,6 +90,23 @@ export default function StageTestExamPage() {
 
       let receivedResult: PracticeJudgeResult | null = null;
       let streamError = '';
+      let completedDetail: StageTestCompletedDetail | null = null;
+      const completeExamWithResult = (result: PracticeJudgeResult) => {
+        if (receivedResult) {
+          return;
+        }
+        const normalizedResult = normalizeExamResult(result, currentBatch);
+        const score = normalizeDisplayScore(normalizedResult);
+        receivedResult = normalizedResult;
+        completeStageTestSession(normalizedResult);
+        completedDetail = {
+          phaseId: session.phaseId || '',
+          phaseTitle: session.phaseTitle || batchTopic,
+          taskId: submitResp.taskId,
+          score,
+          passed: score >= PASS_SCORE,
+        };
+      };
       await smartEngineApi.streamTask(
         submitResp.taskId,
         {
@@ -97,8 +115,7 @@ export default function StageTestExamPage() {
             if (event.event === 'judge_result') {
               const result = readPracticeJudgeResult(payload);
               if (result) {
-                receivedResult = normalizeExamResult(result, currentBatch);
-                completeStageTestSession(receivedResult);
+                completeExamWithResult(result);
               }
             }
             if (event.event === 'error') {
@@ -118,11 +135,18 @@ export default function StageTestExamPage() {
       if (streamError) {
         throw new Error(streamError);
       }
+      if (completedDetail) {
+        dispatchStageTestCompleted(completedDetail);
+        return;
+      }
       if (!receivedResult) {
         const task = await smartEngineApi.getTask(submitResp.taskId, { dedupe: false, retry: 2 });
         const result = readPracticeJudgeResult(task.responseSummary);
         if (result) {
-          completeStageTestSession(normalizeExamResult(result, currentBatch));
+          completeExamWithResult(result);
+          if (completedDetail) {
+            dispatchStageTestCompleted(completedDetail);
+          }
           return;
         }
         throw new Error('未收到完整批改结果');
@@ -401,10 +425,19 @@ function ResultSummary({ result }: { result: PracticeJudgeResult }) {
 
 function normalizeExamResult(result: PracticeJudgeResult, batch: PracticeQuestionBatch): PracticeJudgeResult {
   const rawScore = result.totalScore || 0;
+  const accuracyScore = result.accuracy > 0 && result.accuracy <= 1
+    ? Math.round(result.accuracy * 100)
+    : undefined;
   const maxPerQuestionScore = Math.max(...result.items.map((item) => item.score), 0);
-  const totalScore = rawScore > 100 || maxPerQuestionScore > 10
-    ? Math.round((rawScore / Math.max(batch.questions.length * 20, 1)) * 100)
-    : Math.round(rawScore);
+  const totalPossibleScore = Math.max(batch.questions.length * Math.max(maxPerQuestionScore, 1), 1);
+  const normalizedScore = rawScore > 100
+    ? Math.round((rawScore / totalPossibleScore) * 100)
+    : accuracyScore !== undefined && maxPerQuestionScore > 10 && Math.abs(rawScore - accuracyScore) > 10
+      ? accuracyScore
+      : rawScore > 0
+        ? Math.round(rawScore)
+        : accuracyScore ?? 0;
+  const totalScore = Math.max(0, Math.min(100, normalizedScore));
   return {
     ...result,
     totalScore,

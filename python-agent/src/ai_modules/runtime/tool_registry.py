@@ -75,6 +75,9 @@ class ToolRegistry:
             if definition.permission_level <= agent_level
         ]
 
+    def names(self) -> list[str]:
+        return list(self._tools.keys())
+
     def list_tool_schemas(self, agent_level: int) -> list[dict[str, Any]]:
         return [
             definition.as_llm_tool()

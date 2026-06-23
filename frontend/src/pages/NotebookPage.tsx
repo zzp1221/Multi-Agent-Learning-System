@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import {
   Bold,
   BookOpen,
@@ -70,6 +71,22 @@ interface NoteDraftSnapshot {
   tags: string[];
 }
 
+interface PendingConfirm {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  onConfirm: () => void;
+}
+
+interface PendingPrompt {
+  title: string;
+  label: string;
+  initialValue: string;
+  confirmLabel: string;
+  onConfirm: (value: string) => void;
+}
+
 export default function NotebookPage() {
   const { isAuthenticated, openAuthModal } = useOutletContext<LayoutOutletContext>();
   const navigate = useNavigate();
@@ -116,6 +133,8 @@ export default function NotebookPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatStreaming, setChatStreaming] = useState(false);
   const [chatError, setChatError] = useState('');
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [pendingPrompt, setPendingPrompt] = useState<PendingPrompt | null>(null);
 
   const loadRequestIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
@@ -416,9 +435,18 @@ export default function NotebookPage() {
       return;
     }
     const note = notes.find((item) => item.id === noteId);
-    if (!window.confirm(`确认删除「${note?.title ?? '这条笔记'}」？`)) {
-      return;
-    }
+    setPendingConfirm({
+      title: '删除笔记',
+      message: `确认删除「${note?.title ?? '这条笔记'}」？`,
+      confirmLabel: '删除',
+      danger: true,
+      onConfirm: () => {
+        void deleteNote(noteId);
+      },
+    });
+  };
+
+  const deleteNote = async (noteId: string) => {
     setDeletingId(noteId);
     setError('');
     try {
@@ -472,7 +500,19 @@ export default function NotebookPage() {
     if (!requireLogin()) {
       return;
     }
-    const nextName = window.prompt('重命名目录', folder.name)?.trim();
+    setPendingPrompt({
+      title: '重命名目录',
+      label: '目录名称',
+      initialValue: folder.name,
+      confirmLabel: '保存',
+      onConfirm: (value) => {
+        void renameFolder(folder, value);
+      },
+    });
+  };
+
+  const renameFolder = async (folder: NoteFolder, value: string) => {
+    const nextName = value.trim();
     if (!nextName || nextName === folder.name) {
       return;
     }
@@ -491,9 +531,18 @@ export default function NotebookPage() {
     if (!requireLogin()) {
       return;
     }
-    if (!window.confirm(`删除目录「${folder.name}」？目录内笔记会移到未分类。`)) {
-      return;
-    }
+    setPendingConfirm({
+      title: '删除目录',
+      message: `删除目录「${folder.name}」？目录内笔记会移到未分类。`,
+      confirmLabel: '删除',
+      danger: true,
+      onConfirm: () => {
+        void deleteFolder(folder);
+      },
+    });
+  };
+
+  const deleteFolder = async (folder: NoteFolder) => {
     setFolderBusyId(folder.id);
     try {
       await notesApi.deleteFolder(folder.id);
@@ -512,7 +561,18 @@ export default function NotebookPage() {
     if (!detail || !requireLogin()) {
       return;
     }
-    if (!window.confirm(`恢复到版本 ${version.versionNo}？当前内容会先写入新的历史版本。`)) {
+    setPendingConfirm({
+      title: '恢复版本',
+      message: `恢复到版本 ${version.versionNo}？当前内容会先写入新的历史版本。`,
+      confirmLabel: '恢复',
+      onConfirm: () => {
+        void restoreVersion(version);
+      },
+    });
+  };
+
+  const restoreVersion = async (version: NoteVersion) => {
+    if (!detail) {
       return;
     }
     setRestoringVersionId(version.id);
@@ -721,6 +781,7 @@ export default function NotebookPage() {
   }
 
   return (
+    <>
     <div className="notebook-page min-h-screen w-full space-y-4 px-3 py-3 sm:px-4 lg:px-5">
       <div className="flex flex-col gap-4 rounded-[1.4rem] border border-white/70 bg-white/92 px-5 py-4 shadow-[0_18px_48px_rgba(64,91,142,0.08)] dark:border-slate-800/70 dark:bg-slate-900/88 dark:shadow-slate-950/20 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
@@ -1319,6 +1380,119 @@ export default function NotebookPage() {
         </aside>
       </div>
     </div>
+    <ConfirmDialog
+      dialog={pendingConfirm}
+      onCancel={() => setPendingConfirm(null)}
+      onConfirm={() => {
+        const action = pendingConfirm?.onConfirm;
+        setPendingConfirm(null);
+        action?.();
+      }}
+    />
+    <PromptDialog
+      dialog={pendingPrompt}
+      onCancel={() => setPendingPrompt(null)}
+      onConfirm={(value) => {
+        const action = pendingPrompt?.onConfirm;
+        setPendingPrompt(null);
+        action?.(value);
+      }}
+    />
+    </>
+  );
+}
+
+function ConfirmDialog(props: {
+  dialog: PendingConfirm | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!props.dialog) {
+    return null;
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl shadow-slate-950/20 dark:bg-slate-900">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{props.dialog.title}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{props.dialog.message}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={props.onCancel}
+            className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={props.onConfirm}
+            className={cn(
+              'rounded-xl px-4 py-2 text-sm font-semibold text-white',
+              props.dialog.danger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-primary-600 hover:bg-primary-700',
+            )}
+          >
+            {props.dialog.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PromptDialog(props: {
+  dialog: PendingPrompt | null;
+  onCancel: () => void;
+  onConfirm: (value: string) => void;
+}) {
+  const [value, setValue] = useState('');
+
+  useEffect(() => {
+    setValue(props.dialog?.initialValue ?? '');
+  }, [props.dialog]);
+
+  if (!props.dialog) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+      <form
+        className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl shadow-slate-950/20 dark:bg-slate-900"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (trimmed) {
+            props.onConfirm(trimmed);
+          }
+        }}
+      >
+        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{props.dialog.title}</h2>
+        <label className="mt-4 block text-sm font-medium text-slate-600 dark:text-slate-300">
+          {props.dialog.label}
+          <input
+            autoFocus
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-primary-300 focus:ring-2 focus:ring-primary-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-primary-500 dark:focus:ring-primary-500/20"
+          />
+        </label>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={props.onCancel}
+            className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            disabled={!trimmed}
+            className="rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {props.dialog.confirmLabel}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -1334,14 +1508,21 @@ function RichTextEditor(props: { markdown: string; onChange: (markdown: string) 
     if (focusedRef.current && appliedMarkdownRef.current === props.markdown) {
       return;
     }
-    editorRef.current.innerHTML = markdownToRichHtml(props.markdown);
+    editorRef.current.innerHTML = sanitizeRichHtml(markdownToRichHtml(props.markdown));
     appliedMarkdownRef.current = props.markdown;
   }, [props.markdown]);
 
   const emitChange = () => {
-    const nextMarkdown = htmlToMarkdown(editorRef.current?.innerHTML ?? '');
+    const nextMarkdown = htmlToMarkdown(sanitizeRichHtml(editorRef.current?.innerHTML ?? ''));
     appliedMarkdownRef.current = nextMarkdown;
     props.onChange(nextMarkdown);
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const text = event.clipboardData.getData('text/plain');
+    insertPlainText(text);
+    emitChange();
   };
 
   const runCommand = (command: string) => {
@@ -1369,6 +1550,7 @@ function RichTextEditor(props: { markdown: string; onChange: (markdown: string) 
           emitChange();
         }}
         onInput={emitChange}
+        onPaste={handlePaste}
         className="rich-note-editor min-h-0 flex-1 overflow-y-auto p-4 text-sm leading-7 text-slate-800 outline-none dark:text-slate-200 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:text-lg [&_h2]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_p]:my-2"
       />
     </div>
@@ -1609,7 +1791,7 @@ function htmlToMarkdown(html: string): string {
     return '';
   }
   const root = document.createElement('div');
-  root.innerHTML = html;
+  root.innerHTML = sanitizeRichHtml(html);
   const lines: string[] = [];
   root.childNodes.forEach((node) => {
     const text = nodeToMarkdown(node).trimEnd();
@@ -1618,6 +1800,23 @@ function htmlToMarkdown(html: string): string {
     }
   });
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function sanitizeRichHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'code', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'div'],
+    ALLOWED_ATTR: [],
+  });
+}
+
+function insertPlainText(text: string): void {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return;
+  }
+  selection.deleteFromDocument();
+  selection.getRangeAt(0).insertNode(document.createTextNode(text));
+  selection.collapseToEnd();
 }
 
 function nodeToMarkdown(node: Node): string {

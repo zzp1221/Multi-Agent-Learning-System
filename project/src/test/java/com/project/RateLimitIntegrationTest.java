@@ -21,7 +21,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = {
     "app.rate-limit.user-requests-per-minute=1",
-    "app.rate-limit.ip-requests-per-minute=100"
+    "app.rate-limit.ip-requests-per-minute=100",
+    "app.rate-limit.login-requests-per-minute=1",
+    "app.rate-limit.register-requests-per-hour=100"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -43,6 +45,33 @@ class RateLimitIntegrationTest {
 
         mockMvc.perform(get("/api/auth/me")
                 .header("Authorization", "Bearer " + token))
+            .andExpect(status().isTooManyRequests())
+            .andExpect(jsonPath("$.code").value("TOO_MANY_REQUESTS"));
+    }
+
+    @Test
+    void loginRequestsAreRateLimitedBeforeAuthentication() throws Exception {
+        String loginId = "login_limit_" + System.nanoTime();
+        registerAndGetToken(loginId);
+
+        mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "loginId": "%s",
+                      "password": "wrong-password"
+                    }
+                    """.formatted(loginId)))
+            .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "loginId": "%s",
+                      "password": "wrong-password"
+                    }
+                    """.formatted(loginId)))
             .andExpect(status().isTooManyRequests())
             .andExpect(jsonPath("$.code").value("TOO_MANY_REQUESTS"));
     }

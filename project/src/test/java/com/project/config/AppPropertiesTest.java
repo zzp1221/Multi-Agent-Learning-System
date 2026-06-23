@@ -24,5 +24,7 @@ class AppPropertiesTest {
         assertThat(properties.getUpload().getImageStorageDir()).isEqualTo("sandbox-temp/chat-images");
         assertThat(properties.getUserLlm().isEnabled()).isTrue();
         assertThat(properties.getUserLlm().getEncryptionKey()).isEmpty();
+        assertThat(properties.getRateLimit().getLoginRequestsPerMinute()).isEqualTo(5);
+        assertThat(properties.getRateLimit().getRegisterRequestsPerHour()).isEqualTo(3);
     }
 }

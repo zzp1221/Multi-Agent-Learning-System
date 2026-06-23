@@ -145,7 +145,7 @@ def test_query_rewrite_service_prefers_message_over_polluted_query_for_plain_tut
     assert "Thread.sleep" not in result.keywords
 
 
-def test_query_rewrite_service_keeps_learning_context_for_resource_workflows() -> None:
+def test_query_rewrite_service_preserves_explicit_topic_for_resource_workflows() -> None:
     service = QueryRewriteService()
 
     result = service.rewrite(
@@ -157,8 +157,46 @@ def test_query_rewrite_service_keeps_learning_context_for_resource_workflows() -
     )
 
     assert result.original_query == "联合索引"
-    assert result.rewritten_query == "数据库原理 联合索引"
+    assert result.rewritten_query == "联合索引"
     assert "联合索引" in result.keywords
+
+def test_query_rewrite_service_preserves_explicit_topic_from_broad_context() -> None:
+    service = QueryRewriteService()
+
+    result = service.rewrite(
+        {
+            "query": "Python基础",
+            "learningContext": {"course": "全栈开发", "chapter": "前后端综合实践"},
+            "queryRewriteContext": {
+                "diagnosisWeaknesses": ["全栈开发"],
+                "profileWeakPoints": ["前后端整合"],
+            },
+        },
+        service_type="RESOURCE_GENERATION",
+    )
+
+    assert result.original_query == "Python基础"
+    assert result.rewritten_query == "Python基础"
+    assert "全栈开发" not in result.keywords
+
+
+def test_query_rewrite_service_keeps_related_context_for_explicit_topic() -> None:
+    service = QueryRewriteService()
+
+    result = service.rewrite(
+        {
+            "query": "Python基础",
+            "learningContext": {"course": "全栈开发", "chapter": "Python语法基础"},
+            "queryRewriteContext": {
+                "diagnosisWeaknesses": ["Python语法基础"],
+            },
+        },
+        service_type="RESOURCE_GENERATION",
+    )
+
+    assert result.original_query == "Python基础"
+    assert result.rewritten_query == "Python语法基础 Python基础"
+    assert "全栈开发" not in result.keywords
 
 
 def test_query_rewrite_service_prefers_resource_business_fields_over_resource_type() -> None:

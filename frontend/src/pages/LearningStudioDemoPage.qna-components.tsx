@@ -258,6 +258,7 @@ export const ChatPanel = memo(function ChatPanel({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
+  const clearCopiedTimerRef = useRef<number | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [autoFollow, setAutoFollow] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -305,6 +306,12 @@ export const ChatPanel = memo(function ChatPanel({
     scrollToBottom();
   }, [autoFollow, messages, scrollToBottom]);
 
+  useEffect(() => () => {
+    if (clearCopiedTimerRef.current !== null) {
+      window.clearTimeout(clearCopiedTimerRef.current);
+    }
+  }, []);
+
   useEffect(() => {
     const content = contentRef.current;
     if (!content || typeof ResizeObserver === 'undefined') {
@@ -334,8 +341,12 @@ export const ChatPanel = memo(function ChatPanel({
     try {
       await navigator.clipboard.writeText(normalizeCopyMarkdown(message.content));
       setCopiedMessageId(message.id);
-      window.setTimeout(() => {
+      if (clearCopiedTimerRef.current !== null) {
+        window.clearTimeout(clearCopiedTimerRef.current);
+      }
+      clearCopiedTimerRef.current = window.setTimeout(() => {
         setCopiedMessageId((prev) => (prev === message.id ? null : prev));
+        clearCopiedTimerRef.current = null;
       }, 1200);
     } catch {
       // 忽略剪贴板错误

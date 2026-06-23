@@ -22,6 +22,7 @@ import { readStreamMessage, readStreamPayload } from '../api/sse';
 import { downloadAuthenticatedFile, isInternalArtifactDownloadUrl } from '../utils/authenticatedDownload';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
 import { openStageTestSession } from './stageTestSessionStore';
+import { STAGE_TEST_COMPLETED_EVENT } from './stageTestEvents';
 
 type PhaseStatus = 'completed' | 'active' | 'pending';
 
@@ -46,6 +47,11 @@ interface StepResource {
   stepId?: string;
 }
 
+interface LastStageTestView {
+  score: number;
+  passed: boolean;
+}
+
 type StageTestStatus = 'idle' | 'generating' | 'error';
 
 interface StageTestState {
@@ -62,6 +68,7 @@ const emptyStageTestState: StageTestState = {
 
 const LEARNING_PATH_EMPTY_RECHECK_INTERVAL_MS = 2500;
 const LEARNING_PATH_EMPTY_RECHECK_MAX_ATTEMPTS = 12;
+const STAGE_TEST_PASS_SCORE = 80;
 
 const learningGateSteps = [
   { step: '01', title: '建立画像', summary: '记录基础、目标、偏好和学习节奏' },
@@ -123,6 +130,17 @@ export default function PersonalizedLearningPathPage() {
     };
     window.addEventListener('app:profile-updated', handleProfileUpdated);
     return () => window.removeEventListener('app:profile-updated', handleProfileUpdated);
+  }, [isAuthenticated, loadCurrent]);
+
+  useEffect(() => {
+    if (!isAuthenticated || typeof window === 'undefined') {
+      return;
+    }
+    const handleStageTestCompleted = () => {
+      void loadCurrent();
+    };
+    window.addEventListener(STAGE_TEST_COMPLETED_EVENT, handleStageTestCompleted);
+    return () => window.removeEventListener(STAGE_TEST_COMPLETED_EVENT, handleStageTestCompleted);
   }, [isAuthenticated, loadCurrent]);
 
   useEffect(() => {
@@ -191,6 +209,7 @@ export default function PersonalizedLearningPathPage() {
   const overallProgress = phases.length ? Math.round((completedCount / phases.length) * 100) : 0;
   const resourceTaskRefreshing = isLiveTask(resourceRefreshTask?.status);
   const activePhaseResources = activePhase ? resourcesByStep.get(activePhase.stepId) ?? [] : [];
+  const lastStageTest = readLastStageTest(data);
   const visibleResources = activePhase
     ? activePhaseResources.length ? activePhaseResources : flattenResources(resourcesByStep)
     : flattenResources(resourcesByStep);
@@ -494,7 +513,12 @@ export default function PersonalizedLearningPathPage() {
                 <div className="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-800">
                   <div className="h-full rounded-full bg-primary-600" style={{ width: `${Math.max(8, activePhase.progress)}%` }} />
                 </div>
-                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">阶段进度 {activePhase.progress}% · 总进度 {overallProgress}%</div>
+                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">当前阶段进度 {activePhase.progress}% · 总进度 {overallProgress}%</div>
+                {lastStageTest ? (
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    最近阶段测试：{lastStageTest.passed ? '已通过' : '未通过'} · {lastStageTest.score}分
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="space-y-3">
@@ -638,18 +662,20 @@ function StageTestPanel({
 
 function ResourceCard({ resource }: { resource: StepResource }) {
   const Icon = resourceIcon(resource.resourceType);
+  const [downloadError, setDownloadError] = useState('');
   const internalDownload = resource.downloadUrl ? isInternalArtifactDownloadUrl(resource.downloadUrl) : false;
   const handleDownload = async () => {
     if (!resource.downloadUrl) {
       return;
     }
+    setDownloadError('');
     try {
       await downloadAuthenticatedFile({
         url: resource.downloadUrl,
         title: resource.title,
       });
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : '下载失败，请稍后重试');
+      setDownloadError(error instanceof Error ? error.message : '下载失败，请稍后重试');
     }
   };
   const content = (
@@ -666,6 +692,7 @@ function ResourceCard({ resource }: { resource: StepResource }) {
   );
   if (resource.downloadUrl && internalDownload) {
     return (
+      <>
       <button
         type="button"
         onClick={() => { void handleDownload(); }}
@@ -673,6 +700,8 @@ function ResourceCard({ resource }: { resource: StepResource }) {
       >
         {content}
       </button>
+      {downloadError ? <div className="mt-2 text-xs text-red-500 dark:text-red-300">{downloadError}</div> : null}
+      </>
     );
   }
   if (resource.downloadUrl) {
@@ -956,6 +985,20 @@ function firstLearningStepId(data: LearningPathCurrentResponse | null): string {
     }
   }
   return '';
+}
+
+function readLastStageTest(data: LearningPathCurrentResponse | null): LastStageTestView | null {
+  const source = readRecord(data?.learningPath?.lastStageTest);
+  if (!source) {
+    return null;
+  }
+  const rawScore = readNumber(source.score) ?? readNumber(source.totalScore);
+  if (rawScore === undefined) {
+    return null;
+  }
+  const score = clampProgress(rawScore <= 1 ? rawScore * 100 : rawScore);
+  const passed = typeof source.passed === 'boolean' ? source.passed : score >= STAGE_TEST_PASS_SCORE;
+  return { score, passed };
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {

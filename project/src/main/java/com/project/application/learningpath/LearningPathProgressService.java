@@ -100,6 +100,9 @@ public class LearningPathProgressService {
             || task.getTaskStatus() != TaskStatus.COMPLETED) {
             return true;
         }
+        if (!isStageTestJudgeTask(params, task.getResponseSummary())) {
+            return true;
+        }
 
         String requestedStepId = readActiveStepId(params);
         Double score = readAccuracy(task.getResponseSummary());
@@ -287,6 +290,26 @@ public class LearningPathProgressService {
 
     private boolean isStageTest(Map<String, Object> params) {
         return STAGE_TEST_PURPOSE.equalsIgnoreCase(readString(params.get("purpose")));
+    }
+
+    private boolean isStageTestJudgeTask(Map<String, Object> params, Map<String, Object> responseSummary) {
+        Object answers = params.get("answers");
+        if (answers instanceof Map<?, ?> answerMap && !answerMap.isEmpty()) {
+            return true;
+        }
+        Map<String, Object> summary = safeMap(responseSummary);
+        Map<String, Object> judgeResult = safeMap(summary.get("judgeResult"));
+        return hasJudgeResultSignal(summary) || hasJudgeResultSignal(judgeResult);
+    }
+
+    private boolean hasJudgeResultSignal(Map<String, Object> value) {
+        if (value.isEmpty()) {
+            return false;
+        }
+        if (value.containsKey("accuracy") || value.containsKey("totalScore")) {
+            return true;
+        }
+        return value.containsKey("items");
     }
 
     private String readActiveStepId(Map<String, Object> params) {

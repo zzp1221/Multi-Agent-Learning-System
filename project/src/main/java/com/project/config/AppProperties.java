@@ -193,6 +193,8 @@ public class AppProperties {
         private boolean enabled = true;
         private int userRequestsPerMinute = 240;
         private int ipRequestsPerMinute = 600;
+        private int loginRequestsPerMinute = 5;
+        private int registerRequestsPerHour = 3;
 
         public boolean isEnabled() {
             return enabled;
@@ -216,6 +218,22 @@ public class AppProperties {
 
         public void setIpRequestsPerMinute(int ipRequestsPerMinute) {
             this.ipRequestsPerMinute = ipRequestsPerMinute;
+        }
+
+        public int getLoginRequestsPerMinute() {
+            return loginRequestsPerMinute;
+        }
+
+        public void setLoginRequestsPerMinute(int loginRequestsPerMinute) {
+            this.loginRequestsPerMinute = loginRequestsPerMinute;
+        }
+
+        public int getRegisterRequestsPerHour() {
+            return registerRequestsPerHour;
+        }
+
+        public void setRegisterRequestsPerHour(int registerRequestsPerHour) {
+            this.registerRequestsPerHour = registerRequestsPerHour;
         }
     }
 

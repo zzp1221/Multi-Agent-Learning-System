@@ -84,6 +84,9 @@ class HybridRetriever:
         self._initialized = True
         print(f"  [HybridRetriever] Loaded {n} terms from term_lexicon")
 
+    def initialize(self, cur):
+        self._init(cur)
+
     def _embedding_api_key(self, settings) -> str:
         explicit_key = str(getattr(settings, "effective_embedding_api_key", "") or "").strip()
         if explicit_key:
@@ -104,7 +107,7 @@ class HybridRetriever:
         """Run all 3 channels and fuse. Returns structured results."""
         effective_web_query = self._web_query(web_search_query or query)
         try:
-            self._init(cur)
+            self.initialize(cur)
         except Exception as exc:
             LOGGER.warning("Local hybrid retrieval init failed for query %r: %s", query, exc)
             web_results = TavilySearcher().search(effective_web_query, top_k=5) if web_search_enabled else []

@@ -34,6 +34,7 @@ import { readStreamMessage, readStreamPayload } from '../api/sse';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
 import { readPracticeQuestionBatch } from './LearningStudioDemoPage.taskPayloadReaders';
 import { openStageTestSession } from './stageTestSessionStore';
+import { STAGE_TEST_COMPLETED_EVENT } from './stageTestEvents';
 
 type StageGenerationStatus = 'idle' | 'generating' | 'failed';
 
@@ -69,6 +70,17 @@ export default function DailyStudyWorkbenchPage() {
   useEffect(() => {
     void loadDaily();
   }, [loadDaily]);
+
+  useEffect(() => {
+    if (!isAuthenticated || typeof window === 'undefined') {
+      return;
+    }
+    const handleStageTestCompleted = () => {
+      void loadDaily();
+    };
+    window.addEventListener(STAGE_TEST_COMPLETED_EVENT, handleStageTestCompleted);
+    return () => window.removeEventListener(STAGE_TEST_COMPLETED_EVENT, handleStageTestCompleted);
+  }, [isAuthenticated, loadDaily]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 

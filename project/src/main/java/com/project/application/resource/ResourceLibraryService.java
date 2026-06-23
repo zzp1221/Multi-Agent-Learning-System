@@ -521,8 +521,8 @@ public class ResourceLibraryService {
         conditions.add(readableResourceCondition());
         conditions.add(visibleResourceCondition());
         if (keyword != null && !keyword.isBlank()) {
-            conditions.add("(lr.title ILIKE :keyword OR COALESCE(lr.summary_text, '') ILIKE :keyword OR lr.tags::text ILIKE :keyword)");
-            params.addValue("keyword", "%" + keyword.trim() + "%");
+            conditions.add("(lr.title ILIKE :keyword ESCAPE '\\' OR COALESCE(lr.summary_text, '') ILIKE :keyword ESCAPE '\\' OR lr.tags::text ILIKE :keyword ESCAPE '\\')");
+            params.addValue("keyword", likeContainsPattern(keyword));
         }
         ResourceTypeFilter typeFilter = resolveResourceTypeFilter(type);
         if (!typeFilter.resourceTypes().isEmpty() || !typeFilter.displayTypes().isEmpty()) {
@@ -902,6 +902,14 @@ public class ResourceLibraryService {
 
     private MapSqlParameterSource baseParams(UUID userId) {
         return new MapSqlParameterSource("userId", userId);
+    }
+
+    private String likeContainsPattern(String value) {
+        String escaped = value.trim()
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_");
+        return "%" + escaped + "%";
     }
 
     private boolean isStageRecommendedSort(String sort) {

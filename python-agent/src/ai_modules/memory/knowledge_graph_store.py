@@ -6,6 +6,7 @@ import logging
 import re
 import unicodedata
 import uuid
+from threading import Lock
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
@@ -144,25 +145,62 @@ def _status_from_mastery(mastery: float) -> str:
     return "NOT_STARTED"
 
 
+class _PooledConnection:
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+        self._conn = None
+
+    def __enter__(self):
+        self._conn = self._pool.getconn()
+        return self._conn.__enter__()
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        try:
+            self._conn.__exit__(exc_type, exc, tb)
+        finally:
+            self._pool.putconn(self._conn)
+            self._conn = None
+
+
 class LearnerKnowledgeGraphStore:
     """读写 app.learner_knowledge_node / app.learner_knowledge_edge。"""
 
     def __init__(self, db_config: dict | None = None) -> None:
         self._db_config = db_config
+        self._pool = None
+        self._pool_lock = Lock()
 
     def _get_conn(self):
-        import psycopg2
+        return _PooledConnection(self._get_pool())
+
+    def close(self) -> None:
+        with self._pool_lock:
+            if self._pool is not None:
+                self._pool.closeall()
+                self._pool = None
+
+    def _get_pool(self):
+        if self._pool is not None:
+            return self._pool
+        with self._pool_lock:
+            if self._pool is None:
+                from psycopg2.pool import ThreadedConnectionPool
+
+                self._pool = ThreadedConnectionPool(1, 5, **self._resolved_db_config())
+            return self._pool
+
+    def _resolved_db_config(self) -> dict[str, Any]:
         if self._db_config:
-            return psycopg2.connect(**self._db_config)
+            return dict(self._db_config)
         from src.ai_modules.config import get_settings
         s = get_settings()
-        return psycopg2.connect(
-            host=s.postgres_host,
-            port=s.postgres_port,
-            dbname=s.postgres_db,
-            user=s.postgres_user,
-            password=s.postgres_password,
-        )
+        return {
+            "host": s.postgres_host,
+            "port": s.postgres_port,
+            "dbname": s.postgres_db,
+            "user": s.postgres_user,
+            "password": s.postgres_password,
+        }
 
     async def upsert_node(
         self,

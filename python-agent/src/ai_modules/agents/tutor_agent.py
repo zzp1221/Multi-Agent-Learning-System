@@ -1481,6 +1481,12 @@ class TutorAgent(PlaceholderAgent):
                 user_id=user_id,
             )
         except Exception:
+            LOGGER.warning(
+                "load persisted conversation summary failed conversation_id=%s user_id=%s",
+                conversation_id,
+                user_id,
+                exc_info=True,
+            )
             return None
         if document is None:
             return None
@@ -1506,6 +1512,7 @@ class TutorAgent(PlaceholderAgent):
         try:
             return StructuredConversationSummary.model_validate(persisted_summary)
         except Exception:
+            LOGGER.warning("persisted conversation summary validation failed", exc_info=True)
             return None
 
     async def _upsert_summary(
@@ -1540,6 +1547,12 @@ class TutorAgent(PlaceholderAgent):
                 return
             await self.summary_store.save_summary(document)
         except Exception:
+            LOGGER.warning(
+                "upsert conversation summary failed conversation_id=%s task_id=%s",
+                self._conversation_id(params, task_id),
+                task_id,
+                exc_info=True,
+            )
             return
 
     def _conversation_id(self, params: dict[str, Any], task_id: str) -> str:

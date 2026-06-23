@@ -343,10 +343,15 @@ public class NoteService {
 
     @Transactional
     public NoteDetailResponse updateTags(UUID userId, UUID noteId, UpdateNoteTagsRequest request) {
-        getNote(userId, noteId);
+        NoteDetailResponse existing = getNote(userId, noteId);
         updateNoteTags(userId, noteId, request.tags());
-        NoteDetailResponse note = getNote(userId, noteId);
-        upsertNoteResource(userId, noteId, ensureRagResourceId(userId, noteId), normalizeNoteInput(note.title(), note.markdownContent()), tagNamesForNote(noteId));
+        upsertNoteResource(
+            userId,
+            noteId,
+            ensureRagResourceId(userId, noteId),
+            normalizeNoteInput(existing.title(), existing.markdownContent()),
+            tagNamesForNote(noteId)
+        );
         indexNoteForRagAfterCommit(userId, noteId);
         return getNote(userId, noteId);
     }
@@ -611,29 +616,35 @@ public class NoteService {
     private void updateNoteTags(UUID userId, UUID noteId, List<String> rawTags) {
         List<String> tags = normalizeTags(rawTags);
         jdbcTemplate.update("DELETE FROM app.note_tag_link WHERE note_id = :noteId", new MapSqlParameterSource("noteId", noteId));
-        for (String tag : tags) {
-            UUID tagId = upsertTag(userId, tag);
-            jdbcTemplate.update(
-                """
-                INSERT INTO app.note_tag_link(note_id, tag_id)
-                VALUES (:noteId, :tagId)
-                ON CONFLICT DO NOTHING
-                """,
-                new MapSqlParameterSource("noteId", noteId).addValue("tagId", tagId)
-            );
+        if (tags.isEmpty()) {
+            return;
         }
-    }
-
-    private UUID upsertTag(UUID userId, String tag) {
-        return jdbcTemplate.queryForObject(
+        MapSqlParameterSource params = baseParams(userId).addValue("noteId", noteId);
+        List<String> values = new ArrayList<>();
+        for (int index = 0; index < tags.size(); index += 1) {
+            String tag = tags.get(index);
+            values.add("(:tagName" + index + ", :tagColor" + index + ")");
+            params.addValue("tagName" + index, tag);
+            params.addValue("tagColor" + index, colorForTag(tag));
+        }
+        jdbcTemplate.update(
             """
-            INSERT INTO app.note_tag(user_id, name, color)
-            VALUES (:userId, :name, :color)
-            ON CONFLICT (user_id, name) DO UPDATE SET updated_at = now()
-            RETURNING id
-            """,
-            baseParams(userId).addValue("name", tag).addValue("color", colorForTag(tag)),
-            UUID.class
+            WITH input(name, color) AS (
+                VALUES %s
+            ),
+            upserted AS (
+                INSERT INTO app.note_tag(user_id, name, color)
+                SELECT :userId, input.name, input.color
+                FROM input
+                ON CONFLICT (user_id, name) DO UPDATE SET updated_at = now()
+                RETURNING id
+            )
+            INSERT INTO app.note_tag_link(note_id, tag_id)
+            SELECT :noteId, id
+            FROM upserted
+            ON CONFLICT DO NOTHING
+            """.formatted(String.join(", ", values)),
+            params
         );
     }
 
@@ -765,8 +776,8 @@ public class NoteService {
         conditions.add("n.user_id = :userId");
         conditions.add("n.status = 'ACTIVE'");
         if (keyword != null && !keyword.isBlank()) {
-            conditions.add("(n.title ILIKE :keyword OR n.plain_text ILIKE :keyword)");
-            params.addValue("keyword", "%" + keyword.trim() + "%");
+            conditions.add("(n.title ILIKE :keyword ESCAPE '\\' OR n.plain_text ILIKE :keyword ESCAPE '\\')");
+            params.addValue("keyword", likeContainsPattern(keyword));
         }
         if (folderId != null) {
             conditions.add("n.folder_id = :folderId");
@@ -1007,6 +1018,14 @@ public class NoteService {
 
     private MapSqlParameterSource baseParams(UUID userId) {
         return new MapSqlParameterSource("userId", userId);
+    }
+
+    private String likeContainsPattern(String value) {
+        String escaped = value.trim()
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_");
+        return "%" + escaped + "%";
     }
 
     private OffsetDateTime readOffsetDateTime(ResultSet rs, String column) throws SQLException {
