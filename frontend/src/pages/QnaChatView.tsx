@@ -14,9 +14,11 @@ import {
   UserRoundSearch,
 } from 'lucide-react';
 import { ChatPanel, InputPanel } from './LearningStudioDemoPage.qna-components';
+import QnaAgentWorkspacePanel from './QnaAgentWorkspacePanel';
 import type { ChatMessage, PendingChatImage } from './LearningStudioDemoPage.types';
 
 interface QnaChatViewProps {
+  conversationId: string;
   hasStartedConversation: boolean;
   qnaInput: string;
   qnaBusy: boolean;
@@ -193,27 +195,33 @@ export default function QnaChatView(props: QnaChatViewProps) {
   }
 
   return (
-    <div className="qna-chat-shell">
-      <ChatPanel
-        busy={props.qnaBusy}
-        messages={props.qnaMessages}
-      />
-      <InputPanel
-        value={props.qnaInput}
-        busy={props.qnaBusy}
-        placeholder="向智学引擎提问"
-        pendingImages={props.pendingImages ?? []}
-        errorMessage={props.imageErrorMessage}
-        deepReasoningEnabled={props.deepReasoningEnabled}
-        webSearchEnabled={props.webSearchEnabled}
-        onChange={props.onChange}
-        onSend={props.onSend}
-        onStop={props.onStop}
-        onToggleDeepReasoning={props.onToggleDeepReasoning}
-        onToggleWebSearch={props.onToggleWebSearch}
-        onPickImages={props.onPickImages ?? (() => undefined)}
-        onRemoveImage={props.onRemoveImage ?? (() => undefined)}
-        variant="chat"
+    <div className="qna-chat-workbench">
+      <div className="qna-chat-shell">
+        <ChatPanel
+          busy={props.qnaBusy}
+          messages={props.qnaMessages}
+        />
+        <InputPanel
+          value={props.qnaInput}
+          busy={props.qnaBusy}
+          placeholder="向智学引擎提问"
+          pendingImages={props.pendingImages ?? []}
+          errorMessage={props.imageErrorMessage}
+          deepReasoningEnabled={props.deepReasoningEnabled}
+          webSearchEnabled={props.webSearchEnabled}
+          onChange={props.onChange}
+          onSend={props.onSend}
+          onStop={props.onStop}
+          onToggleDeepReasoning={props.onToggleDeepReasoning}
+          onToggleWebSearch={props.onToggleWebSearch}
+          onPickImages={props.onPickImages ?? (() => undefined)}
+          onRemoveImage={props.onRemoveImage ?? (() => undefined)}
+          variant="chat"
+        />
+      </div>
+      <QnaAgentWorkspacePanel
+        conversationId={props.conversationId}
+        hasStartedConversation={props.hasStartedConversation}
       />
     </div>
   );

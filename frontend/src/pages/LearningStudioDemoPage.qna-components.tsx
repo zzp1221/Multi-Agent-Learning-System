@@ -21,6 +21,8 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
   copiedMessageId,
 }: ChatMessageBubbleProps) {
   const assistantIsPending = message.role === 'assistant' && !message.content.trim();
+  const showAssistantAnswer = message.role === 'assistant' && (Boolean(message.content.trim()) || isStreaming);
+  const assistantAnswerTitle = message.content.trim() ? '最终回答' : '回答生成中';
 
   return (
     <motion.div
@@ -63,11 +65,15 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
               collaborationState={message.collaborationState}
               isStreaming={isStreaming}
             />
-            {message.content ? (
-              <MarkdownRenderer content={message.content} isStreaming={isStreaming} />
-            ) : (
-              <MarkdownRenderer content="" isStreaming={true} />
-            )}
+            {showAssistantAnswer ? (
+              <section className="qna-final-answer-panel" aria-label={assistantAnswerTitle}>
+                <div className="qna-final-answer-heading">
+                  <Bot className="h-4 w-4" />
+                  <span>{assistantAnswerTitle}</span>
+                </div>
+                <MarkdownRenderer content={message.content} isStreaming={isStreaming} />
+              </section>
+            ) : null}
           </div>
         )}
         {message.content.trim() ? (
@@ -118,6 +124,14 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
   }
 
   const hasPartialCompletion = traceItems.some((item) => item.status === 'PARTIAL_FAILED');
+  const successfulTraceCount = traceItems.filter((item) => item.status === 'SUCCESS').length;
+  const failedTraceCount = traceItems.filter((item) => item.status === 'FAILED' || item.status === 'PARTIAL_FAILED').length;
+  const activeTraceItem = [...traceItems].reverse().find((item) => item.status === 'RUNNING') ?? traceItems[traceItems.length - 1];
+  const traceSummary = hasTrace
+    ? `${successfulTraceCount}/${traceItems.length} 步完成${failedTraceCount ? `，${failedTraceCount} 个异常` : ''}`
+    : hasContent && (isStreaming || reasoningState === 'streaming')
+      ? '正在整理中间推理'
+      : '可展开查看推理过程';
   const title = hasTrace
     ? collaborationState === 'stopped'
       ? '协作已中止'
@@ -138,12 +152,22 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
         aria-expanded={expanded}
         onClick={() => setExpanded((prev) => !prev)}
       >
-        {hasTrace ? <Route className="h-4 w-4" /> : <BrainCircuit className="h-4 w-4" />}
-        <span>{title}</span>
+        <span className="qna-reasoning-toggle-main">
+          {hasTrace ? <Route className="h-4 w-4" /> : <BrainCircuit className="h-4 w-4" />}
+          <span className="qna-reasoning-title">{title}</span>
+        </span>
+        <span className="qna-reasoning-summary">{traceSummary}</span>
         <ChevronDown className="qna-reasoning-chevron h-4 w-4" />
       </button>
       {expanded ? (
         <div className={`qna-reasoning-content ${hasTrace ? 'has-agent-trace' : ''}`}>
+          {hasTrace && activeTraceItem ? (
+            <div className="qna-agent-trace-overview">
+              <span>当前阶段</span>
+              <strong>{activeTraceItem.agentName}</strong>
+              <small>{phaseLabel(activeTraceItem.phase)}</small>
+            </div>
+          ) : null}
           {hasTrace ? <AgentTraceTimeline items={traceItems} collaborationState={collaborationState} /> : null}
           {hasTrace && !isStreaming && collaborationState === 'done' ? (
             <div className="qna-agent-trace-complete">

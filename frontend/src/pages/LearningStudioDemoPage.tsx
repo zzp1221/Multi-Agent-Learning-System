@@ -214,7 +214,7 @@ export default function LearningStudioDemoPage({ mode }: { mode: 'qna' | 'engine
   }, [engineBusy, handleSubmitService, mode, selectedService, voicePlanSubmitPending]);
 
   if (mode === 'qna') {
-    return <QnaChatView {...qnaViewProps} />;
+    return <QnaChatView {...qnaViewProps} conversationId={conversationId} />;
   }
 
   return (
