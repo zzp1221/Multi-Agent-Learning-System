@@ -147,6 +147,9 @@ class Settings(BaseSettings):
     cache_adaptive_min_hit_rate: float = Field(default=0.10, alias="CACHE_ADAPTIVE_MIN_HIT_RATE")
     cache_adaptive_bypass_seconds: int = Field(default=60, alias="CACHE_ADAPTIVE_BYPASS_SECONDS")
     cache_adaptive_probe_interval: int = Field(default=20, alias="CACHE_ADAPTIVE_PROBE_INTERVAL")
+    enable_semantic_reranking: bool = Field(default=False, alias="ENABLE_SEMANTIC_RERANKING")
+    semantic_reranker_use_api: bool = Field(default=False, alias="SEMANTIC_RERANKER_USE_API")
+    cohere_api_key: str = Field(default="", alias="COHERE_API_KEY")
     cache_max_value_bytes: int = Field(default=262144, alias="CACHE_MAX_VALUE_BYTES")
     query_rewrite_llm: LLMComponentOverride = Field(
         default_factory=LLMComponentOverride,

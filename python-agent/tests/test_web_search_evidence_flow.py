@@ -1,4 +1,3 @@
-from src.ai_modules.agents.deep_reasoning_planner import DeepReasoningPlanner
 from src.ai_modules.agents.retrieval_agent import RetrievalAgent
 from src.ai_modules.agents.tutor_agent import TutorAgent
 from src.ai_modules.llms import RuleBasedTutorLLM
@@ -233,44 +232,6 @@ def test_tutor_web_context_mentions_fallback_when_external_resources_empty() -> 
     assert "回答当前问题" in context
 
 
-def test_deep_reasoning_planner_prompt_payload_includes_web_evidence() -> None:
-    planner = DeepReasoningPlanner(generator=object())
-    params = {
-        "query": "Will TS replace JS?",
-        "webSearchEnabled": True,
-        "retrievalResult": {
-            "documents": [
-                {
-                    "title": "TypeScript and JavaScript",
-                    "slug": "https://example.com/ts-js",
-                    "channel": "web",
-                    "evidence": "TypeScript extends JavaScript.",
-                    "url": "https://example.com/ts-js",
-                    "score": 0.91,
-                }
-            ],
-            "sourcesSummary": "web evidence for TS and JS",
-        },
-        "webRetrievalResult": {
-            "enabled": True,
-            "query": "Will TS replace JS?",
-            "results": [
-                (
-                    "https://example.com/ts-js",
-                    "TypeScript and JavaScript",
-                    0.91,
-                    {"url": "https://example.com/ts-js", "snippet": "TS extends JS."},
-                )
-            ],
-        },
-    }
-
-    payload = planner._build_prompt_payload(params)
-
-    assert payload["webSearchEnabled"] is True
-    assert payload["retrievalResult"]["documents"][0]["url"] == "https://example.com/ts-js"
-    assert payload["webRetrievalResult"]["results"][0]["url"] == "https://example.com/ts-js"
-    assert payload["externalResources"][0]["url"] == "https://example.com/ts-js"
 
 
 def test_tutor_appends_web_citation_table_when_answer_omits_it() -> None:

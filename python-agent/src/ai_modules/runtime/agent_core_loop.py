@@ -12,6 +12,7 @@ from src.ai_modules.runtime.recovery_engine import (
     LLMRateLimitError,
     RecoveryFailureType,
 )
+from src.ai_modules.runtime.structure_aware_compactor import StructureAwareCompactor
 from src.ai_modules.runtime.tool_registry import ToolRegistry
 
 
@@ -135,6 +136,9 @@ class AgentCoreLoop:
             max_tool_dict_items
             if max_tool_dict_items is not None
             else settings.llm_tool_content_max_dict_items
+        )
+        self.structure_aware_compactor = StructureAwareCompactor(
+            default_budget=self.max_tool_content_chars
         )
 
     async def run(
@@ -315,26 +319,5 @@ class AgentCoreLoop:
         return prepared_messages
 
     def _compact_tool_content(self, value: Any, *, depth: int = 0) -> Any:
-        if isinstance(value, str):
-            if len(value) <= self.max_tool_content_chars:
-                return value
-            return value[: self.max_tool_content_chars] + "...[truncated]"
-        if isinstance(value, list):
-            compacted = [
-                self._compact_tool_content(item, depth=depth + 1)
-                for item in value[: self.max_tool_list_items]
-            ]
-            if len(value) > self.max_tool_list_items:
-                compacted.append({"_truncated_items": len(value) - self.max_tool_list_items})
-            return compacted
-        if isinstance(value, dict):
-            compacted: dict[str, Any] = {}
-            items = list(value.items())
-            for key, item_value in items[: self.max_tool_dict_items]:
-                compacted[str(key)] = self._compact_tool_content(item_value, depth=depth + 1)
-            if len(items) > self.max_tool_dict_items:
-                compacted["_truncated_keys"] = len(items) - self.max_tool_dict_items
-            if depth > 2 and compacted:
-                compacted["_compacted"] = True
-            return compacted
-        return value
+        """使用结构感知压缩器智能压缩工具输出内容"""
+        return self.structure_aware_compactor.compact(value, budget=self.max_tool_content_chars)

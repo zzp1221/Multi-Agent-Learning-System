@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.ai_modules.runtime.topic_canonicalizer import canonicalize_topics
+from src.ai_modules.runtime.token_budget import TokenBudgetAllocator
 
 
 class StructuredConversationSummary(BaseModel):
@@ -56,15 +57,25 @@ class ConversationCompactor:
 
     def __init__(
         self,
-        token_budget: int = 1200,
+        token_budget: int | None = None,
         keep_recent_turns: int = 4,
         summary_max_chars: int = 500,
         summary_refiner: Any | None = None,
+        model_name: str = "default",
     ) -> None:
-        self.token_budget = token_budget
         self.keep_recent_turns = keep_recent_turns
         self.summary_max_chars = summary_max_chars
         self.summary_refiner = summary_refiner
+        self.model_name = model_name
+
+        # 如果未指定固定预算，使用动态分配
+        if token_budget is None:
+            allocator = TokenBudgetAllocator(model_name=model_name)
+            # 假设系统提示 + 工具定义 + 查询约占 2000 tokens
+            budget = allocator.allocate_simple(used_tokens=2000)
+            self.token_budget = budget.conversation_history
+        else:
+            self.token_budget = token_budget
 
     def estimate_tokens(self, messages: list[dict[str, Any]]) -> int:
         """基于字符数的粗略 token 估算。"""

@@ -169,9 +169,14 @@ class OpenAICompatibleClient:
         tools: list[dict[str, Any]] | None = None,
         response_format: dict[str, Any] | None = None,
         max_tokens: int | None = None,
+        enable_prompt_caching: bool = False,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise missing_llm_config_error(provider=self.provider_name, model=model_name or self.model_name)
+
+        # 应用 Prompt Caching (Claude/GPT-4)
+        if enable_prompt_caching:
+            messages = self._apply_prompt_caching(messages, model_name or self.model_name)
 
         payload: dict[str, Any] = {
             "model": model_name or self.model_name,
@@ -220,6 +225,7 @@ class OpenAICompatibleClient:
         temperature: float = 0.2,
         response_format: dict[str, Any] | None = None,
         max_tokens: int | None = None,
+        enable_prompt_caching: bool = False,
     ) -> AsyncIterator[str]:
         async for chunk in self.chat_completion_stream_events(
             messages=messages,
@@ -228,6 +234,7 @@ class OpenAICompatibleClient:
             response_format=response_format,
             max_tokens=max_tokens,
             include_reasoning=False,
+            enable_prompt_caching=enable_prompt_caching,
         ):
             if chunk.kind == "answer":
                 yield chunk.text
@@ -241,11 +248,17 @@ class OpenAICompatibleClient:
         response_format: dict[str, Any] | None = None,
         max_tokens: int | None = None,
         include_reasoning: bool = False,
+        enable_prompt_caching: bool = False,
     ) -> AsyncIterator[ChatStreamChunk]:
         if not self.api_key:
             raise missing_llm_config_error(provider=self.provider_name, model=model_name or self.model_name)
 
         resolved_model = model_name or self.model_name
+
+        # 应用 Prompt Caching (Claude/GPT-4)
+        if enable_prompt_caching:
+            messages = self._apply_prompt_caching(messages, resolved_model)
+
         reasoning_config = (
             get_settings().reasoning_stream_config(provider_name=self.provider_name, model_name=resolved_model)
             if include_reasoning
@@ -448,6 +461,73 @@ class OpenAICompatibleClient:
                 for item in content
             )
         return str(content)
+
+    def _apply_prompt_caching(
+        self,
+        messages: list[dict[str, Any]],
+        model_name: str,
+    ) -> list[dict[str, Any]]:
+        """
+        为Claude和GPT-4添加prompt caching标记
+
+        缓存策略:
+        1. System消息 - 总是缓存（如果>2048 tokens）
+        2. 长检索证据 - 缓存（如果>2048 tokens）
+        3. 工具定义 - 自动被Claude缓存
+        """
+        # 只对Claude和GPT-4系列启用
+        normalized_model = model_name.lower()
+        is_claude = any(
+            normalized_model.startswith(prefix)
+            for prefix in ["claude-3", "claude-4"]
+        )
+        is_gpt4 = any(
+            normalized_model.startswith(prefix)
+            for prefix in ["gpt-4", "gpt-4o", "gpt-4-turbo"]
+        )
+
+        if not (is_claude or is_gpt4):
+            return messages
+
+        # 深拷贝避免修改原始消息
+        cached_messages = []
+
+        for msg in messages:
+            cached_msg = dict(msg)
+            role = msg.get("role")
+            content = msg.get("content")
+
+            # System消息 - 标记为缓存
+            if role == "system" and isinstance(content, str):
+                if len(content) > 2048:  # Claude要求>2048 tokens才缓存
+                    if is_claude:
+                        cached_msg["content"] = [
+                            {
+                                "type": "text",
+                                "text": content,
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ]
+                    # GPT-4会自动缓存system消息
+
+            # User消息中的长文本（通常是检索证据）
+            elif role == "user" and isinstance(content, str):
+                # 检测是否包含检索证据标记
+                has_evidence = "## 检索证据" in content or "## 图谱关联概念" in content
+                is_long = len(content) > 2048
+
+                if has_evidence and is_long and is_claude:
+                    cached_msg["content"] = [
+                        {
+                            "type": "text",
+                            "text": content,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ]
+
+            cached_messages.append(cached_msg)
+
+        return cached_messages
 
 
 class OpenAICompatibleToolCallingLLM:

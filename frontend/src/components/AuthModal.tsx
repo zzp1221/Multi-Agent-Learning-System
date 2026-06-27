@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LoaderCircle, Sparkles, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { authApi, type AuthResponse, type AuthUser } from '../api/auth';
 import { AUTH_USER_STORAGE_KEY, getErrorMessage, persistAuthSession } from '../api/request';
 
@@ -77,9 +78,12 @@ export default function AuthModal(props: AuthModalProps) {
       persistAuthSession({
         token: result.token,
       });
+      toast.success(tab === 'login' ? '登录成功！' : '注册成功！欢迎加入智学引擎');
       props.onSuccess(user, tab);
     } catch (err) {
-      setError(getErrorMessage(err));
+      const errorMsg = getErrorMessage(err);
+      setError(errorMsg);
+      toast.error(tab === 'login' ? '登录失败: ' + errorMsg : '注册失败: ' + errorMsg);
     } finally {
       setSubmitting(false);
     }

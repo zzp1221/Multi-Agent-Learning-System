@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 
@@ -26,6 +27,7 @@ function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <Toaster position="top-center" richColors closeButton />
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Layout />}>

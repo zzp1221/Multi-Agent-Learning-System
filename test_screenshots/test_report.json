@@ -1,0 +1,23 @@
+{
+  "username": "student_1782353792925",
+  "timestamp": "2026-06-25T02:17:22.906Z",
+  "questionsAsked": 3,
+  "messageCount": 37,
+  "consoleErrors": 0,
+  "sseConnections": 3,
+  "sseDetails": [
+    {
+      "url": "http://localhost/api/conversations/77095520-7849-4876-8267-494fd602d975/messages/stream",
+      "status": 200
+    },
+    {
+      "url": "http://localhost/api/conversations/77095520-7849-4876-8267-494fd602d975/messages/stream",
+      "status": 200
+    },
+    {
+      "url": "http://localhost/api/conversations/77095520-7849-4876-8267-494fd602d975/messages/stream",
+      "status": 200
+    }
+  ],
+  "errors": []
+}

@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.ai_modules.config import get_settings
 from src.ai_modules.agents import (
     CodeGeneratorAgent,
     CriticAgent,
@@ -141,7 +142,11 @@ class PythonAgentSupervisor:
             async for event in self._run_tutoring_resource_bundle(agent_registry=registry, **kwargs):
                 yield event
 
-        registry["tutor"] = TutorAgent(resource_bundle_runner=run_resource_bundle)
+        settings = get_settings()
+        registry["tutor"] = TutorAgent(
+            resource_bundle_runner=run_resource_bundle,
+            enable_semantic_reranking=settings.enable_semantic_reranking,
+        )
         return registry
 
     def resolve_route(self, service_type: str, params: dict) -> RoutePlan:

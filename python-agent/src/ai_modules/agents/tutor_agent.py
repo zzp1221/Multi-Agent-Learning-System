@@ -30,6 +30,11 @@ from src.ai_modules.retrieval.evidence_relevance import (
     evidence_url,
     select_relevant_evidence,
 )
+from src.ai_modules.retrieval.evidence_formatter import (
+    format_evidence_with_metadata,
+    format_graph_evidence_nodes,
+)
+from src.ai_modules.retrieval.semantic_reranker import SemanticReranker
 from src.ai_modules.runtime import (
     AgentCoreLoop,
     ConversationCompactor,
@@ -121,6 +126,7 @@ class TutorAgent(PlaceholderAgent):
         summary_refiner: Any | None = None,
         resource_intent_extractor: Any = _DEFAULT_RESOURCE_INTENT_EXTRACTOR,
         resource_bundle_runner: Any | None = None,
+        enable_semantic_reranking: bool = False,
     ) -> None:
         super().__init__("Tutor Agent", "tutoring")
         self.summary_refiner = summary_refiner or ConversationSummaryRefinerFactory.create()
@@ -142,6 +148,8 @@ class TutorAgent(PlaceholderAgent):
         else:
             self.resource_intent_extractor = resource_intent_extractor
         self.resource_bundle_runner = resource_bundle_runner
+        self.enable_semantic_reranking = enable_semantic_reranking
+        self.semantic_reranker = SemanticReranker() if enable_semantic_reranking else None
 
     def system_prompt(self, snapshot: SystemSnapshot) -> str:
         return self.skill_loader.build_system_prompt(
@@ -1341,30 +1349,32 @@ class TutorAgent(PlaceholderAgent):
         return "\n".join(lines)
 
     def _summarize_retrieval_evidence(self, evidence: dict[str, Any]) -> list[str]:
+        """
+        使用新的元数据格式化器总结检索证据
+
+        保留此方法用于工具输出总结，实际prompt注入使用format_evidence_with_metadata
+        """
         documents = evidence.get("documents")
         if not isinstance(documents, list):
             return []
-        summaries: list[str] = []
-        for document in documents[:5]:
-            if not isinstance(document, dict):
-                continue
-            title = evidence_title(document)
-            channel = evidence_channel(document)
-            snippet = str(
-                document.get("evidence")
-                or document.get("snippet")
-                or document.get("summary")
-                or ""
-            ).strip()
-            text = title or snippet
-            if not text:
-                continue
-            if snippet and title and snippet != title:
-                text = f"{title}: {self._truncate_dialogue_text(snippet, 120)}"
-            if channel:
-                text = f"{text}（{channel}）"
-            summaries.append(self._truncate_dialogue_text(text, 180))
-        return summaries
+
+        # 使用新的格式化器生成带元数据的摘要
+        graph_intent = evidence.get("graphEvidencePack", {}).get("intent")
+        formatted = format_evidence_with_metadata(
+            documents=documents,
+            query=str(evidence.get("query", "")),
+            graph_intent=graph_intent,
+            max_documents=5,
+            include_snippets=True,
+            snippet_max_length=120,
+        )
+
+        # 转换为行列表用于工具输出总结
+        if formatted:
+            lines = [line for line in formatted.split("\n") if line.strip() and not line.startswith("#")]
+            return lines[:10]  # 限制总结行数
+
+        return []
 
     def _summarize_wiki_tool_output(self, *, tool_name: str, output: dict[str, Any]) -> list[str]:
         if output.get("enabled") is False:
@@ -1594,6 +1604,17 @@ class TutorAgent(PlaceholderAgent):
         if not isinstance(documents, list):
             documents = []
         query = str(params.get("query") or "").strip()
+
+        # 应用语义重排序（如果启用）
+        if self.enable_semantic_reranking and self.semantic_reranker and documents:
+            documents = self.semantic_reranker.rerank(
+                query=query,
+                documents=documents,
+                top_k=20,  # 先扩大候选池
+                coarse_top_n=30,
+                blend_weight=0.7,
+            )
+
         selected = select_relevant_evidence(query=query, documents=documents, limit=8)
         documents = selected.adopted
         if self._resolve_graph_intent_from_params(params) and not documents:
