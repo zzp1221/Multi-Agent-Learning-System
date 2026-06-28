@@ -31,6 +31,7 @@ import { studyWorkbenchApi, type KnowledgeNodeDetailResponse } from '../api/stud
 import type { LayoutOutletContext } from '../components/Layout';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
 import { readPracticeQuestionBatch } from './LearningStudioDemoPage.taskPayloadReaders';
+import { buildPracticeJudgeParams } from './practiceSemanticScope';
 import { openPracticeSession } from './practiceSessionStore';
 
 type NodeStatusCounts = Record<KnowledgeGraphNode['status'], number>;
@@ -171,17 +172,27 @@ export default function KnowledgeGraphPage() {
       const response = await smartEngineApi.submit({
         conversationId: conversation.conversationId,
         serviceType: 'PRACTICE_JUDGE',
-        params: {
+        params: buildPracticeJudgeParams({
+          source: 'KNOWLEDGE_GRAPH_DETAIL',
           topic: detail.node.topic,
           query: `${detail.node.topic} 知识点针对性练习`,
           count: 5,
           questionCount: 5,
+          knowledgeTags: [
+            detail.node.topic,
+            ...detail.prerequisites.map((item) => item.topic),
+            ...detail.relatedNodes.map((item) => item.topic),
+          ],
+          evidence: [
+            ...detail.relatedMistakes.slice(0, 3).map((item) => item.stem),
+            ...detail.recommendedNextActions,
+          ],
           learningContext: {
             ...detail.practiceContext,
             chapter: detail.node.topic,
             questionCount: 5,
           },
-        },
+        }),
       });
       await smartEngineApi.streamTask(response.taskId, {
         onEvent: (event) => {

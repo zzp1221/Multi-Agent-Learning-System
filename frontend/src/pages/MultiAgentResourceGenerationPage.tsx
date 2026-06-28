@@ -201,9 +201,9 @@ export default function MultiAgentResourceGenerationPage() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
-                  学习资源工作台
+                  资源包详情
                 </h1>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">集中查看对话中生成的学习资源</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">预览、编辑和下载当前对话生成的完整资源包</p>
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">

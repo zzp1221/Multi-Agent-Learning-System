@@ -21,6 +21,7 @@ import { learningPathApi, smartEngineApi, type LearningPathCurrentResponse, type
 import { readStreamMessage, readStreamPayload } from '../api/sse';
 import { downloadAuthenticatedFile, isInternalArtifactDownloadUrl } from '../utils/authenticatedDownload';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
+import { buildPracticeJudgeParams } from './practiceSemanticScope';
 import { openStageTestSession } from './stageTestSessionStore';
 import { STAGE_TEST_COMPLETED_EVENT } from './stageTestEvents';
 
@@ -34,6 +35,8 @@ interface LearningPhase {
   prerequisites: string[];
   targetKnowledgePoints: string[];
   checkpoint: string;
+  objective: string;
+  semanticScope?: Record<string, unknown>;
   progress: number;
   estimatedMinutes?: number;
 }
@@ -798,6 +801,8 @@ function buildLearningPhases(data: LearningPathCurrentResponse | null): Learning
         prerequisites: readStringArray(step.prerequisites).length ? readStringArray(step.prerequisites) : readStringArray(step.targetKnowledgePoints).slice(0, 3),
         targetKnowledgePoints: readStringArray(step.targetKnowledgePoints),
         checkpoint: readString(step.checkpoint) || readString(step.successCriteria) || readString(step.objective),
+        objective: readString(step.objective),
+        semanticScope: readRecord(step.semanticScope) ?? undefined,
         progress: clampProgress(readNumber(step.progress) ?? readNumber(step.progressPercent) ?? (status === 'completed' ? 100 : 0)),
         estimatedMinutes: readNumber(step.estimatedMinutes),
       };
@@ -867,19 +872,32 @@ function flattenResources(resourcesByStep: Map<string, StepResource[]>): StepRes
 }
 
 function buildStageTestParams(phase: LearningPhase): Record<string, unknown> {
-  return {
+  return buildPracticeJudgeParams({
+    source: 'LEARNING_PATH',
     purpose: 'STAGE_TEST',
     topic: phase.title,
-    query: `${phase.title} 阶段测试`,
     count: 10,
-    questionCount: 10,
+    knowledgeTags: phase.targetKnowledgePoints,
+    evidence: [phase.checkpoint, phase.objective, ...phase.prerequisites],
     learningContext: {
       activeLearningStepId: phase.stepId,
       activeLearningStepTitle: phase.title,
       chapter: phase.title,
-      questionCount: 10,
+      targetKnowledgePoints: phase.targetKnowledgePoints,
+      prerequisites: phase.prerequisites,
+      checkpoint: phase.checkpoint,
+      objective: phase.objective,
+      semanticScope: phase.semanticScope,
     },
-  };
+    activeLearningStep: {
+      stepId: phase.stepId,
+      title: phase.title,
+      targetKnowledgePoints: phase.targetKnowledgePoints,
+      checkpoint: phase.checkpoint,
+      objective: phase.objective,
+    },
+    query: `${phase.title} 阶段测试`,
+  });
 }
 
 function readPracticeQuestionBatch(payload: Record<string, unknown> | undefined): PracticeQuestionBatch | null {

@@ -690,6 +690,7 @@ class OpenAICompatiblePracticeQuestionGenerator:
             "你是教学系统中的 Practice Agent。"
             "请围绕指定主题生成高质量中文练习题。"
             "默认同时混合客观题和主观题；若用户指定题型，必须按指定题型生成。"
+            "如果学习上下文包含 semanticScope，必须以 semanticScope.topic、domain 和 knowledgeTags 为准，禁止把 rawTopic 自行解释到其他学科。"
             "输出必须是单个 JSON 对象，顶层必须包含 title、topic、difficulty、questions。"
             "questions 必须恰好等于题量，不要只返回单道题对象。"
             "结构为 "

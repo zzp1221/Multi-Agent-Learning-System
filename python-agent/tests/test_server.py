@@ -186,7 +186,7 @@ def test_resource_semantic_search_returns_grouped_results(client, monkeypatch) -
     assert len(payload["results"][0]["hits"]) == 2
 
 
-def test_resource_semantic_search_prefers_existing_hybrid_rag(client, monkeypatch) -> None:
+def test_resource_semantic_search_prefers_vector_score_over_low_hybrid_score(client, monkeypatch) -> None:
     def hybrid_search(query, top_k, domain=None, user_id=None):
         return [
             {
@@ -194,15 +194,24 @@ def test_resource_semantic_search_prefers_existing_hybrid_rag(client, monkeypatc
                 "resource_id": "70000000-0000-0000-0000-000000000011",
                 "chunk_no": 1,
                 "content": "Java Thread and Runnable synchronized volatile",
-                "similarity": 0.9,
-                "rank_score": 0.9,
+                "similarity": 0.0164,
+                "rank_score": 0.0164,
                 "source_url": "https://example.com/java-thread",
                 "retrieval_reason": "existing hybrid RAG",
             }
         ]
 
     def chunk_search(query, top_k, domain=None, user_id=None):
-        raise AssertionError("chunk fallback should not run when hybrid RAG returns resources")
+        return [
+            {
+                "chunk_id": 12,
+                "resource_id": "70000000-0000-0000-0000-000000000012",
+                "chunk_no": 1,
+                "content": "Runnable synchronized volatile thread safety",
+                "similarity": 0.76,
+                "source_url": "https://example.com/java-thread-vector",
+            }
+        ]
 
     monkeypatch.setattr(server, "_search_resource_chunks_with_hybrid_rag", hybrid_search)
     monkeypatch.setattr(server, "_search_resource_chunks", chunk_search)
@@ -220,8 +229,12 @@ def test_resource_semantic_search_prefers_existing_hybrid_rag(client, monkeypatc
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["results"][0]["resourceId"] == "70000000-0000-0000-0000-000000000011"
-    assert payload["results"][0]["reason"] == "existing hybrid RAG"
+    assert [item["resourceId"] for item in payload["results"]] == [
+        "70000000-0000-0000-0000-000000000012",
+        "70000000-0000-0000-0000-000000000011",
+    ]
+    assert payload["results"][0]["score"] == 0.76
+    assert payload["results"][1]["score"] == 0.0164
 
 
 def test_hybrid_rag_resource_lookup_maps_existing_rag_refs(monkeypatch) -> None:
@@ -330,11 +343,59 @@ def test_resource_ranking_uses_generic_features_without_topic_rules() -> None:
     assert ranked[0]["lexical_coverage"] == 1.0
 
 
+def test_merge_resource_semantic_rows_keeps_best_resource_score_and_hits() -> None:
+    hybrid_rows = [
+        {
+            "chunk_id": 31,
+            "resource_id": "70000000-0000-0000-0000-000000000031",
+            "chunk_no": 1,
+            "content": "hybrid candidate",
+            "similarity": 0.0164,
+            "rank_score": 0.0164,
+            "retrieval_reason": "existing hybrid RAG",
+        },
+        {
+            "chunk_id": 41,
+            "resource_id": "70000000-0000-0000-0000-000000000041",
+            "chunk_no": 1,
+            "content": "second resource",
+            "similarity": 0.03,
+            "rank_score": 0.03,
+        },
+    ]
+    vector_rows = [
+        {
+            "chunk_id": 32,
+            "resource_id": "70000000-0000-0000-0000-000000000031",
+            "chunk_no": 2,
+            "content": "vector candidate",
+            "similarity": 0.68,
+        }
+    ]
+
+    merged = server._merge_resource_semantic_rows(vector_rows, hybrid_rows, top_k=2)
+    response = server._build_resource_semantic_response("generic query", merged)
+
+    assert [item.resource_id for item in response.results] == [
+        "70000000-0000-0000-0000-000000000031",
+        "70000000-0000-0000-0000-000000000041",
+    ]
+    assert response.results[0].score == 0.68
+    assert [hit.chunk_id for hit in response.results[0].hits] == [32, 31]
+
+
 def test_resource_recommendation_code_has_no_fixed_topic_special_cases() -> None:
     source = Path(server.__file__).read_text(encoding="utf-8")
     forbidden_terms = ["java并发编程", "AQS", "线程池", "React state", "B+树", "死锁", "数据库索引"]
 
     for term in forbidden_terms:
+        assert term not in source
+
+
+def test_resource_recommendation_code_has_no_fixed_ml_topic_special_cases() -> None:
+    source = Path(server.__file__).read_text(encoding="utf-8")
+
+    for term in ["机器学习", "监督学习", "深度学习", "神经网络"]:
         assert term not in source
 
 
@@ -357,6 +418,42 @@ def test_resource_semantic_search_degrades_when_embedding_unavailable(client, mo
     assert payload["available"] is False
     assert "missing embedding key" in payload["message"]
     assert payload["results"] == []
+
+
+def test_resource_semantic_search_uses_hybrid_when_vector_unavailable(client, monkeypatch) -> None:
+    def fail_search(query, top_k, domain=None, user_id=None):
+        raise RuntimeError("missing embedding key")
+
+    monkeypatch.setattr(
+        server,
+        "_search_resource_chunks_with_hybrid_rag",
+        lambda *_args, **_kwargs: [
+            {
+                "chunk_id": 51,
+                "resource_id": "70000000-0000-0000-0000-000000000051",
+                "chunk_no": 1,
+                "content": "fallback hybrid resource",
+                "similarity": 0.0164,
+                "rank_score": 0.0164,
+                "source_url": "https://example.com/hybrid-resource",
+                "retrieval_reason": "existing hybrid RAG",
+            }
+        ],
+    )
+    monkeypatch.setattr(server, "_search_resource_chunks", fail_search)
+    monkeypatch.setattr(server, "_search_resource_tavily_candidates", empty_tavily_fallback)
+
+    response = client.get(
+        "/internal/resources/search/semantic",
+        params={"query": "dynamic programming"},
+        headers=INTERNAL_HEADERS,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["message"] == "ok"
+    assert payload["results"][0]["resourceId"] == "70000000-0000-0000-0000-000000000051"
 
 
 def test_resource_semantic_search_uses_tavily_when_embedding_unavailable(client, monkeypatch) -> None:
@@ -470,7 +567,9 @@ def test_resource_semantic_search_fills_short_rag_results_with_tavily(client, mo
         ]
 
     def chunk_search(query, top_k, domain=None, user_id=None):
-        raise AssertionError("vector fallback should not run when hybrid RAG has resources")
+        assert query == "graph traversal current stage"
+        assert top_k == 3
+        return []
 
     async def tavily_fallback(query, top_k):
         assert query == "graph traversal current stage"

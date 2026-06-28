@@ -174,8 +174,10 @@ class PathPlanningAgent(PlaceholderAgent):
             ]
         )
         weakest_skills = self._lowest_mastery_skills(skill_mastery)
+        profile_goal = str(profile.get("learningGoal") or "").strip()
         context = {
             "goal": self._resolve_goal(params),
+            "profileGoal": profile_goal,
             "targetPeriod": str(params.get("targetPeriod") or "").strip() or "7天",
             "weeklyHours": str(params.get("weeklyHours") or "").strip() or "6",
             "currentProgress": str(params.get("currentProgress") or "").strip() or "已完成基础概念，准备进入案例训练",
@@ -331,18 +333,112 @@ class PathPlanningAgent(PlaceholderAgent):
             step_resource_types = raw_step.get("preferredResourceTypes")
             if not isinstance(step_resource_types, list) or not step_resource_types:
                 step_resource_types = preferred_types
+            title = str(raw_step.get("title") or "").strip()
+            scoped_title = self._scope_step_title(title, target_points, planning_context)
+            semantic_scope = self._step_semantic_scope(
+                title=scoped_title,
+                raw_title=title,
+                target_points=target_points,
+                planning_context=planning_context,
+            )
             enriched_steps.append(
                 {
                     **raw_step,
                     "stepId": raw_step.get("stepId") or f"step-{index}",
                     "order": raw_step.get("order") or index,
+                    "title": scoped_title,
                     "targetKnowledgePoints": target_points,
                     "preferredResourceTypes": step_resource_types,
                     "checkpoint": raw_step.get("checkpoint") or raw_step.get("successCriteria") or raw_step.get("objective"),
+                    "semanticScope": semantic_scope,
                 }
             )
         serialized["steps"] = enriched_steps
         return LearningPlanPayload.model_validate(serialized)
+
+    def _scope_step_title(
+        self,
+        title: str,
+        target_points: list[Any],
+        planning_context: dict[str, Any],
+    ) -> str:
+        base_title = str(title or "").strip()
+        domain = self._resolve_semantic_domain(planning_context)
+        target_text = next((str(item).strip() for item in target_points if str(item).strip()), "")
+        if not base_title:
+            return target_text or domain or "当前阶段"
+        if domain and not self._has_text_overlap(base_title, domain) and self._looks_ambiguous_step_title(base_title, target_text):
+            return f"{domain}：{base_title}"
+        return base_title
+
+    def _step_semantic_scope(
+        self,
+        *,
+        title: str,
+        raw_title: str,
+        target_points: list[Any],
+        planning_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        knowledge_tags = self._unique_items([str(item).strip() for item in target_points if str(item).strip()])
+        domain = self._resolve_semantic_domain(planning_context)
+        topic = self._compose_semantic_topic(title, domain, knowledge_tags)
+        return {
+            "domain": domain,
+            "topic": topic,
+            "rawTopic": raw_title or title,
+            "knowledgeTags": knowledge_tags,
+            "source": "PATH_PLANNING",
+            "evidence": self._unique_items([
+                str(item).strip()
+                for item in [
+                    planning_context.get("goal"),
+                    *(planning_context.get("weaknesses") if isinstance(planning_context.get("weaknesses"), list) else []),
+                ]
+                if str(item).strip()
+            ])[:5],
+        }
+
+    def _resolve_semantic_domain(self, planning_context: dict[str, Any]) -> str:
+        current_goal = planning_context.get("currentGoal")
+        goal_candidates: list[Any] = []
+        if isinstance(current_goal, dict):
+            goal_candidates.extend([current_goal.get("shortTerm"), current_goal.get("midTerm"), current_goal.get("context")])
+        goal_candidates.extend([
+            planning_context.get("goal"),
+            planning_context.get("profileGoal"),
+        ])
+        for value in goal_candidates:
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _compose_semantic_topic(self, title: str, domain: str, knowledge_tags: list[str]) -> str:
+        rich_tag = next((tag for tag in knowledge_tags if self._has_text_overlap(tag, title) and len(tag) > len(title)), "")
+        topic = rich_tag or title or (knowledge_tags[0] if knowledge_tags else "")
+        if domain and topic and not self._has_text_overlap(domain, topic):
+            return f"{domain}：{topic}"
+        return topic or domain
+
+    def _looks_ambiguous_step_title(self, title: str, target_text: str) -> bool:
+        normalized = title.strip()
+        if not normalized:
+            return True
+        if len(normalized) <= 8:
+            return True
+        if not target_text:
+            return False
+        if not self._has_text_overlap(normalized, target_text):
+            return True
+        normalized_target = target_text.strip()
+        return len(normalized_target) >= len(normalized) + 6
+
+    def _has_text_overlap(self, left: str, right: str) -> bool:
+        normalized_left = "".join(str(left or "").lower().split())
+        normalized_right = "".join(str(right or "").lower().split())
+        if len(normalized_left) < 2 or len(normalized_right) < 2:
+            return False
+        return normalized_left in normalized_right or normalized_right in normalized_left
 
     def _resolve_preferred_resource_types(self, planning_context: dict[str, Any]) -> list[str]:
         raw_types = planning_context.get("preferredResourceTypes")

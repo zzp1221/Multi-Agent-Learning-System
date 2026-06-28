@@ -1,4 +1,6 @@
 import type { EngineService, ResourceType, ServiceFormsPayload } from './LearningStudioDemoPage.types';
+import { buildPracticeSemanticScope } from './practiceSemanticScope';
+
 export function buildServiceParams(service: EngineService, payload: ServiceFormsPayload): Record<string, unknown> {
   if (service === 'resource') {
     const resourceForm = payload.resourceForm;
@@ -7,6 +9,13 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
     const includeVideo = normalizedResourceTypes.includes('VIDEO');
     const resourceTypeLabelText = selectedResourceTypes.map(resourceTypeLabel).join('、');
     const difficultyLabel = resourceDifficultyLabel(resourceForm.difficulty);
+    const semanticScope = buildPracticeSemanticScope({
+      source: 'QNA_RESOURCE',
+      topic: resourceForm.keyPoints || resourceForm.course,
+      domain: resourceForm.course,
+      count: 5,
+      knowledgeTags: resourceForm.keyPoints ? [resourceForm.keyPoints] : [],
+    });
     const query = [
       resourceForm.course,
       resourceForm.keyPoints,
@@ -27,6 +36,8 @@ export function buildServiceParams(service: EngineService, payload: ServiceForms
       learningContext: {
         course: resourceForm.course,
         chapter: resourceForm.keyPoints,
+        knowledgeTags: resourceForm.keyPoints ? [resourceForm.keyPoints] : [],
+        semanticScope,
       },
       style: includeVideo ? 'talking_head' : undefined,
       duration: includeVideo ? 60 : undefined,

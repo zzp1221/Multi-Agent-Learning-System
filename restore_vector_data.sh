@@ -158,6 +158,7 @@ awk '
     sub(/^COPY preload_export\.resource_document /, "COPY rag.resource_document ")
     sub(/^COPY preload_export\.resource_chunk /, "COPY rag.resource_chunk ")
     sub(/^COPY preload_export\.wiki_page /, "COPY rag.wiki_page ")
+    sub(/^COPY preload_export\.wiki_page_graph_features /, "COPY rag.wiki_page_graph_features ")
     sub(/^COPY preload_export\.wiki_link /, "COPY rag.wiki_link ")
     sub(/^COPY preload_export\.term_lexicon /, "COPY rag.term_lexicon ")
     sub(/^COPY preload_export\.synonym_group /, "COPY rag.synonym_group ")

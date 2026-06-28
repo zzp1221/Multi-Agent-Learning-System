@@ -1,12 +1,10 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   BookOpen,
   CheckCircle2,
-  ChevronDown,
   Code2,
-  Download,
   ExternalLink,
   FileText,
   Film,
@@ -18,23 +16,15 @@ import {
   PanelRightOpen,
   Presentation,
 } from 'lucide-react';
-import MarkdownRenderer from '../components/MarkdownRenderer';
-import VideoCard from '../components/VideoCard';
-import { downloadAuthenticatedFile, isInternalArtifactDownloadUrl } from '../utils/authenticatedDownload';
 import { ACTIVE_CONVERSATION_ID_STORAGE_KEY } from './LearningStudioDemoPage.model';
-import { setPracticeSessionOpen } from './practiceSessionStore';
 import {
   RESOURCE_GENERATION_UPDATED_EVENT,
   loadResourceGenerationSession,
   resourceLabel,
   type GeneratedResourceType,
-  type ResourceGenerationQuizSummary,
   type ResourceGenerationResource,
   type ResourceGenerationSession,
 } from './resourceGenerationStore';
-import type { InlineResourceView } from './LearningStudioDemoPage.types';
-
-const MermaidDiagram = lazy(() => import('../components/MermaidDiagram'));
 
 const RESOURCE_META: Record<GeneratedResourceType, { icon: ComponentType<{ className?: string }>; className: string }> = {
   DOCUMENT: { icon: FileText, className: 'is-document' },
@@ -103,6 +93,8 @@ export default function QnaAgentWorkspacePanel({
   const failedCount = resources.filter((item) => item.status === 'failed').length;
   const generatingCount = resources.filter((item) => item.status === 'generating').length;
   const latestResource = resources[resources.length - 1] ?? null;
+  const recentResources = resources.slice(-3).reverse();
+  const hiddenResourceCount = Math.max(0, resources.length - recentResources.length);
   const statusTone = workspaceStatusTone(session.taskStatus);
 
   if (!visible) {
@@ -117,7 +109,7 @@ export default function QnaAgentWorkspacePanel({
     <aside
       className={`qna-agent-workspace ${expanded ? 'is-expanded' : 'is-collapsed'}`}
       data-state={expanded ? 'expanded' : 'collapsed'}
-      aria-label="资源工作区"
+      aria-label="本轮产物"
     >
       <div className="qna-workspace-header">
         <div className="qna-workspace-title-group">
@@ -125,15 +117,15 @@ export default function QnaAgentWorkspacePanel({
             {statusTone.icon}
             {statusTone.label}
           </span>
-          <h2>资源工作区</h2>
+          <h2>本轮产物</h2>
           <p>{workspaceSubtitle(session, latestResource)}</p>
         </div>
         <button
           type="button"
           className="qna-workspace-icon-button"
           onClick={toggleWorkspace}
-          title={expanded ? '收起资源工作区' : '展开资源工作区'}
-          aria-label={expanded ? '收起资源工作区' : '展开资源工作区'}
+          title={expanded ? '收起本轮产物' : '展开本轮产物'}
+          aria-label={expanded ? '收起本轮产物' : '展开本轮产物'}
           aria-expanded={expanded}
         >
           {expanded ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
@@ -158,11 +150,16 @@ export default function QnaAgentWorkspacePanel({
             <WorkspaceMetric label="异常" value={failedCount} />
           </div>
 
-          {resources.length ? (
+          {recentResources.length ? (
             <div className="qna-workspace-resource-list">
-              {resources.map((resource) => (
+              {recentResources.map((resource) => (
                 <WorkspaceResourceCard key={resource.id} resource={resource} />
               ))}
+              {hiddenResourceCount > 0 ? (
+                <div className="qna-workspace-more-hint">
+                  还有 {hiddenResourceCount} 个产物，进入资源包查看完整结果。
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="qna-workspace-empty">
@@ -176,7 +173,7 @@ export default function QnaAgentWorkspacePanel({
             className="qna-workspace-open-page"
             onClick={() => navigate('/resources/generation')}
           >
-            打开完整资源页
+            查看资源包
             <ExternalLink className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -195,26 +192,13 @@ function WorkspaceMetric({ label, value }: { label: string; value: number }) {
 }
 
 function WorkspaceResourceCard({ resource }: { resource: ResourceGenerationResource }) {
-  const [open, setOpen] = useState(false);
   const status = resourceStatusMeta(resource);
   const Icon = RESOURCE_META[resource.type]?.icon ?? FileText;
   const typeClassName = RESOURCE_META[resource.type]?.className ?? 'is-document';
-  const canPreview = Boolean(resource.inline || resource.quiz || resource.video || resource.pptistSlides || resource.download);
-
-  useEffect(() => {
-    if (resource.status === 'ready' && canPreview) {
-      setOpen(true);
-    }
-  }, [canPreview, resource.status]);
 
   return (
     <article className={`qna-workspace-resource ${typeClassName}`}>
-      <button
-        type="button"
-        className="qna-workspace-resource-main"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
+      <div className="qna-workspace-resource-main">
         <span className="qna-workspace-resource-icon">
           <Icon className="h-4 w-4" />
         </span>
@@ -228,158 +212,11 @@ function WorkspaceResourceCard({ resource }: { resource: ResourceGenerationResou
           {status.icon}
           {status.label}
         </span>
-        <ChevronDown className={`qna-workspace-resource-chevron h-4 w-4 ${open ? 'is-open' : ''}`} />
-      </button>
+      </div>
       {resource.summary ? (
         <p className="qna-workspace-resource-summary">{resource.summary}</p>
       ) : null}
-      {open ? (
-        <div className="qna-workspace-resource-preview">
-          <WorkspaceResourcePreview resource={resource} />
-        </div>
-      ) : null}
     </article>
-  );
-}
-
-function WorkspaceResourcePreview({ resource }: { resource: ResourceGenerationResource }) {
-  if (resource.video) {
-    return <VideoCard {...resource.video} />;
-  }
-
-  if (resource.quiz) {
-    return <WorkspaceQuizPreview batch={resource.quiz} />;
-  }
-
-  if (resource.inline) {
-    return <WorkspaceInlinePreview inline={resource.inline} />;
-  }
-
-  if (resource.pptistSlides) {
-    return <WorkspacePptPreview slidesJson={resource.pptistSlides} />;
-  }
-
-  if (resource.download) {
-    return <WorkspaceDownloadPreview resource={resource} />;
-  }
-
-  return (
-    <div className="qna-workspace-pending-preview">
-      {resource.statusText || resource.failureReason || '资源正在整理，完成后会自动更新。'}
-    </div>
-  );
-}
-
-function WorkspaceInlinePreview({ inline }: { inline: InlineResourceView }) {
-  if (inline.kind === 'mermaid') {
-    return (
-      <Suspense fallback={<div className="qna-workspace-pending-preview">图表加载中...</div>}>
-        <MermaidDiagram chart={inline.content} />
-      </Suspense>
-    );
-  }
-
-  if (inline.kind === 'code') {
-    return (
-      <div className="qna-workspace-code-preview">
-        <div className="qna-workspace-code-head">
-          <span>{inline.language || 'text'}</span>
-          <Code2 className="h-3.5 w-3.5" />
-        </div>
-        <pre>
-          <code>{inline.content}</code>
-        </pre>
-        {inline.explanation ? (
-          <div className="qna-workspace-code-note">{inline.explanation}</div>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className="qna-workspace-markdown-preview">
-      <MarkdownRenderer content={inline.content} />
-    </div>
-  );
-}
-
-function WorkspaceQuizPreview({ batch }: { batch: ResourceGenerationQuizSummary }) {
-  return (
-    <div className="qna-workspace-quiz-preview">
-      <div>
-        <strong>{batch.title || '练习题'}</strong>
-        <span>{batch.topic ? `${batch.topic} · ` : ''}{batch.questionCount} 道题</span>
-      </div>
-      <button type="button" onClick={() => setPracticeSessionOpen(true)}>
-        打开练习助手
-      </button>
-      {batch.description ? <p>{batch.description}</p> : null}
-    </div>
-  );
-}
-
-function WorkspacePptPreview({ slidesJson }: { slidesJson: string }) {
-  const slideCount = useMemo(() => {
-    try {
-      const parsed = JSON.parse(slidesJson) as { slides?: unknown[] };
-      return Array.isArray(parsed.slides) ? parsed.slides.length : 0;
-    } catch {
-      return 0;
-    }
-  }, [slidesJson]);
-
-  return (
-    <div className="qna-workspace-ppt-preview">
-      <Presentation className="h-7 w-7" />
-      <span>{slideCount > 0 ? `${slideCount} 页可编辑幻灯片` : 'PPT 课件已生成'}</span>
-      <small>完整编辑器在资源生成页打开。</small>
-    </div>
-  );
-}
-
-function WorkspaceDownloadPreview({ resource }: { resource: ResourceGenerationResource }) {
-  const [downloading, setDownloading] = useState(false);
-  const [error, setError] = useState('');
-  const download = resource.download;
-
-  if (!download) {
-    return null;
-  }
-
-  const internalDownload = isInternalArtifactDownloadUrl(download.url);
-  const handleDownload = async () => {
-    if (downloading) {
-      return;
-    }
-    setDownloading(true);
-    setError('');
-    try {
-      await downloadAuthenticatedFile({
-        url: download.url,
-        fileName: download.fileName,
-        title: resource.title,
-      });
-    } catch (downloadError) {
-      setError(downloadError instanceof Error ? downloadError.message : '下载失败，请稍后重试');
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  return (
-    <div className="qna-workspace-download-preview">
-      <FileText className="h-5 w-5" />
-      <div>
-        <strong>{download.fileName || resource.title}</strong>
-        <span>{download.expiresHint || resource.expiresAt || '临时下载链接'}</span>
-      </div>
-      <button type="button" disabled={downloading} onClick={() => { void handleDownload(); }}>
-        {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-        下载
-        {internalDownload ? null : <ExternalLink className="h-3.5 w-3.5" />}
-      </button>
-      {error ? <p>{error}</p> : null}
-    </div>
   );
 }
 

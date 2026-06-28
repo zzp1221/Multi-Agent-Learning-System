@@ -220,6 +220,11 @@ class StudyWorkbenchServiceTest {
         assertThat(detail.relatedResources()).containsExactly(relatedResource);
         assertThat(detail.recommendedNextActions()).isNotEmpty();
         assertThat(detail.practiceContext()).containsEntry("source", "KNOWLEDGE_GRAPH_DETAIL");
+        assertThat(detail.practiceContext()).containsKey("semanticScope");
+        Map<String, Object> semanticScope = (Map<String, Object>) detail.practiceContext().get("semanticScope");
+        assertThat(semanticScope)
+            .containsEntry("topic", "循环")
+            .containsEntry("source", "KNOWLEDGE_GRAPH_DETAIL");
     }
 
     @Test
@@ -376,6 +381,11 @@ class StudyWorkbenchServiceTest {
         assertThat(camp.representativeMistakes()).containsExactly(representative);
         assertThat(camp.microPractices()).hasSize(2);
         assertThat(camp.practiceContext()).containsEntry("source", "MISTAKE_TRAINING_CAMP");
+        assertThat(camp.practiceContext()).containsKey("semanticScope");
+        Map<String, Object> semanticScope = (Map<String, Object>) camp.practiceContext().get("semanticScope");
+        assertThat(semanticScope)
+            .containsEntry("topic", "循环")
+            .containsEntry("source", "MISTAKE_TRAINING_CAMP");
     }
 
     private static StudyWorkbenchService service() {

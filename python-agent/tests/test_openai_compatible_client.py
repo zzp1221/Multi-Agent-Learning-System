@@ -72,6 +72,19 @@ def test_llm_http_error_classifier_detects_rate_limit() -> None:
     assert error.retryable is True
 
 
+def test_llm_service_error_message_survives_runtime_error_initialization() -> None:
+    error = classify_llm_http_error(
+        status_code=400,
+        response_text='{"error":{"message":"unsupported request parameter"}}',
+        provider="mimo",
+        model="mimo-v2-flash",
+    )
+
+    assert error.code == "LLM_REQUEST_INVALID"
+    assert str(error) == error.message
+    assert "super(type, obj)" not in str(error)
+
+
 def test_llm_service_error_can_be_recovered_from_exception_chain() -> None:
     llm_error = LLMServiceError(
         code="LLM_AUTH_INVALID",

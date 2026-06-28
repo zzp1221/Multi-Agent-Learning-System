@@ -46,6 +46,19 @@ def test_openai_compatible_subjective_evaluator_extracts_json_payload() -> None:
     assert payload["isCorrect"] is True
 
 
+def test_openai_compatible_subjective_evaluator_defaults_to_main_judge_model(monkeypatch) -> None:
+    get_settings.cache_clear()
+    monkeypatch.setenv("ACTIVE_PROVIDER", "mimo")
+    monkeypatch.setenv("MIMO_API_KEY", "test-key")
+
+    evaluator = OpenAICompatibleSubjectiveJudgeEvaluator()
+
+    assert evaluator.provider_name == "mimo"
+    assert evaluator.model_name == "mimo-v2-omni"
+
+    get_settings.cache_clear()
+
+
 def test_subjective_evaluator_factory_requires_real_llm(monkeypatch) -> None:
     get_settings.cache_clear()
     monkeypatch.setenv("ENABLE_LOCAL_JUDGE", "false")

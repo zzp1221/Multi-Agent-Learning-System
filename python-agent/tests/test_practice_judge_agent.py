@@ -198,6 +198,78 @@ async def test_practice_agent_generates_question_batch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_practice_agent_prefers_semantic_scope_topic_for_ambiguous_stage_title() -> None:
+    class CapturingQuestionGenerator:
+        provider_name = "unit-test-provider"
+        model_name = "unit-test-practice-model"
+
+        def __init__(self) -> None:
+            self.topic = ""
+            self.learning_context = {}
+
+        async def generate_batch(self, *, topic, difficulty, count, learning_context):
+            self.topic = topic
+            self.learning_context = learning_context
+            return QuestionBatchPayload.model_validate(
+                {
+                    "title": f"{topic} questions",
+                    "topic": topic,
+                    "difficulty": difficulty,
+                    "questions": [
+                        {
+                            "questionId": f"q{index}",
+                            "questionType": "SINGLE_CHOICE" if index == 1 else "SHORT_ANSWER",
+                            "stem": f"{topic} prompt {index}",
+                            "options": ["A", "B", "C", "D"] if index == 1 else [],
+                            "answer": "A" if index == 1 else "call by function name",
+                            "knowledgeTags": [topic, "Shell function"],
+                            "difficultyLevel": difficulty,
+                            "explanation": "scoped",
+                        }
+                        for index in range(1, count + 1)
+                    ],
+                }
+            )
+
+    generator = CapturingQuestionGenerator()
+    agent = PracticeAgent(
+        practice_store=InMemoryPracticeStore(),
+        question_generator=generator,
+    )
+    params = {
+        "topic": "function definition reinforcement",
+        "count": 2,
+        "learningContext": {
+            "activeLearningStepTitle": "function definition reinforcement",
+            "semanticScope": {
+                "domain": "Linux Shell",
+                "topic": "Linux Shell shell function definition and invocation",
+                "rawTopic": "function definition reinforcement",
+                "knowledgeTags": ["shell function definition and invocation"],
+            },
+        },
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-semantic-practice",
+            trace_id="trace-semantic-practice",
+            seq=1,
+            service_type="PRACTICE_JUDGE",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert generator.topic == "Linux Shell shell function definition and invocation"
+    assert generator.learning_context["semanticScope"]["rawTopic"] == "function definition reinforcement"
+    assert params["practiceQuestionBatch"]["topic"] == "Linux Shell shell function definition and invocation"
+    assert any(event.event == "question_batch" for event in events)
+
+
+@pytest.mark.asyncio
 async def test_practice_agent_conversation_triggered_batch_persists_without_task_id() -> None:
     class CapturingPracticeStore(InMemoryPracticeStore):
         def __init__(self) -> None:

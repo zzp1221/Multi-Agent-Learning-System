@@ -285,7 +285,11 @@ class PracticeAgent(PlaceholderAgent):
 
     def _resolve_topic(self, params: dict[str, Any]) -> str:
         learning_context = params.get("learningContext", {})
+        semantic_scope = learning_context.get("semanticScope") if isinstance(learning_context, dict) else None
+        if not isinstance(semantic_scope, dict):
+            semantic_scope = {}
         strict_candidates = [
+            semantic_scope.get("topic"),
             params.get("explicitUserTopic"),
             learning_context.get("explicitUserTopic") if isinstance(learning_context, dict) else None,
             params.get("activeLearningStepTitle"),
@@ -296,6 +300,7 @@ class PracticeAgent(PlaceholderAgent):
             params.get("knowledgePoint"),
             learning_context.get("knowledgePoint") if isinstance(learning_context, dict) else None,
             learning_context.get("chapter") if isinstance(learning_context, dict) else None,
+            semantic_scope.get("rawTopic"),
             learning_context.get("course") if isinstance(learning_context, dict) else None,
         ]
         for candidate in strict_candidates:

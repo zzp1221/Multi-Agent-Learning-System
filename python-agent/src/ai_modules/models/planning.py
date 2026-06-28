@@ -106,6 +106,7 @@ class LearningPlanStep(BaseModel):
     preferred_resource_types: list[str] = Field(default_factory=list, alias="preferredResourceTypes")
     estimated_minutes: int | None = Field(default=None, alias="estimatedMinutes")
     checkpoint: str | None = None
+    semantic_scope: dict = Field(default_factory=dict, alias="semanticScope")
 
     model_config = ConfigDict(populate_by_name=True)
 

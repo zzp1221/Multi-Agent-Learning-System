@@ -553,6 +553,58 @@ def _safe_float(value: Any, fallback: float = 0.0) -> float:
         return fallback
 
 
+def _resource_row_effective_score(row: dict) -> float:
+    if row.get("rank_score") not in (None, ""):
+        return _safe_float(row.get("rank_score"), _safe_float(row.get("similarity")))
+    return _safe_float(row.get("similarity"))
+
+
+def _merge_resource_semantic_rows(vector_rows: list[dict], hybrid_rows: list[dict], top_k: int) -> list[dict]:
+    resources: dict[str, dict[str, Any]] = {}
+    sequence = 0
+    for source_priority, rows in ((0, vector_rows), (1, hybrid_rows)):
+        for row in rows:
+            resource_id = str(row.get("resource_id") or "")
+            if not resource_id:
+                continue
+            item = dict(row)
+            score = _resource_row_effective_score(item)
+            entry = resources.setdefault(
+                resource_id,
+                {
+                    "score": score,
+                    "source_priority": source_priority,
+                    "sequence": sequence,
+                    "chunks": {},
+                    "rows": [],
+                },
+            )
+            if score > entry["score"] or (score == entry["score"] and source_priority < entry["source_priority"]):
+                entry["score"] = score
+                entry["source_priority"] = source_priority
+
+            record = (score, source_priority, sequence, item)
+            chunk_key = str(item.get("chunk_id") or "")
+            if chunk_key:
+                previous = entry["chunks"].get(chunk_key)
+                if previous is None or (score, -source_priority) > (previous[0], -previous[1]):
+                    entry["chunks"][chunk_key] = record
+            else:
+                entry["rows"].append(record)
+            sequence += 1
+
+    selected = sorted(
+        resources.values(),
+        key=lambda entry: (-entry["score"], entry["source_priority"], entry["sequence"]),
+    )[:top_k]
+    merged: list[dict] = []
+    for entry in selected:
+        records = list(entry["chunks"].values()) + entry["rows"]
+        records.sort(key=lambda record: (-record[0], record[1], record[2]))
+        merged.extend(record[3] for record in records)
+    return merged
+
+
 def _rank_resource_rows(query: str, rows: list[dict], top_k: int) -> list[dict]:
     ranked: list[dict] = []
     seen_types: set[str] = set()
@@ -1335,34 +1387,43 @@ async def search_resources_semantic(
     normalized_query = query.strip()
     if not normalized_query:
         raise HTTPException(status_code=400, detail="query must not be blank")
-    rag_error = ""
-    rows: list[dict] = []
+    hybrid_error = ""
+    vector_error = ""
+    hybrid_rows: list[dict] = []
+    vector_rows: list[dict] = []
+    search_domain = domain or SETTINGS.retrieval_domain
     try:
-        rows = _search_resource_chunks_with_hybrid_rag(
+        hybrid_rows = _search_resource_chunks_with_hybrid_rag(
             normalized_query,
             top_k=top_k,
-            domain=domain or SETTINGS.retrieval_domain,
+            domain=search_domain,
             user_id=user_id,
         )
-        if not rows:
-            rows = _search_resource_chunks(
-                normalized_query,
-                top_k=top_k,
-                domain=domain or SETTINGS.retrieval_domain,
-                user_id=user_id,
-            )
     except Exception as exc:
-        rag_error = str(exc)
-        LOGGER.warning("Resource RAG search unavailable for query=%r: %s", normalized_query, exc)
+        hybrid_error = str(exc)
+        LOGGER.warning("Resource hybrid RAG search unavailable for query=%r: %s", normalized_query, exc)
 
+    try:
+        vector_rows = _search_resource_chunks(
+            normalized_query,
+            top_k=top_k,
+            domain=search_domain,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        vector_error = str(exc)
+        LOGGER.warning("Resource vector search unavailable for query=%r: %s", normalized_query, exc)
+
+    rows = _merge_resource_semantic_rows(vector_rows, hybrid_rows, top_k)
     remaining = max(0, top_k - len({str(row.get("resource_id") or "") for row in rows if row.get("resource_id")}))
     external_candidates = await _search_resource_tavily_candidates(normalized_query, remaining)
     response = _build_resource_semantic_response(normalized_query, rows, external_candidates)
-    if rag_error and not response.results:
+    if vector_error and not response.results:
+        errors = "; ".join(error for error in (hybrid_error, vector_error) if error)
         response = ResourceSemanticSearchResponse(
             query=normalized_query,
             available=False,
-            message=f"semantic search unavailable: {rag_error}",
+            message=f"semantic search unavailable: {errors}",
             results=[],
         )
     return JSONResponse(response.model_dump(by_alias=True, mode="json"))

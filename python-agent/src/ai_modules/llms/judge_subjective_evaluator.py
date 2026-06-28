@@ -104,7 +104,7 @@ class OpenAICompatibleSubjectiveJudgeEvaluator:
         self.api_key = api_key or settings.provider_api_key(self.provider_name)
         self.model_name = model_name or settings.resolve_component_model(
             "judge_llm",
-            default_logical_model="fast_model",
+            default_logical_model="main_chat_model",
             provider_name=self.provider_name,
         )
         self.max_retries = max_retries

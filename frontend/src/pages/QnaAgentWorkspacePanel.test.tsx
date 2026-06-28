@@ -55,7 +55,7 @@ describe('QnaAgentWorkspacePanel', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('complementary', { name: '资源工作区' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: '本轮产物' })).toBeInTheDocument();
     expect(screen.getByText('联合索引讲义')).toBeInTheDocument();
     expect(screen.getByText('已生成讲义')).toBeInTheDocument();
   });
@@ -67,7 +67,7 @@ describe('QnaAgentWorkspacePanel', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole('complementary', { name: '资源工作区' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: '本轮产物' })).not.toBeInTheDocument();
   });
 
   it('collapses the workspace body when the collapse button is clicked', async () => {
@@ -80,10 +80,10 @@ describe('QnaAgentWorkspacePanel', () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole('button', { name: '收起资源工作区' }));
+    await user.click(screen.getByRole('button', { name: '收起本轮产物' }));
 
-    expect(screen.getByRole('complementary', { name: '资源工作区' })).toHaveAttribute('data-state', 'collapsed');
+    expect(screen.getByRole('complementary', { name: '本轮产物' })).toHaveAttribute('data-state', 'collapsed');
     expect(screen.queryByText('联合索引讲义')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '展开资源工作区' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开本轮产物' })).toBeInTheDocument();
   });
 });

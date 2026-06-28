@@ -238,13 +238,17 @@ class QueryRewriteService:
         query_context = params.get("queryRewriteContext")
         if not isinstance(query_context, dict):
             query_context = {}
+        nested_context = query_context.get("learningContext")
+        if not isinstance(nested_context, dict):
+            nested_context = {}
+        merged_context = {**query_context, **nested_context}
         context_terms = [
             learning_context.get("chapter", ""),
-            *self._context_terms(query_context, "diagnosisWeaknesses"),
-            *self._context_terms(query_context, "diagnosisFocus"),
-            *self._context_terms(query_context, "profileWeakPoints"),
+            *self._context_terms(merged_context, "diagnosisWeaknesses"),
+            *self._context_terms(merged_context, "diagnosisFocus"),
+            *self._context_terms(merged_context, "profileWeakPoints"),
         ]
-        if self._should_preserve_explicit_topic(params, original_query):
+        if self._should_preserve_explicit_topic(params, original_query, service_type=service_type):
             prefixes = [
                 prefix
                 for prefix in context_terms
@@ -319,7 +323,16 @@ class QueryRewriteService:
             if text
         ][:4]
 
-    def _should_preserve_explicit_topic(self, params: dict[str, Any], original_query: str) -> bool:
+    def _should_preserve_explicit_topic(
+        self,
+        params: dict[str, Any],
+        original_query: str,
+        *,
+        service_type: str | None,
+    ) -> bool:
+        normalized_service_type = str(service_type or params.get("serviceType") or "").strip().upper()
+        if normalized_service_type and normalized_service_type != "RESOURCE_GENERATION":
+            return False
         if not self._is_explicit_query_field(params, original_query):
             return False
         return self._is_specific_topic_query(original_query)

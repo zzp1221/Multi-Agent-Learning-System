@@ -34,6 +34,7 @@ import {
 import type { LayoutOutletContext } from '../components/Layout';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
 import { readPracticeQuestionBatch } from './LearningStudioDemoPage.taskPayloadReaders';
+import { buildPracticeJudgeParams } from './practiceSemanticScope';
 import { openPracticeSession } from './practiceSessionStore';
 import {
   VOICE_PAGE_ACTION_EVENT,
@@ -410,13 +411,20 @@ export default function MistakeBookPage() {
       const response = await smartEngineApi.submit({
         conversationId: conversation.conversationId,
         serviceType: 'PRACTICE_JUDGE',
-        params: {
+        params: buildPracticeJudgeParams({
+          source: 'MISTAKE_TRAINING_CAMP',
           purpose: 'MISTAKE_CAUSE_TRAINING',
           topic: camp.knowledgeTag,
           query: practice.prompt,
           count: 5,
           questionCount: 5,
           difficulty: practice.difficulty,
+          knowledgeTags: practice.knowledgeTags,
+          evidence: [
+            practice.description,
+            camp.explanation,
+            ...camp.representativeMistakes.slice(0, 3).map((item) => item.stem),
+          ],
           learningContext: {
             ...camp.practiceContext,
             chapter: camp.knowledgeTag,
@@ -426,7 +434,7 @@ export default function MistakeBookPage() {
             representativeMistakeIds: camp.representativeMistakes.map((item) => item.id),
             questionCount: 5,
           },
-        },
+        }),
       });
       let streamError = '';
       await smartEngineApi.streamTask(response.taskId, {

@@ -535,7 +535,7 @@ export default function Layout() {
     },
     {
       key: 'generation',
-      label: '资源生成',
+      label: '生成记录',
       icon: <Flame className="h-4 w-4" />,
       active: location.pathname.startsWith('/resources/generation'),
       onClick: handleOpenResourceGenerationTool,
@@ -740,7 +740,7 @@ export default function Layout() {
                 </div>
               </NavLink>
               <div className={`app-breadcrumb min-w-0 xl:hidden ${inSettings ? 'is-settings-breadcrumb' : ''}`}>
-                <span>{inKnowledgeGraph ? '知识图谱' : inProfile ? '个人画像' : inMistakes ? '错题本' : inResources ? '资源总览' : inEngine ? '学习路径' : inChat ? '问答辅导' : inNotes ? 'AI 笔记本' : '工作台'}</span>
+                <span>{inKnowledgeGraph ? '知识图谱' : inProfile ? '个人画像' : inMistakes ? '错题本' : location.pathname.startsWith('/resources/generation') ? '生成记录' : inResources ? '资源库' : inEngine ? '学习路径' : inChat ? '问答辅导' : inNotes ? 'AI 笔记本' : '工作台'}</span>
               </div>
             </div>
 

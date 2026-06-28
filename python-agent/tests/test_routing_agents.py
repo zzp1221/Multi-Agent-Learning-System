@@ -1060,6 +1060,8 @@ async def test_path_planning_agent_golden_eval_preserves_learning_path_contract(
     assert learning_path["duration"] == "4天"
     assert learning_path["milestones"] == ["理解规则", "判断条件", "解释场景"]
     assert learning_path["steps"][0]["successCriteria"] == "能说清失效条件"
+    assert learning_path["steps"][0]["semanticScope"]["source"] == "PATH_PLANNING"
+    assert learning_path["steps"][0]["semanticScope"]["topic"]
     assert params["learningPlanPersistence"]["version"] == 1
     assert stored_record["summaryText"].startswith("LLM 路径：")
     assert events[1].payload.text.startswith("LLM 路径：")
@@ -1144,6 +1146,61 @@ async def test_path_planning_agent_maps_mastery_diagnosis_to_planning_context() 
     assert params["pathPlanningContext"]["masteryDiagnosis"] == params["masteryDiagnosis"]
     assert params["learningPath"]["steps"][0]["targetKnowledgePoints"][:2] == ["最左匹配判定", "最左匹配"]
     assert params["learningPath"]["steps"][0]["preferredResourceTypes"][:2] == ["VIDEO", "QUIZ"]
+
+
+@pytest.mark.asyncio
+async def test_path_planning_enriches_ambiguous_step_with_semantic_scope() -> None:
+    class FakePathGenerator:
+        async def plan(self, *, system_prompt, context_payload):
+            del system_prompt, context_payload
+            return LearningPlanPayload.model_validate(
+                {
+                    "goal": "master Linux Shell function syntax",
+                    "duration": "2 days",
+                    "milestones": ["review", "practice"],
+                    "steps": [
+                        {
+                            "title": "function definition",
+                            "objective": "review shell function syntax",
+                            "activities": ["read examples"],
+                            "successCriteria": "can write myfunc()",
+                        }
+                    ],
+                    "summaryText": "plan",
+                }
+            )
+
+    agent = PathPlanningAgent(
+        llm_client=_UnusedPlanningLLM(),
+        learning_plan_store=InMemoryLearningPlanStore(),
+        generator=FakePathGenerator(),
+    )
+    params = {
+        "userId": "00000000-0000-0000-0000-000000000779",
+        "profile": {
+            "learningGoal": "master Linux Shell function syntax",
+            "knowledgeGaps": ["shell function definition and invocation"],
+        },
+    }
+
+    _ = [
+        event
+        async for event in agent.run(
+            task_id="task-plan-semantic",
+            trace_id="trace-plan-semantic",
+            seq=1,
+            service_type="PATH_PLANNING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt=agent.system_prompt(_build_snapshot()),
+        )
+    ]
+
+    step = params["learningPath"]["steps"][0]
+    assert step["title"].startswith("master Linux Shell function syntax")
+    assert step["semanticScope"]["source"] == "PATH_PLANNING"
+    assert step["semanticScope"]["domain"] == "master Linux Shell function syntax"
+    assert "shell function definition and invocation" in step["semanticScope"]["knowledgeTags"]
 
 
 @pytest.mark.asyncio

@@ -5791,30 +5791,30 @@
 
   .qna-workspace-resource-list {
     display: grid;
-    gap: 10px;
+    gap: 8px;
   }
 
   .qna-workspace-resource {
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
   }
 
   .qna-workspace-resource-main {
     display: grid;
     width: 100%;
-    grid-template-columns: 34px minmax(0, 1fr) auto 18px;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
     align-items: center;
     gap: 9px;
-    padding: 10px;
+    padding: 9px 10px;
     text-align: left;
   }
 
   .qna-workspace-resource-icon {
     display: inline-flex;
-    height: 34px;
-    width: 34px;
+    height: 32px;
+    width: 32px;
     align-items: center;
     justify-content: center;
     border-radius: 10px;
@@ -5867,83 +5867,16 @@
     font-weight: 620;
   }
 
-  .qna-workspace-resource-chevron {
-    color: var(--text-secondary);
-    transition: transform 0.18s ease;
-  }
-
-  .qna-workspace-resource-chevron.is-open {
-    transform: rotate(180deg);
-  }
-
   .qna-workspace-resource-summary {
-    margin: -2px 10px 10px 53px;
+    margin: -1px 10px 9px 51px;
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 1.55;
     overflow-wrap: anywhere;
   }
 
-  .qna-workspace-resource-preview {
-    border-top: 1px solid var(--border);
-    padding: 10px;
-  }
-
-  .qna-workspace-markdown-preview {
-    max-height: 280px;
-    overflow: auto;
-    border-radius: 10px;
-    background: var(--surface-muted);
-    padding: 10px;
-  }
-
-  .qna-workspace-markdown-preview .qna-markdown {
-    font-size: 13px;
-    line-height: 1.65;
-  }
-
-  .qna-workspace-code-preview {
-    overflow: hidden;
-    border-radius: 10px;
-    background: #0f172a;
-    color: #e2e8f0;
-  }
-
-  .qna-workspace-code-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: rgba(255, 255, 255, 0.07);
-    padding: 7px 10px;
-    color: #cbd5e1;
-    font-size: 11px;
-    font-weight: 700;
-  }
-
-  .qna-workspace-code-preview pre {
-    max-height: 240px;
-    overflow: auto;
-    margin: 0;
-    padding: 10px;
-    font-size: 12px;
-    line-height: 1.65;
-  }
-
-  .qna-workspace-code-note {
-    margin: 0 10px 10px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.08);
-    padding: 8px;
-    color: #cbd5e1;
-    font-size: 12px;
-    line-height: 1.55;
-  }
-
-  .qna-workspace-quiz-preview,
-  .qna-workspace-ppt-preview,
-  .qna-workspace-download-preview,
-  .qna-workspace-pending-preview,
-  .qna-workspace-empty {
+  .qna-workspace-empty,
+  .qna-workspace-more-hint {
     border-radius: 10px;
     background: var(--surface-muted);
     padding: 11px;
@@ -5952,23 +5885,6 @@
     line-height: 1.55;
   }
 
-  .qna-workspace-quiz-preview {
-    display: grid;
-    gap: 9px;
-  }
-
-  .qna-workspace-quiz-preview strong,
-  .qna-workspace-quiz-preview span {
-    display: block;
-  }
-
-  .qna-workspace-quiz-preview strong {
-    color: var(--text-primary);
-    font-size: 13px;
-  }
-
-  .qna-workspace-quiz-preview button,
-  .qna-workspace-download-preview button,
   .qna-workspace-open-page {
     display: inline-flex;
     min-height: 34px;
@@ -5984,68 +5900,11 @@
     transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
   }
 
-  .qna-workspace-quiz-preview button:hover,
-  .qna-workspace-download-preview button:hover,
   .qna-workspace-open-page:hover {
     border-color: color-mix(in srgb, var(--action) 34%, var(--border));
     background: color-mix(in srgb, var(--action) 13%, var(--surface));
     color: var(--action);
     transform: translateY(-1px);
-  }
-
-  .qna-workspace-ppt-preview {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 5px;
-    text-align: center;
-  }
-
-  .qna-workspace-ppt-preview svg {
-    color: #4338ca;
-  }
-
-  .qna-workspace-ppt-preview span {
-    color: var(--text-primary);
-    font-weight: 760;
-  }
-
-  .qna-workspace-ppt-preview small {
-    color: var(--text-secondary);
-    font-size: 11px;
-  }
-
-  .qna-workspace-download-preview {
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
-    gap: 8px;
-    align-items: center;
-  }
-
-  .qna-workspace-download-preview > div {
-    min-width: 0;
-  }
-
-  .qna-workspace-download-preview strong,
-  .qna-workspace-download-preview span {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .qna-workspace-download-preview strong {
-    color: var(--text-primary);
-  }
-
-  .qna-workspace-download-preview button,
-  .qna-workspace-download-preview p {
-    grid-column: 1 / -1;
-  }
-
-  .qna-workspace-download-preview p {
-    margin: 0;
-    color: #b91c1c;
   }
 
   .qna-workspace-empty {
@@ -6054,23 +5913,15 @@
     gap: 8px;
   }
 
+  .qna-workspace-more-hint {
+    border: 1px dashed var(--border);
+    background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
+    text-align: center;
+  }
+
   .qna-workspace-open-page {
     width: 100%;
     margin-top: auto;
-  }
-
-  .qna-workspace-resource-preview :where(.mermaid-diagram, .overflow-hidden.rounded-2xl) {
-    max-width: 100%;
-  }
-
-  .qna-workspace-resource-preview .mermaid-diagram {
-    max-height: 260px;
-    overflow: auto;
-    padding: 10px;
-  }
-
-  .qna-workspace-resource-preview video {
-    max-height: 230px;
   }
 
   .dark .qna-agent-workspace,

@@ -329,7 +329,14 @@ public class StudyWorkbenchService {
                 "topic", node.topic(),
                 "knowledgeTags", List.of(node.topic()),
                 "nodeKey", node.key(),
-                "source", "KNOWLEDGE_GRAPH_DETAIL"
+                "source", "KNOWLEDGE_GRAPH_DETAIL",
+                "semanticScope", semanticScope(
+                    node.topic(),
+                    node.topic(),
+                    List.of(node.topic()),
+                    "KNOWLEDGE_GRAPH_DETAIL",
+                    List.of("nodeKey=" + node.key(), "status=" + node.status())
+                )
             )
         );
     }
@@ -383,7 +390,18 @@ public class StudyWorkbenchService {
                     "topic", knowledgeTag,
                     "knowledgeTags", List.of(knowledgeTag),
                     "mistakeType", mistakeType,
-                    "source", "MISTAKE_TRAINING_CAMP"
+                    "source", "MISTAKE_TRAINING_CAMP",
+                    "semanticScope", semanticScope(
+                        knowledgeTag,
+                        knowledgeTag,
+                        List.of(knowledgeTag),
+                        "MISTAKE_TRAINING_CAMP",
+                        representatives.stream()
+                            .map(MistakeRecordResponse::stem)
+                            .filter(text -> text != null && !text.isBlank())
+                            .limit(3)
+                            .toList()
+                    )
                 )
             ));
         }
@@ -1143,6 +1161,29 @@ public class StudyWorkbenchService {
             case "careless" -> "围绕「" + knowledgeTag + "」的审题、单位、条件遗漏和最终检查建立检查清单。";
             default -> "先补全错因分类，再用代表题定位最常见的错误模式。";
         };
+    }
+
+    private Map<String, Object> semanticScope(
+        String topic,
+        String rawTopic,
+        List<String> knowledgeTags,
+        String source,
+        List<String> evidence
+    ) {
+        Map<String, Object> scope = new LinkedHashMap<>();
+        scope.put("topic", safeString(topic));
+        scope.put("rawTopic", safeString(rawTopic));
+        scope.put("knowledgeTags", knowledgeTags == null ? List.of() : knowledgeTags.stream()
+            .filter(tag -> tag != null && !tag.isBlank())
+            .distinct()
+            .toList());
+        scope.put("source", source);
+        scope.put("evidence", evidence == null ? List.of() : evidence.stream()
+            .filter(item -> item != null && !item.isBlank())
+            .distinct()
+            .limit(5)
+            .toList());
+        return scope;
     }
 
     private double masteryChange(int reviewCount, int wrongCount, int masteredCount) {

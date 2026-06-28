@@ -817,10 +817,14 @@ class ResourceGenerationService:
     def _display_topic(self, params: dict) -> str:
         learning_context = params.get("learningContext", {})
         nested_active_step = None
+        semantic_scope = {}
         if isinstance(learning_context, dict):
             nested_active_step = learning_context.get("activeLearningStep")
+            if isinstance(learning_context.get("semanticScope"), dict):
+                semantic_scope = learning_context["semanticScope"]
 
         strict_candidates = [
+            semantic_scope.get("topic"),
             params.get("explicitUserTopic"),
             learning_context.get("explicitUserTopic") if isinstance(learning_context, dict) else None,
             params.get("activeLearningStepTitle"),
@@ -831,6 +835,7 @@ class ResourceGenerationService:
             params.get("knowledgePoint"),
             learning_context.get("knowledgePoint") if isinstance(learning_context, dict) else None,
             learning_context.get("chapter") if isinstance(learning_context, dict) else None,
+            semantic_scope.get("rawTopic"),
             learning_context.get("course") if isinstance(learning_context, dict) else None,
         ]
         for candidate in strict_candidates:

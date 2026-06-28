@@ -33,6 +33,7 @@ import {
 import { readStreamMessage, readStreamPayload } from '../api/sse';
 import type { PracticeQuestionBatch } from './LearningStudioDemoPage.types';
 import { readPracticeQuestionBatch } from './LearningStudioDemoPage.taskPayloadReaders';
+import { buildPracticeJudgeParams } from './practiceSemanticScope';
 import { openStageTestSession } from './stageTestSessionStore';
 import { STAGE_TEST_COMPLETED_EVENT } from './stageTestEvents';
 
@@ -152,20 +153,32 @@ export default function DailyStudyWorkbenchPage() {
       const submitResp = await smartEngineApi.submit({
         conversationId: conversation.conversationId,
         serviceType: 'PRACTICE_JUDGE',
-        params: {
+        params: buildPracticeJudgeParams({
+          source: 'LEARNING_PATH',
           purpose: 'STAGE_TEST',
           topic: stageTitle,
           query: `${stageTitle} 阶段检测`,
           count: 10,
           questionCount: 10,
+          knowledgeTags: targetPoints,
+          evidence: [
+            readString(activeStep.checkpoint),
+            readString(activeStep.successCriteria),
+            readString(activeStep.objective),
+          ],
           learningContext: {
             activeLearningStepId: readString(activeStep.stepId),
             activeLearningStepTitle: stageTitle,
             chapter: stageTitle,
             knowledgeTags: targetPoints,
             questionCount: 10,
+            targetKnowledgePoints: targetPoints,
+            checkpoint: readString(activeStep.checkpoint),
+            objective: readString(activeStep.objective),
+            semanticScope: readRecord(activeStep.semanticScope),
           },
-        },
+          activeLearningStep: activeStep,
+        }),
       });
       let streamError = '';
       await smartEngineApi.streamTask(submitResp.taskId, {
@@ -888,6 +901,10 @@ function estimateMinutes(type: string): number {
 
 function readString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
 function readStringArray(value: unknown): string[] {

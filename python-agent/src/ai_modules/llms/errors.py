@@ -4,25 +4,31 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 
-@dataclass(frozen=True, slots=True)
 class LLMServiceError(RuntimeError):
     """Classified LLM provider failure safe to show to end users."""
 
-    code: str
-    message: str
-    http_status: int | None = None
-    provider: str | None = None
-    model: str | None = None
-    retryable: bool = False
-
-    def __post_init__(self) -> None:
-        RuntimeError.__init__(self, self.message)
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        http_status: int | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.http_status = http_status
+        self.provider = provider
+        self.model = model
+        self.retryable = retryable
 
     def payload_kwargs(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
