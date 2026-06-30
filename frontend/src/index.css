@@ -1464,6 +1464,27 @@
     padding-top: 10px;
   }
 
+  .qna-public-reasoning-list {
+    display: grid;
+    gap: 10px;
+    white-space: normal;
+  }
+
+  .qna-public-reasoning-step {
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(248, 250, 252, 0.62);
+    padding: 10px 12px;
+  }
+
+  .qna-public-reasoning-step-title {
+    margin-bottom: 6px;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 720;
+    letter-spacing: 0;
+  }
+
   .qna-markdown {
     white-space: pre-wrap;
   }
@@ -1607,6 +1628,15 @@
   .dark .qna-reasoning-content {
     border-left-color: rgba(71, 85, 105, 0.62);
     color: #94a3b8;
+  }
+
+  .dark .qna-public-reasoning-step {
+    border-color: rgba(71, 85, 105, 0.5);
+    background: rgba(15, 23, 42, 0.42);
+  }
+
+  .dark .qna-public-reasoning-step-title {
+    color: #dbeafe;
   }
 
   .dark .qna-agent-trace-avatar {

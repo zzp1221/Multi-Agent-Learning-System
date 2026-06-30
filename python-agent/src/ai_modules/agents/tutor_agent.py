@@ -47,9 +47,19 @@ from src.ai_modules.runtime import (
 )
 from src.ai_modules.runtime.planning_contract import PlanningParamKeys
 from src.ai_modules.runtime.skill_loader import SkillPromptLoader
-from retrieval.wiki_tools import WikiToolset, graph_intent_allows_wiki_tools
+from retrieval.wiki_tools import (
+    ALLOWED_WIKI_RELATION_TYPES,
+    WikiToolset,
+    bounded_wiki_int,
+    clean_wiki_query,
+    graph_intent_allows_wiki_tools,
+    normalize_wiki_relation_type,
+    normalize_wiki_slug,
+)
 
 LOGGER = logging.getLogger(__name__)
+
+TUTOR_TOOL_CONTENT_MAX_CHARS = 8192
 
 GRAPH_AWARE_INTENTS = {
     "COMMON_MISTAKE",
@@ -316,7 +326,8 @@ class TutorAgent(PlaceholderAgent):
             streamed = False
             emitted_stream_event = False
             streamed_answer = ""
-            if not response_constraints and not self._wiki_tools_enabled(params):
+            has_max_length_constraint = bool(response_constraints.get("maxChars")) if response_constraints else False
+            if not has_max_length_constraint and not self._wiki_tools_enabled(params):
                 try:
                     async for stream_event in self._try_direct_chat_stream(
                         llm_client=llm_client,
@@ -326,18 +337,7 @@ class TutorAgent(PlaceholderAgent):
                     ):
                         emitted_stream_event = True
                         if stream_event["kind"] == "reasoning":
-                            yield ReasoningChunkSSEEvent(
-                                taskId=task_id,
-                                traceId=trace_id,
-                                seq=current_seq,
-                                payload=ReasoningChunkPayload(
-                                    text=stream_event["text"],
-                                    stage="reasoning",
-                                    provider=stream_event.get("provider"),
-                                    model=stream_event.get("model"),
-                                ),
-                                dialogState=dialog_state,
-                            )
+                            continue
                         else:
                             streamed = True
                             streamed_answer += stream_event["text"]
@@ -410,16 +410,29 @@ class TutorAgent(PlaceholderAgent):
 
     def _extract_response_constraints(self, user_query: str) -> dict[str, Any]:
         text = str(user_query or "")
-        match = re.search(r"(\d{2,4})\s*(?:字|个字|字符)\s*(?:以内|内|之内|以下|左右)?", text)
-        if not match:
-            return {}
-        max_chars = int(match.group(1))
-        if max_chars <= 0:
-            return {}
-        return {
-            "maxChars": max_chars,
-            "instruction": f"用户明确要求回答控制在 {max_chars} 字以内；必须优先满足该长度要求。",
-        }
+        max_match = re.search(
+            r"(?:不超过|不多于|少于|小于|控制在)?\s*(\d{2,5})\s*(?:字|个字|字符)\s*(?:以内|内|之内|以下)",
+            text,
+        )
+        if not max_match:
+            max_match = re.search(r"(?:不超过|不多于|少于|小于|控制在)\s*(\d{2,5})\s*(?:字|个字|字符)", text)
+        if max_match:
+            max_chars = int(max_match.group(1))
+            if max_chars > 0:
+                return {
+                    "maxChars": max_chars,
+                    "instruction": f"用户明确要求回答控制在 {max_chars} 字以内；必须优先满足该长度要求。",
+                }
+
+        min_match = re.search(r"(?:至少|不少于|不低于|超过|大于|多于)\s*(\d{2,5})\s*(?:字|个字|字符)", text)
+        if min_match:
+            min_chars = int(min_match.group(1))
+            if min_chars > 0:
+                return {
+                    "minChars": min_chars,
+                    "instruction": f"用户明确要求回答不少于 {min_chars} 字；需要展开解释并覆盖关键边界。",
+                }
+        return {}
 
     async def _enforce_response_constraints(
         self,
@@ -430,6 +443,9 @@ class TutorAgent(PlaceholderAgent):
         user_query: str,
     ) -> str:
         max_chars = int(constraints.get("maxChars") or 0) if constraints else 0
+        min_chars = int(constraints.get("minChars") or 0) if constraints else 0
+        if min_chars > 0 and max_chars <= 0:
+            return self._dedupe_repeated_paragraphs(response_text)
         if max_chars <= 0 or len(response_text) <= max_chars:
             return self._dedupe_repeated_paragraphs(response_text)
         client = getattr(llm_client, "client", None)
@@ -987,7 +1003,8 @@ class TutorAgent(PlaceholderAgent):
             user_query=user_query,
         )
 
-        # Answer tokens are batched for smoother UI updates; reasoning stays raw.
+        # Answer tokens are batched for smoother UI updates. Provider reasoning is
+        # hidden; the public process summary is emitted separately by this agent.
         batch: list[str] = []
         stream_method = getattr(client, "chat_completion_stream_events", None)
         if callable(stream_method):
@@ -1002,15 +1019,6 @@ class TutorAgent(PlaceholderAgent):
             if isinstance(chunk, str):
                 batch.append(chunk)
             elif getattr(chunk, "kind", "") == "reasoning":
-                if batch:
-                    yield {"kind": "answer", "text": "".join(batch)}
-                    batch.clear()
-                yield {
-                    "kind": "reasoning",
-                    "text": getattr(chunk, "text", ""),
-                    "provider": getattr(chunk, "provider", None),
-                    "model": getattr(chunk, "model", None),
-                }
                 continue
             else:
                 batch.append(str(getattr(chunk, "text", "") or ""))
@@ -1288,6 +1296,7 @@ class TutorAgent(PlaceholderAgent):
             recovery_engine=RecoveryEngine(),
             max_iterations=8,
             agent_level=PermissionLevel.READ_ONLY,
+            max_tool_content_chars=TUTOR_TOOL_CONTENT_MAX_CHARS,
         )
         try:
             result = await core_loop.run(
@@ -1304,6 +1313,16 @@ class TutorAgent(PlaceholderAgent):
                 ],
             )
         except MaxIterationsExceededError as exc:
+            try:
+                return await self._try_direct_chat(
+                    llm_client=llm_client,
+                    system_prompt=system_prompt,
+                    user_query=user_query,
+                    params=params,
+                    persisted_summary=persisted_summary,
+                )
+            except Exception as direct_exc:
+                self._log_llm_failure("direct_chat_after_max_iterations", direct_exc, llm_client)
             fallback = self._answer_from_partial_tool_evidence(
                 user_query=user_query,
                 params=params,
@@ -1435,6 +1454,7 @@ class TutorAgent(PlaceholderAgent):
                 "properties": {
                     "slug": {"type": "string"},
                     "chunkLimit": {"type": "integer", "minimum": 1, "maximum": 5},
+                    "query": {"type": "string"},
                 },
                 "required": ["slug"],
                 "additionalProperties": False,
@@ -1461,7 +1481,7 @@ class TutorAgent(PlaceholderAgent):
         intent = self._resolve_graph_intent_from_params(params)
         if intent == "PREREQUISITE_PATH":
             return (
-                "Wiki graph tool protocol: first read the seed page, then use wiki_neighbors "
+                "Wiki graph tool protocol: first read the seed page with the current query when useful, then use wiki_neighbors "
                 "for prerequisite/follow-up evidence. Use at most 3 wiki tool steps. Treat wiki "
                 "results as evidence enhancement, not as a replacement for retrieval evidence.\n\n"
             )
@@ -1473,9 +1493,15 @@ class TutorAgent(PlaceholderAgent):
             )
         if intent == "COMPARISON":
             return (
-                "Wiki graph tool protocol: read the comparison object pages and key chunks, then "
+                "Wiki graph tool protocol: read the comparison object pages and query-relevant key chunks, then "
                 "summarize common points, differences, and boundaries. Use at most 3 wiki tool "
                 "steps and keep retrieval evidence as the primary grounding.\n\n"
+            )
+        if intent == "CROSS_LAYER_RELATION":
+            return (
+                "Wiki graph tool protocol: read the explicitly named concept pages with the current query, then inspect "
+                "neighbors only when a relation needs supporting evidence. Use at most 3 wiki tool "
+                "steps and distinguish observed edges from inferred cross-layer learning paths.\n\n"
             )
         return ""
 
@@ -1615,6 +1641,8 @@ class TutorAgent(PlaceholderAgent):
                 blend_weight=0.7,
             )
 
+        diagnostics = params.get("retrievalEvidenceDiagnostics")
+        diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
         selected = select_relevant_evidence(query=query, documents=documents, limit=8)
         documents = selected.adopted
         if self._resolve_graph_intent_from_params(params) and not documents:
@@ -1644,6 +1672,8 @@ class TutorAgent(PlaceholderAgent):
             "evidenceIds": self._read_string_list_param(params, "evidenceIds"),
             "externalUrls": self._read_string_list_param(params, "externalUrls"),
             "discardedLocalEvidenceCount": selected.discarded_count,
+            "retrievalEvidenceDiagnostics": diagnostics,
+            "evidenceState": diagnostics.get("evidenceState") or selected.evidence_state,
             "sourcesSummary": retrieval_result.get("sourcesSummary", ""),
             "retrievalResult": retrieval_result,
             "webRetrievalResult": web_retrieval_result,
@@ -1675,11 +1705,24 @@ class TutorAgent(PlaceholderAgent):
             if isinstance(evidence.get("externalResources"), list)
             else []
         )
-        answer_lines = [
-            f"回答组织：我会围绕「{self._truncate_dialogue_text(user_query, 120)}」组织最终回答。",
-        ]
+        response_constraints = params.get("responseConstraints")
+        response_constraints = response_constraints if isinstance(response_constraints, dict) else {}
+        diagnostics = evidence.get("retrievalEvidenceDiagnostics")
+        diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+        evidence_state = str(evidence.get("evidenceState") or diagnostics.get("evidenceState") or "").strip()
+        intent_line = (
+            f"我先识别问题意图：这是围绕「{self._truncate_dialogue_text(user_query, 120)}」的学习问题，"
+            "需要先抓住核心概念，再区分边界、适用场景和常见误区。"
+        )
+        answer_lines = [intent_line]
         if documents:
-            answer_lines.append("可参考的本地证据：")
+            if evidence_state == "PARTIAL":
+                answer_lines.append("接着检查证据：本地知识库找到部分相关资料，可作为辅助参考。")
+            elif evidence_state == "LOW_CONFIDENCE":
+                answer_lines.append("接着检查证据：本地知识库只有低置信候选，我会把它们当作背景线索而不是强结论。")
+            else:
+                high_count = int(diagnostics.get("adoptedHighCount") or len(documents))
+                answer_lines.append(f"接着检查证据：本地知识库找到 {high_count} 条可作为高置信参考的资料。")
             for document in documents[:3]:
                 title = evidence_title(document)
                 channel = evidence_channel(document)
@@ -1687,7 +1730,7 @@ class TutorAgent(PlaceholderAgent):
                     suffix = f"（{channel}）" if channel else ""
                     answer_lines.append(f"- {self._truncate_dialogue_text(title, 80)}{suffix}")
         else:
-            answer_lines.append("可参考的本地证据：未命中足够相关资料，会以通用知识回答。")
+            answer_lines.append("接着检查证据：本地证据不足，将谨慎使用通用知识，并避免把不确定资料写成结论。")
 
         if evidence.get("webSearchEnabled") is True:
             web_result = evidence.get("webRetrievalResult") if isinstance(evidence.get("webRetrievalResult"), dict) else {}
@@ -1721,11 +1764,18 @@ class TutorAgent(PlaceholderAgent):
                         )
             else:
                 answer_lines.append("联网证据：未采用外部来源。")
-        self_check = (
-            "质量自检：最终回答需要直接回应当前问题，说明关键概念、边界和易混淆点；"
-            "只引用已采用来源，不会把历史画像、低相关检索候选或未验证链接写成结论。\n"
+        organization_line = (
+            "然后组织答案：先给结论，再按“定义/关系、关键差异、工程价值、常见误区”展开。"
         )
-        return ["\n".join(answer_lines) + "\n", self_check]
+        if response_constraints.get("minChars"):
+            organization_line += f" 同时满足不少于 {response_constraints['minChars']} 字的展开要求。"
+        if response_constraints.get("maxChars"):
+            organization_line += f" 同时控制在 {response_constraints['maxChars']} 字以内。"
+        self_check = (
+            "最后自检：直接回应问题，避免把无关概念混入；只引用已采用来源，"
+            "对低置信资料保持谨慎表述。\n"
+        )
+        return ["\n".join(answer_lines) + "\n", organization_line + "\n", self_check]
 
     def _tool_wiki_search(
         self,
@@ -1734,6 +1784,28 @@ class TutorAgent(PlaceholderAgent):
         params: dict[str, Any],
     ) -> dict[str, Any]:
         started = self._perf_counter()
+        if not self._wiki_tools_enabled(params):
+            result = {"enabled": False, "reason": "wiki tools are limited to graph-aware intents"}
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_search",
+                tool_input=tool_input,
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
+        query = clean_wiki_query(tool_input.get("query") or params.get("rewrittenQuery") or params.get("query") or "")
+        limit = self._bounded_int(tool_input.get("limit"), default=5, minimum=1, maximum=8)
+        if not query:
+            result = {"enabled": True, "query": query, "results": [], "diagnostics": {"reason": "empty query"}}
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_search",
+                tool_input={"query": query, "limit": limit},
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
         allowed, reason = self._claim_wiki_tool_step(params)
         if not allowed:
             result = {"enabled": False, "reason": reason}
@@ -1745,8 +1817,6 @@ class TutorAgent(PlaceholderAgent):
                 elapsed_ms=self._elapsed_ms(started),
             )
             return result
-        query = str(tool_input.get("query") or params.get("rewrittenQuery") or params.get("query") or "").strip()
-        limit = self._bounded_int(tool_input.get("limit"), default=5, minimum=1, maximum=8)
         try:
             result = {"enabled": True, **WikiToolset(self._wiki_db_config()).wiki_search(query, limit=limit)}
         except Exception as exc:
@@ -1768,6 +1838,29 @@ class TutorAgent(PlaceholderAgent):
         params: dict[str, Any],
     ) -> dict[str, Any]:
         started = self._perf_counter()
+        if not self._wiki_tools_enabled(params):
+            result = {"enabled": False, "reason": "wiki tools are limited to graph-aware intents"}
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_read",
+                tool_input=tool_input,
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
+        slug = normalize_wiki_slug(tool_input.get("slug"))
+        chunk_limit = self._bounded_int(tool_input.get("chunkLimit"), default=3, minimum=1, maximum=5)
+        query = clean_wiki_query(tool_input.get("query") or params.get("rewrittenQuery") or params.get("query") or "")
+        if not slug:
+            result = {"enabled": True, "slug": slug, "found": False, "diagnostics": {"reason": "empty or invalid slug"}}
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_read",
+                tool_input={"slug": slug, "chunkLimit": chunk_limit, "query": query},
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
         allowed, reason = self._claim_wiki_tool_step(params)
         if not allowed:
             result = {"enabled": False, "reason": reason}
@@ -1779,17 +1872,18 @@ class TutorAgent(PlaceholderAgent):
                 elapsed_ms=self._elapsed_ms(started),
             )
             return result
-        slug = str(tool_input.get("slug") or "").strip()
-        chunk_limit = self._bounded_int(tool_input.get("chunkLimit"), default=3, minimum=1, maximum=5)
         try:
-            result = {"enabled": True, **WikiToolset(self._wiki_db_config()).wiki_read(slug, chunk_limit=chunk_limit)}
+            result = {
+                "enabled": True,
+                **WikiToolset(self._wiki_db_config()).wiki_read(slug, chunk_limit=chunk_limit, query=query),
+            }
         except Exception as exc:
             LOGGER.warning("wiki_read failed: %s", exc)
             result = {"enabled": True, "error": f"{type(exc).__name__}: {exc}", "found": False}
         self._record_wiki_tool_call(
             params=params,
             tool_name="wiki_read",
-            tool_input={"slug": slug, "chunkLimit": chunk_limit},
+            tool_input={"slug": slug, "chunkLimit": chunk_limit, "query": query},
             result=result,
             elapsed_ms=self._elapsed_ms(started),
         )
@@ -1802,6 +1896,53 @@ class TutorAgent(PlaceholderAgent):
         params: dict[str, Any],
     ) -> dict[str, Any]:
         started = self._perf_counter()
+        if not self._wiki_tools_enabled(params):
+            result = {"enabled": False, "reason": "wiki tools are limited to graph-aware intents"}
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_neighbors",
+                tool_input=tool_input,
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
+        slug = normalize_wiki_slug(tool_input.get("slug"))
+        relation_type = normalize_wiki_relation_type(tool_input.get("relationType")) or None
+        limit = self._bounded_int(tool_input.get("limit"), default=8, minimum=1, maximum=12)
+        if not slug:
+            result = {
+                "enabled": True,
+                "slug": slug,
+                "found": False,
+                "outgoing": [],
+                "incoming": [],
+                "diagnostics": {"reason": "empty or invalid slug"},
+            }
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_neighbors",
+                tool_input={"slug": slug, "relationType": relation_type, "limit": limit},
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
+        if relation_type and relation_type not in ALLOWED_WIKI_RELATION_TYPES:
+            result = {
+                "enabled": True,
+                "slug": slug,
+                "found": True,
+                "outgoing": [],
+                "incoming": [],
+                "diagnostics": {"reason": "invalid relationType"},
+            }
+            self._record_wiki_tool_call(
+                params=params,
+                tool_name="wiki_neighbors",
+                tool_input={"slug": slug, "relationType": relation_type, "limit": limit},
+                result=result,
+                elapsed_ms=self._elapsed_ms(started),
+            )
+            return result
         allowed, reason = self._claim_wiki_tool_step(params)
         if not allowed:
             result = {"enabled": False, "reason": reason}
@@ -1813,9 +1954,6 @@ class TutorAgent(PlaceholderAgent):
                 elapsed_ms=self._elapsed_ms(started),
             )
             return result
-        slug = str(tool_input.get("slug") or "").strip()
-        relation_type = str(tool_input.get("relationType") or "").strip() or None
-        limit = self._bounded_int(tool_input.get("limit"), default=8, minimum=1, maximum=12)
         try:
             result = {
                 "enabled": True,
@@ -1958,11 +2096,7 @@ class TutorAgent(PlaceholderAgent):
         return get_settings().postgres_connect_kwargs()
 
     def _bounded_int(self, value: Any, *, default: int, minimum: int, maximum: int) -> int:
-        try:
-            number = int(value)
-        except (TypeError, ValueError):
-            number = default
-        return max(minimum, min(maximum, number))
+        return bounded_wiki_int(value, default=default, minimum=minimum, maximum=maximum)
 
     def _collect_external_resources(
         self,

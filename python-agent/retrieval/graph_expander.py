@@ -4,8 +4,21 @@ Graph expansion channel: traverse rag.wiki_link from seed pages.
 import json
 import re
 from collections import defaultdict
+from typing import Any
+from retrieval.graph_relation_policy import weighted_relation_score
+from retrieval.source_quality import is_low_value_source
 
 PREREQUISITE_PATH_INTENT = "PREREQUISITE_PATH"
+QUERY_AWARE_INTENTS = {PREREQUISITE_PATH_INTENT}
+LOW_VALUE_FILTER_INTENTS = {
+    "COMMON_MISTAKE",
+    "COMMUNITY_SUMMARY",
+    "COMPARISON",
+    "CROSS_LAYER_RELATION",
+    "MECHANISM_APPLICATION",
+    "MULTI_HOP_RELATION",
+    PREREQUISITE_PATH_INTENT,
+}
 GRAPH_SOURCE_1HOP = "graph_1hop"
 GRAPH_SOURCE_2HOP = "graph_2hop"
 TWO_HOP_DECAY = 0.45
@@ -73,17 +86,19 @@ class GraphExpander:
         seed_ids = [str(row[0]) for row in seed_rows]
         seed_slug_set = {row[1] for row in seed_rows}
         prerequisite_intent = self._is_prerequisite_path(graph_intent)
+        query_aware_intent = self._is_query_aware_intent(graph_intent)
+        skip_low_value = self._filters_low_value_for_intent(graph_intent)
 
         qualified = self._one_hop_qualified(cur, seed_ids, min_shared_tags)
 
         if not qualified:
             return []
 
-        one_hop_window = self._one_hop_window(top_n) if prerequisite_intent else top_n * 3
+        one_hop_window = self._one_hop_window(top_n) if query_aware_intent else top_n * 3
         one_hop_ids = [neighbor_id for neighbor_id, *_ in qualified[:one_hop_window]]
         one_hop_scores = self._score_parts_by_id(qualified)
         seed_communities = self._load_seed_communities(cur, seed_ids)
-        query_terms = self._extract_query_terms(query) if prerequisite_intent else []
+        query_terms = self._extract_query_terms(query) if query_aware_intent else []
         candidates = self._score_page_rows(
             self._load_page_rows(cur, one_hop_ids),
             one_hop_scores,
@@ -93,10 +108,10 @@ class GraphExpander:
             hop=1,
             source=GRAPH_SOURCE_1HOP,
             prerequisite_intent=prerequisite_intent,
-            skip_low_value=prerequisite_intent,
+            skip_low_value=skip_low_value,
         )
 
-        if prerequisite_intent:
+        if query_aware_intent:
             two_hop_scores = self._two_hop_qualified(
                 cur,
                 one_hop_ids,
@@ -112,13 +127,13 @@ class GraphExpander:
                     seed_slug_set=seed_slug_set,
                     hop=2,
                     source=GRAPH_SOURCE_2HOP,
-                    prerequisite_intent=True,
-                    skip_low_value=True,
+                    prerequisite_intent=prerequisite_intent,
+                    skip_low_value=skip_low_value,
                 )
             )
 
         ranked = self._rank_candidates(self._dedupe_candidates(candidates))
-        return [self._candidate_tuple(candidate, include_source=prerequisite_intent) for candidate in ranked[:top_n]]
+        return [self._candidate_tuple(candidate, include_source=query_aware_intent) for candidate in ranked[:top_n]]
 
     def explain_candidates(
         self,
@@ -146,13 +161,15 @@ class GraphExpander:
         seed_ids = [str(row[0]) for row in seed_rows]
         seed_slug_set = {row[1] for row in seed_rows}
         prerequisite_intent = self._is_prerequisite_path(graph_intent)
+        query_aware_intent = self._is_query_aware_intent(graph_intent)
+        skip_low_value = self._filters_low_value_for_intent(graph_intent)
         qualified = self._one_hop_qualified(cur, seed_ids, min_shared_tags)
         if not qualified:
             return {"seedSlugs": list(seed_slug_set), "queryTerms": [], "candidates": []}
 
         rank_by_id = {neighbor_id: rank for rank, (neighbor_id, *_) in enumerate(qualified, start=1)}
         query_terms = self._extract_query_terms(query)
-        scoring_terms = query_terms if prerequisite_intent else []
+        scoring_terms = query_terms if query_aware_intent else []
         seed_communities = self._load_seed_communities(cur, seed_ids)
         one_hop_ids = [neighbor_id for neighbor_id, *_ in qualified[:limit]]
         candidates = self._score_page_rows(
@@ -164,11 +181,11 @@ class GraphExpander:
             hop=1,
             source=GRAPH_SOURCE_1HOP,
             prerequisite_intent=prerequisite_intent,
-            skip_low_value=prerequisite_intent,
+            skip_low_value=skip_low_value,
         )
 
         two_hop_rank_by_id = {}
-        if prerequisite_intent:
+        if query_aware_intent:
             two_hop_source_window = min(max(default_window, MIN_ONE_HOP_WINDOW), MAX_ONE_HOP_WINDOW)
             two_hop_source_ids = [neighbor_id for neighbor_id, *_ in qualified[:two_hop_source_window]]
             two_hop_scores = self._two_hop_qualified(
@@ -187,8 +204,8 @@ class GraphExpander:
                     seed_slug_set=seed_slug_set,
                     hop=2,
                     source=GRAPH_SOURCE_2HOP,
-                    prerequisite_intent=True,
-                    skip_low_value=True,
+                    prerequisite_intent=prerequisite_intent,
+                    skip_low_value=skip_low_value,
                 )
             )
 
@@ -243,7 +260,8 @@ class GraphExpander:
                     ELSE l.from_page_id
                 END AS neighbor_id,
                 l.relation_type,
-                COUNT(*) AS strength
+                COUNT(*) AS edge_count,
+                COALESCE(SUM(l.weight), COUNT(*)::numeric) AS weighted_strength
             FROM rag.wiki_link l
             WHERE l.from_page_id::text = ANY(%s)
                OR l.to_page_id::text = ANY(%s)
@@ -276,10 +294,12 @@ class GraphExpander:
                     END AS source_id,
                     CASE
                         WHEN l.from_page_id::text = ANY(%s) THEN l.to_page_id::text
-                        ELSE l.from_page_id::text
-                    END AS neighbor_id,
-                    SUM(CASE WHEN l.relation_type = 'WIKILINK' THEN 1 ELSE 0 END) AS wikilink_count,
-                    SUM(CASE WHEN l.relation_type = 'SHARED_TAG' THEN 1 ELSE 0 END) AS shared_tag_count
+                    ELSE l.from_page_id::text
+                END AS neighbor_id,
+                SUM(CASE WHEN l.relation_type = 'WIKILINK' THEN 1 ELSE 0 END) AS wikilink_count,
+                SUM(CASE WHEN l.relation_type = 'SHARED_TAG' THEN 1 ELSE 0 END) AS shared_tag_count,
+                COALESCE(SUM(CASE WHEN l.relation_type = 'WIKILINK' THEN l.weight ELSE 0 END), 0) AS wikilink_strength,
+                COALESCE(SUM(CASE WHEN l.relation_type = 'SHARED_TAG' THEN l.weight ELSE 0 END), 0) AS shared_tag_strength
                 FROM rag.wiki_link l
                 WHERE l.from_page_id::text = ANY(%s)
                    OR l.to_page_id::text = ANY(%s)
@@ -289,14 +309,14 @@ class GraphExpander:
                 SELECT *,
                        ROW_NUMBER() OVER (
                            PARTITION BY source_id
-                           ORDER BY (wikilink_count * 2 + shared_tag_count) DESC, neighbor_id DESC
+                           ORDER BY (wikilink_strength * 2 + shared_tag_strength) DESC, neighbor_id DESC
                        ) AS source_rank
                 FROM edge_counts
                 WHERE neighbor_id != source_id
                   AND neighbor_id != ALL(%s)
                   AND (wikilink_count > 0 OR shared_tag_count >= %s)
             )
-            SELECT source_id, neighbor_id, wikilink_count, shared_tag_count
+            SELECT source_id, neighbor_id, wikilink_count, shared_tag_count, wikilink_strength, shared_tag_strength
             FROM ranked
             WHERE source_rank <= %s
             ORDER BY source_id, source_rank
@@ -313,21 +333,29 @@ class GraphExpander:
         )
 
         per_source_scores = defaultdict(lambda: defaultdict(lambda: {"WIKILINK": 0, "SHARED_TAG": 0}))
-        for source_id, neighbor_id, wikilink_count, shared_tag_count in cur.fetchall():
+        for row in cur.fetchall():
+            if len(row) >= 6:
+                source_id, neighbor_id, wikilink_count, shared_tag_count, wikilink_strength, shared_tag_strength = row[:6]
+            else:
+                source_id, neighbor_id, wikilink_count, shared_tag_count = row[:4]
+                wikilink_strength = wikilink_count
+                shared_tag_strength = shared_tag_count
             source_key = str(source_id)
             neighbor_key = str(neighbor_id)
             if neighbor_key in excluded_ids or neighbor_key == source_key:
                 continue
-            per_source_scores[source_key][neighbor_key]["WIKILINK"] = int(wikilink_count)
-            per_source_scores[source_key][neighbor_key]["SHARED_TAG"] = int(shared_tag_count)
+            per_source_scores[source_key][neighbor_key]["WIKILINK"] = float(wikilink_strength or 0)
+            per_source_scores[source_key][neighbor_key]["SHARED_TAG"] = float(shared_tag_strength or 0)
+            per_source_scores[source_key][neighbor_key]["WIKILINK_COUNT"] = int(wikilink_count)
+            per_source_scores[source_key][neighbor_key]["SHARED_TAG_COUNT"] = int(shared_tag_count)
 
         selected: dict[str, dict] = {}
         for source_id in one_hop_ids:
             ranked = []
             for neighbor_id, scores in per_source_scores.get(str(source_id), {}).items():
-                if scores["WIKILINK"] > 0 or scores["SHARED_TAG"] >= min_shared_tags:
-                    base = scores["WIKILINK"] * 2 + scores["SHARED_TAG"]
-                    ranked.append((neighbor_id, base, scores["WIKILINK"], scores["SHARED_TAG"]))
+                if scores["WIKILINK_COUNT"] > 0 or scores["SHARED_TAG_COUNT"] >= min_shared_tags:
+                    base = self._base_score(scores)
+                    ranked.append((neighbor_id, base, scores["WIKILINK_COUNT"], scores["SHARED_TAG_COUNT"]))
             ranked.sort(key=lambda item: item[1], reverse=True)
             for neighbor_id, base, wikilink, shared_tag in ranked[:TWO_HOP_PER_NODE_LIMIT]:
                 decayed_base = round(float(base) * TWO_HOP_DECAY, 4)
@@ -357,20 +385,55 @@ class GraphExpander:
         excluded_ids: set[str],
         decay: float,
     ) -> list[tuple]:
-        neighbor_scores = defaultdict(lambda: {"WIKILINK": 0, "SHARED_TAG": 0})
-        for neighbor_id, relation_type, strength in edge_rows:
+        neighbor_scores = defaultdict(
+            lambda: {"WIKILINK": 0.0, "SHARED_TAG": 0.0, "WIKILINK_COUNT": 0, "SHARED_TAG_COUNT": 0}
+        )
+        for row in edge_rows:
+            neighbor_id, relation_type, edge_count, weighted_strength = self._edge_strength_row(row)
             neighbor_key = str(neighbor_id)
             if neighbor_key in excluded_ids:
                 continue
-            neighbor_scores[neighbor_key][relation_type] = int(strength)
+            relation = str(relation_type or "").upper()
+            neighbor_scores[neighbor_key][relation] = float(weighted_strength)
+            neighbor_scores[neighbor_key][f"{relation}_COUNT"] = int(edge_count)
 
         qualified = []
         for neighbor_id, scores in neighbor_scores.items():
-            if scores["WIKILINK"] > 0 or scores["SHARED_TAG"] >= min_shared_tags:
-                base_score = (scores["WIKILINK"] * 2 + scores["SHARED_TAG"]) * decay
-                qualified.append((neighbor_id, round(float(base_score), 4), scores["WIKILINK"], scores["SHARED_TAG"]))
+            if scores["WIKILINK_COUNT"] > 0 or scores["SHARED_TAG_COUNT"] >= min_shared_tags:
+                base_score = self._base_score(scores) * decay
+                qualified.append(
+                    (
+                        neighbor_id,
+                        round(float(base_score), 4),
+                        scores["WIKILINK_COUNT"],
+                        scores["SHARED_TAG_COUNT"],
+                    )
+                )
         qualified.sort(key=lambda item: item[1], reverse=True)
         return qualified
+
+    def _edge_strength_row(self, row: tuple) -> tuple[Any, Any, int, float]:
+        if len(row) >= 4:
+            neighbor_id, relation_type, edge_count, weighted_strength = row[:4]
+        else:
+            neighbor_id, relation_type, edge_count = row[:3]
+            weighted_strength = edge_count
+        try:
+            count = int(edge_count or 0)
+        except (TypeError, ValueError):
+            count = 0
+        try:
+            strength = float(weighted_strength or 0)
+        except (TypeError, ValueError):
+            strength = float(count)
+        return neighbor_id, relation_type, count, strength
+
+    def _base_score(self, scores: dict[str, int]) -> float:
+        return sum(
+            weighted_relation_score(relation, strength)
+            for relation, strength in scores.items()
+            if not str(relation).endswith("_COUNT")
+        )
 
     def _one_hop_window(self, top_n: int) -> int:
         return min(max(top_n * 3, MIN_ONE_HOP_WINDOW), MAX_ONE_HOP_WINDOW)
@@ -484,6 +547,12 @@ class GraphExpander:
 
     def _is_prerequisite_path(self, graph_intent: str | None) -> bool:
         return self._normalize_graph_intent(graph_intent) == PREREQUISITE_PATH_INTENT
+
+    def _is_query_aware_intent(self, graph_intent: str | None) -> bool:
+        return self._normalize_graph_intent(graph_intent) in QUERY_AWARE_INTENTS
+
+    def _filters_low_value_for_intent(self, graph_intent: str | None) -> bool:
+        return self._normalize_graph_intent(graph_intent) in LOW_VALUE_FILTER_INTENTS
 
     def _extract_query_terms(self, query: str | None) -> list[str]:
         if not query:
@@ -679,17 +748,4 @@ class GraphExpander:
         return bonus
 
     def _is_low_value_resource(self, slug: str, title: str) -> bool:
-        lowered_slug = self._normalize_text(slug)
-        lowered_title = self._normalize_text(title)
-        title = str(title or "")
-        if not lowered_slug or lowered_slug == "none":
-            return True
-        return (
-            lowered_slug.startswith("http")
-            or lowered_slug.startswith("wiki://")
-            or "视频资源" in lowered_slug
-            or "视频资源" in title
-            or "视频资源" in lowered_title
-            or "视频" in lowered_title
-            or "video" in lowered_slug
-        )
+        return is_low_value_source(slug, title)

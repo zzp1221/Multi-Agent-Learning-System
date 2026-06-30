@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from retrieval import vector_searcher
+from retrieval.source_quality import low_value_source_filter_sql
 from retrieval.vector_searcher import VectorSearcher
 from src.ai_modules.config import get_settings
 
@@ -64,6 +65,34 @@ def test_vector_searcher_keeps_non_200_embedding_error(monkeypatch: pytest.Monke
         searcher._embed("死锁")
 
 
+def test_low_value_source_filter_sql_rejects_untrusted_alias() -> None:
+    with pytest.raises(ValueError):
+        low_value_source_filter_sql("rd; DROP TABLE rag.resource_document")
+
+
+def test_vector_search_filters_low_value_knowledge_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    executed = {}
+
+    class FakeCursor:
+        def execute(self, sql, params):
+            executed["sql"] = sql
+            executed["params"] = params
+
+        def fetchall(self):
+            return []
+
+    monkeypatch.setattr(VectorSearcher, "_embed", lambda self, query: [0.1] * self.dimension)
+    searcher = VectorSearcher(dimension=1024, model="fake-model")
+
+    rows = searcher.search(FakeCursor(), "graph theory", top_k=3, domain="COMPUTER_SCIENCE")
+
+    assert rows == []
+    assert "lower(btrim(kd.source_ref)) NOT LIKE 'wiki://%%'" in executed["sql"]
+    assert "lower(COALESCE(kd.title, '')) NOT LIKE '%%视频%%'" in executed["sql"]
+    assert "lower((btrim(kd.source_ref) || ' ' || COALESCE(kd.title, ''))) NOT LIKE '%%视频资源%%'" in executed["sql"]
+    assert executed["params"][-1] == 3
+
+
 def test_search_all_excludes_low_confidence_dropped_resources(monkeypatch: pytest.MonkeyPatch) -> None:
     executed = {}
 
@@ -83,4 +112,11 @@ def test_search_all_excludes_low_confidence_dropped_resources(monkeypatch: pytes
     assert rows == []
     assert "wikiBindingStatus" in executed["sql"]
     assert "LOW_CONFIDENCE_DROPPED" in executed["sql"]
+    assert "lower(btrim(kd.source_ref)) NOT LIKE 'wiki://%%'" in executed["sql"]
+    assert "lower(COALESCE(kd.title, '')) NOT LIKE '%%视频%%'" in executed["sql"]
+    assert "lower(btrim(rd.source_ref)) NOT LIKE 'wiki://%%'" in executed["sql"]
+    assert "lower(btrim(rd.source_ref)) NOT LIKE 'http://%%'" in executed["sql"]
+    assert "lower(btrim(rd.source_ref)) <> 'none'" in executed["sql"]
+    assert "lower(COALESCE(rd.title, '')) NOT LIKE '%%视频%%'" in executed["sql"]
+    assert "lower((btrim(rd.source_ref) || ' ' || COALESCE(rd.title, ''))) NOT LIKE '%%视频资源%%'" in executed["sql"]
     assert executed["params"][-1] == 5

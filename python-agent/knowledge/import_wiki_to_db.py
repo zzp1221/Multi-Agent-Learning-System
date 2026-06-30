@@ -15,6 +15,10 @@ from collections import defaultdict
 import psycopg2
 from settings_helper import configure_dashscope_api_key
 from graph_low_evidence_repairs import build_repair_wikilinks, load_repair_link_records
+try:
+    from knowledge.wiki_file_filter import iter_content_wiki_markdown
+except ModuleNotFoundError:
+    from wiki_file_filter import iter_content_wiki_markdown
 
 RUNTIME_CONFIG = configure_dashscope_api_key()
 from psycopg2.extras import execute_values
@@ -222,7 +226,7 @@ def main():
     print("Wiki → PostgreSQL Import" + (" (INCREMENTAL)" if incremental else ""))
     print("=" * 60)
 
-    md_files = sorted(WIKI_ROOT.rglob("*.md"))
+    md_files = iter_content_wiki_markdown(WIKI_ROOT)
     print(f"\nFound {len(md_files)} .md files")
 
     pages = []

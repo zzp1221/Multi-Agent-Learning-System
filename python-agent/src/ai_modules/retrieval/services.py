@@ -14,6 +14,12 @@ from src.ai_modules.models import (
     RetrievalDocument,
     RetrievalResponse,
 )
+from src.ai_modules.retrieval.evidence_relevance import query_term_profile
+from src.ai_modules.retrieval.query_expansion import (
+    QueryExpansionResult,
+    build_expanded_queries,
+    compact_expansion_term,
+)
 from src.ai_modules.runtime.ttl_cache import InMemoryTTLCache, stable_cache_key
 
 LOGGER = logging.getLogger(__name__)
@@ -434,6 +440,32 @@ class HybridRetrievalService:
             raw_result=raw_result,
         )
 
+    def build_query_expansion(self, query: str) -> QueryExpansionResult:
+        profile = query_term_profile(query)
+        topic_terms = sorted(profile.topic_terms, key=lambda item: (-len(item), item))[:8]
+        instruction_terms = sorted(profile.instruction_terms, key=lambda item: (-len(item), item))[:8]
+        if not topic_terms:
+            return build_expanded_queries(
+                original_query=query,
+                topic_terms=[],
+                instruction_terms=instruction_terms,
+                term_expansions={},
+                expansion_sources=[],
+            )
+
+        try:
+            term_expansions, expansion_sources = self._lookup_query_expansions(topic_terms)
+        except Exception:
+            LOGGER.warning("Query expansion lookup failed for query %r", query, exc_info=True)
+            term_expansions, expansion_sources = {}, []
+        return build_expanded_queries(
+            original_query=query,
+            topic_terms=topic_terms,
+            instruction_terms=instruction_terms,
+            term_expansions=term_expansions,
+            expansion_sources=expansion_sources,
+        )
+
     def retrieve_raw(
         self,
         rewritten_query: str,
@@ -516,6 +548,128 @@ class HybridRetrievalService:
                 "channels": {},
                 "top": [],
             }
+
+    def _lookup_query_expansions(self, topic_terms: list[str]) -> tuple[dict[str, list[str]], list[str]]:
+        if self.retriever is not None:
+            custom_lookup = getattr(self.retriever, "query_expansions", None)
+            if callable(custom_lookup):
+                payload = custom_lookup(topic_terms)
+                if isinstance(payload, tuple) and len(payload) == 2:
+                    return payload
+                if isinstance(payload, dict):
+                    sources = payload.get("expansionSources")
+                    if isinstance(sources, list):
+                        payload = {key: value for key, value in payload.items() if key != "expansionSources"}
+                        return payload, [str(item) for item in sources]
+                    return payload, ["custom"]
+            return {}, []
+
+        adapter = self._get_legacy_adapter()
+        import psycopg2
+
+        term_keys = [compact_expansion_term(term) for term in topic_terms if compact_expansion_term(term)]
+        if not term_keys:
+            return {}, []
+        with psycopg2.connect(**adapter._db_config) as conn:
+            with conn.cursor() as cur:
+                return self._query_expansion_rows(cur, topic_terms=topic_terms, term_keys=term_keys)
+
+    def _query_expansion_rows(
+        self,
+        cur: Any,
+        *,
+        topic_terms: list[str],
+        term_keys: list[str],
+    ) -> tuple[dict[str, list[str]], list[str]]:
+        term_by_key = {compact_expansion_term(term): term for term in topic_terms}
+        expansions: dict[str, list[str]] = {term: [] for term in topic_terms}
+        sources: set[str] = set()
+
+        def add(key: str, values: list[Any], source: str) -> None:
+            term = term_by_key.get(compact_expansion_term(key))
+            if not term:
+                return
+            for value in values:
+                text = str(value or "").strip()
+                if not text or compact_expansion_term(text) == compact_expansion_term(term):
+                    continue
+                expansions.setdefault(term, []).append(text)
+                sources.add(source)
+
+        cur.execute(
+            """
+            SELECT canonical_term, normalized_term, aliases
+            FROM rag.term_lexicon
+            WHERE is_active = true
+              AND domain = %s
+              AND normalized_term = ANY(%s)
+            """,
+            (self.domain, term_keys),
+        )
+        for canonical, normalized, aliases in cur.fetchall():
+            add(str(normalized), [canonical, *self._json_list(aliases)], "term_lexicon")
+
+        cur.execute(
+            """
+            SELECT canonical_term, variants
+            FROM rag.synonym_group
+            WHERE is_active = true
+              AND domain = %s
+            """,
+            (self.domain,),
+        )
+        for canonical, variants in cur.fetchall():
+            group_terms = [str(canonical or "").strip(), *self._json_list(variants)]
+            group_keys = {compact_expansion_term(term) for term in group_terms if term}
+            for key in group_keys & set(term_keys):
+                add(key, group_terms, "synonym_group")
+
+        cur.execute(
+            """
+            SELECT title, slug, aliases, tags
+            FROM rag.wiki_page
+            WHERE is_active = true
+              AND domain = %s
+            """,
+            (self.domain,),
+        )
+        for title, slug, aliases, tags in cur.fetchall():
+            group_terms = [str(title or "").strip(), str(slug or "").strip(), *self._json_list(aliases), *self._json_list(tags)]
+            group_keys = {compact_expansion_term(term) for term in group_terms if term}
+            for key in group_keys & set(term_keys):
+                add(key, group_terms, "wiki_page")
+
+        return {
+            term: self._dedupe_expansion_values(values)[:5]
+            for term, values in expansions.items()
+            if values
+        }, sorted(sources)
+
+    def _json_list(self, value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            try:
+                import json
+
+                parsed = json.loads(value)
+            except Exception:
+                return [value.strip()] if value.strip() else []
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        return []
+
+    def _dedupe_expansion_values(self, values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for value in values:
+            text = " ".join(str(value or "").split())
+            key = compact_expansion_term(text)
+            if not text or not key or key in seen:
+                continue
+            seen.add(key)
+            result.append(text)
+        return result
 
     def build_response(
         self,

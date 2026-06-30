@@ -23,10 +23,13 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from knowledge.benchmark_rag_100 import (  # noqa: E402
     DEFAULT_EMBEDDING_CACHE_TTL_DAYS,
+    DEFAULT_JUDGE_MAX_ATTEMPTS,
+    DEFAULT_JUDGE_RETRY_BASE_SECONDS,
     JUDGE_CACHE_VERSION,
     RUNTIME_CONFIG,
     TOP_K,
     QueryEmbeddingCache,
+    _judge_with_retries,
     _json_hash,
     _load_judge_cache,
     _read_json,
@@ -160,19 +163,33 @@ def summarize_graph_records(records: list[dict[str, Any]]) -> dict[str, Any]:
 def summarize_graph_quality_gates(
     summary: dict[str, Any],
     graph_summary: dict[str, Any],
+    *,
+    thresholds: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    pass_hit_at3 = float(summary.get("hitAt3Pct") or 0.0) >= GRAPH_HIT_AT3_MIN_PCT
+    gate_thresholds = {
+        "hitAt3Pct": GRAPH_HIT_AT3_MIN_PCT,
+        "avgLatencyMs": GRAPH_AVG_LATENCY_MAX_MS,
+        "p95LatencyMs": GRAPH_P95_LATENCY_MAX_MS,
+        "primaryTop5Pct": GRAPH_PRIMARY_TOP5_MIN_PCT,
+        "completeEvidenceTop5Pct": GRAPH_COMPLETE_EVIDENCE_TOP5_MIN_PCT,
+        "evidenceNodeRecallTop5Pct": GRAPH_EVIDENCE_RECALL_TOP5_MIN_PCT,
+        "channelErrorCount": 0,
+    }
+    if thresholds:
+        gate_thresholds.update({key: float(value) for key, value in thresholds.items() if key in gate_thresholds})
+
+    pass_hit_at3 = float(summary.get("hitAt3Pct") or 0.0) >= gate_thresholds["hitAt3Pct"]
     pass_latency = (
-        float(summary.get("avgLatencyMs") or 0.0) <= GRAPH_AVG_LATENCY_MAX_MS
-        and float(summary.get("p95LatencyMs") or 0.0) <= GRAPH_P95_LATENCY_MAX_MS
+        float(summary.get("avgLatencyMs") or 0.0) <= gate_thresholds["avgLatencyMs"]
+        and float(summary.get("p95LatencyMs") or 0.0) <= gate_thresholds["p95LatencyMs"]
     )
-    pass_channel_errors = int(summary.get("channelErrorCount") or 0) == 0
-    pass_primary_top5 = float(graph_summary.get("primaryTop5Pct") or 0.0) >= GRAPH_PRIMARY_TOP5_MIN_PCT
+    pass_channel_errors = int(summary.get("channelErrorCount") or 0) <= int(gate_thresholds["channelErrorCount"])
+    pass_primary_top5 = float(graph_summary.get("primaryTop5Pct") or 0.0) >= gate_thresholds["primaryTop5Pct"]
     pass_evidence_recall = (
-        float(graph_summary.get("evidenceNodeRecallTop5Pct") or 0.0) >= GRAPH_EVIDENCE_RECALL_TOP5_MIN_PCT
+        float(graph_summary.get("evidenceNodeRecallTop5Pct") or 0.0) >= gate_thresholds["evidenceNodeRecallTop5Pct"]
     )
     pass_complete_evidence = (
-        float(graph_summary.get("completeEvidenceTop5Pct") or 0.0) >= GRAPH_COMPLETE_EVIDENCE_TOP5_MIN_PCT
+        float(graph_summary.get("completeEvidenceTop5Pct") or 0.0) >= gate_thresholds["completeEvidenceTop5Pct"]
     )
     return {
         "passHitAt3": pass_hit_at3,
@@ -191,15 +208,7 @@ def summarize_graph_quality_gates(
                 pass_complete_evidence,
             ]
         ),
-        "thresholds": {
-            "hitAt3Pct": GRAPH_HIT_AT3_MIN_PCT,
-            "avgLatencyMs": GRAPH_AVG_LATENCY_MAX_MS,
-            "p95LatencyMs": GRAPH_P95_LATENCY_MAX_MS,
-            "primaryTop5Pct": GRAPH_PRIMARY_TOP5_MIN_PCT,
-            "completeEvidenceTop5Pct": GRAPH_COMPLETE_EVIDENCE_TOP5_MIN_PCT,
-            "evidenceNodeRecallTop5Pct": GRAPH_EVIDENCE_RECALL_TOP5_MIN_PCT,
-            "channelErrorCount": 0,
-        },
+        "thresholds": gate_thresholds,
     }
 
 
@@ -585,6 +594,9 @@ async def benchmark_graph_questions(
     intent_mode: str = INTENT_MODE_ORACLE,
     embedding_cache_path: Path | None = DEFAULT_GRAPH_EMBEDDING_CACHE,
     embedding_cache_ttl_days: int = DEFAULT_EMBEDDING_CACHE_TTL_DAYS,
+    quality_thresholds: dict[str, float] | None = None,
+    judge_max_attempts: int = DEFAULT_JUDGE_MAX_ATTEMPTS,
+    judge_retry_base_seconds: float = DEFAULT_JUDGE_RETRY_BASE_SECONDS,
 ) -> dict[str, Any]:
     question_set = _read_json(questions_path)
     questions = question_set.get("questions", [])
@@ -609,9 +621,15 @@ async def benchmark_graph_questions(
             if intent_mode == INTENT_MODE_CLASSIFIER
             else str(question_item.get("graphIntent") or "")
         )
+        retrieval_strategy = (
+            classification.retrieval_strategy
+            if intent_mode == INTENT_MODE_CLASSIFIER
+            else "LOCAL_HYBRID"
+        )
         result, timings, total_ms, error = run_retrieval(
             question,
             graph_intent=retrieval_graph_intent,
+            retrieval_strategy=retrieval_strategy,
             include_diagnostics=True,
             embedding_cache=embedding_cache,
         )
@@ -621,7 +639,13 @@ async def benchmark_graph_questions(
             judge_result = normalize_judge_payload(judge_cache[cache_key])
             judge_from_cache = True
         else:
-            judge_result = await judge.judge(question_item, candidates)
+            judge_result = await _judge_with_retries(
+                judge,
+                question_item,
+                candidates,
+                max_attempts=judge_max_attempts,
+                retry_base_seconds=judge_retry_base_seconds,
+            )
             judge_cache[cache_key] = judge_result
             _save_judge_cache(judge_cache_path, judge_cache)
             judge_from_cache = False
@@ -663,7 +687,13 @@ async def benchmark_graph_questions(
 
     legacy_summary = summarize_records(records)
     graph_summary = summarize_graph_records(records)
-    legacy_summary.update(summarize_graph_quality_gates(legacy_summary, graph_summary))
+    legacy_summary.update(
+        summarize_graph_quality_gates(
+            legacy_summary,
+            graph_summary,
+            thresholds=quality_thresholds,
+        )
+    )
     alias_summary = attach_alias_diagnostics(records)
     report = {
         "questionSet": {
@@ -696,6 +726,32 @@ async def benchmark_graph_questions(
     return report
 
 
+def _quality_thresholds_from_args(args: argparse.Namespace) -> dict[str, float]:
+    return {
+        "hitAt3Pct": args.hit_at3_min_pct,
+        "avgLatencyMs": args.avg_latency_max_ms,
+        "p95LatencyMs": args.p95_latency_max_ms,
+        "primaryTop5Pct": args.primary_top5_min_pct,
+        "completeEvidenceTop5Pct": args.complete_evidence_top5_min_pct,
+        "evidenceNodeRecallTop5Pct": args.evidence_recall_top5_min_pct,
+    }
+
+
+def _failed_quality_gate_names(summary: dict[str, Any]) -> list[str]:
+    return [
+        key
+        for key in (
+            "passHitAt3",
+            "passLatency",
+            "passChannelErrors",
+            "passPrimaryTop5",
+            "passEvidenceRecall",
+            "passCompleteEvidence",
+        )
+        if summary.get(key) is False
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--questions", type=Path, default=DEFAULT_QUESTIONS)
@@ -705,6 +761,19 @@ def main() -> None:
     parser.add_argument("--embedding-cache", type=Path, default=DEFAULT_GRAPH_EMBEDDING_CACHE)
     parser.add_argument("--embedding-cache-ttl-days", type=int, default=DEFAULT_EMBEDDING_CACHE_TTL_DAYS)
     parser.add_argument("--no-embedding-cache", action="store_true")
+    parser.add_argument("--judge-max-attempts", type=int, default=DEFAULT_JUDGE_MAX_ATTEMPTS)
+    parser.add_argument("--judge-retry-base-seconds", type=float, default=DEFAULT_JUDGE_RETRY_BASE_SECONDS)
+    parser.add_argument("--hit-at3-min-pct", type=float, default=GRAPH_HIT_AT3_MIN_PCT)
+    parser.add_argument("--avg-latency-max-ms", type=float, default=GRAPH_AVG_LATENCY_MAX_MS)
+    parser.add_argument("--p95-latency-max-ms", type=float, default=GRAPH_P95_LATENCY_MAX_MS)
+    parser.add_argument("--primary-top5-min-pct", type=float, default=GRAPH_PRIMARY_TOP5_MIN_PCT)
+    parser.add_argument("--complete-evidence-top5-min-pct", type=float, default=GRAPH_COMPLETE_EVIDENCE_TOP5_MIN_PCT)
+    parser.add_argument("--evidence-recall-top5-min-pct", type=float, default=GRAPH_EVIDENCE_RECALL_TOP5_MIN_PCT)
+    parser.add_argument(
+        "--no-fail-on-gate",
+        action="store_true",
+        help="Write the report but keep exit code 0 when the quality gate fails.",
+    )
     args = parser.parse_args()
 
     report = asyncio.run(
@@ -715,6 +784,9 @@ def main() -> None:
             intent_mode=args.intent_mode,
             embedding_cache_path=None if args.no_embedding_cache else args.embedding_cache,
             embedding_cache_ttl_days=args.embedding_cache_ttl_days,
+            quality_thresholds=_quality_thresholds_from_args(args),
+            judge_max_attempts=args.judge_max_attempts,
+            judge_retry_base_seconds=args.judge_retry_base_seconds,
         )
     )
     print(
@@ -735,6 +807,9 @@ def main() -> None:
         )
     )
     print(f"Saved graph report to {args.output}")
+    if not args.no_fail_on_gate and not report["summary"].get("overallPass"):
+        failed_gates = ", ".join(_failed_quality_gate_names(report["summary"])) or "overallPass"
+        raise SystemExit(f"GraphRAG benchmark quality gate failed: {failed_gates}")
 
 
 if __name__ == "__main__":

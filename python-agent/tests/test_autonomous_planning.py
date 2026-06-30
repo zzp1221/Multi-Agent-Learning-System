@@ -302,3 +302,65 @@ def test_supervisor_done_payload_includes_planning_metadata() -> None:
 
     assert payload.planning is not None
     assert payload.planning["preset"] == PRESET_RAG_TUTOR
+
+
+def test_supervisor_done_payload_includes_compact_retrieval_diagnostics() -> None:
+    supervisor = PythonAgentSupervisor()
+    params = {
+        "planning": {"preset": "RAG_TUTOR", "level": "preset_router"},
+        "queryType": "NEW_CONCEPT",
+        "retrievalStrategy": "LOCAL_HYBRID",
+        "graphIntent": "CROSS_LAYER_RELATION",
+        "webSearchEnabled": True,
+        "retrievalResult": {
+            "documents": [
+                {"title": "TLS", "channel": "graph"},
+                {"title": "SBOM", "channel": "web"},
+            ],
+        },
+        "retrievalRawResult": {
+            "graphIntent": "CROSS_LAYER_RELATION",
+            "channels": {
+                "grep": {"priority": [("a", "A", 1.0)], "normal_count": 2},
+                "vector": [("b", "B", 0.9)],
+                "graph": [("c", "C", 0.8)],
+                "web": [("d", "D", 0.7)],
+            },
+            "graphDiagnostics": {
+                "wikiTraversal": {
+                    "enabled": True,
+                    "stepCount": 1,
+                    "calls": [{"tool": "wiki_read"}, {"tool": "wiki_read", "enabled": False}],
+                    "errors": ["wiki tool traversal is limited to 3 steps"],
+                },
+            },
+        },
+        "webRetrievalResult": {"enabled": True, "results": [{"title": "web"}]},
+    }
+
+    payload = supervisor._build_done_payload(
+        service_type="TUTORING",
+        agent_names=["query_rewrite", "retrieval", "tutor"],
+        params=params,
+    )
+
+    retrieval = payload.planning["retrieval"]
+    assert retrieval["queryType"] == "NEW_CONCEPT"
+    assert retrieval["retrievalStrategy"] == "LOCAL_HYBRID"
+    assert retrieval["graphIntent"] == "CROSS_LAYER_RELATION"
+    assert retrieval["documentCount"] == 2
+    assert retrieval["webSearchEnabled"] is True
+    assert retrieval["channels"] == {
+        "grepPriority": 1,
+        "grepNormal": 2,
+        "vector": 1,
+        "graph": 1,
+        "web": 1,
+    }
+    assert retrieval["wikiTraversal"] == {
+        "enabled": True,
+        "stepCount": 1,
+        "callCount": 2,
+        "errorCount": 0,
+        "disabledCount": 1,
+    }

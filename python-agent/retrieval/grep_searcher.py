@@ -47,6 +47,8 @@ class GrepSearcher:
         "什么 是 的 和 与 如何 怎样 怎么 了 吗 呢 啊 请问 请".split()
     )
     _PUNCT_RE = re.compile(r"[，。？！、；：“”‘’（）\[\]【】\s]+")
+    _FOCUS_QUOTE_RE = re.compile(r"[「『《“\"']([^」』》”\"']{1,120})[」』》”\"']")
+    _MAX_FULL_PHRASE_QUERY_CHARS = 96
 
     def search(self, cur, query: str, domain: str = "COMPUTER_SCIENCE",
                coverage_min: float = 0.0) -> dict:
@@ -57,8 +59,11 @@ class GrepSearcher:
         """
         query_lower = query.lower()
 
-        # Phase 1: Phrase search — complete query as contiguous substring
-        priority = self._phrase_search(cur, query, query_lower, domain)
+        # Phase 1: plain concept explanations can focus on the quoted topic;
+        # graph/relation questions need full-query term recall for all evidence nodes.
+        priority = self._focused_phrase_search(cur, query, domain) if self._should_focus_topic_phrase(query) else []
+        if not priority and self._should_search_full_phrase(query):
+            priority = self._phrase_search(cur, query, query_lower, domain)
 
         # Phase 1.5: FMM-term sub-phrase search — each recognized term as a phrase
         if not priority:
@@ -70,6 +75,78 @@ class GrepSearcher:
             normal = self._token_search(cur, query_lower, domain, coverage_min)
 
         return {"priority": priority, "normal": normal}
+
+    def _extract_focus_phrases(self, query: str) -> list[str]:
+        phrases: list[str] = []
+        seen: set[str] = set()
+        for match in self._FOCUS_QUOTE_RE.finditer(query):
+            phrase = match.group(1).strip().strip("\"'“”「」『』《》")
+            normalized = self._normalize_phrase(phrase)
+            if not self._is_focus_phrase_candidate(normalized) or normalized in seen:
+                continue
+            seen.add(normalized)
+            phrases.append(phrase)
+        return phrases
+
+    def _is_focus_phrase_candidate(self, normalized: str) -> bool:
+        if len(normalized) >= 2:
+            return True
+        return bool(re.search(r"[\u4e00-\u9fff]", normalized))
+
+    def _should_focus_topic_phrase(self, query: str) -> bool:
+        compact = self._normalize_phrase(query)
+        if "核心概念" not in compact:
+            return False
+        if not any(signal in compact for signal in ("典型场景", "参考方向", "常见误区")):
+            return False
+        relation_signals = (
+            "知识图谱",
+            "关系角度",
+            "关系焦点",
+            "多跳",
+            "学习路径",
+            "前置",
+            "依赖",
+            "通向",
+            "连接",
+            "联系",
+        )
+        return not any(signal in compact for signal in relation_signals)
+
+    def _should_search_full_phrase(self, query: str) -> bool:
+        compact = self._normalize_phrase(query)
+        if len(compact) <= self._MAX_FULL_PHRASE_QUERY_CHARS:
+            return True
+        instruction_signals = (
+            "请",
+            "回答时",
+            "说明",
+            "解释",
+            "比较",
+            "构建",
+            "覆盖",
+            "关系",
+            "路径",
+            "联系",
+            "please",
+            "explain",
+            "compare",
+            "relationship",
+            "cover",
+        )
+        return not any(signal in compact for signal in instruction_signals)
+
+    def _focused_phrase_search(self, cur, query: str, domain: str) -> list:
+        focused: list = []
+        seen_slugs: set[str] = set()
+        for phrase in self._extract_focus_phrases(query):
+            for item in self._phrase_search(cur, phrase, phrase.lower(), domain):
+                slug = str(item[0])
+                if slug in seen_slugs:
+                    continue
+                seen_slugs.add(slug)
+                focused.append(item)
+        return focused
 
     def _decode_json_list(self, value) -> list[str]:
         if isinstance(value, list):
@@ -138,7 +215,7 @@ class GrepSearcher:
             terms = []
         else:
             tokens = self.tokenizer.tokenize(cleaned)
-            terms = [
+            terms = self._dedupe_terms_by_normalized_phrase([
                 {
                     "text": token.text,
                     "idf": token.idf,
@@ -146,7 +223,7 @@ class GrepSearcher:
                 }
                 for token in tokens
                 if token.term_type != "CHAR" and len(token.text) >= 2
-            ]
+            ])
 
         seen_terms = {self._normalize_phrase(term["text"]) for term in terms}
         for text, score_factor in extra_terms or []:
@@ -165,18 +242,17 @@ class GrepSearcher:
         if not terms:
             return []
 
-        # For each recognized term, search as phrase in titles and content
+        # Batch the title/content scans to avoid two DB round trips per term.
         phrase_results: dict[str, dict] = {}
-        for term in terms:
+        title_rows = self._batch_term_phrase_rows(cur, terms, domain, content=False)
+        content_rows = self._batch_term_phrase_rows(cur, terms, domain, content=True)
+        title_rows_by_term = self._rows_by_term_index(title_rows)
+        content_rows_by_term = self._rows_by_term_index(content_rows)
+
+        for term_index, term in enumerate(terms):
             term_text = term["text"]
             score_factor = term["score_factor"]
-            # Title match (higher priority)
-            cur.execute("""
-                SELECT source_ref AS slug, title
-                FROM rag.knowledge_document
-                WHERE title ILIKE %s AND domain = %s
-            """, (f"%{term_text}%", domain))
-            for slug, title in cur.fetchall():
+            for slug, title in title_rows_by_term.get(term_index, []):
                 priority_score, coverage = self._compute_phrase_priority(
                     title=title, query=term_text, body_match=False,
                 )
@@ -191,14 +267,7 @@ class GrepSearcher:
                         "tokens": [term_text],
                     }
 
-            # Content match (lower priority)
-            cur.execute("""
-                SELECT DISTINCT kd.source_ref AS slug, kd.title
-                FROM rag.knowledge_chunk kc
-                JOIN rag.knowledge_document kd ON kd.id = kc.document_id
-                WHERE kc.content ILIKE %s AND kd.domain = %s
-            """, (f"%{term_text}%", domain))
-            for slug, title in cur.fetchall():
+            for slug, title in content_rows_by_term.get(term_index, []):
                 if slug in phrase_results:
                     continue  # title match already exists, skip lower-priority content match
                 priority_score, coverage = self._compute_phrase_priority(
@@ -221,6 +290,52 @@ class GrepSearcher:
             (slug, info["title"], info["coverage"], info["tokens"])
             for slug, info in ranked
         ]
+
+    def _batch_term_phrase_rows(
+        self,
+        cur,
+        terms: list[dict],
+        domain: str,
+        *,
+        content: bool,
+    ) -> list[tuple[int, str, str]]:
+        if not terms:
+            return []
+
+        if content:
+            branch_sql = """
+                SELECT DISTINCT %s::integer AS term_index, kd.source_ref AS slug, kd.title
+                FROM rag.knowledge_chunk kc
+                JOIN rag.knowledge_document kd ON kd.id = kc.document_id
+                WHERE kc.content ILIKE %s AND kd.domain = %s
+            """
+        else:
+            branch_sql = """
+                SELECT %s::integer AS term_index, kd.source_ref AS slug, kd.title
+                FROM rag.knowledge_document kd
+                WHERE kd.title ILIKE %s AND kd.domain = %s
+            """
+
+        sql = "\nUNION ALL\n".join(branch_sql for _ in terms)
+        params: list[object] = []
+        for index, term in enumerate(terms):
+            pattern = f"%{term['text']}%"
+            params.extend([index, pattern, domain])
+        cur.execute(sql, tuple(params))
+        return cur.fetchall()
+
+    def _rows_by_term_index(self, rows: list[tuple]) -> dict[int, list[tuple[str, str]]]:
+        grouped: dict[int, list[tuple[str, str]]] = {}
+        for row in rows:
+            if len(row) < 3:
+                continue
+            term_index, slug, title = row[:3]
+            try:
+                index = int(term_index)
+            except (TypeError, ValueError):
+                continue
+            grouped.setdefault(index, []).append((slug, title))
+        return grouped
 
     def _clean_query(self, text: str) -> str:
         """Remove stopwords and punctuation, keep meaningful terms."""
@@ -325,6 +440,7 @@ class GrepSearcher:
                 }
                 for token in tokens
             ]
+        known = self._dedupe_terms_by_normalized_phrase(known)
 
         seen_terms = {self._normalize_phrase(token["text"]) for token in known}
         for text, score_factor in extra_terms or []:
@@ -368,3 +484,22 @@ class GrepSearcher:
 
         results.sort(key=lambda x: x[2], reverse=True)
         return results
+
+    def _dedupe_terms_by_normalized_phrase(self, terms: list[dict]) -> list[dict]:
+        deduped: dict[str, dict] = {}
+        for term in terms:
+            normalized = self._normalize_phrase(term.get("text", ""))
+            if not normalized:
+                continue
+            current = deduped.get(normalized)
+            if current is None or (
+                float(term.get("idf") or 0.0),
+                float(term.get("score_factor") or 0.0),
+                len(str(term.get("text") or "")),
+            ) > (
+                float(current.get("idf") or 0.0),
+                float(current.get("score_factor") or 0.0),
+                len(str(current.get("text") or "")),
+            ):
+                deduped[normalized] = term
+        return list(deduped.values())

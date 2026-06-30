@@ -168,7 +168,15 @@ public class UserLlmSettingsService {
 
     @Transactional
     public UserLlmSettingsResponse saveSettings(UUID userId, UserLlmSettingsRequest request) {
+        return saveSettings(userId, request, true);
+    }
+
+    private UserLlmSettingsResponse saveSettings(UUID userId, UserLlmSettingsRequest request, boolean verifyActiveProvider) {
         ensureFeatureEnabled();
+        if (verifyActiveProvider) {
+            String provider = resolveTestProvider(request);
+            verifyProviderConnection(userId, provider, request);
+        }
         UserLlmSettingsRepository.UserLlmSettingsRecord existing = repository.findByUserId(userId).orElse(null);
         Map<String, UserLlmProviderStoredConfig> existingProviders = existing == null
             ? Map.of()
@@ -241,7 +249,7 @@ public class UserLlmSettingsService {
         ensureFeatureEnabled();
         String provider = resolveTestProvider(request);
         List<String> models = verifyProviderConnection(userId, provider, request);
-        UserLlmSettingsResponse saved = saveSettings(userId, request);
+        UserLlmSettingsResponse saved = saveSettings(userId, request, false);
         return Map.of(
             "ok", true,
             "activeProvider", saved.activeProvider(),

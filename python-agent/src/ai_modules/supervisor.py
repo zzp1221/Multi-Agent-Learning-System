@@ -393,21 +393,21 @@ class PythonAgentSupervisor:
                 taskId=request.task_id,
                 traceId=request.trace_id,
                 seq=state.seq,
-                payload=DonePayload(
-                    status="FAILED",
-                    summary=message,
-                    masteryDiagnosis=self._safe_dict(state.params.get("masteryDiagnosis")),
-                    learningPath=self._safe_dict(state.params.get("learningPath")),
-                    learningPlan=self._safe_dict(state.params.get("learningPlan")),
-                    resourcePushPlan=self._safe_dict(state.params.get("resourcePushPlan")),
-                    pushedResources=state.params.get("pushedResources") if isinstance(state.params.get("pushedResources"), list) else [],
-                    agentTrace=state.params.get("agentTrace") if isinstance(state.params.get("agentTrace"), list) else [],
-                    criticReview=self._safe_dict(state.params.get("criticReview")),
-                    planning=self._safe_dict(state.params.get("planning")),
-                    checkpointActions=state.params.get(PlanningParamKeys.CHECKPOINT_ACTIONS)
-                    if isinstance(state.params.get(PlanningParamKeys.CHECKPOINT_ACTIONS), list)
-                    else [],
-                    learningLoop=self._safe_dict(state.params.get(PlanningParamKeys.LEARNING_LOOP)),
+                payload=self._attach_planning_payload(
+                    DonePayload(
+                        status="FAILED",
+                        summary=message,
+                        masteryDiagnosis=self._safe_dict(state.params.get("masteryDiagnosis")),
+                        learningPath=self._safe_dict(state.params.get("learningPath")),
+                        learningPlan=self._safe_dict(state.params.get("learningPlan")),
+                        resourcePushPlan=self._safe_dict(state.params.get("resourcePushPlan")),
+                        pushedResources=state.params.get("pushedResources")
+                        if isinstance(state.params.get("pushedResources"), list)
+                        else [],
+                        agentTrace=state.params.get("agentTrace") if isinstance(state.params.get("agentTrace"), list) else [],
+                        criticReview=self._safe_dict(state.params.get("criticReview")),
+                    ),
+                    params=state.params,
                 ),
             )
             return
@@ -1076,6 +1076,10 @@ class PythonAgentSupervisor:
 
     def _attach_planning_payload(self, payload: DonePayload, *, params: dict) -> DonePayload:
         planning = self._safe_dict(params.get("planning"))
+        if planning is not None:
+            retrieval_summary = self._planning_retrieval_summary(params)
+            if retrieval_summary:
+                planning = {**planning, "retrieval": retrieval_summary}
         if planning is not None and isinstance(params.get(PlanningParamKeys.PLANNING_TRACE), list):
             planning = {**planning, "trace": params[PlanningParamKeys.PLANNING_TRACE]}
         return payload.model_copy(
@@ -1087,6 +1091,91 @@ class PythonAgentSupervisor:
                 "learning_loop": self._safe_dict(params.get(PlanningParamKeys.LEARNING_LOOP)),
             }
         )
+
+    def _planning_retrieval_summary(self, params: dict) -> dict[str, Any]:
+        retrieval_result = self._safe_dict(params.get("retrievalResult")) or {}
+        raw_result = self._safe_dict(params.get("retrievalRawResult")) or {}
+        query_classification = self._safe_dict(params.get("queryClassification")) or {}
+        web_result = self._safe_dict(params.get("webRetrievalResult")) or {}
+        graph_result = self._safe_dict(params.get("graphRetrievalResult")) or {}
+        graph_diagnostics = self._safe_dict(raw_result.get("graphDiagnostics")) or {}
+        wiki_traversal = self._safe_dict(params.get("wikiTraversal")) or self._safe_dict(graph_diagnostics.get("wikiTraversal")) or {}
+        channels = raw_result.get("channels") if isinstance(raw_result.get("channels"), dict) else {}
+        documents = retrieval_result.get("documents") if isinstance(retrieval_result.get("documents"), list) else []
+
+        retrieval_strategy = self._first_non_empty(
+            params.get("retrievalStrategy"),
+            raw_result.get("retrievalStrategy"),
+            query_classification.get("retrievalStrategy"),
+        )
+        graph_intent = self._first_non_empty(
+            params.get("graphIntent"),
+            raw_result.get("graphIntent"),
+            graph_result.get("graphIntent"),
+            query_classification.get("graphIntent"),
+        )
+        summary: dict[str, Any] = {
+            "queryType": self._first_non_empty(params.get("queryType"), query_classification.get("queryType")),
+            "retrievalStrategy": retrieval_strategy,
+            "graphIntent": graph_intent,
+            "documentCount": len(documents),
+            "channels": self._retrieval_channel_counts(channels, web_result=web_result, graph_result=graph_result),
+            "webSearchEnabled": self._truthy(params.get("webSearchEnabled"))
+            or self._truthy(raw_result.get("webSearchEnabled"))
+            or self._truthy(web_result.get("enabled")),
+        }
+        if wiki_traversal:
+            calls = wiki_traversal.get("calls") if isinstance(wiki_traversal.get("calls"), list) else []
+            errors = wiki_traversal.get("errors") if isinstance(wiki_traversal.get("errors"), list) else []
+            disabled_count = sum(1 for call in calls if isinstance(call, dict) and call.get("enabled") is False)
+            summary["wikiTraversal"] = {
+                "enabled": self._truthy(wiki_traversal.get("enabled")),
+                "stepCount": self._safe_int(wiki_traversal.get("stepCount")),
+                "callCount": len(calls),
+                "errorCount": max(0, len(errors) - disabled_count),
+                "disabledCount": disabled_count,
+            }
+        return {key: value for key, value in summary.items() if value not in (None, "", {})}
+
+    def _retrieval_channel_counts(
+        self,
+        channels: dict[str, Any],
+        *,
+        web_result: dict[str, Any],
+        graph_result: dict[str, Any],
+    ) -> dict[str, int]:
+        grep = channels.get("grep") if isinstance(channels.get("grep"), dict) else {}
+        graph_items = graph_result.get("results") if isinstance(graph_result.get("results"), list) else channels.get("graph")
+        web_items = web_result.get("results") if isinstance(web_result.get("results"), list) else channels.get("web")
+        return {
+            "grepPriority": self._sequence_count(grep.get("priority")),
+            "grepNormal": self._safe_int(grep.get("normal_count")),
+            "vector": self._sequence_count(channels.get("vector")),
+            "graph": self._sequence_count(graph_items),
+            "web": self._sequence_count(web_items),
+        }
+
+    @staticmethod
+    def _sequence_count(value: Any) -> int:
+        return len(value) if isinstance(value, list) else 0
+
+    @staticmethod
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _truthy(value: Any) -> bool:
+        return value is True or (isinstance(value, str) and value.strip().lower() == "true")
+
+    @staticmethod
+    def _first_non_empty(*values: Any) -> str | None:
+        for value in values:
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
 
     def _should_start_goal_loop(self, *, route_plan: RoutePlan, params: dict) -> bool:
         return (

@@ -22,7 +22,12 @@ def build_external_evidence_contract(
     """Return the single auditable source contract used by reasoning and answers."""
 
     candidates = _collect_candidates(documents=documents, web_items=web_items)
-    selected = select_relevant_evidence(query=query, documents=candidates, limit=limit)
+    selected = select_relevant_evidence(
+        query=query,
+        documents=candidates,
+        limit=limit,
+        allow_low_fallback=False,
+    )
     adopted_urls = {_normalize_url(item.get("url")) for item in selected.adopted}
     ignored = _build_ignored_sources(candidates=candidates, adopted_urls=adopted_urls)
     return {

@@ -1,7 +1,11 @@
 import pytest
+import argparse
+import sys
 from datetime import datetime, timedelta, timezone
 
+import knowledge.benchmark_graph_rag_100 as graph_benchmark
 from knowledge.benchmark_graph_rag_100 import (
+    _failed_quality_gate_names,
     classify_low_evidence_reasons,
     evaluate_graph_evidence,
     summarize_graph_quality_gates,
@@ -12,15 +16,23 @@ from knowledge.benchmark_graph_rag_100 import (
 )
 from knowledge.benchmark_rag_100 import (
     QueryEmbeddingCache,
+    _failed_rag_quality_gate_names,
     _fusion_replacements,
+    _judge_with_retries,
+    _quality_thresholds_from_args as rag_quality_thresholds_from_args,
     _search_vector_with_retries,
     _summarize_low_value_sources,
+    summarize_rag_quality_gates,
     summarize_channel_errors,
 )
+import knowledge.benchmark_rag_100 as rag_benchmark
+from src.ai_modules.llms.errors import LLMServiceError
 from knowledge.graph_low_evidence_repairs import build_repair_wikilinks, load_repair_link_records
+from retrieval.graph_relation_policy import relation_base_weight, weighted_relation_score
 from retrieval.hybrid_retriever import HybridRetriever
 from retrieval.graph_expander import GraphExpander
 from retrieval.rrf_fusion import RRFFusion
+from retrieval.source_quality import low_value_source_kind
 from src.ai_modules.agents.base import PlaceholderAgent
 from src.ai_modules.models import (
     EngineStreamRequest,
@@ -136,22 +148,110 @@ def test_graph_expander_uses_undirected_edges_and_filters_weak_shared_tags() -> 
     assert all(item[0] != "weak-tag-doc" for item in results)
 
 
-def test_graph_low_evidence_repairs_build_reproducible_wikilinks() -> None:
-    records = load_repair_link_records()
+def test_graph_relation_weight_policy_keeps_existing_relation_weights() -> None:
+    assert relation_base_weight("WIKILINK") == 2.0
+    assert relation_base_weight("SHARED_TAG") == 1.0
+    assert relation_base_weight("COMMUNITY") == 0.75
+    assert weighted_relation_score("WIKILINK", 3) == 6.0
+    assert weighted_relation_score("UNKNOWN", 2) == 2.0
+
+
+def test_graph_expander_scores_db_edge_weight_not_just_edge_count() -> None:
+    qualified = GraphExpander()._qualified_from_edge_rows(
+        [
+            ("plain-id", "WIKILINK", 1, 1.0),
+            ("repair-id", "WIKILINK", 1, 1.4),
+            ("tag-id", "SHARED_TAG", 3, 3.0),
+        ],
+        min_shared_tags=3,
+        excluded_ids=set(),
+        decay=1.0,
+    )
+
+    assert qualified[0] == ("tag-id", 3.0, 0, 3)
+    assert qualified[1] == ("repair-id", 2.8, 1, 0)
+    assert qualified[2] == ("plain-id", 2.0, 1, 0)
+
+
+def test_graph_low_evidence_repairs_build_reproducible_wikilinks(tmp_path) -> None:
+    repair_path = tmp_path / "repairs.json"
+    repair_path.write_text(
+        """
+{
+  "repairs": [
+    {
+      "id": "case-cross",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [
+        ["course/a", "course/b"],
+        ["course/a", "course/b"],
+        ["course/a", "course/a"]
+      ]
+    },
+    {
+      "id": "case-path",
+      "graphIntent": "PREREQUISITE_PATH",
+      "links": [["course/c", "course/d"]]
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    records = load_repair_link_records(repair_path)
     links = build_repair_wikilinks(
         records,
         pages=[
-            {"slug": "Python深入/生成器与协程", "title": "生成器与协程"},
-            {"slug": "JavaScript/TypeScript/Promise与微任务", "title": "Promise与微任务"},
-            {"slug": "编译原理/First-Follow", "title": "First-Follow"},
-            {"slug": "离散数学/环与域", "title": "环与域"},
-            {"slug": "离散数学/同余与模运算", "title": "同余与模运算"},
+            {"slug": "course/a", "title": "A"},
+            {"slug": "course/b", "title": "B"},
+            {"slug": "course/c", "title": "C"},
+            {"slug": "course/d", "title": "D"},
         ],
     )
 
-    assert {"from_title": "生成器与协程", "to_title": "Promise与微任务", "relation": "WIKILINK", "weight": 1, "repair_id": "grq030", "graph_intent": "CROSS_LAYER_RELATION"} in links
-    assert {"from_title": "环与域", "to_title": "同余与模运算", "relation": "WIKILINK", "weight": 1, "repair_id": "grq055", "graph_intent": "PREREQUISITE_PATH"} in links
+    assert {"from_title": "A", "to_title": "B", "relation": "WIKILINK", "weight": 1.0, "repair_id": "case-cross", "graph_intent": "CROSS_LAYER_RELATION"} in links
+    assert {"from_title": "C", "to_title": "D", "relation": "WIKILINK", "weight": 1.0, "repair_id": "case-path", "graph_intent": "PREREQUISITE_PATH"} in links
+    assert len(links) == 2
     assert all(link["from_title"] != link["to_title"] for link in links)
+
+
+def test_graph_low_evidence_repairs_preserve_semantic_relation_metadata(tmp_path) -> None:
+    repair_path = tmp_path / "repairs.json"
+    repair_path.write_text(
+        """
+{
+  "repairs": [
+    {
+      "id": "grq-cross",
+      "graphIntent": "CROSS_LAYER_RELATION",
+      "links": [
+        ["course/a", "course/b", "CROSS_LAYER_RELATION"],
+        {"from": "course/b", "to": "course/c", "relation": "UNSUPPORTED", "semanticRelation": "PREREQUISITE_OF"}
+      ]
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    records = load_repair_link_records(repair_path)
+    links = build_repair_wikilinks(
+        records,
+        pages=[
+            {"slug": "course/a", "title": "A"},
+            {"slug": "course/b", "title": "B"},
+            {"slug": "course/c", "title": "C"},
+        ],
+    )
+
+    assert records[0]["semantic_relation"] == "CROSS_LAYER_RELATION"
+    assert records[0]["relation"] == "WIKILINK"
+    assert records[0]["weight"] > 1.0
+    assert records[1]["relation"] == "WIKILINK"
+    assert records[1]["semantic_relation"] == "PREREQUISITE_OF"
+    assert {link["semantic_relation"] for link in links} == {"CROSS_LAYER_RELATION", "PREREQUISITE_OF"}
+    assert {link["relation"] for link in links} == {"WIKILINK"}
 
 
 def test_graph_expander_explain_candidates_keeps_candidate_rows() -> None:
@@ -200,7 +300,6 @@ def test_graph_expander_only_prerequisite_path_returns_bounded_two_hop() -> None
         query="two hop",
         graph_intent="PREREQUISITE_PATH",
     )
-
     assert all(len(item) == 3 for item in default_results)
     assert [item[0] for item in default_results] == ["strong-tag-doc", "incoming-doc"]
     assert any(item[0] == "two-hop-doc" and item[3] == "graph_2hop" for item in prerequisite_results)
@@ -214,6 +313,68 @@ def test_prerequisite_graph_low_value_filter_covers_video_resource_slug() -> Non
     assert expander._is_low_value_resource("视频资源/离散数学-图论基础与应用", "Graph Doc") is True
     assert retriever._graph_slug_penalty("视频资源/离散数学-图论基础与应用") < 1.0
     assert expander._is_low_value_resource("knowledge-doc", None) is False
+
+
+def test_graph_expander_filters_low_value_for_all_graph_intents() -> None:
+    expander = GraphExpander()
+    score_parts = {
+        "video-id": {"base": 10.0, "wikilink": 1, "sharedTag": 0},
+        "doc-id": {"base": 9.0, "wikilink": 1, "sharedTag": 0},
+    }
+    page_rows = [
+        ("video-id", "视频资源/计算机网络-TCP拥塞控制详解", "TCP 拥塞控制详解（视频）", 1, 0.1, "[]", "[]"),
+        ("doc-id", "计算机网络/TCP拥塞控制", "TCP 拥塞控制", 1, 0.1, "[]", "[]"),
+    ]
+
+    graph_candidates = expander._score_page_rows(
+        page_rows,
+        score_parts,
+        query_terms=[],
+        seed_communities=set(),
+        seed_slug_set=set(),
+        hop=1,
+        source="graph_1hop",
+        prerequisite_intent=False,
+        skip_low_value=expander._filters_low_value_for_intent("CROSS_LAYER_RELATION"),
+    )
+    plain_candidates = expander._score_page_rows(
+        page_rows,
+        score_parts,
+        query_terms=[],
+        seed_communities=set(),
+        seed_slug_set=set(),
+        hop=1,
+        source="graph_1hop",
+        prerequisite_intent=False,
+        skip_low_value=expander._filters_low_value_for_intent(None),
+    )
+
+    assert [item["slug"] for item in graph_candidates] == ["计算机网络/TCP拥塞控制"]
+    assert {item["slug"] for item in plain_candidates} == {
+        "视频资源/计算机网络-TCP拥塞控制详解",
+        "计算机网络/TCP拥塞控制",
+    }
+
+
+@pytest.mark.parametrize(
+    ("slug", "title", "kind"),
+    [
+        ("", "empty", "none"),
+        ("None", "placeholder", "none"),
+        ("https://example.test/ref", "External", "http"),
+        ("wiki://course/topic", "Wiki mirror", "wiki"),
+        ("视频资源/course/topic", "Course video", "video"),
+        ("course/topic-video", "Video lesson", "video"),
+        ("course/topic", "Knowledge Doc", None),
+    ],
+)
+def test_low_value_source_classification_is_shared(slug: str, title: str, kind: str | None) -> None:
+    expander = GraphExpander()
+    retriever = HybridRetriever({})
+
+    assert low_value_source_kind(slug, title) == kind
+    assert expander._is_low_value_resource(slug, title) is (kind is not None)
+    assert (retriever._graph_slug_penalty(slug) < 1.0) is (kind is not None)
 
 
 def test_query_classifier_marks_graph_relation_intent() -> None:
@@ -288,7 +449,7 @@ def test_hybrid_retriever_graph_weight_mapping() -> None:
     assert retriever._graph_weight("PREREQUISITE_PATH") == 1.8
 
 
-def test_hybrid_retriever_caps_vector_embedding_latency_budget(monkeypatch) -> None:
+def test_hybrid_retriever_uses_configured_vector_embedding_budget(monkeypatch) -> None:
     class FakeTokenizer:
         def load_from_db(self, cur, domain):
             del cur, domain
@@ -311,9 +472,11 @@ def test_hybrid_retriever_caps_vector_embedding_latency_budget(monkeypatch) -> N
     retriever = HybridRetriever({})
     retriever._init(object())
 
-    assert created_vectors[0].request_timeout == 1.0
-    assert vector_kwargs[0]["max_embedding_retries"] == 1
-    assert vector_kwargs[0]["embedding_retry_backoff_seconds"] == 0
+    assert created_vectors[0].request_timeout == 10.0
+    assert created_vectors[0].max_embedding_retries == 3
+    assert created_vectors[0].embedding_retry_backoff_seconds == 0.5
+    assert "max_embedding_retries" not in vector_kwargs[0]
+    assert "embedding_retry_backoff_seconds" not in vector_kwargs[0]
 
 
 def test_hybrid_retriever_passes_dynamic_graph_weight_to_rrf() -> None:
@@ -710,7 +873,7 @@ def test_benchmark_vector_search_uses_persistent_embedding_cache(tmp_path) -> No
     assert cache.stats["hits"] == 1
 
 
-def test_non_prerequisite_graph_intent_does_not_fill_tail() -> None:
+def test_non_evidence_fill_graph_intent_does_not_fill_tail() -> None:
     retriever = HybridRetriever({})
     fused = [
         ("doc-a", "Doc A", 0.2),
@@ -724,6 +887,424 @@ def test_non_prerequisite_graph_intent_does_not_fill_tail() -> None:
     result = retriever._stabilize_graph_top5(fused, graph_results, "COMPARISON")
 
     assert result == fused
+
+
+def test_graph_relation_intent_protects_strong_grep_evidence_tail() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("other-course/noisy-d", "Noisy D", 0.17),
+        ("other-course/noisy-e", "Noisy E", 0.16),
+    ]
+    grep_results = {
+        "priority": [
+            ("doc-a", "Doc A", 1.0, ["a"]),
+            ("target-course/target-x", "Target X", 1.0, ["x"]),
+            ("target-course/target-y", "Target Y", 1.0, ["y"]),
+        ],
+        "normal": [],
+    }
+
+    result, diagnostics = retriever._protect_strong_grep_evidence_with_diagnostics(
+        fused,
+        grep_results,
+        "CROSS_LAYER_RELATION",
+    )
+
+    assert [item[0] for item in result[:3]] == ["doc-a", "doc-b", "doc-c"]
+    assert [item[0] for item in result[3:5]] == ["target-course/target-y", "target-course/target-x"]
+    assert diagnostics["reason"] == "strong_grep_evidence_top6"
+
+
+def test_graph_intent_balances_query_objects_into_top3() -> None:
+    retriever = HybridRetriever({})
+    query = "请比较「顺序查找」与「二叉排序树、KMP字符串匹配算法」的区别和联系。"
+    fused = [
+        ("数据结构/KMP字符串匹配", "KMP字符串匹配算法", 0.2),
+        ("数据结构/二叉排序树", "二叉排序树", 0.19),
+        ("算法设计与分析/KMP算法", "KMP字符串匹配算法", 0.18),
+        ("数据结构/KMP算法", "KMP算法", 0.17),
+        ("数据结构/顺序查找", "顺序查找", 0.16),
+    ]
+    grep_results = {
+        "priority": [
+            ("数据结构/顺序查找", "顺序查找", 1.0, ["顺序查找"]),
+            ("数据结构/二叉排序树", "二叉排序树", 1.0, ["二叉排序树"]),
+            ("数据结构/KMP字符串匹配", "KMP字符串匹配算法", 1.0, ["KMP"]),
+        ],
+        "normal": [],
+    }
+
+    result, diagnostics = retriever._balance_query_object_top3_with_diagnostics(
+        fused,
+        grep_results,
+        [],
+        [],
+        query,
+        "COMPARISON",
+    )
+
+    assert "数据结构/顺序查找" in [item[0] for item in result[:3]]
+    assert diagnostics["reason"] == "query_object_top3_balance"
+
+
+def test_query_object_balance_keeps_specific_primary_when_broad_alias_overlaps() -> None:
+    retriever = HybridRetriever({})
+    query = "请说明「并发编程-线程池原理」在机制落地时如何连接「C语言-多线程pthread、经典同步问题-生产者消费者」。"
+    fused = [
+        ("操作系统/经典同步问题-生产者消费者", "经典同步问题-生产者消费者", 0.0738),
+        ("程序设计/并发编程", "并发编程", 0.0726),
+        ("程序设计/线程池原理", "\"并发编程-线程池原理\"", 0.3023),
+        ("程序设计/并发编程模型对比", "\"并发编程模型对比（线程/协程/Actor）\"", 0.1394),
+        ("C语言深入/多线程pthread", "\"C语言-多线程pthread\"", 0.1287),
+    ]
+
+    result, diagnostics = retriever._balance_query_object_top3_with_diagnostics(
+        fused,
+        {"priority": [], "normal": []},
+        [],
+        [],
+        query,
+        "MECHANISM_APPLICATION",
+    )
+
+    top3_slugs = [item[0] for item in result[:3]]
+    assert "程序设计/线程池原理" in top3_slugs
+    assert "C语言深入/多线程pthread" in top3_slugs
+    assert "程序设计/并发编程" not in top3_slugs
+    assert diagnostics["promotedSlugs"][0]["replacedSlug"] == "程序设计/并发编程"
+
+
+def test_query_object_balance_accepts_specific_prefix_alias() -> None:
+    retriever = HybridRetriever({})
+    query = "请构建一条学习路径，说明「NFA」如何依赖或通向「词法分析与自动机、DFA最小化（Hopcroft算法）」。"
+    fused = [
+        ("编译原理/DFA最小化", "DFA最小化", 0.2369),
+        ("编译原理/词法分析与DFA", "\"词法分析与自动机\"", 0.2369),
+        ("编译原理/NFA", "NFA", 0.0991),
+        ("编译原理/DFA", "DFA", 0.177),
+        ("编译原理/NFA转DFA", "NFA转DFA", 0.1701),
+        ("编译原理/DFA最小化算法", "\"DFA最小化（Hopcroft算法）\"", 0.0879),
+    ]
+
+    result, diagnostics = retriever._balance_query_object_top3_with_diagnostics(
+        fused,
+        {"priority": [("编译原理/DFA最小化算法", "\"DFA最小化（Hopcroft算法）\"", 1.0, ["DFA"])], "normal": []},
+        [],
+        [],
+        query,
+        "PREREQUISITE_PATH",
+    )
+
+    assert [item[0] for item in result[:3]] == [
+        "编译原理/DFA最小化",
+        "编译原理/词法分析与DFA",
+        "编译原理/NFA",
+    ]
+    assert diagnostics["promotedSlugs"] == []
+
+
+def test_query_object_match_requires_exact_label_for_single_chinese_character() -> None:
+    retriever = HybridRetriever({})
+
+    assert retriever._item_matches_query_object(("离散数学/群论", "群", 0.1), "群") is True
+    assert retriever._item_matches_query_object(("离散数学/置换群", "置换群", 0.1), "群") is False
+    assert retriever._item_matches_query_object(("数据结构/栈", "栈", 0.1), "栈") is True
+    assert retriever._item_matches_query_object(("数据结构/链栈", "链栈", 0.1), "栈") is False
+
+
+def test_query_object_balance_promotes_exact_single_character_concept() -> None:
+    retriever = HybridRetriever({})
+    query = "请构建一条学习路径，说明「群」如何依赖或通向「置换群、环与域」。"
+    fused = [
+        ("离散数学/置换群", "置换群", 0.26),
+        ("离散数学/解释", "解释", 0.07),
+        ("离散数学/环与域", "环与域", 0.18),
+        ("离散数学/群论", "群", 0.13),
+        ("离散数学/谓词", "谓词", 0.01),
+    ]
+
+    result, diagnostics = retriever._balance_query_object_top3_with_diagnostics(
+        fused,
+        {"priority": [], "normal": []},
+        [],
+        [("离散数学/群论", "群", 33.0, "direct_evidence")],
+        query,
+        "PREREQUISITE_PATH",
+    )
+
+    assert "离散数学/群论" in [item[0] for item in result[:3]]
+    assert diagnostics["reason"] == "query_object_top3_balance"
+
+
+def test_graph_intent_balances_query_object_from_channel_pool() -> None:
+    retriever = HybridRetriever({})
+    query = "请从知识图谱关系角度说明「HTTP协议详解」与「TCP三次握手详解、OAuth2与OpenID Connect」之间的多跳联系。"
+    fused = [
+        ("软件工程/OAuth2与认证协议", "OAuth 2.0与OpenID Connect", 0.2),
+        ("信息安全/OAuth2与OpenIDConnect", "OAuth2与OpenID Connect", 0.19),
+        ("计算机网络/TCP四次挥手", "TCP四次挥手", 0.18),
+        ("计算机网络/TCP首部", "TCP首部格式详解", 0.17),
+    ]
+    grep_results = {
+        "priority": [
+            ("计算机网络/应用层-HTTP", "HTTP协议详解", 1.0, ["HTTP"]),
+            ("计算机网络/TCP三次握手", "TCP三次握手详解", 1.0, ["TCP"]),
+        ],
+        "normal": [],
+    }
+
+    result, diagnostics = retriever._balance_query_object_top3_with_diagnostics(
+        fused,
+        grep_results,
+        [],
+        [],
+        query,
+        "CROSS_LAYER_RELATION",
+    )
+
+    assert {"计算机网络/应用层-HTTP", "计算机网络/TCP三次握手"} <= {item[0] for item in result[:3]}
+    assert diagnostics["reason"] == "query_object_top3_balance"
+
+
+def test_graph_intent_promotes_primary_query_object_when_already_top3() -> None:
+    retriever = HybridRetriever({})
+    query = "请比较「后缀数组与后缀树」与「后缀数组算法、KMP字符串匹配算法」的区别和联系。"
+    fused = [
+        ("算法设计与分析/后缀数组算法", "后缀数组算法", 0.31),
+        ("数据结构/后缀数组与后缀树", "后缀数组与后缀树", 0.22),
+        ("数据结构/KMP字符串匹配", "KMP字符串匹配算法", 0.2),
+    ]
+
+    result, diagnostics = retriever._promote_primary_query_object_top1_with_diagnostics(
+        fused,
+        query,
+        "COMPARISON",
+    )
+
+    assert result[0][0] == "数据结构/后缀数组与后缀树"
+    assert result[1][0] == "算法设计与分析/后缀数组算法"
+    assert diagnostics["reason"] == "primary_query_object_already_in_top3"
+
+
+def test_primary_query_object_top1_does_not_replace_non_object_leader() -> None:
+    retriever = HybridRetriever({})
+    query = "请比较「顺序查找」与「二叉排序树、KMP字符串匹配算法」的区别和联系。"
+    fused = [
+        ("数据结构/散列表", "散列表", 0.31),
+        ("数据结构/顺序查找", "顺序查找", 0.22),
+        ("数据结构/KMP字符串匹配", "KMP字符串匹配算法", 0.2),
+    ]
+
+    result, diagnostics = retriever._promote_primary_query_object_top1_with_diagnostics(
+        fused,
+        query,
+        "COMPARISON",
+    )
+
+    assert result == fused
+    assert diagnostics["promotedSlug"] is None
+
+
+def test_query_object_top3_balance_is_graph_only() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("target-doc", "Target Doc", 0.17),
+    ]
+    grep_results = {"priority": [("target-doc", "Target Doc", 1.0, ["target"])], "normal": []}
+
+    result, diagnostics = retriever._balance_query_object_top3_with_diagnostics(
+        fused,
+        grep_results,
+        [],
+        [],
+        "请比较「Target Doc」与「Doc A」",
+        None,
+    )
+
+    assert result == fused
+    assert diagnostics["promotedSlugs"] == []
+
+
+def test_strong_grep_evidence_protection_is_limited_to_relation_intents() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("noisy-d", "Noisy D", 0.17),
+        ("noisy-e", "Noisy E", 0.16),
+    ]
+    grep_results = {"priority": [("target-x", "Target X", 1.0, ["x"])], "normal": []}
+
+    result, diagnostics = retriever._protect_strong_grep_evidence_with_diagnostics(
+        fused,
+        grep_results,
+        "PREREQUISITE_PATH",
+    )
+
+    assert result == fused
+    assert diagnostics["insertedSlugs"] == []
+
+
+def test_strong_grep_evidence_protection_requires_exact_coverage() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("doc-a", "Doc A", 0.2),
+        ("doc-b", "Doc B", 0.19),
+        ("doc-c", "Doc C", 0.18),
+        ("noisy-d", "Noisy D", 0.17),
+        ("noisy-e", "Noisy E", 0.16),
+    ]
+    grep_results = {"priority": [("generic-x", "Generic X", 0.98, ["x"])], "normal": []}
+
+    result, diagnostics = retriever._protect_strong_grep_evidence_with_diagnostics(
+        fused,
+        grep_results,
+        "COMPARISON",
+    )
+
+    assert result == fused
+    assert diagnostics["insertedSlugs"] == []
+
+
+def test_strong_grep_evidence_does_not_replace_more_specific_top5_evidence() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("数据结构/后缀数组与后缀树", "后缀数组与后缀树", 0.2),
+        ("算法设计与分析/后缀数组算法", "后缀数组算法", 0.19),
+        ("数据结构/后缀自动机与后缀数组", "后缀自动机与后缀数组", 0.18),
+        ("数据结构/KMP算法", "KMP算法", 0.17),
+        ("数据结构/KMP字符串匹配", "KMP字符串匹配算法", 0.16),
+    ]
+    grep_results = {
+        "priority": [
+            ("算法设计与分析/KMP算法", "KMP字符串匹配算法", 1.0, ["KMP"]),
+        ],
+        "normal": [],
+    }
+
+    result, diagnostics = retriever._protect_strong_grep_evidence_with_diagnostics(
+        fused,
+        grep_results,
+        "COMPARISON",
+    )
+
+    assert result == fused
+    assert diagnostics["insertedSlugs"] == []
+
+
+def test_strong_grep_evidence_keeps_broader_concept_when_algorithm_variant_is_top5() -> None:
+    retriever = HybridRetriever({})
+    fused = [
+        ("数据结构/最短路径-BellmanFord", "最短路径-Bellman-Ford算法", 0.2),
+        ("数据结构/最小生成树-Prim", "最小生成树-Prim算法", 0.19),
+        ("数据结构/最短路径-Dijkstra", "最短路径-Dijkstra算法", 0.18),
+        ("程序设计/图算法", "图算法", 0.17),
+        ("算法设计与分析/Dijkstra算法", "Dijkstra最短路径算法", 0.16),
+    ]
+    grep_results = {
+        "priority": [
+            ("算法设计与分析/最小生成树", "最小生成树", 1.0, ["最小生成树"]),
+        ],
+        "normal": [],
+    }
+
+    result, diagnostics = retriever._protect_strong_grep_evidence_with_diagnostics(
+        fused,
+        grep_results,
+        "COMPARISON",
+    )
+
+    assert result[3][0] == "算法设计与分析/最小生成树"
+    assert diagnostics["insertedSlugs"][0]["replacedSlug"] == "程序设计/图算法"
+
+
+def test_explicit_graph_evidence_replaces_duplicate_tail() -> None:
+    retriever = HybridRetriever({})
+    query = "请比较「后缀数组与后缀树」与「后缀数组算法、KMP字符串匹配算法」的区别和联系。"
+    fused = [
+        ("算法设计与分析/后缀数组算法", "后缀数组算法", 0.2),
+        ("数据结构/后缀数组与后缀树", "后缀数组与后缀树", 0.19),
+        ("算法设计与分析/KMP算法", "KMP字符串匹配算法", 0.18),
+        ("数据结构/KMP算法", "KMP算法", 0.17),
+        ("算法设计与分析/KMP算法", "KMP字符串匹配算法", 0.16),
+    ]
+    graph_results = [
+        ("数据结构/KMP字符串匹配", "KMP字符串匹配算法", 8.75),
+        ("数据结构/KMP算法", "KMP算法", 6.0),
+    ]
+
+    result, diagnostics = retriever._protect_explicit_graph_evidence_with_diagnostics(
+        fused,
+        graph_results,
+        query,
+        "COMPARISON",
+    )
+
+    assert result[4][0] == "数据结构/KMP字符串匹配"
+    assert "数据结构/KMP字符串匹配" in [item[0] for item in result[:5]]
+    assert diagnostics["insertedSlugs"][0]["reason"] == "replace_duplicate_tail"
+
+
+def test_explicit_graph_evidence_replaces_cross_course_tail() -> None:
+    retriever = HybridRetriever({})
+    query = (
+        "请从知识图谱关系角度说明「光照模型（Lambert/Phong/Blinn-Phong）」与"
+        "「着色频率（Flat/Gouraud/Phong Shading）、PBR材质系统」之间的多跳联系。"
+    )
+    fused = [
+        ("计算机图形学/光照模型（Lambert/Phong/Blinn-Phong）", "光照模型", 0.2),
+        ("计算机图形学/着色频率（Flat/Gouraud/Phong Shading）", "着色频率", 0.19),
+        ("databases/innodb-architecture", "InnoDB存储引擎架构", 0.18),
+        ("计算机图形学/PBR物理渲染原理", "PBR物理渲染原理", 0.17),
+        ("数据库原理/码", "码", 0.16),
+    ]
+    graph_results = [
+        ("计算机图形学/PBR物理渲染原理", "PBR物理渲染原理", 9.0),
+        ("计算机图形学/PBR材质系统", "PBR材质系统", 8.0),
+    ]
+
+    result, diagnostics = retriever._protect_explicit_graph_evidence_with_diagnostics(
+        fused,
+        graph_results,
+        query,
+        "CROSS_LAYER_RELATION",
+    )
+
+    assert result[4][0] == "计算机图形学/PBR材质系统"
+    assert "数据库原理/码" not in [item[0] for item in result[:5]]
+    assert diagnostics["insertedSlugs"][0]["reason"] == "replace_cross_course_tail"
+
+
+def test_explicit_graph_evidence_skips_when_top5_already_represents_it() -> None:
+    retriever = HybridRetriever({})
+    query = "请构建一条学习路径，说明「DFA最小化（Hopcroft算法）」如何依赖或通向「NFA、词法分析与自动机」。"
+    fused = [
+        ("编译原理/DFA最小化", "DFA最小化", 0.2),
+        ("编译原理/词法分析与DFA", "词法分析与自动机", 0.19),
+        ("编译原理/NFA", "NFA", 0.18),
+        ("编译原理/NFA转DFA", "NFA转DFA", 0.17),
+        ("离散数学/自动机基础", "自动机基础", 0.16),
+    ]
+    graph_results = [
+        ("编译原理/DFA最小化算法", "DFA最小化（Hopcroft算法）", 30.0),
+    ]
+
+    result, diagnostics = retriever._protect_explicit_graph_evidence_with_diagnostics(
+        fused,
+        graph_results,
+        query,
+        "PREREQUISITE_PATH",
+    )
+
+    assert result == fused
+    assert diagnostics["insertedSlugs"] == []
 
 
 def test_strong_grep_top3_protection_remains_graph_only() -> None:
@@ -756,6 +1337,10 @@ def test_graph_intent_forces_grep_first_to_keep_graph_channel() -> None:
             return {"priority": [("seed-doc", "Seed Doc", 0.95, ["seed"])], "normal": []}
 
     class FakeVector:
+        def search(self, cur, query, top_k, domain):
+            del cur, query, top_k, domain
+            return [("vector-doc", "Vector Doc", 0.9)]
+
         def search_all(self, cur, query, top_k, domain):
             del cur, query, top_k, domain
             return [("vector-doc", "Vector Doc", 0.9, "knowledge")]
@@ -945,6 +1530,11 @@ def test_graph_benchmark_summary_quality_gates() -> None:
 
     gates = summarize_graph_quality_gates(summary, graph_summary)
     failed = summarize_graph_quality_gates({**summary, "hitAt3Pct": 92.0}, graph_summary)
+    failed_latency = summarize_graph_quality_gates(
+        summary,
+        graph_summary,
+        thresholds={"avgLatencyMs": 900.0, "p95LatencyMs": 1500.0},
+    )
 
     assert gates["passHitAt3"] is True
     assert gates["passLatency"] is True
@@ -953,6 +1543,388 @@ def test_graph_benchmark_summary_quality_gates() -> None:
     assert gates["overallPass"] is True
     assert failed["passHitAt3"] is False
     assert failed["overallPass"] is False
+    assert failed_latency["passLatency"] is False
+    assert failed_latency["overallPass"] is False
+    assert _failed_quality_gate_names(failed_latency) == ["passLatency"]
+    assert failed_latency["thresholds"]["avgLatencyMs"] == 900.0
+
+
+def test_graph_benchmark_cli_fails_when_quality_gate_fails(monkeypatch, tmp_path) -> None:
+    async def fake_benchmark_graph_questions(**_kwargs):
+        return {
+            "summary": {"overallPass": False, "passLatency": False},
+            "graphSummary": {},
+            "byGraphIntent": {},
+            "intentMismatchSummary": {},
+            "lowValueSourceSummary": {},
+            "aliasDiagnosticSummary": {},
+            "focusedLowCaseDiagnostics": {},
+            "lowEvidenceRecords": [],
+            "lowEvidenceRecordsByIntent": {},
+        }
+
+    monkeypatch.setattr(graph_benchmark, "benchmark_graph_questions", fake_benchmark_graph_questions)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark_graph_rag_100.py",
+            "--output",
+            str(tmp_path / "graph_report.json"),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        graph_benchmark.main()
+
+    assert "passLatency" in str(exc_info.value)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark_graph_rag_100.py",
+            "--output",
+            str(tmp_path / "graph_report.json"),
+            "--no-fail-on-gate",
+        ],
+    )
+    graph_benchmark.main()
+
+
+def test_graph_benchmark_cli_passes_judge_retry_options(monkeypatch, tmp_path) -> None:
+    captured = {}
+
+    async def fake_benchmark_graph_questions(**kwargs):
+        captured.update(kwargs)
+        return {
+            "summary": {"overallPass": True},
+            "graphSummary": {},
+            "byGraphIntent": {},
+            "intentMismatchSummary": {},
+            "lowValueSourceSummary": {},
+            "aliasDiagnosticSummary": {},
+            "focusedLowCaseDiagnostics": {},
+            "lowEvidenceRecords": [],
+            "lowEvidenceRecordsByIntent": {},
+        }
+
+    monkeypatch.setattr(graph_benchmark, "benchmark_graph_questions", fake_benchmark_graph_questions)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark_graph_rag_100.py",
+            "--output",
+            str(tmp_path / "graph_report.json"),
+            "--judge-max-attempts",
+            "7",
+            "--judge-retry-base-seconds",
+            "0.5",
+        ],
+    )
+
+    graph_benchmark.main()
+
+    assert captured["judge_max_attempts"] == 7
+    assert captured["judge_retry_base_seconds"] == 0.5
+
+
+def test_graph_benchmark_cli_passes_classifier_intent_mode(monkeypatch, tmp_path) -> None:
+    captured = {}
+
+    async def fake_benchmark_graph_questions(**kwargs):
+        captured.update(kwargs)
+        return {
+            "summary": {"overallPass": True},
+            "graphSummary": {},
+            "byGraphIntent": {},
+            "intentMismatchSummary": {},
+            "lowValueSourceSummary": {},
+            "aliasDiagnosticSummary": {},
+            "focusedLowCaseDiagnostics": {},
+            "lowEvidenceRecords": [],
+            "lowEvidenceRecordsByIntent": {},
+        }
+
+    monkeypatch.setattr(graph_benchmark, "benchmark_graph_questions", fake_benchmark_graph_questions)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark_graph_rag_100.py",
+            "--intent-mode",
+            "classifier",
+            "--output",
+            str(tmp_path / "graph_report.json"),
+        ],
+    )
+
+    graph_benchmark.main()
+
+    assert captured["intent_mode"] == graph_benchmark.INTENT_MODE_CLASSIFIER
+
+
+@pytest.mark.asyncio
+async def test_graph_benchmark_classifier_strategy_reaches_retrieval(monkeypatch, tmp_path) -> None:
+    captured = {}
+    questions_path = tmp_path / "graph_questions.json"
+    judge_cache_path = tmp_path / "judge_cache.json"
+    output_path = tmp_path / "graph_report.json"
+    questions_path.write_text(
+        '{"seed": 1, "questionSetHash": "h", "questions": [{"id": "grq001", "question": "q", "graphIntent": "COMPARISON"}]}',
+        encoding="utf-8",
+    )
+
+    class FakeJudge:
+        pass
+
+    class FakeClassification:
+        graph_intent = "COMPARISON"
+        retrieval_strategy = "LOCAL_GREP_FIRST"
+        reason = "test"
+
+    class FakeClassifier:
+        def classify(self, params):
+            del params
+            return FakeClassification()
+
+    async def fake_judge_with_retries(*_args, **_kwargs):
+        return {"hitAt1": True, "hitAt3": True, "bestRank": 1, "relevanceScore": 1.0, "reason": "ok"}
+
+    def fake_run_retrieval(question, **kwargs):
+        captured["question"] = question
+        captured["retrieval_strategy"] = kwargs.get("retrieval_strategy")
+        return (
+            {
+                "top": [("course/a", "A", 1.0)],
+                "diagnostics": {},
+                "channelErrors": {},
+            },
+            {"init_ms": 0.0},
+            1.0,
+            None,
+        )
+
+    monkeypatch.setattr(graph_benchmark, "LLMRetrievalJudge", FakeJudge)
+    monkeypatch.setattr(graph_benchmark, "QueryClassifier", FakeClassifier)
+    monkeypatch.setattr(graph_benchmark, "_judge_with_retries", fake_judge_with_retries)
+    monkeypatch.setattr(graph_benchmark, "run_retrieval", fake_run_retrieval)
+
+    await graph_benchmark.benchmark_graph_questions(
+        questions_path=questions_path,
+        output_path=output_path,
+        judge_cache_path=judge_cache_path,
+        intent_mode=graph_benchmark.INTENT_MODE_CLASSIFIER,
+        embedding_cache_path=None,
+    )
+
+    assert captured["retrieval_strategy"] == "LOCAL_GREP_FIRST"
+
+
+def test_rag_benchmark_summary_quality_gates() -> None:
+    summary = {
+        "successRatePct": 100.0,
+        "hitAt3Pct": 99.0,
+        "avgLatencyMs": 1000.0,
+        "p95LatencyMs": 2000.0,
+        "channelErrorCount": 0,
+    }
+
+    gates = summarize_rag_quality_gates(summary)
+    failed_success = summarize_rag_quality_gates({**summary, "successRatePct": 98.0})
+    failed_latency = summarize_rag_quality_gates(
+        summary,
+        thresholds={"avgLatencyMs": 900.0, "p95LatencyMs": 1500.0},
+    )
+
+    assert gates["passHitAt3"] is True
+    assert gates["passSuccessRate"] is True
+    assert gates["passLatency"] is True
+    assert gates["passChannelErrors"] is True
+    assert gates["overallPass"] is True
+    assert failed_success["passSuccessRate"] is False
+    assert failed_success["overallPass"] is False
+    assert failed_latency["passLatency"] is False
+    assert _failed_rag_quality_gate_names(failed_latency) == ["passLatency"]
+
+
+def test_rag_benchmark_cli_fails_when_quality_gate_fails(monkeypatch, tmp_path) -> None:
+    async def fake_benchmark_questions(**_kwargs):
+        return {
+            "summary": {"overallPass": False, "passHitAt3": False},
+        }
+
+    monkeypatch.setattr(rag_benchmark, "benchmark_questions", fake_benchmark_questions)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark_rag_100.py",
+            "--questions",
+            str(tmp_path / "questions.json"),
+            "--output",
+            str(tmp_path / "rag_report.json"),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        rag_benchmark.main()
+
+    assert "passHitAt3" in str(exc_info.value)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark_rag_100.py",
+            "--questions",
+            str(tmp_path / "questions.json"),
+            "--output",
+            str(tmp_path / "rag_report.json"),
+            "--no-fail-on-gate",
+        ],
+    )
+    rag_benchmark.main()
+
+
+def test_rag_benchmark_cli_threshold_overrides() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hit-at3-min-pct", type=float, default=99.0)
+    parser.add_argument("--success-rate-min-pct", type=float, default=99.0)
+    parser.add_argument("--avg-latency-max-ms", type=float, default=1651.99)
+    parser.add_argument("--p95-latency-max-ms", type=float, default=4049.05)
+    parser.add_argument("--channel-error-max", type=int, default=0)
+    args = parser.parse_args(
+        [
+            "--hit-at3-min-pct",
+            "90",
+            "--success-rate-min-pct",
+            "99",
+            "--avg-latency-max-ms",
+            "2500",
+            "--p95-latency-max-ms",
+            "9000",
+            "--channel-error-max",
+            "1",
+        ]
+    )
+
+    thresholds = rag_quality_thresholds_from_args(args)
+
+    assert thresholds == {
+        "hitAt3Pct": 90.0,
+        "successRatePct": 99.0,
+        "avgLatencyMs": 2500.0,
+        "p95LatencyMs": 9000.0,
+        "channelErrorCount": 1,
+    }
+
+
+def test_rag_benchmark_default_cache_paths_are_project_scoped() -> None:
+    assert rag_benchmark.DEFAULT_JUDGE_CACHE.is_absolute()
+    assert rag_benchmark.DEFAULT_EMBEDDING_CACHE.is_absolute()
+    assert rag_benchmark.DEFAULT_JUDGE_CACHE.parent.name == "reports"
+    assert rag_benchmark.DEFAULT_JUDGE_CACHE.parent.parent.name == "python-agent"
+    assert rag_benchmark.DEFAULT_EMBEDDING_CACHE.parent == rag_benchmark.DEFAULT_JUDGE_CACHE.parent
+
+
+def test_rag_benchmark_run_retrieval_uses_production_grep_first(monkeypatch) -> None:
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return self
+
+    class FakeRetriever:
+        def __init__(self, db_config, top_k):
+            del db_config, top_k
+            self.called = None
+
+        def initialize(self, cur):
+            del cur
+
+        def retrieve(self, cur, query, **kwargs):
+            del cur, kwargs
+            self.called = "retrieve"
+            return {"query": query, "channels": {}, "top": [("hybrid", "Hybrid", 1.0)]}
+
+        def retrieve_grep_first(self, cur, query, **kwargs):
+            del cur
+            self.called = "retrieve_grep_first"
+            return {
+                "query": query,
+                "graphIntent": kwargs.get("graph_intent"),
+                "retrievalStrategy": "LOCAL_GREP_FIRST",
+                "channels": {"grep": {"priority": [("grep", "Grep", 1.0)]}, "vector": [], "graph": []},
+                "top": [("grep", "Grep", 1.0)],
+            }
+
+    monkeypatch.setattr(rag_benchmark.psycopg2, "connect", lambda **_kwargs: FakeConnection())
+    monkeypatch.setattr(rag_benchmark, "HybridRetriever", FakeRetriever)
+
+    result, timings, _total_ms, error = rag_benchmark.run_retrieval(
+        "query",
+        retrieval_strategy="LOCAL_GREP_FIRST",
+        graph_intent="COMPARISON",
+    )
+
+    assert error is None
+    assert result["retrievalStrategy"] == "LOCAL_GREP_FIRST"
+    assert result["top"][0][0] == "grep"
+    assert timings["init_ms"] >= 0.0
+
+
+@pytest.mark.asyncio
+async def test_rag_benchmark_judge_retries_retryable_errors(monkeypatch) -> None:
+    class FlakyJudge:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def judge(self, question_item, candidates):
+            del question_item, candidates
+            self.calls += 1
+            if self.calls == 1:
+                raise LLMServiceError(code="LLM_RATE_LIMITED", message="rate limited", retryable=True)
+            return {"hitAt3": True}
+
+    async def fake_sleep(_seconds):
+        return None
+
+    judge = FlakyJudge()
+    monkeypatch.setattr(rag_benchmark.asyncio, "sleep", fake_sleep)
+
+    result = await _judge_with_retries(judge, {}, [], max_attempts=2)
+
+    assert result == {"hitAt3": True}
+    assert judge.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_rag_benchmark_judge_does_not_retry_non_retryable_errors(monkeypatch) -> None:
+    class FailingJudge:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def judge(self, question_item, candidates):
+            del question_item, candidates
+            self.calls += 1
+            raise LLMServiceError(code="LLM_AUTH_INVALID", message="auth", retryable=False)
+
+    async def fake_sleep(_seconds):
+        raise AssertionError("sleep should not be called")
+
+    judge = FailingJudge()
+    monkeypatch.setattr(rag_benchmark.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(LLMServiceError):
+        await _judge_with_retries(judge, {}, [], max_attempts=3)
+
+    assert judge.calls == 1
 
 
 def test_graph_benchmark_summarizes_intent_mismatches() -> None:

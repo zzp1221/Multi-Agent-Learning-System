@@ -42,7 +42,7 @@ class PracticeAgent(PlaceholderAgent):
     ) -> None:
         super().__init__("Practice Agent", "practice")
         self.practice_store = practice_store or PostgresPracticeStore()
-        self.question_generator = question_generator or PracticeQuestionGenerator()
+        self.question_generator = question_generator
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.skill_loader = SkillPromptLoader()
 
@@ -185,10 +185,12 @@ class PracticeAgent(PlaceholderAgent):
             "count": count,
             "learning_context": params.get("learningContext", {}),
         }
-        if self._supports_question_type_preference():
+        generator = self._question_generator()
+        if self._supports_question_type_preference(generator):
             kwargs["question_type_preference"] = self._question_type_preference(params)
         try:
-            question_batch = await self.question_generator.generate_batch(**kwargs)
+            question_batch = await generator.generate_batch(**kwargs)
+            params["_practiceQuestionGenerator"] = generator
             return self._normalize_generated_question_batch(question_batch, params=params)
         except Exception as exc:
             raise RuntimeError(
@@ -279,7 +281,7 @@ class PracticeAgent(PlaceholderAgent):
     def _build_question_provenance(self, *, params: dict[str, Any]) -> dict[str, Any]:
         return build_llm_provenance(
             agent_name=self.stage_name,
-            generator=self.question_generator,
+            generator=params.get("_practiceQuestionGenerator") or self._question_generator(),
             params=params,
         )
 
@@ -358,9 +360,12 @@ class PracticeAgent(PlaceholderAgent):
         if len(questions) >= 2 and not (question_types & objective_types and question_types & subjective_types):
             raise RuntimeError("默认练习题必须混合客观题和主观题")
 
-    def _supports_question_type_preference(self) -> bool:
+    def _question_generator(self) -> Any:
+        return self.question_generator or PracticeQuestionGenerator()
+
+    def _supports_question_type_preference(self, generator: Any) -> bool:
         try:
-            signature = inspect.signature(self.question_generator.generate_batch)
+            signature = inspect.signature(generator.generate_batch)
         except (TypeError, ValueError):
             return True
         return "question_type_preference" in signature.parameters

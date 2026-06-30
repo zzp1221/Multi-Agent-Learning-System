@@ -90,6 +90,13 @@ class QueryClassifier:
                 0.86,
                 "answer_previous_question",
             ), deep_quality_mode)
+        if self._is_plain_concept_explanation(query, lowered):
+            return self._apply_deep_quality_mode(self._decision(
+                QUERY_TYPE_NEW_CONCEPT,
+                RETRIEVAL_LOCAL_GREP_FIRST,
+                0.82,
+                "plain_concept_explanation",
+            ), deep_quality_mode)
         graph_intent = self._detect_graph_intent(lowered)
         if graph_intent:
             if self._contains_any(lowered, "currentInfoTerms"):
@@ -101,7 +108,7 @@ class QueryClassifier:
                     graph_intent=graph_intent,
                 ), deep_quality_mode)
             return self._apply_deep_quality_mode(self._decision(
-                QUERY_TYPE_NEW_CONCEPT,
+                QUERY_TYPE_COMPARISON if graph_intent == GRAPH_INTENT_COMPARISON else QUERY_TYPE_NEW_CONCEPT,
                 RETRIEVAL_LOCAL_HYBRID,
                 0.74,
                 f"graph_{graph_intent.lower()}_signal",
@@ -330,6 +337,45 @@ class QueryClassifier:
             or params.get("tavilySearchEnabled") is True
         )
 
+    def _is_plain_concept_explanation(self, query: str, lowered_text: str) -> bool:
+        compact = self._normalize(query)
+        if not compact or self._has_freshness_signal(lowered_text):
+            return False
+        if "核心概念" not in compact:
+            return False
+        if not any(signal in compact for signal in ("典型场景", "参考方向", "常见误区")):
+            return False
+        graph_signals = (
+            "知识图谱",
+            "多跳",
+            "跨层",
+            "学习路径",
+            "前置",
+            "依赖关系",
+            "关系角度",
+            "之间的联系",
+            "之间的关系",
+        )
+        return not any(signal in compact for signal in graph_signals)
+
+    def _has_freshness_signal(self, lowered_text: str) -> bool:
+        return any(
+            signal in lowered_text
+            for signal in (
+                "今天",
+                "今日",
+                "现在",
+                "当前",
+                "最新",
+                "最近",
+                "today",
+                "current",
+                "latest",
+                "now",
+                "recent",
+            )
+        )
+
     def _detect_graph_intent(self, lowered_text: str) -> str | None:
         if self._contains_any(lowered_text, "graphPrerequisiteTemplateTerms"):
             return GRAPH_INTENT_PREREQUISITE_PATH
@@ -371,7 +417,7 @@ class QueryClassifier:
     def _is_algorithm_multi_hop_relation_query(self, lowered_text: str) -> bool:
         if "多跳" not in lowered_text:
             return False
-        return any(term in lowered_text for term in ("鸽巢原理", "组合计数", "图着色", "欧拉图", "哈密顿图"))
+        return any(term in lowered_text for term in ("鸽巢原理", "组合计数"))
 
     def _is_strong_prerequisite_path_query(self, lowered_text: str) -> bool:
         if self._contains_any(lowered_text, "graphPrerequisiteStrongTerms"):

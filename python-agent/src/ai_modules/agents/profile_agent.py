@@ -63,7 +63,7 @@ class ProfileAgent(PlaceholderAgent):
         self.profile_store = profile_store or PostgresProfileStore()
         self.summary_store = summary_store or MongoConversationSummaryStore()
         self.fallback_profile_store = InMemoryProfileStore()
-        self.profile_analyzer = profile_analyzer or ProfileAnalyzer()
+        self.profile_analyzer = profile_analyzer
         self.recovery_engine = RecoveryEngine()
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.knowledge_graph_store = knowledge_graph_store or LearnerKnowledgeGraphStore()
@@ -260,7 +260,7 @@ class ProfileAgent(PlaceholderAgent):
             "profileSource": profile_source,
         }
         try:
-            dimensions = await self.profile_analyzer.analyze(context_payload=context_payload)
+            dimensions = await self._profile_analyzer().analyze(context_payload=context_payload)
         except Exception as exc:
             LOGGER.warning("画像 LLM 分析失败，使用规则兜底画像: %s", exc)
             dimensions = self._build_fallback_dimensions(
@@ -282,6 +282,9 @@ class ProfileAgent(PlaceholderAgent):
         serialized_dimensions = dimensions.model_dump(by_alias=True, mode="json")
         params["analyzedProfileDimensions"] = serialized_dimensions
         return serialized_dimensions
+
+    def _profile_analyzer(self) -> Any:
+        return self.profile_analyzer or ProfileAnalyzer()
 
     def _build_fallback_dimensions(
         self,

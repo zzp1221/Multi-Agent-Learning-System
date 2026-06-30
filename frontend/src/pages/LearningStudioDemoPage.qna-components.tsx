@@ -130,8 +130,8 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
   const traceSummary = hasTrace
     ? `${successfulTraceCount}/${traceItems.length} 步完成${failedTraceCount ? `，${failedTraceCount} 个异常` : ''}`
     : hasContent && (isStreaming || reasoningState === 'streaming')
-      ? '正在整理中间推理'
-      : '可展开查看推理过程';
+      ? '正在推敲答案结构'
+      : '已完成意图识别、证据筛选和答案自检';
   const title = hasTrace
     ? collaborationState === 'stopped'
       ? '协作已中止'
@@ -141,7 +141,7 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
     : reasoningState === 'stopped'
       ? '深度思考已停止'
       : isStreaming || reasoningState === 'streaming'
-        ? '深度思考中'
+        ? '正在推敲答案结构'
         : '深度思考已完成';
 
   return (
@@ -176,7 +176,11 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
           ) : null}
           {hasContent ? (
             <div className={hasTrace ? 'qna-reasoning-legacy' : undefined}>
-              <MarkdownRenderer content={content} isStreaming={isStreaming} />
+              {hasTrace ? (
+                <MarkdownRenderer content={content} isStreaming={isStreaming} />
+              ) : (
+                <PublicReasoningSummary content={content} isStreaming={isStreaming} />
+              )}
             </div>
           ) : null}
         </div>
@@ -184,6 +188,62 @@ const AgentCollaborationPanel = memo(function AgentCollaborationPanel({
     </div>
   );
 });
+
+const PUBLIC_REASONING_HEADS = [
+  '我先识别问题意图',
+  '接着检查证据',
+  '然后组织答案',
+  '最后自检',
+  '联网搜索词',
+  '可引用的联网证据',
+  '未采用联网来源',
+  '联网证据',
+];
+
+const PublicReasoningSummary = memo(function PublicReasoningSummary({
+  content,
+  isStreaming,
+}: {
+  content: string;
+  isStreaming: boolean;
+}) {
+  const sections = splitPublicReasoningSections(content);
+  return (
+    <div className="qna-public-reasoning-list">
+      {sections.map((section, index) => (
+        <section key={`${section.title}-${index}`} className="qna-public-reasoning-step">
+          <div className="qna-public-reasoning-step-title">{section.title}</div>
+          <MarkdownRenderer content={section.body} isStreaming={isStreaming} />
+        </section>
+      ))}
+    </div>
+  );
+});
+
+function splitPublicReasoningSections(content: string): Array<{ title: string; body: string }> {
+  const lines = content
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const sections: Array<{ title: string; bodyLines: string[] }> = [];
+  for (const line of lines) {
+    const matchedHead = PUBLIC_REASONING_HEADS.find((head) => line.startsWith(`${head}：`) || line.startsWith(`${head}:`));
+    if (matchedHead) {
+      const body = line.slice(matchedHead.length + 1).trim();
+      sections.push({ title: matchedHead, bodyLines: body ? [body] : [] });
+      continue;
+    }
+    if (!sections.length) {
+      sections.push({ title: '思考摘要', bodyLines: [] });
+    }
+    sections[sections.length - 1].bodyLines.push(line);
+  }
+  return sections.map((section) => ({
+    title: section.title,
+    body: section.bodyLines.join('\n'),
+  }));
+}
 
 const AgentTraceTimeline = memo(function AgentTraceTimeline({
   items,

@@ -9,12 +9,19 @@ Usage:
 """
 from __future__ import annotations
 
+import sys
 from collections import Counter, defaultdict
+from pathlib import Path
 
 import psycopg2
 from psycopg2.extras import execute_values
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from settings_helper import configure_dashscope_api_key
+from retrieval.graph_relation_policy import weighted_relation_score
 
 RUNTIME_CONFIG = configure_dashscope_api_key()
 DB_CONFIG = RUNTIME_CONFIG.postgres.model_dump()
@@ -29,8 +36,7 @@ def connect():
 
 
 def relation_weight(relation_type: str, weight) -> float:
-    base = 2.0 if relation_type == "WIKILINK" else 1.0
-    return base * float(weight or 1.0)
+    return weighted_relation_score(relation_type, weight or 1.0)
 
 
 def build_communities(page_ids: list[str], undirected_adj: dict[str, list[tuple[str, float]]]) -> dict[str, int]:

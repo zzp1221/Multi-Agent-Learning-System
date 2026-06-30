@@ -261,11 +261,11 @@ describe('useLearningStudioQna', () => {
     vi.mocked(conversationApi.streamMessage).mockImplementation(async (_conversationId, _request, handlers) => {
       handlers.onEvent({
         event: 'reasoning_chunk',
-        data: { payload: { text: '回答组织：按证据回答\n未采用来源：A：相关性不足\n' } },
+        data: { payload: { text: '然后组织答案：按证据回答\n最后自检：只引用采用来源\n' } },
       } as ConversationStreamEvent);
       handlers.onEvent({
         event: 'reasoning_chunk',
-        data: { payload: { text: '回答组织：按证据回答\n未采用来源：A：相关性不足\n自检：只引用采用来源\n' } },
+        data: { payload: { text: '然后组织答案：按证据回答\n最后自检：只引用采用来源\n' } },
       } as ConversationStreamEvent);
     });
     const { result } = renderQnaHook();
@@ -280,8 +280,8 @@ describe('useLearningStudioQna', () => {
 
     const assistant = result.current.viewProps.qnaMessages.find((message) => message.role === 'assistant' && message.id.startsWith('qna-assistant-'));
     const reasoning = assistant?.reasoningContent ?? '';
-    expect(reasoning.match(/回答组织/g)).toHaveLength(1);
-    expect(reasoning.match(/未采用来源/g)).toHaveLength(1);
-    expect(reasoning).toContain('自检：只引用采用来源');
+    expect(reasoning.match(/然后组织答案/g)).toHaveLength(1);
+    expect(reasoning.match(/最后自检/g)).toHaveLength(1);
+    expect(reasoning).toContain('最后自检：只引用采用来源');
   });
 });

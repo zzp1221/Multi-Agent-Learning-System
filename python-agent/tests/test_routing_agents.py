@@ -545,6 +545,85 @@ async def test_retrieval_agent_uses_clean_user_query_for_web_search() -> None:
 
 
 @pytest.mark.asyncio
+async def test_retrieval_agent_promotes_relevant_web_sources_over_local_noise() -> None:
+    class NoisyLocalRetriever:
+        def retrieve(
+            self,
+            query: str,
+            *,
+            web_search_enabled: bool = False,
+            web_search_query: str | None = None,
+            graph_intent: str | None = None,
+        ) -> dict:
+            del web_search_enabled, web_search_query, graph_intent
+            return {
+                "query": query,
+                "retrievalStrategy": "WEB_AUGMENTED",
+                "webSearchEnabled": True,
+                "channels": {
+                    "grep": {"priority": [], "normal_count": 20},
+                    "vector": [],
+                    "graph": [],
+                    "web": [
+                        (
+                            "https://www.cisa.gov/sbom",
+                            "Software Bill of Materials",
+                            0.92,
+                            {
+                                "url": "https://www.cisa.gov/sbom",
+                                "snippet": "CISA describes SBOM as a nested inventory for software components and supply chain risk.",
+                                "sourceTitle": "CISA",
+                            },
+                        ),
+                        (
+                            "https://cyclonedx.org/",
+                            "CycloneDX SBOM standard",
+                            0.88,
+                            {
+                                "url": "https://cyclonedx.org/",
+                                "snippet": "CycloneDX is a full-stack Bill of Materials standard.",
+                                "sourceTitle": "CycloneDX",
+                            },
+                        ),
+                    ],
+                },
+                "top": [
+                    ("local-req-change", "软件需求变更管理", 0.93),
+                    ("local-gantt", "软件项目进度管理-甘特图与关键路径", 0.91),
+                    ("local-trend", "软件工程趋势与最佳实践", 0.86),
+                ],
+            }
+
+    agent = RetrievalAgent(service=HybridRetrievalService(retriever=NoisyLocalRetriever()))
+    params = {
+        "query": "请结合联网搜索，说明今天仍推荐使用 SBOM 管理软件供应链风险的原因，并和传统依赖清单比较。",
+        "rewrittenQuery": "SBOM 软件供应链风险 传统依赖清单 联网搜索",
+        "keywords": ["SBOM", "软件供应链", "依赖清单"],
+        "retrievalStrategy": "WEB_AUGMENTED",
+        "webSearchEnabled": True,
+    }
+
+    _ = [
+        event
+        async for event in agent.run(
+            task_id="task-web-promote",
+            trace_id="trace-web-promote",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    documents = params["retrievalResult"]["documents"]
+    titles = [item["title"] for item in documents]
+    assert titles[:2] == ["Software Bill of Materials", "CycloneDX SBOM standard"]
+    assert "软件需求变更管理" not in titles
+    assert params["adoptedExternalSources"][0]["url"] == "https://www.cisa.gov/sbom"
+
+
+@pytest.mark.asyncio
 async def test_retrieval_agent_deep_mode_streams_public_process_and_gates_evidence() -> None:
     class MixedRelevanceRetriever:
         def retrieve(
@@ -594,13 +673,84 @@ async def test_retrieval_agent_deep_mode_streams_public_process_and_gates_eviden
 
     reasoning_chunks = [event.payload.text for event in events if event.event == "reasoning_chunk"]
     assert len(reasoning_chunks) == 3
-    assert reasoning_chunks[0].startswith("理解问题：")
-    assert reasoning_chunks[1].startswith("检索计划：")
-    assert reasoning_chunks[2].startswith("证据结果：")
+    assert reasoning_chunks[0].startswith("我先识别问题意图：")
+    assert reasoning_chunks[1].startswith("接着规划证据检索：")
+    assert reasoning_chunks[2].startswith("接着检查证据：")
     assert [document["title"] for document in params["retrievalResult"]["documents"]] == [
         "注意力机制概览"
     ]
     assert params["retrievalEvidenceDiagnostics"]["discardedLocalCount"] == 1
+    assert params["retrievalEvidenceDiagnostics"]["evidenceState"] == "HIGH_CONFIDENCE"
+
+
+@pytest.mark.asyncio
+async def test_retrieval_agent_uses_data_driven_query_expansion_for_acronyms() -> None:
+    class AliasAwareRetriever:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def query_expansions(self, terms: list[str]) -> dict[str, list[str]]:
+            assert "ts" in terms
+            assert "js" in terms
+            return {
+                "ts": ["TypeScript"],
+                "js": ["JavaScript"],
+                "expansionSources": ["custom"],
+            }
+
+        def retrieve(
+            self,
+            query: str,
+            *,
+            web_search_enabled: bool = False,
+            web_search_query: str | None = None,
+            graph_intent: str | None = None,
+        ) -> dict:
+            del web_search_enabled, web_search_query, graph_intent
+            self.calls.append(query)
+            if "TypeScript" in query or "JavaScript" in query:
+                top = [("ts-js", "TypeScript and JavaScript", 0.88)]
+            else:
+                top = [("juc", "Java并发JUC", 0.95)]
+            return {
+                "query": query,
+                "channels": {
+                    "grep": {"priority": []},
+                    "vector": [],
+                    "graph": [],
+                    "web": [],
+                },
+                "top": top,
+            }
+
+    retriever = AliasAwareRetriever()
+    agent = RetrievalAgent(service=HybridRetrievalService(retriever=retriever))
+    params = {
+        "query": "帮我解释一下 TS 和 JS 的区别，至少500字",
+        "rewrittenQuery": "帮我解释一下 TS 和 JS 的区别，至少500字",
+        "keywords": ["TS", "JS"],
+        "retrievalStrategy": "LOCAL_HYBRID",
+    }
+
+    events = [
+        event
+        async for event in agent.run(
+            task_id="task-query-expansion",
+            trace_id="trace-query-expansion",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert [event.event for event in events] == ["progress", "result_chunk"]
+    assert len(retriever.calls) > 1
+    assert any("TypeScript" in call and "JavaScript" in call for call in retriever.calls)
+    assert params["queryExpansionResult"]["expandedQueries"][0] == params["rewrittenQuery"]
+    assert params["retrievalEvidenceDiagnostics"]["expandedQueryCount"] > 1
+    assert params["retrievalResult"]["documents"][0]["title"] == "TypeScript and JavaScript"
 
 
 @pytest.mark.asyncio

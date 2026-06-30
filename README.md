@@ -9,7 +9,7 @@
 ## 项目亮点
 
 - **18 个专职智能体协作运行**：基于 LangGraph 构建多智能体运行时，由 `PythonAgentSupervisor` 统一编排，支持动态意图路由、fan-out 并行生成和链式任务组合。
-- **四路融合 RAG 检索**：Grep（FMM 术语词典 + 三阶段渐进回退）、Vector（DashScope embedding + pgvector 1024 维）、Graph（1-hop/2-hop 知识图谱扩展 + PageRank + 社区加权）、Web（Tavily 联网搜索）四路并行召回，经加权 RRF 融合（k=60，Graph 权重按 7 种 intent 动态调整 0.5-1.8），纯规则 QueryClassifier 零 LLM 调用分类检索策略；第三阶段 benchmark 中基础 100 题 hit@3 达 100/100，图谱型 100 题 hit@3 达 94/100，且 channelErrorCount=0。
+- **四路融合 RAG 检索**：Grep（FMM 术语词典 + 三阶段渐进回退）、Vector（DashScope embedding + pgvector 1024 维）、Graph（1-hop/2-hop 知识图谱扩展 + PageRank + 社区加权）、Web（Tavily 联网搜索）四路并行召回，经加权 RRF 融合（k=60，Graph 权重按 7 种 intent 动态调整 0.5-1.8），纯规则 QueryClassifier 零 LLM 调用分类检索策略；基础 100 题 hit@3 达 100/100，2026-06-28 图谱型 100 题 hit@3 达 100/100，且 channelErrorCount=0。
 - **完整学习闭环**：从诊断评估、路径规划、资源推送、练习批改到错题复习，形成"学-练-测-评-复"全链路闭环，学习画像与知识掌握图谱实时更新。
 - **上下文工程分层架构**：会话记忆、结构化摘要、学习画像、知识图谱、学习计划、练习结果六层记忆分层持久化，`SnapshotBuilder` 聚合为系统提示词，`ConversationCompactor` 智能压缩长对话；**2026-06-25优化**：动态Token预算（Claude Opus提升59倍）、Prompt缓存（成本-90%）、元数据注入（质量+10%）、结构感知压缩（工具可用性+20%）、语义重排序（Hits@3达95-98%）。
 - **无伪生成边界保障**：可发布资源必须携带 `generatedBy=LLM`、`contentOrigin=LLM`、`provider`、`model`、`agentName`、`evidenceIds`、`fallback=false` 等标识，Python/Java/前端三层共同校验。
@@ -30,7 +30,7 @@
 | 错题本与复习 | SM-2 间隔重复算法组织复习计划，按主题归并错题 | 间隔重复调度 |
 | 学习画像 | 多维度学习特征建模，知识掌握图谱可视化 | Profile Registry、Graph Store |
 | 悬浮语音助手 | 实时 ASR/TTS、语音命令解析、页面上下文问答、朗读控制 | AudioWorklet、百炼 Qwen |
-| 知识库检索 | 642 wiki + 499 资源文档向量化，四路融合 RAG | pgvector、RRF 融合 |
+| 知识库检索 | 986 页 LLM-Wiki 编译知识页 + 资源文档向量化，四路融合 RAG | pgvector、RRF 融合 |
 
 ---
 
@@ -217,7 +217,14 @@ zhixue-engine/
 │       ├── memory/                # 记忆系统（会话/画像/知识图谱/计划）
 │       └── runtime/               # Supervisor 编排与 SnapshotBuilder
 ├── tests/                         # 端到端与系统测试
-├── wiki/                          # RAG 原始知识文档（642 wiki + 499 资源）
+├── wiki/                          # LLM-Wiki vault：课程编译页 + raw/source/schema/log 维护层
+│   ├── index.md                   # 内容导航入口，供 agent 查询/维护前读取
+│   ├── schema.md                  # LLM-Wiki 页面、来源、ingest/query/lint 协议
+│   ├── log.md                     # ingest/query/lint/repair 追加日志
+│   ├── raw/                       # 不可变原始来源登记与 source notes（不进入 RAG 导入）
+│   ├── maintenance/               # lint checklist 与 error book（不进入 RAG 导入）
+│   ├── templates/                 # 概念页/source note 模板（不进入 RAG 导入）
+│   └── <课程目录>/                # 986 页编译知识页，导入 rag.wiki_page / knowledge_chunk
 ├── docker-compose.yml             # 6 服务编排
 ├── init.sql                       # PostgreSQL 初始化（三 schema + 枚举 + 表）
 ├── mongo-init.js                  # MongoDB 初始化
@@ -264,6 +271,8 @@ flowchart LR
 
 Graph-aware 查询会额外启用图谱种子 canonical 化、低价值 `wiki://` seed 跳过、direct evidence Top5 保护，以及 strong grep top3 保护。普通 `LOCAL_HYBRID` 默认路径保持不变，线上向量检索仍使用单次 1 秒 embedding 预算；持久 query embedding cache 仅用于 benchmark 稳定复跑，不扩大普通请求延迟。
 
+`wiki/` 按 LLM-Wiki 方式组织：课程目录是已编译知识页，会导入 `rag.wiki_page` 并向量化；`wiki/raw/`、`wiki/maintenance/`、`wiki/templates/` 以及根部 `index.md/schema.md/log.md/README.md` 是维护层，离线导入脚本会显式排除，避免把元文档污染到 RAG 语料。
+
 **四路召回详解**：
 
 | 通道 | 核心技术 | 策略 |
@@ -294,13 +303,13 @@ RRF_score(item) = Σ weight × priority_boost × slug_penalty / (k + rank + 1)
 | 测试集 | hit@1 | hit@3 | 平均延迟 | P95 延迟 |
 |---|---|---|---|---|
 | 基础 100 题 | 100% | **100/100** | 861.07ms | 972.03ms |
-| 图谱型 100 题 | 56% | **94/100** | 652.38ms | 765.35ms |
+| 图谱型 100 题 | 64% | **100/100** | 1682.14ms | 1829.76ms |
 
-图谱型测试额外指标：primaryTop5 98.0%、evidenceNodeRecallTop5 85.67%、completeEvidenceTop5 63.0%、channelErrorCount 0、overallPass=true。
+图谱型测试额外指标：primaryTop5 97.0%、evidenceNodeRecallTop5 90.0%、completeEvidenceTop5 72.0%、channelErrorCount 0、overallPass=true。
 
-报告文件：`python-agent/reports/rag_100_phase3_20260614.json`、`python-agent/reports/graph_rag_100_phase3_pass_20260614.json`。Graph benchmark summary 固化了 `passHitAt3`、`passLatency`、`passEvidenceRecall`、`passCompleteEvidence`、`overallPass` 等门槛字段，`lowEvidenceRecordsByIntent` 用于后续低召回样本修复。
+报告文件：`python-agent/reports/rag_100_phase3_20260614.json`、历史 Graph 基线 `python-agent/reports/graph_rag_100_phase3_pass_20260614.json`、最新 Graph 验证 `tmp/graph_rag_100_after_query_object_top3_20260628.json`。Graph benchmark summary 固化了 `passHitAt3`、`passLatency`、`passEvidenceRecall`、`passCompleteEvidence`、`overallPass` 等门槛字段，`lowEvidenceRecordsByIntent` 用于后续低召回样本修复。
 
-预置向量数据随仓库提供（`vector_data.dump`，642 wiki + 499 资源文档），首次部署自动恢复。
+预置向量数据随仓库提供（`vector_data.dump`，包含 wiki 编译页、资源文档、图谱特征等 RAG 数据），首次部署自动恢复。
 
 ### 记忆系统与上下文工程
 

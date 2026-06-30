@@ -30,6 +30,51 @@ def test_query_classifier_routes_new_concept_to_local_hybrid() -> None:
     assert result.retrieval_strategy == "LOCAL_HYBRID"
 
 
+def test_query_classifier_routes_plain_concept_explanation_to_grep_first() -> None:
+    result = QueryClassifier().classify(
+        {
+            "query": "请解释“安全策略与等保”的核心概念、典型场景和常见误区。（参考方向：安全策略、等级保护、等保2.0、合规）"
+        }
+    )
+
+    assert result.query_type == "NEW_CONCEPT"
+    assert result.retrieval_strategy == "LOCAL_GREP_FIRST"
+    assert result.graph_intent is None
+    assert result.reason == "plain_concept_explanation"
+
+
+def test_query_classifier_keeps_multi_version_concept_local() -> None:
+    result = QueryClassifier().classify(
+        {
+            "query": "请解释“MVCC多版本并发控制详解”的核心概念、典型场景和常见误区。（参考方向：数据库、MVCC、事务、并发控制）"
+        }
+    )
+
+    assert result.query_type == "NEW_CONCEPT"
+    assert result.retrieval_strategy == "LOCAL_GREP_FIRST"
+    assert result.graph_intent is None
+
+
+def test_query_classifier_routes_comparison_named_concept_explanation_to_grep_first() -> None:
+    result = QueryClassifier().classify(
+        {
+            "query": "请解释“GCC与LLVM编译器架构对比”的核心概念、典型场景和常见误区。（参考方向：编译原理、GCC、LLVM、编译器架构）"
+        }
+    )
+
+    assert result.query_type == "NEW_CONCEPT"
+    assert result.retrieval_strategy == "LOCAL_GREP_FIRST"
+    assert result.graph_intent is None
+
+
+def test_query_classifier_keeps_explicit_comparison_question_as_graph_intent() -> None:
+    result = QueryClassifier().classify({"query": "请比较GCC与LLVM编译器架构的区别和联系"})
+
+    assert result.query_type == "COMPARISON"
+    assert result.retrieval_strategy == "LOCAL_HYBRID"
+    assert result.graph_intent == "COMPARISON"
+
+
 def test_query_classifier_routes_error_debug_to_local_hybrid() -> None:
     result = QueryClassifier().classify({"query": "NullPointerException 报错怎么办"})
 
@@ -139,6 +184,33 @@ def test_query_classifier_keeps_graph_relation_template_over_comparison_terms() 
     )
 
     assert result.graph_intent == "CROSS_LAYER_RELATION"
+
+
+def test_query_classifier_keeps_graph_relation_template_for_graph_theory_links() -> None:
+    result = QueryClassifier().classify(
+        {
+            "query": (
+                "请从知识图谱关系角度说明「图着色与色多项式」与"
+                "「欧拉图与哈密顿图、NP完全性与归约」之间的多跳联系。"
+            )
+        }
+    )
+
+    assert result.graph_intent == "CROSS_LAYER_RELATION"
+
+
+def test_query_classifier_keeps_combinatorics_bridge_as_multi_hop() -> None:
+    result = QueryClassifier().classify(
+        {
+            "query": (
+                "请从知识图谱关系角度说明「鸽巢原理及其推广」与"
+                "「图着色与色多项式、欧拉图与哈密顿图」之间的多跳联系。"
+                "关系焦点：从组合计数思想连接图着色、欧拉图与哈密顿图。"
+            )
+        }
+    )
+
+    assert result.graph_intent == "MULTI_HOP_RELATION"
 
 
 def test_query_classifier_keeps_prerequisite_template_over_mechanism_terms() -> None:

@@ -6,7 +6,14 @@ import logging
 import time
 from typing import Any, Callable
 
-from retrieval.wiki_tools import graph_intent_allows_wiki_tools
+from retrieval.wiki_tools import (
+    ALLOWED_WIKI_RELATION_TYPES,
+    bounded_wiki_int,
+    clean_wiki_query,
+    graph_intent_allows_wiki_tools,
+    normalize_wiki_relation_type,
+    normalize_wiki_slug,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +28,7 @@ def build_wiki_tool_protocol(
     intent = resolve_graph_intent(params)
     if intent == "PREREQUISITE_PATH":
         return (
-            "Wiki graph tool protocol: first read the seed page, then use wiki_neighbors "
+            "Wiki graph tool protocol: first read the seed page with the current query when useful, then use wiki_neighbors "
             "for prerequisite/follow-up evidence. Use at most 3 wiki tool steps. Treat wiki "
             "results as evidence enhancement, not as a replacement for retrieval evidence.\n\n"
         )
@@ -33,9 +40,15 @@ def build_wiki_tool_protocol(
         )
     if intent == "COMPARISON":
         return (
-            "Wiki graph tool protocol: read the comparison object pages and key chunks, then "
+            "Wiki graph tool protocol: read the comparison object pages and query-relevant key chunks, then "
             "summarize common points, differences, and boundaries. Use at most 3 wiki tool "
             "steps and keep retrieval evidence as the primary grounding.\n\n"
+        )
+    if intent == "CROSS_LAYER_RELATION":
+        return (
+            "Wiki graph tool protocol: read the explicitly named concept pages with the current query, then inspect "
+            "neighbors only when a relation needs supporting evidence. Use at most 3 wiki tool "
+            "steps and distinguish observed edges from inferred cross-layer learning paths.\n\n"
         )
     return ""
 
@@ -57,6 +70,30 @@ def tool_wiki_search(
     tools_enabled: Callable[[dict[str, Any]], bool],
 ) -> dict[str, Any]:
     started = perf_counter()
+    if not tools_enabled(params):
+        result = {"enabled": False, "reason": "wiki tools are limited to graph-aware intents"}
+        record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_search",
+            tool_input=tool_input,
+            result=result,
+            elapsed_ms=elapsed_ms(started),
+            tools_enabled=tools_enabled,
+        )
+        return result
+    query = clean_wiki_query(tool_input.get("query") or params.get("rewrittenQuery") or params.get("query") or "")
+    limit = bounded_int(tool_input.get("limit"), default=5, minimum=1, maximum=8)
+    if not query:
+        result = {"enabled": True, "query": query, "results": [], "diagnostics": {"reason": "empty query"}}
+        record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_search",
+            tool_input={"query": query, "limit": limit},
+            result=result,
+            elapsed_ms=elapsed_ms(started),
+            tools_enabled=tools_enabled,
+        )
+        return result
     allowed, reason = claim_wiki_tool_step(params, tools_enabled=tools_enabled)
     if not allowed:
         result = {"enabled": False, "reason": reason}
@@ -69,8 +106,6 @@ def tool_wiki_search(
             tools_enabled=tools_enabled,
         )
         return result
-    query = str(tool_input.get("query") or params.get("rewrittenQuery") or params.get("query") or "").strip()
-    limit = bounded_int(tool_input.get("limit"), default=5, minimum=1, maximum=8)
     try:
         result = {"enabled": True, **wiki_toolset_cls(wiki_db_config()).wiki_search(query, limit=limit)}
     except Exception as exc:
@@ -96,6 +131,31 @@ def tool_wiki_read(
     tools_enabled: Callable[[dict[str, Any]], bool],
 ) -> dict[str, Any]:
     started = perf_counter()
+    if not tools_enabled(params):
+        result = {"enabled": False, "reason": "wiki tools are limited to graph-aware intents"}
+        record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_read",
+            tool_input=tool_input,
+            result=result,
+            elapsed_ms=elapsed_ms(started),
+            tools_enabled=tools_enabled,
+        )
+        return result
+    slug = normalize_wiki_slug(tool_input.get("slug"))
+    chunk_limit = bounded_int(tool_input.get("chunkLimit"), default=3, minimum=1, maximum=5)
+    query = clean_wiki_query(tool_input.get("query") or params.get("rewrittenQuery") or params.get("query") or "")
+    if not slug:
+        result = {"enabled": True, "slug": slug, "found": False, "diagnostics": {"reason": "empty or invalid slug"}}
+        record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_read",
+            tool_input={"slug": slug, "chunkLimit": chunk_limit, "query": query},
+            result=result,
+            elapsed_ms=elapsed_ms(started),
+            tools_enabled=tools_enabled,
+        )
+        return result
     allowed, reason = claim_wiki_tool_step(params, tools_enabled=tools_enabled)
     if not allowed:
         result = {"enabled": False, "reason": reason}
@@ -108,17 +168,18 @@ def tool_wiki_read(
             tools_enabled=tools_enabled,
         )
         return result
-    slug = str(tool_input.get("slug") or "").strip()
-    chunk_limit = bounded_int(tool_input.get("chunkLimit"), default=3, minimum=1, maximum=5)
     try:
-        result = {"enabled": True, **wiki_toolset_cls(wiki_db_config()).wiki_read(slug, chunk_limit=chunk_limit)}
+        result = {
+            "enabled": True,
+            **wiki_toolset_cls(wiki_db_config()).wiki_read(slug, chunk_limit=chunk_limit, query=query),
+        }
     except Exception as exc:
         LOGGER.warning("wiki_read failed: %s", exc)
         result = {"enabled": True, "error": f"{type(exc).__name__}: {exc}", "found": False}
     record_wiki_tool_call(
         params=params,
         tool_name="wiki_read",
-        tool_input={"slug": slug, "chunkLimit": chunk_limit},
+        tool_input={"slug": slug, "chunkLimit": chunk_limit, "query": query},
         result=result,
         elapsed_ms=elapsed_ms(started),
         tools_enabled=tools_enabled,
@@ -135,6 +196,56 @@ def tool_wiki_neighbors(
     tools_enabled: Callable[[dict[str, Any]], bool],
 ) -> dict[str, Any]:
     started = perf_counter()
+    if not tools_enabled(params):
+        result = {"enabled": False, "reason": "wiki tools are limited to graph-aware intents"}
+        record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_neighbors",
+            tool_input=tool_input,
+            result=result,
+            elapsed_ms=elapsed_ms(started),
+            tools_enabled=tools_enabled,
+        )
+        return result
+    slug = normalize_wiki_slug(tool_input.get("slug"))
+    relation_type = normalize_wiki_relation_type(tool_input.get("relationType")) or None
+    limit = bounded_int(tool_input.get("limit"), default=8, minimum=1, maximum=12)
+    if not slug:
+        result = {
+            "enabled": True,
+            "slug": slug,
+            "found": False,
+            "outgoing": [],
+            "incoming": [],
+            "diagnostics": {"reason": "empty or invalid slug"},
+        }
+        record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_neighbors",
+            tool_input={"slug": slug, "relationType": relation_type, "limit": limit},
+            result=result,
+            elapsed_ms=elapsed_ms(started),
+            tools_enabled=tools_enabled,
+        )
+        return result
+    if relation_type and relation_type not in ALLOWED_WIKI_RELATION_TYPES:
+        result = {
+            "enabled": True,
+            "slug": slug,
+            "found": True,
+            "outgoing": [],
+            "incoming": [],
+            "diagnostics": {"reason": "invalid relationType"},
+        }
+        record_wiki_tool_call(
+            params=params,
+            tool_name="wiki_neighbors",
+            tool_input={"slug": slug, "relationType": relation_type, "limit": limit},
+            result=result,
+            elapsed_ms=elapsed_ms(started),
+            tools_enabled=tools_enabled,
+        )
+        return result
     allowed, reason = claim_wiki_tool_step(params, tools_enabled=tools_enabled)
     if not allowed:
         result = {"enabled": False, "reason": reason}
@@ -147,9 +258,6 @@ def tool_wiki_neighbors(
             tools_enabled=tools_enabled,
         )
         return result
-    slug = str(tool_input.get("slug") or "").strip()
-    relation_type = str(tool_input.get("relationType") or "").strip() or None
-    limit = bounded_int(tool_input.get("limit"), default=8, minimum=1, maximum=12)
     try:
         result = {
             "enabled": True,
@@ -304,8 +412,4 @@ def safe_elapsed_ms(value: Any) -> float:
 
 
 def bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(minimum, min(maximum, number))
+    return bounded_wiki_int(value, default=default, minimum=minimum, maximum=maximum)

@@ -9,6 +9,14 @@ from typing import Any
 
 
 DEFAULT_REPAIR_PATH = Path(__file__).with_name("graph_low_evidence_repairs.json")
+ALLOWED_DB_RELATIONS = {"WIKILINK", "SHARED_TAG", "SHARED_SOURCE", "COMMUNITY"}
+SEMANTIC_RELATION_WEIGHTS = {
+    "PREREQUISITE_OF": 1.4,
+    "BUILDS_ON": 1.3,
+    "CROSS_LAYER_RELATION": 1.3,
+    "MECHANISM_APPLICATION": 1.2,
+    "COMPARISON": 1.1,
+}
 
 
 def canonical_slug_key(value: Any) -> str:
@@ -35,22 +43,23 @@ def load_repair_link_records(path: Path | str = DEFAULT_REPAIR_PATH) -> list[dic
         repair_id = str(item.get("id") or "").strip()
         graph_intent = str(item.get("graphIntent") or "").strip()
         for pair in item.get("links", []):
-            if not isinstance(pair, list) or len(pair) != 2:
+            parsed = _parse_repair_pair(pair, graph_intent=graph_intent)
+            if not parsed:
                 continue
-            from_slug = str(pair[0] or "").strip()
-            to_slug = str(pair[1] or "").strip()
+            from_slug, to_slug, semantic_relation, db_relation, weight = parsed
             if not from_slug or not to_slug:
                 continue
-            records.append(
-                {
-                    "from_slug": from_slug,
-                    "to_slug": to_slug,
-                    "relation": "WIKILINK",
-                    "weight": 1,
-                    "repair_id": repair_id,
-                    "graph_intent": graph_intent,
-                }
-            )
+            record = {
+                "from_slug": from_slug,
+                "to_slug": to_slug,
+                "relation": db_relation,
+                "weight": weight,
+                "repair_id": repair_id,
+                "graph_intent": graph_intent,
+            }
+            if semantic_relation:
+                record["semantic_relation"] = semantic_relation
+            records.append(record)
     return records
 
 
@@ -89,16 +98,17 @@ def build_repair_wikilinks(
         if key in seen:
             continue
         seen.add(key)
-        links.append(
-            {
-                "from_title": from_title,
-                "to_title": to_title,
-                "relation": relation,
-                "weight": int(record.get("weight") or 1),
-                "repair_id": record.get("repair_id"),
-                "graph_intent": record.get("graph_intent"),
-            }
-        )
+        link = {
+            "from_title": from_title,
+            "to_title": to_title,
+            "relation": relation,
+            "weight": float(record.get("weight") or 1),
+            "repair_id": record.get("repair_id"),
+            "graph_intent": record.get("graph_intent"),
+        }
+        if record.get("semantic_relation"):
+            link["semantic_relation"] = record.get("semantic_relation")
+        links.append(link)
     return links
 
 
@@ -107,3 +117,25 @@ def _resolve_title(index: dict[str, str], slug: Any) -> str:
     if not raw:
         return ""
     return index.get(raw) or index.get(canonical_slug_key(raw)) or ""
+
+
+def _parse_repair_pair(pair: Any, *, graph_intent: str) -> tuple[str, str, str, str, float] | None:
+    if isinstance(pair, list):
+        if len(pair) < 2:
+            return None
+        from_slug = str(pair[0] or "").strip()
+        to_slug = str(pair[1] or "").strip()
+        raw_semantic_relation = pair[2] if len(pair) >= 3 else ""
+        semantic_relation = str(raw_semantic_relation or "").strip().upper()
+        db_relation = "WIKILINK"
+        weight = SEMANTIC_RELATION_WEIGHTS.get(semantic_relation, 1.0)
+        return from_slug, to_slug, semantic_relation, db_relation, weight
+    if isinstance(pair, dict):
+        from_slug = str(pair.get("from") or pair.get("from_slug") or "").strip()
+        to_slug = str(pair.get("to") or pair.get("to_slug") or "").strip()
+        semantic_relation = str(pair.get("semanticRelation") or pair.get("semantic_relation") or graph_intent or "WIKILINK").strip().upper()
+        raw_db_relation = str(pair.get("relation") or "WIKILINK").strip().upper()
+        db_relation = raw_db_relation if raw_db_relation in ALLOWED_DB_RELATIONS else "WIKILINK"
+        weight = float(pair.get("weight") or SEMANTIC_RELATION_WEIGHTS.get(semantic_relation, 1.0))
+        return from_slug, to_slug, semantic_relation, db_relation, weight
+    return None

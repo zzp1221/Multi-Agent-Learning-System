@@ -7,7 +7,11 @@ import time
 import dashscope
 from dashscope import MultiModalEmbedding
 
+from retrieval.source_quality import low_value_source_filter_sql
 from src.ai_modules.config import get_settings
+
+KNOWLEDGE_LOW_VALUE_SQL = low_value_source_filter_sql("kd")
+RESOURCE_LOW_VALUE_SQL = low_value_source_filter_sql("rd")
 
 
 class VectorSearcher:
@@ -77,9 +81,10 @@ class VectorSearcher:
             FROM rag.knowledge_chunk kc
             JOIN rag.knowledge_document kd ON kd.id = kc.document_id
             WHERE kd.domain = %s
+              {knowledge_low_value_filter}
             ORDER BY kc.embedding <=> %s::vector
             LIMIT %s
-        """, (vec_str, domain, vec_str, top_k))
+        """.format(knowledge_low_value_filter=KNOWLEDGE_LOW_VALUE_SQL), (vec_str, domain, vec_str, top_k))
         return [(row[0], row[1], float(row[2])) for row in cur.fetchall()]
 
     def search_all(self, cur, query: str, top_k: int = 10,
@@ -99,6 +104,7 @@ class VectorSearcher:
                 FROM rag.knowledge_chunk kc
                 JOIN rag.knowledge_document kd ON kd.id = kc.document_id
                 WHERE kd.domain = %s
+                  {knowledge_low_value_filter}
                 UNION ALL
                 SELECT rd.source_ref AS slug, rd.title,
                        ROUND((1 - (rc.embedding <=> %s::vector))::numeric, 4) AS similarity,
@@ -110,8 +116,12 @@ class VectorSearcher:
                   AND lr.status = 'ACTIVE'
                   AND COALESCE(lr.metadata_json ->> 'wikiBindingStatus', '') <> 'LOW_CONFIDENCE_DROPPED'
                   AND rc.access_scope::text = 'GLOBAL'
+                  {resource_low_value_filter}
             ) combined
             ORDER BY similarity DESC
             LIMIT %s
-        """, (vec_str, domain, vec_str, domain, top_k))
+        """.format(
+            knowledge_low_value_filter=KNOWLEDGE_LOW_VALUE_SQL,
+            resource_low_value_filter=RESOURCE_LOW_VALUE_SQL,
+        ), (vec_str, domain, vec_str, domain, top_k))
         return [(row[0], row[1], float(row[2]), row[3]) for row in cur.fetchall()]

@@ -313,6 +313,40 @@ class _StubRetrievalAgent(PlaceholderAgent):
         )
 
 
+class _StubWebRetrievalAgent(PlaceholderAgent):
+    def __init__(self) -> None:
+        super().__init__("stub web retrieval", "retrieval")
+
+    async def run(self, *, task_id, trace_id, seq, params, **kwargs):
+        del kwargs
+        params["webSearchEnabled"] = True
+        params["retrievalResult"] = {
+            "documents": [{"title": "SBOM current guidance", "channel": "web", "url": "https://example.com/sbom"}],
+            "sourcesSummary": "SBOM current guidance(web:0.95)",
+        }
+        params["retrievalRawResult"] = {
+            "retrievalStrategy": "WEB_AUGMENTED",
+            "webSearchEnabled": True,
+            "channels": {
+                "grep": {"priority": [], "normal_count": 0},
+                "vector": [],
+                "graph": [],
+                "web": [("https://example.com/sbom", "SBOM current guidance", 0.95)],
+            },
+        }
+        params["webRetrievalResult"] = {
+            "enabled": True,
+            "query": "SBOM current guidance",
+            "results": [{"title": "SBOM current guidance", "url": "https://example.com/sbom"}],
+        }
+        yield ProgressSSEEvent(
+            taskId=task_id,
+            traceId=trace_id,
+            seq=seq,
+            payload=ProgressPayload(stage="retrieval", percent=35, message="retrieval done"),
+        )
+
+
 class _AlwaysWeakRetrievalAgent(PlaceholderAgent):
     def __init__(self) -> None:
         super().__init__("weak retrieval", "retrieval")
@@ -1595,10 +1629,12 @@ async def test_supervisor_fails_when_critic_fails_after_key_result() -> None:
 @pytest.mark.asyncio
 async def test_supervisor_preserves_classified_llm_error() -> None:
     supervisor = PythonAgentSupervisor()
+    supervisor.agent_registry["query_rewrite"] = _StubRewriteAgent()
+    supervisor.agent_registry["retrieval"] = _StubWebRetrievalAgent()
     supervisor.agent_registry["tutor"] = _FailingLlmTutorAgent()
     request = EngineStreamRequest(
         serviceType="TUTORING",
-        params={"query": "解释联合索引"},
+        params={"query": "SBOM latest guidance", "webSearchEnabled": True},
         taskId="task-llm-rate-limited",
         traceId="trace-llm-rate-limited",
     )
@@ -1612,6 +1648,13 @@ async def test_supervisor_preserves_classified_llm_error() -> None:
     assert events[-2].payload.provider == "openai_compatible"
     assert events[-2].payload.model == "mimo-v2.5"
     assert events[-2].payload.retryable is True
+    assert events[-1].payload.status == "FAILED"
+    assert events[-1].payload.planning is not None
+    retrieval = events[-1].payload.planning["retrieval"]
+    assert retrieval["retrievalStrategy"] == "WEB_AUGMENTED"
+    assert retrieval["documentCount"] == 1
+    assert retrieval["channels"]["web"] == 1
+    assert retrieval["webSearchEnabled"] is True
 
 
 @pytest.mark.asyncio

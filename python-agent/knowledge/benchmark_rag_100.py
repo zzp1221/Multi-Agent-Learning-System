@@ -29,9 +29,10 @@ import psycopg2
 
 from knowledge.settings_helper import configure_dashscope_api_key
 from retrieval.hybrid_retriever import HybridRetriever
-from retrieval.slug_canonicalizer import safe_slug_key
+from retrieval.source_quality import low_value_source_kind
 from src.ai_modules.config import get_settings
 from src.ai_modules.llms.agent_models import OpenAICompatibleJSONGenerator
+from src.ai_modules.llms.errors import LLMServiceError
 
 RUNTIME_CONFIG = configure_dashscope_api_key()
 DB_CONFIG = RUNTIME_CONFIG.postgres.model_dump()
@@ -39,8 +40,16 @@ DEFAULT_QUESTION_COUNT = 100
 DEFAULT_SEED = 20260524
 TOP_K = 5
 JUDGE_CACHE_VERSION = "rag-judge-v1"
-DEFAULT_EMBEDDING_CACHE = Path("reports/rag_100_embedding_cache.json")
+DEFAULT_JUDGE_CACHE = PROJECT_ROOT / "reports" / "rag_100_judge_cache.json"
+DEFAULT_EMBEDDING_CACHE = PROJECT_ROOT / "reports" / "rag_100_embedding_cache.json"
 DEFAULT_EMBEDDING_CACHE_TTL_DAYS = 30
+DEFAULT_JUDGE_MAX_ATTEMPTS = 3
+DEFAULT_JUDGE_RETRY_BASE_SECONDS = 2.0
+RAG_HIT_AT3_MIN_PCT = 99.0
+RAG_SUCCESS_RATE_MIN_PCT = 99.0
+RAG_AVG_LATENCY_MAX_MS = 1651.99
+RAG_P95_LATENCY_MAX_MS = 4049.05
+RAG_CHANNEL_ERROR_MAX = 0
 
 
 def _normalize_slug(value: Any) -> str:
@@ -68,17 +77,7 @@ def _top_channel_items(items: list[Any], limit: int = 10) -> list[dict[str, Any]
 
 
 def _low_value_kind(slug: Any, title: Any) -> str | None:
-    normalized_slug = _normalize_slug(slug)
-    normalized_title = str(title or "").strip().lower()
-    if not normalized_slug or normalized_slug == "none":
-        return "none"
-    if re.match(r"^https?://", normalized_slug):
-        return "http"
-    if normalized_slug.startswith("wiki://"):
-        return "wiki"
-    if "视频资源" in normalized_slug or "视频" in str(title or "") or "video" in normalized_slug or "video" in normalized_title:
-        return "video"
-    return None
+    return low_value_source_kind(slug, title)
 
 
 def _summarize_low_value_sources(
@@ -353,6 +352,7 @@ def _search_vector_with_retries(
     retriever: HybridRetriever,
     cur,
     question: str,
+    graph_intent: str | None = None,
     max_attempts: int = 1,
     embedding_cache: QueryEmbeddingCache | None = None,
 ) -> list[tuple]:
@@ -375,6 +375,63 @@ def _search_vector_with_retries(
     raise last_error
 
 
+def _benchmark_diagnostics_from_debug(
+    retriever: HybridRetriever,
+    *,
+    graph_intent: str | None,
+    timings: dict[str, float],
+    embedding_cache: QueryEmbeddingCache | None,
+    debug: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(debug, dict):
+        return None
+
+    grep_results = debug.get("grepResults") if isinstance(debug.get("grepResults"), dict) else {}
+    vector_results = debug.get("vectorResults") if isinstance(debug.get("vectorResults"), list) else []
+    graph_results = debug.get("graphResults") if isinstance(debug.get("graphResults"), list) else []
+    web_results = debug.get("webResults") if isinstance(debug.get("webResults"), list) else []
+    pre_fused = debug.get("preFused") if isinstance(debug.get("preFused"), list) else []
+    post_fused = debug.get("postFused") if isinstance(debug.get("postFused"), list) else []
+    prerequisite_evidence = (
+        debug.get("prerequisiteEvidence") if isinstance(debug.get("prerequisiteEvidence"), dict) else {}
+    )
+
+    return {
+        "retrievalGraphIntent": graph_intent,
+        "channelErrors": debug.get("channelErrors", {}),
+        "embeddingCache": embedding_cache.snapshot_stats() if embedding_cache else None,
+        "graphSeedSlugs": debug.get("graphSeedSlugs", []),
+        "channelsTopN": {
+            "grepPriority": _top_channel_items(grep_results.get("priority", []), 10),
+            "grepNormal": _top_channel_items(grep_results.get("normal", []), 10),
+            "vector": _top_channel_items(vector_results, 10),
+            "graph": _top_channel_items(graph_results, 10),
+            "web": _top_channel_items(web_results, 10),
+        },
+        "preFused": _top_channel_items(pre_fused, 10),
+        "postFused": _top_channel_items(post_fused, 10),
+        "fusionReplacementsTop5": _fusion_replacements(pre_fused, post_fused),
+        "prerequisiteEvidence": retriever._format_prerequisite_evidence(prerequisite_evidence),
+        "top5Stabilization": debug.get("top5Stabilization", {}),
+        "strongGrepTop3": debug.get("strongGrepTop3", {}),
+        "strongGrepTop": debug.get("strongGrepTop", {}),
+        "strongGrepEvidence": debug.get("strongGrepEvidence", {}),
+        "queryObjectTop3": debug.get("queryObjectTop3", {}),
+        "explicitGraphEvidence": debug.get("explicitGraphEvidence", {}),
+        "wikiTraversal": {
+            **(debug.get("wikiTraversal", {}) if isinstance(debug.get("wikiTraversal"), dict) else {}),
+            "wiki_neighbors_ms": round(timings.get("graph_ms", 0.0), 2),
+        },
+        "lowValueSources": _summarize_low_value_sources(
+            grep_results=grep_results,
+            vector_results=vector_results,
+            graph_results=graph_results,
+            web_results=web_results,
+        ),
+        "graphCandidateExplainTop50": debug.get("graphCandidateExplainTop50", {}),
+    }
+
+
 def run_retrieval(
     question: str,
     *,
@@ -388,180 +445,40 @@ def run_retrieval(
     error: str | None = None
     started = time.perf_counter()
     result: dict[str, Any] = {"query": question, "graphIntent": graph_intent, "channels": {}, "top": []}
-    channel_errors: dict[str, str] = {}
 
     with psycopg2.connect(**DB_CONFIG) as conn:
         with conn.cursor() as cur:
             try:
                 with channel_timer(timings, "init_ms"):
-                    retriever._init(cur)
+                    retriever.initialize(cur)
+                    _install_embedding_cache(retriever, embedding_cache)
 
-                with channel_timer(timings, "grep_ms"):
-                    try:
-                        grep_results = retriever._grep.search(cur, question, retriever.domain)
-                    except Exception as exc:
-                        channel_errors["grep"] = f"{type(exc).__name__}: {exc}"
-                        grep_results = {"priority": [], "normal": []}
-
-                use_grep_first = (
-                    retrieval_strategy.strip().upper() == "LOCAL_GREP_FIRST"
-                    and not retriever._is_graph_aware_intent(graph_intent)
-                    and retriever._has_strong_grep_hit(grep_results)
+                strategy = retrieval_strategy.strip().upper()
+                retrieve_fn = retriever.retrieve_grep_first if strategy == "LOCAL_GREP_FIRST" else retriever.retrieve
+                result = retrieve_fn(
+                    cur,
+                    question,
+                    web_search_enabled=False,
+                    graph_intent=graph_intent,
+                    timings=timings,
+                    include_diagnostics=include_diagnostics,
                 )
-                if use_grep_first:
-                    vector_all = []
-                    vector_results = []
-                else:
-                    with channel_timer(timings, "vector_ms"):
-                        try:
-                            vector_all = _search_vector_with_retries(
-                                retriever,
-                                cur,
-                                question,
-                                embedding_cache=embedding_cache,
-                            )
-                        except Exception as exc:
-                            channel_errors["vector"] = f"{type(exc).__name__}: {exc}"
-                            vector_all = []
-                        vector_results = [(item[0], item[1], item[2]) for item in vector_all]
-
-                seed_slugs = []
-                prerequisite_evidence = retriever._empty_prerequisite_evidence()
-                graph_results = []
-                if not use_grep_first:
-                    with channel_timer(timings, "graph_ms"):
-                        seed_slugs = retriever._graph_seed_slugs(
-                            grep_results,
-                            vector_results,
-                            graph_intent,
-                        )
-                        try:
-                            graph_results = retriever._graph.expand(
-                                cur,
-                                seed_slugs,
-                                top_n=retriever._graph_top_n(graph_intent),
-                                query=question,
-                                graph_intent=graph_intent,
-                            )
-                            if retriever._uses_prerequisite_evidence_fill(graph_intent, question):
-                                prerequisite_evidence = retriever._graph.build_prerequisite_evidence(cur, seed_slugs, question)
-                                graph_results = retriever._merge_graph_evidence(
-                                    prerequisite_evidence["directEvidence"],
-                                    graph_results,
-                                    prerequisite_evidence["protectedSeeds"],
-                                )
-                        except Exception as exc:
-                            channel_errors["graph"] = f"{type(exc).__name__}: {exc}"
-                            graph_results = []
-
-                web_results: list[Any] = []
-                with channel_timer(timings, "fusion_ms"):
-                    pre_fused = retriever._rrf.fuse(
-                        grep_results,
-                        vector_results,
-                        graph_results,
-                        web_results,
-                        graph_weight=retriever._graph_weight(graph_intent),
-                        slug_penalty=(
-                            retriever._graph_slug_penalty
-                            if retriever._is_graph_aware_intent(graph_intent)
-                            else None
-                        ),
-                        slug_key=safe_slug_key,
-                    )
-                    fused, graph_diagnostics = retriever._stabilize_graph_top5_with_diagnostics(
-                        pre_fused,
-                        graph_results,
-                        graph_intent,
-                        protected_slugs={
-                            item[0]
-                            for item in prerequisite_evidence["protectedSeeds"]
-                            + prerequisite_evidence["directEvidence"]
-                        },
-                    )
-                    fused, grep_top3_diagnostics = retriever._protect_strong_grep_top3_with_diagnostics(
-                        fused,
-                        grep_results,
-                        graph_intent,
-                    )
-                    fused, grep_top_diagnostics = retriever._promote_strong_grep_top_with_diagnostics(
-                        fused,
-                        grep_results,
-                        graph_intent,
-                    )
-
-                diagnostics = None
-                if include_diagnostics:
-                    try:
-                        graph_explain = retriever._graph.explain_candidates(
-                            cur,
-                            seed_slugs,
-                            limit=50,
-                            default_window=retriever._graph_top_n(graph_intent) * 3,
-                            query=question,
-                            graph_intent=graph_intent,
-                        )
-                    except Exception as exc:
-                        channel_errors["graphExplain"] = f"{type(exc).__name__}: {exc}"
-                        graph_explain = {}
-                    diagnostics = {
-                        "retrievalGraphIntent": graph_intent,
-                        "channelErrors": channel_errors,
-                        "embeddingCache": embedding_cache.snapshot_stats() if embedding_cache else None,
-                        "graphSeedSlugs": seed_slugs,
-                        "channelsTopN": {
-                            "grepPriority": _top_channel_items(grep_results.get("priority", []), 10),
-                            "grepNormal": _top_channel_items(grep_results.get("normal", []), 10),
-                            "vector": _top_channel_items(vector_results, 10),
-                            "graph": _top_channel_items(graph_results, 10),
-                            "web": _top_channel_items(web_results, 10),
-                        },
-                        "preFused": _top_channel_items(pre_fused, 10),
-                        "postFused": _top_channel_items(fused, 10),
-                        "fusionReplacementsTop5": _fusion_replacements(pre_fused, fused),
-                        "prerequisiteEvidence": retriever._format_prerequisite_evidence(prerequisite_evidence),
-                        "top5Stabilization": graph_diagnostics,
-                        "strongGrepTop3": grep_top3_diagnostics,
-                        "strongGrepTop": grep_top_diagnostics,
-                        "wikiTraversal": {
-                            "enabled": retriever._normalize_graph_intent(graph_intent)
-                            in {"PREREQUISITE_PATH", "MULTI_HOP_RELATION", "COMPARISON"},
-                            "wiki_neighbors_ms": round(timings.get("graph_ms", 0.0), 2),
-                        },
-                        "lowValueSources": _summarize_low_value_sources(
-                            grep_results=grep_results,
-                            vector_results=vector_results,
-                            graph_results=graph_results,
-                            web_results=web_results,
-                        ),
-                        "graphCandidateExplainTop50": graph_explain,
-                    }
-
-                result = {
-                    "query": question,
-                    "graphIntent": graph_intent,
-                    "retrievalStrategy": "LOCAL_GREP_FIRST" if use_grep_first else "LOCAL_HYBRID",
-                    "webSearchEnabled": False,
-                    "channelErrors": channel_errors,
-                    "channels": {
-                        "grep": {
-                            "priority": grep_results.get("priority", []),
-                            "normal_count": len(grep_results.get("normal", [])),
-                        },
-                        "vector": [(item[0], item[1], item[2], item[3]) for item in vector_all[:5]],
-                        "graph": graph_results,
-                        "web": web_results,
-                    },
-                    "fused": fused,
-                    "top": fused[:5],
-                }
+                result.setdefault("retrievalStrategy", strategy if strategy == "LOCAL_GREP_FIRST" else "LOCAL_HYBRID")
+                debug = result.pop("_retrievalDebug", None)
+                diagnostics = _benchmark_diagnostics_from_debug(
+                    retriever,
+                    graph_intent=graph_intent,
+                    timings=timings,
+                    embedding_cache=embedding_cache,
+                    debug=debug,
+                )
                 if diagnostics:
                     result["diagnostics"] = diagnostics
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
 
     total_ms = (time.perf_counter() - started) * 1000
-    result.setdefault("channelErrors", channel_errors)
+    result.setdefault("channelErrors", {})
     return result, timings, total_ms, error
 
 
@@ -676,6 +593,9 @@ async def benchmark_questions(
     retrieval_strategy: str = "LOCAL_HYBRID",
     embedding_cache_path: Path | None = DEFAULT_EMBEDDING_CACHE,
     embedding_cache_ttl_days: int = DEFAULT_EMBEDDING_CACHE_TTL_DAYS,
+    quality_thresholds: dict[str, float] | None = None,
+    judge_max_attempts: int = DEFAULT_JUDGE_MAX_ATTEMPTS,
+    judge_retry_base_seconds: float = DEFAULT_JUDGE_RETRY_BASE_SECONDS,
 ) -> dict[str, Any]:
     question_set = _read_json(questions_path)
     questions = question_set.get("questions", [])
@@ -705,7 +625,13 @@ async def benchmark_questions(
             judge_result = normalize_judge_payload(judge_cache[cache_key])
             judge_from_cache = True
         else:
-            judge_result = await judge.judge(question_item, candidates)
+            judge_result = await _judge_with_retries(
+                judge,
+                question_item,
+                candidates,
+                max_attempts=judge_max_attempts,
+                retry_base_seconds=judge_retry_base_seconds,
+            )
             judge_cache[cache_key] = judge_result
             _save_judge_cache(judge_cache_path, judge_cache)
             judge_from_cache = False
@@ -734,6 +660,8 @@ async def benchmark_questions(
             f"latency={record['latencyMs']:.0f}ms"
         )
 
+    summary = summarize_records(records)
+    summary.update(summarize_rag_quality_gates(summary, thresholds=quality_thresholds))
     report = {
         "questionSet": {
             "path": str(questions_path),
@@ -748,12 +676,34 @@ async def benchmark_questions(
             "retrievalStrategy": retrieval_strategy,
             "embeddingCache": embedding_cache.snapshot_stats() if embedding_cache else {"enabled": False},
         },
-        "summary": summarize_records(records),
+        "summary": summary,
         "records": records,
         "elapsedSeconds": round(time.perf_counter() - total_started, 2),
     }
     _write_json(output_path, report)
     return report
+
+
+async def _judge_with_retries(
+    judge: LLMRetrievalJudge,
+    question_item: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    *,
+    max_attempts: int = DEFAULT_JUDGE_MAX_ATTEMPTS,
+    retry_base_seconds: float = DEFAULT_JUDGE_RETRY_BASE_SECONDS,
+) -> dict[str, Any]:
+    attempts = max(1, int(max_attempts))
+    last_error: LLMServiceError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await judge.judge(question_item, candidates)
+        except LLMServiceError as exc:
+            last_error = exc
+            if not exc.retryable or attempt >= attempts:
+                raise
+            await asyncio.sleep(max(0.0, retry_base_seconds) * attempt)
+    assert last_error is not None
+    raise last_error
 
 
 def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -792,6 +742,38 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def summarize_rag_quality_gates(
+    summary: dict[str, Any],
+    *,
+    thresholds: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    gate_thresholds = {
+        "hitAt3Pct": RAG_HIT_AT3_MIN_PCT,
+        "successRatePct": RAG_SUCCESS_RATE_MIN_PCT,
+        "avgLatencyMs": RAG_AVG_LATENCY_MAX_MS,
+        "p95LatencyMs": RAG_P95_LATENCY_MAX_MS,
+        "channelErrorCount": RAG_CHANNEL_ERROR_MAX,
+    }
+    if thresholds:
+        gate_thresholds.update({key: float(value) for key, value in thresholds.items() if key in gate_thresholds})
+
+    pass_hit_at3 = float(summary.get("hitAt3Pct") or 0.0) >= gate_thresholds["hitAt3Pct"]
+    pass_success_rate = float(summary.get("successRatePct") or 0.0) >= gate_thresholds["successRatePct"]
+    pass_latency = (
+        float(summary.get("avgLatencyMs") or 0.0) <= gate_thresholds["avgLatencyMs"]
+        and float(summary.get("p95LatencyMs") or 0.0) <= gate_thresholds["p95LatencyMs"]
+    )
+    pass_channel_errors = int(summary.get("channelErrorCount") or 0) <= int(gate_thresholds["channelErrorCount"])
+    return {
+        "passHitAt3": pass_hit_at3,
+        "passSuccessRate": pass_success_rate,
+        "passLatency": pass_latency,
+        "passChannelErrors": pass_channel_errors,
+        "overallPass": all([pass_hit_at3, pass_success_rate, pass_latency, pass_channel_errors]),
+        "thresholds": gate_thresholds,
+    }
+
+
 def summarize_channel_errors(records: list[dict[str, Any]]) -> dict[str, Any]:
     by_channel: dict[str, int] = {}
     questions = []
@@ -813,6 +795,29 @@ def summarize_channel_errors(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _quality_thresholds_from_args(args: argparse.Namespace) -> dict[str, float]:
+    return {
+        "hitAt3Pct": args.hit_at3_min_pct,
+        "successRatePct": args.success_rate_min_pct,
+        "avgLatencyMs": args.avg_latency_max_ms,
+        "p95LatencyMs": args.p95_latency_max_ms,
+        "channelErrorCount": args.channel_error_max,
+    }
+
+
+def _failed_rag_quality_gate_names(summary: dict[str, Any]) -> list[str]:
+    return [
+        key
+        for key in (
+            "passHitAt3",
+            "passSuccessRate",
+            "passLatency",
+            "passChannelErrors",
+        )
+        if summary.get(key) is False
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--generate", action="store_true")
@@ -820,10 +825,22 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=DEFAULT_QUESTION_COUNT)
     parser.add_argument("--questions", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--judge-cache", type=Path, default=Path("reports/rag_100_judge_cache.json"))
+    parser.add_argument("--judge-cache", type=Path, default=DEFAULT_JUDGE_CACHE)
     parser.add_argument("--embedding-cache", type=Path, default=DEFAULT_EMBEDDING_CACHE)
     parser.add_argument("--embedding-cache-ttl-days", type=int, default=DEFAULT_EMBEDDING_CACHE_TTL_DAYS)
     parser.add_argument("--no-embedding-cache", action="store_true")
+    parser.add_argument("--judge-max-attempts", type=int, default=DEFAULT_JUDGE_MAX_ATTEMPTS)
+    parser.add_argument("--judge-retry-base-seconds", type=float, default=DEFAULT_JUDGE_RETRY_BASE_SECONDS)
+    parser.add_argument("--hit-at3-min-pct", type=float, default=RAG_HIT_AT3_MIN_PCT)
+    parser.add_argument("--success-rate-min-pct", type=float, default=RAG_SUCCESS_RATE_MIN_PCT)
+    parser.add_argument("--avg-latency-max-ms", type=float, default=RAG_AVG_LATENCY_MAX_MS)
+    parser.add_argument("--p95-latency-max-ms", type=float, default=RAG_P95_LATENCY_MAX_MS)
+    parser.add_argument("--channel-error-max", type=int, default=RAG_CHANNEL_ERROR_MAX)
+    parser.add_argument(
+        "--no-fail-on-gate",
+        action="store_true",
+        help="Write the report but keep exit code 0 when the quality gate fails.",
+    )
     parser.add_argument(
         "--retrieval-strategy",
         choices=["LOCAL_HYBRID", "LOCAL_GREP_FIRST"],
@@ -848,10 +865,16 @@ def main() -> None:
             retrieval_strategy=args.retrieval_strategy,
             embedding_cache_path=None if args.no_embedding_cache else args.embedding_cache,
             embedding_cache_ttl_days=args.embedding_cache_ttl_days,
+            quality_thresholds=_quality_thresholds_from_args(args),
+            judge_max_attempts=args.judge_max_attempts,
+            judge_retry_base_seconds=args.judge_retry_base_seconds,
         )
     )
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
     print(f"Saved report to {args.output}")
+    if not args.no_fail_on_gate and not report["summary"].get("overallPass"):
+        failed_gates = ", ".join(_failed_rag_quality_gate_names(report["summary"])) or "overallPass"
+        raise SystemExit(f"RAG benchmark quality gate failed: {failed_gates}")
 
 
 if __name__ == "__main__":

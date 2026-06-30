@@ -177,6 +177,36 @@ class _LoopingToolTutorLLM:
         )
 
 
+class _LoopingToolWithDirectChatClient:
+    provider_name = "looping-direct"
+    model_name = "looping-direct-model"
+    base_url = "https://looping-direct.invalid/v1"
+
+    async def chat_completion(self, *, messages, **kwargs):
+        del messages, kwargs
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "SBOM 可以结合 NVD 做漏洞响应，并在 CI/CD 中生成可追溯清单。"
+                    }
+                }
+            ]
+        }
+
+    def extract_message(self, response_json):
+        return response_json["choices"][0]["message"]
+
+    def extract_content(self, message):
+        return message["content"]
+
+
+class _LoopingToolWithDirectChatTutorLLM(_LoopingToolTutorLLM):
+    def __init__(self) -> None:
+        super().__init__()
+        self.client = _LoopingToolWithDirectChatClient()
+
+
 class _RecordingResourceBundleRunner:
     def __init__(self, display_mode: str = "INLINE") -> None:
         self.calls: list[dict] = []
@@ -810,13 +840,12 @@ async def test_tutor_agent_streams_raw_reasoning_separately_in_deep_mode() -> No
         "reasoning_chunk",
         "reasoning_chunk",
         "result_chunk",
-        "reasoning_chunk",
-        "result_chunk",
     ]
     reasoning_text = "".join(event.payload.text for event in events if event.event == "reasoning_chunk")
-    assert "回答组织" in reasoning_text
-    assert "质量自检" in reasoning_text
-    assert "先分析问题再检查" in reasoning_text
+    assert "我先识别问题意图" in reasoning_text
+    assert "然后组织答案" in reasoning_text
+    assert "最后自检" in reasoning_text
+    assert "先分析问题再检查" not in reasoning_text
     assert "".join(event.payload.text for event in events if event.event == "result_chunk") == "最终答案"
     assert llm.client.include_reasoning_calls == [True]
 
@@ -858,10 +887,11 @@ async def test_tutor_agent_emits_public_reasoning_when_provider_has_no_reasoning
         )
     ]
 
-    assert [event.event for event in events] == ["progress", "reasoning_chunk", "reasoning_chunk", "result_chunk"]
+    assert [event.event for event in events] == ["progress", "reasoning_chunk", "reasoning_chunk", "reasoning_chunk", "result_chunk"]
     reasoning_text = "".join(event.payload.text for event in events if event.event == "reasoning_chunk")
-    assert "回答组织" in reasoning_text
-    assert "质量自检" in reasoning_text
+    assert "我先识别问题意图" in reasoning_text
+    assert "然后组织答案" in reasoning_text
+    assert "最后自检" in reasoning_text
     assert "什么是AVL树" in reasoning_text
     assert "AVL树" in reasoning_text
     assert "LLM generated answer" == "".join(
@@ -1284,6 +1314,49 @@ async def test_tutor_core_loop_returns_evidence_fallback_when_iterations_exceede
 
 
 @pytest.mark.asyncio
+async def test_tutor_core_loop_uses_direct_chat_after_iterations_exceeded() -> None:
+    tutor = TutorAgent(
+        compactor=ConversationCompactor(token_budget=1000, keep_recent_turns=4),
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=RuleBasedTutorLLM(),
+    )
+    params = {
+        "query": "说明 SBOM 如何帮助漏洞响应和 CI/CD。",
+        "webSearchEnabled": True,
+        "adoptedExternalSources": [
+            {
+                "citationId": "S1",
+                "title": "SBOM guidance",
+                "url": "https://example.com/sbom",
+                "snippet": "SBOM supports vulnerability response.",
+            }
+        ],
+        "retrievalResult": {
+            "documents": [
+                {
+                    "title": "SBOM guidance",
+                    "channel": "web",
+                    "evidence": "SBOM supports vulnerability response.",
+                    "url": "https://example.com/sbom",
+                }
+            ]
+        },
+    }
+
+    answer = await tutor._run_with_agent_core_loop(
+        llm_client=_LoopingToolWithDirectChatTutorLLM(),
+        system_prompt="test",
+        user_query=params["query"],
+        params=params,
+        persisted_summary=None,
+    )
+
+    assert "SBOM 可以结合 NVD 做漏洞响应" in answer
+    assert "基于已检索到的证据先给出有限回答" not in answer
+    assert "可用检索证据" not in answer
+
+
+@pytest.mark.asyncio
 async def test_tutor_agent_uses_real_llm_compression_for_explicit_length_limit() -> None:
     llm = _LengthAwareTutorLLM()
     tutor = TutorAgent(
@@ -1315,6 +1388,42 @@ async def test_tutor_agent_uses_real_llm_compression_for_explicit_length_limit()
     assert llm.client.stream_calls == 0
     assert llm.client.chat_calls == 2
     assert params["responseConstraints"]["maxChars"] == 80
+
+
+@pytest.mark.asyncio
+async def test_tutor_agent_treats_at_least_length_as_min_chars_without_compression() -> None:
+    llm = _StreamingTutorLLM()
+    tutor = TutorAgent(
+        summary_store=InMemoryConversationSummaryStore(),
+        llm_client=llm,
+    )
+    query = "请解释 TS 和 JS 的区别，至少500字"
+    params = {
+        "conversationId": "conv-min-length",
+        "messages": [{"role": "user", "content": query}],
+        "query": query,
+        "retrievalResult": {
+            "documents": [{"title": "TypeScript and JavaScript", "evidence": "TypeScript extends JavaScript."}]
+        },
+    }
+
+    events = [
+        event
+        async for event in tutor.run(
+            task_id="task-min-length",
+            trace_id="trace-min-length",
+            seq=1,
+            service_type="TUTORING",
+            params=params,
+            snapshot=_build_snapshot(),
+            system_prompt="test",
+        )
+    ]
+
+    assert "".join(event.payload.text for event in events if event.event == "result_chunk") == "LLM generated answer"
+    assert params["responseConstraints"]["minChars"] == 500
+    assert "maxChars" not in params["responseConstraints"]
+    assert llm.client.stream_calls == 1
 
 
 def test_tutor_deep_mode_adds_quality_instruction_without_changing_route() -> None:

@@ -158,11 +158,14 @@ frontend/lerna-debug.log*
 
 # Vite cache
 frontend/.vite/
+.pnpm-store/
+.uv-cache/
 
 # Browser test artifacts
 playwright-report/
 test-results/
 tests/screenshots/
+test_screenshots/
 frontend/playwright-report/
 frontend/test-results/
 
@@ -311,12 +314,8 @@ python-agent/models/
 *.embeddings
 python-agent/grpo_output/
 python-agent/sft_output/
-python-agent/reports/graph_rag_100_pr*.json
-python-agent/reports/rag_100_pr*.json
-python-agent/reports/*judge_cache.json
-python-agent/reports/*judge_cache*.json
-python-agent/reports/*embedding_cache.json
-python-agent/reports/*_2026*.json
+python-agent/reports/
+/reports/
 
 # ============================================================
 # 9. Docker
@@ -345,6 +344,8 @@ docs/*
 !docs/技术说明.md
 !docs/架构文档.md
 uploads/
+/output/
+/scripts/
 .agents/
 .tests/
 user_uploads/

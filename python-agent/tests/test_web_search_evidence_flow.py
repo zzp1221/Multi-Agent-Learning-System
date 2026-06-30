@@ -123,6 +123,7 @@ def test_tutor_uses_only_adopted_external_sources_for_answer_context() -> None:
     assert "[S1] TypeScript and JavaScript (https://example.com/ts-js)" in context
     assert "依据对应" in context
     assert "Unrelated runtime article [https://example.com/runtime]：相关性不足或未进入融合结果" in context
+    assert "我先识别问题意图" in reasoning_text
     assert "[S1]" in reasoning_text
     assert "https://example.com/ts-js" in reasoning_text
     assert "Unrelated runtime article：相关性不足或未进入融合结果" in reasoning_text
@@ -146,6 +147,7 @@ def test_tutor_answer_reasoning_declares_no_adopted_external_source() -> None:
     reasoning_text = "\n".join(tutor._build_answer_reasoning_chunks(user_query="Will TS replace JS?", params=params))
 
     assert "联网证据：未采用外部来源。" in reasoning_text
+    assert "最后自检" in reasoning_text
     assert "http" not in reasoning_text
 
 

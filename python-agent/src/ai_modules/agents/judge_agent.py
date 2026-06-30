@@ -43,7 +43,7 @@ class JudgeAgent(PlaceholderAgent):
         self.practice_store = practice_store or PostgresPracticeStore()
         self.fallback_practice_store = InMemoryPracticeStore()
         self.subjective_evaluator = subjective_evaluator
-        self.feedback_generator = feedback_generator or JudgeFeedbackGenerator()
+        self.feedback_generator = feedback_generator
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.skill_loader = SkillPromptLoader()
 
@@ -266,7 +266,7 @@ class JudgeAgent(PlaceholderAgent):
                 or tool_input.get("topic")
                 or "当前主题"
             )
-            feedback = await self.feedback_generator.summarize(items=items, topic=str(topic))
+            feedback = await self._feedback_generator().summarize(items=items, topic=str(topic))
             if not isinstance(feedback, dict):
                 raise TypeError("judge feedback must be a dict")
             feedback["items"] = [item.model_dump(by_alias=True) for item in items]
@@ -450,12 +450,14 @@ class JudgeAgent(PlaceholderAgent):
         question: PracticeQuestion,
         learner_answer: str,
     ) -> SubjectiveJudgeEvaluation:
-        if self.subjective_evaluator is None:
-            self.subjective_evaluator = SubjectiveJudgeEvaluatorFactory.create()
-        return await self.subjective_evaluator.evaluate(
+        evaluator = self.subjective_evaluator or SubjectiveJudgeEvaluatorFactory.create()
+        return await evaluator.evaluate(
             question=question,
             learner_answer=learner_answer,
         )
+
+    def _feedback_generator(self) -> Any:
+        return self.feedback_generator or JudgeFeedbackGenerator()
 
     def _normalize_text(self, value: str) -> str:
         text = "".join(str(value).strip().upper().split())

@@ -7,6 +7,7 @@
 
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE SCHEMA IF NOT EXISTS app;
 CREATE SCHEMA IF NOT EXISTS rag;
@@ -511,6 +512,9 @@ CREATE TABLE IF NOT EXISTS rag.knowledge_document (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_document_external_version
 ON rag.knowledge_document(course_id, domain, external_doc_id, version);
 
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_title_trgm
+ON rag.knowledge_document USING gin (title gin_trgm_ops);
+
 CREATE TABLE IF NOT EXISTS rag.knowledge_chunk (
   id                BIGSERIAL PRIMARY KEY,
   document_id       UUID NOT NULL REFERENCES rag.knowledge_document(id) ON DELETE CASCADE,
@@ -533,6 +537,9 @@ CREATE TABLE IF NOT EXISTS rag.knowledge_chunk (
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_scope_domain
 ON rag.knowledge_chunk(access_scope, domain, difficulty_level);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_content_trgm
+ON rag.knowledge_chunk USING gin (content gin_trgm_ops);
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_embedding_ivfflat
 ON rag.knowledge_chunk USING ivfflat (embedding vector_cosine_ops)

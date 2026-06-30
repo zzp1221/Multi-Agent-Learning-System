@@ -153,13 +153,14 @@ export default function FirstRunOnboardingModal(props: FirstRunOnboardingModalPr
     setLlmSaving(true);
     setError('');
     try {
-      const response = await llmSettingsApi.save(buildPayload(activeProvider, '', providers));
-      const active = normalizeProviderKey(response.activeProvider) || activeProvider;
-      if (!response.providers[active]?.hasApiKey) {
+      const testResponse = await llmSettingsApi.test(buildPayload(activeProvider, '', providers));
+      const savedSettings = await llmSettingsApi.get();
+      const active = normalizeProviderKey(savedSettings.activeProvider) || normalizeProviderKey(testResponse.activeProvider) || activeProvider;
+      if (!savedSettings.providers[active]?.hasApiKey) {
         setError('模型配置已保存，但当前厂商仍缺少 API Key');
         return;
       }
-      setProviders(buildInitialProviders(response));
+      setProviders(buildInitialProviders(savedSettings));
       props.onLlmCompleted();
       props.onStepChange('profile');
     } catch (saveError) {

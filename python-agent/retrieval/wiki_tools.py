@@ -2,13 +2,128 @@
 
 from __future__ import annotations
 
+import re
 import time
+import unicodedata
 from typing import Any
 
 import psycopg2
 
 
-GRAPH_TOOL_INTENTS = {"PREREQUISITE_PATH", "MULTI_HOP_RELATION", "COMPARISON"}
+GRAPH_TOOL_INTENTS = {"PREREQUISITE_PATH", "MULTI_HOP_RELATION", "COMPARISON", "CROSS_LAYER_RELATION"}
+ALLOWED_WIKI_RELATION_TYPES = {"WIKILINK", "SHARED_TAG", "SHARED_SOURCE", "COMMUNITY"}
+MAX_WIKI_QUERY_CHARS = 320
+MAX_WIKI_SLUG_CHARS = 240
+MAX_WIKI_MARKDOWN_CHARS = 3000
+MAX_WIKI_SEARCH_TERMS = 6
+
+_SLUG_EDGE_CHARS = "\"'` <>[](){}"
+_WHITESPACE_RE = re.compile(r"\s+")
+_QUOTED_TERM_RE = re.compile(r"[\"'“”‘’《》「」『』]([^\"'“”‘’《》「」『』]{2,80})[\"'“”‘’《》「」『』]")
+_ASCII_PHRASE_RE = re.compile(r"\b[A-Z][A-Za-z0-9_+#.-]{1,48}(?:\s+[A-Z][A-Za-z0-9_+#.-]{1,48}){1,3}\b")
+_ASCII_TERM_RE = re.compile(r"[A-Za-z][A-Za-z0-9_+#./-]{1,48}")
+_CJK_TERM_RE = re.compile(r"[\u4e00-\u9fffA-Za-z0-9_+#.-]{2,24}")
+_WIKI_SEARCH_STOPWORDS = {
+    "please",
+    "compare",
+    "explain",
+    "difference",
+    "relationship",
+    "between",
+    "with",
+    "and",
+    "请",
+    "说明",
+    "解释",
+    "比较",
+    "关系",
+    "区别",
+    "联系",
+    "如何",
+    "为什么",
+    "是什么",
+    "请比较",
+    "请说明",
+    "请解释",
+    "如何帮助",
+}
+
+_WIKI_SEARCH_STOP_PREFIXES = ("请", "说明", "解释", "比较", "如何", "为什么")
+
+
+def clean_wiki_query(value: Any) -> str:
+    text = unicodedata.normalize("NFKC", str(value or "")).strip()
+    text = _WHITESPACE_RE.sub(" ", text)
+    if len(text) > MAX_WIKI_QUERY_CHARS:
+        text = text[:MAX_WIKI_QUERY_CHARS].rstrip()
+    return text
+
+
+def normalize_wiki_slug(value: Any) -> str:
+    text = unicodedata.normalize("NFKC", str(value or "")).strip().strip(_SLUG_EDGE_CHARS)
+    if not text or text.lower() == "none":
+        return ""
+    if text.lower().startswith("wiki://"):
+        text = text[7:]
+    text = text.strip().strip(_SLUG_EDGE_CHARS).strip("/")
+    if not text or len(text) > MAX_WIKI_SLUG_CHARS:
+        return ""
+    return text
+
+
+def normalize_wiki_relation_type(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
+def bounded_wiki_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(minimum, min(maximum, number))
+
+
+def wiki_search_terms(query: Any) -> list[str]:
+    cleaned = clean_wiki_query(query)
+    terms: list[str] = []
+
+    def add_term(value: Any) -> None:
+        term = clean_wiki_query(value).strip(_SLUG_EDGE_CHARS)
+        if len(term) < 2 or term.lower() in _WIKI_SEARCH_STOPWORDS:
+            return
+        if term.isascii() and len(term) < 3 and "/" not in term:
+            return
+        if any(term.startswith(prefix) for prefix in _WIKI_SEARCH_STOP_PREFIXES):
+            return
+        term_key = term.lower()
+        for existing in terms:
+            existing_tokens = {token.lower() for token in existing.split()}
+            if term_key in existing_tokens:
+                return
+        if term not in terms:
+            terms.append(term)
+
+    for match in _QUOTED_TERM_RE.finditer(cleaned):
+        add_term(match.group(1))
+        if len(terms) >= MAX_WIKI_SEARCH_TERMS:
+            return terms
+
+    for match in _ASCII_PHRASE_RE.finditer(cleaned):
+        add_term(match.group(0))
+        if len(terms) >= MAX_WIKI_SEARCH_TERMS:
+            return terms
+
+    for match in _ASCII_TERM_RE.finditer(cleaned):
+        add_term(match.group(0))
+        if len(terms) >= MAX_WIKI_SEARCH_TERMS:
+            return terms
+
+    for match in _CJK_TERM_RE.finditer(cleaned):
+        add_term(match.group(0))
+        if len(terms) >= MAX_WIKI_SEARCH_TERMS:
+            return terms
+
+    return terms
 
 
 class WikiToolset:
@@ -18,11 +133,38 @@ class WikiToolset:
         self.db_config = db_config or {}
 
     def wiki_search(self, query: str, *, limit: int = 5) -> dict[str, Any]:
-        return self._with_connection(lambda cur: self.search(cur, query, limit=limit))
+        cleaned = clean_wiki_query(query)
+        limit = bounded_wiki_int(limit, default=5, minimum=1, maximum=8)
+        if not cleaned:
+            return {"query": cleaned, "results": [], "diagnostics": {"wiki_search_ms": 0.0, "reason": "empty query"}}
+        return self._with_connection(lambda cur: self.search(cur, cleaned, limit=limit))
 
-    def wiki_read(self, slug: str, *, chunk_limit: int = 3, neighbor_limit: int = 8) -> dict[str, Any]:
+    def wiki_read(
+        self,
+        slug: str,
+        *,
+        chunk_limit: int = 3,
+        neighbor_limit: int = 8,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_slug = normalize_wiki_slug(slug)
+        chunk_limit = bounded_wiki_int(chunk_limit, default=3, minimum=1, maximum=5)
+        neighbor_limit = bounded_wiki_int(neighbor_limit, default=8, minimum=1, maximum=12)
+        cleaned_query = clean_wiki_query(query)
+        if not normalized_slug:
+            return {
+                "slug": normalized_slug,
+                "found": False,
+                "diagnostics": {"wiki_read_ms": 0.0, "reason": "empty or invalid slug"},
+            }
         return self._with_connection(
-            lambda cur: self.read(cur, slug, chunk_limit=chunk_limit, neighbor_limit=neighbor_limit)
+            lambda cur: self.read(
+                cur,
+                normalized_slug,
+                chunk_limit=chunk_limit,
+                neighbor_limit=neighbor_limit,
+                query=cleaned_query,
+            )
         )
 
     def wiki_neighbors(
@@ -32,17 +174,38 @@ class WikiToolset:
         relation_type: str | None = None,
         limit: int = 12,
     ) -> dict[str, Any]:
+        normalized_slug = normalize_wiki_slug(slug)
+        relation_filter = normalize_wiki_relation_type(relation_type)
+        limit = bounded_wiki_int(limit, default=12, minimum=1, maximum=12)
+        if not normalized_slug:
+            return {
+                "slug": normalized_slug,
+                "found": False,
+                "outgoing": [],
+                "incoming": [],
+                "diagnostics": {"wiki_neighbors_ms": 0.0, "reason": "empty or invalid slug"},
+            }
+        if relation_filter and relation_filter not in ALLOWED_WIKI_RELATION_TYPES:
+            return {
+                "slug": normalized_slug,
+                "found": False,
+                "outgoing": [],
+                "incoming": [],
+                "diagnostics": {"wiki_neighbors_ms": 0.0, "reason": "invalid relationType"},
+            }
         return self._with_connection(
-            lambda cur: self.neighbors(cur, slug, relation_type=relation_type, limit=limit)
+            lambda cur: self.neighbors(cur, normalized_slug, relation_type=relation_filter, limit=limit)
         )
 
     def search(self, cur, query: str, *, limit: int = 5) -> dict[str, Any]:
         """Search title/aliases/tags/summary first; no embedding API call."""
         started = time.perf_counter()
-        cleaned = str(query or "").strip()
+        cleaned = clean_wiki_query(query)
+        limit = bounded_wiki_int(limit, default=5, minimum=1, maximum=8)
         if not cleaned:
             return {"query": cleaned, "results": [], "diagnostics": {"wiki_search_ms": 0.0}}
-        pattern = f"%{cleaned}%"
+        search_terms = wiki_search_terms(cleaned)
+        patterns = [f"%{cleaned}%"] + [f"%{term}%" for term in search_terms]
         cur.execute(
             """
             SELECT slug, title, summary_text,
@@ -55,21 +218,53 @@ class WikiToolset:
                      WHEN lower(COALESCE(aliases, '[]'::jsonb)::text) LIKE lower(%s) THEN 70
                      WHEN lower(COALESCE(tags, '[]'::jsonb)::text) LIKE lower(%s) THEN 60
                      WHEN lower(COALESCE(summary_text, '')) LIKE lower(%s) THEN 40
+                     WHEN EXISTS (
+                       SELECT 1 FROM unnest(%s::text[]) AS p(pattern)
+                       WHERE lower(title) LIKE lower(p.pattern)
+                     ) THEN 55
+                     WHEN EXISTS (
+                       SELECT 1 FROM unnest(%s::text[]) AS p(pattern)
+                       WHERE lower(COALESCE(aliases, '[]'::jsonb)::text) LIKE lower(p.pattern)
+                     ) THEN 50
+                     WHEN EXISTS (
+                       SELECT 1 FROM unnest(%s::text[]) AS p(pattern)
+                       WHERE lower(COALESCE(tags, '[]'::jsonb)::text) LIKE lower(p.pattern)
+                     ) THEN 45
+                     WHEN EXISTS (
+                       SELECT 1 FROM unnest(%s::text[]) AS p(pattern)
+                       WHERE lower(COALESCE(summary_text, '')) LIKE lower(p.pattern)
+                     ) THEN 30
                      ELSE 0
                    END AS score
             FROM rag.wiki_page
             WHERE is_active = true
               AND (
-                lower(title) LIKE lower(%s)
-                OR lower(slug) LIKE lower(%s)
-                OR lower(COALESCE(aliases, '[]'::jsonb)::text) LIKE lower(%s)
-                OR lower(COALESCE(tags, '[]'::jsonb)::text) LIKE lower(%s)
-                OR lower(COALESCE(summary_text, '')) LIKE lower(%s)
+                EXISTS (
+                  SELECT 1 FROM unnest(%s::text[]) AS p(pattern)
+                  WHERE lower(title) LIKE lower(p.pattern)
+                     OR lower(slug) LIKE lower(p.pattern)
+                     OR lower(COALESCE(aliases, '[]'::jsonb)::text) LIKE lower(p.pattern)
+                     OR lower(COALESCE(tags, '[]'::jsonb)::text) LIKE lower(p.pattern)
+                     OR lower(COALESCE(summary_text, '')) LIKE lower(p.pattern)
+                )
               )
             ORDER BY score DESC, length(slug), slug
             LIMIT %s
             """,
-            (cleaned, cleaned, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, limit),
+            (
+                cleaned,
+                cleaned,
+                patterns[0],
+                patterns[0],
+                patterns[0],
+                patterns[0],
+                patterns[1:],
+                patterns[1:],
+                patterns[1:],
+                patterns[1:],
+                patterns,
+                limit,
+            ),
         )
         results = [
             {
@@ -85,28 +280,86 @@ class WikiToolset:
         return {
             "query": cleaned,
             "results": results,
-            "diagnostics": {"wiki_search_ms": round((time.perf_counter() - started) * 1000, 2)},
+            "diagnostics": {
+                "wiki_search_ms": round((time.perf_counter() - started) * 1000, 2),
+                "fallbackTerms": search_terms,
+            },
         }
 
-    def read(self, cur, slug: str, *, chunk_limit: int = 3, neighbor_limit: int = 8) -> dict[str, Any]:
+    def read(
+        self,
+        cur,
+        slug: str,
+        *,
+        chunk_limit: int = 3,
+        neighbor_limit: int = 8,
+        query: str | None = None,
+    ) -> dict[str, Any]:
         """Read one wiki page, its top chunks, and shallow in/out edges."""
         started = time.perf_counter()
-        page = self._load_page(cur, slug)
+        normalized_slug = normalize_wiki_slug(slug)
+        chunk_limit = bounded_wiki_int(chunk_limit, default=3, minimum=1, maximum=5)
+        neighbor_limit = bounded_wiki_int(neighbor_limit, default=8, minimum=1, maximum=12)
+        cleaned_query = clean_wiki_query(query)
+        if not normalized_slug:
+            return {
+                "slug": normalized_slug,
+                "found": False,
+                "diagnostics": {
+                    "wiki_read_ms": 0.0,
+                    "reason": "empty or invalid slug",
+                },
+            }
+        page = self._load_page(cur, normalized_slug)
         if page is None:
-            return {"slug": slug, "found": False, "diagnostics": {"wiki_read_ms": round((time.perf_counter() - started) * 1000, 2)}}
+            return {
+                "slug": normalized_slug,
+                "found": False,
+                "diagnostics": {"wiki_read_ms": round((time.perf_counter() - started) * 1000, 2)},
+            }
 
-        cur.execute(
-            """
-            SELECT kc.chunk_no, kc.content, kc.metadata_json
-            FROM rag.knowledge_chunk kc
-            JOIN rag.knowledge_document kd ON kd.id = kc.document_id
-            WHERE kd.external_doc_id = %s
-               OR kd.source_ref = %s
-            ORDER BY kc.chunk_no
-            LIMIT %s
-            """,
-            (page["id"], page["slug"], chunk_limit),
-        )
+        if cleaned_query:
+            full_pattern = f"%{cleaned_query}%"
+            term_patterns = [f"%{term}%" for term in wiki_search_terms(cleaned_query)]
+            cur.execute(
+                """
+                WITH page_chunks AS (
+                    SELECT kc.chunk_no, kc.content, kc.metadata_json,
+                           (
+                             CASE WHEN kc.content ILIKE %s THEN 100 ELSE 0 END
+                             + CASE WHEN COALESCE(kc.metadata_json::text, '') ILIKE %s THEN 30 ELSE 0 END
+                             + (
+                               SELECT COUNT(*) * 10
+                               FROM unnest(%s::text[]) AS p(pattern)
+                               WHERE kc.content ILIKE p.pattern
+                                  OR COALESCE(kc.metadata_json::text, '') ILIKE p.pattern
+                             )
+                           ) AS query_score
+                    FROM rag.knowledge_chunk kc
+                    JOIN rag.knowledge_document kd ON kd.id = kc.document_id
+                    WHERE kd.external_doc_id = %s
+                       OR kd.source_ref = %s
+                )
+                SELECT chunk_no, content, metadata_json
+                FROM page_chunks
+                ORDER BY query_score DESC, chunk_no
+                LIMIT %s
+                """,
+                (full_pattern, full_pattern, term_patterns, page["id"], page["slug"], chunk_limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT kc.chunk_no, kc.content, kc.metadata_json
+                FROM rag.knowledge_chunk kc
+                JOIN rag.knowledge_document kd ON kd.id = kc.document_id
+                WHERE kd.external_doc_id = %s
+                   OR kd.source_ref = %s
+                ORDER BY kc.chunk_no
+                LIMIT %s
+                """,
+                (page["id"], page["slug"], chunk_limit),
+            )
         chunks = [
             {
                 "chunkNo": row[0],
@@ -115,16 +368,17 @@ class WikiToolset:
             }
             for row in cur.fetchall()
         ]
-        edge_pack = self.neighbors(cur, page["slug"], limit=neighbor_limit)
+        edge_pack = self._neighbors_for_page(cur, page, relation_type=None, limit=neighbor_limit, started=started)
         return {
             "slug": page["slug"],
             "found": True,
-            "page": page,
+            "page": self._bounded_page_payload(page),
             "chunks": chunks,
             "outgoing": edge_pack.get("outgoing", []),
             "incoming": edge_pack.get("incoming", []),
             "diagnostics": {
                 "wiki_read_ms": round((time.perf_counter() - started) * 1000, 2),
+                "chunkQuery": cleaned_query,
                 **edge_pack.get("diagnostics", {}),
             },
         }
@@ -139,16 +393,52 @@ class WikiToolset:
     ) -> dict[str, Any]:
         """Return incoming and outgoing wiki edges for one slug."""
         started = time.perf_counter()
-        page = self._load_page(cur, slug)
+        normalized_slug = normalize_wiki_slug(slug)
+        limit = bounded_wiki_int(limit, default=12, minimum=1, maximum=12)
+        if not normalized_slug:
+            return {
+                "slug": normalized_slug,
+                "found": False,
+                "outgoing": [],
+                "incoming": [],
+                "diagnostics": {
+                    "wiki_neighbors_ms": 0.0,
+                    "reason": "empty or invalid slug",
+                },
+            }
+        page = self._load_page(cur, normalized_slug)
         if page is None:
             return {
-                "slug": slug,
+                "slug": normalized_slug,
                 "found": False,
                 "outgoing": [],
                 "incoming": [],
                 "diagnostics": {"wiki_neighbors_ms": round((time.perf_counter() - started) * 1000, 2)},
             }
-        relation_filter = str(relation_type or "").strip().upper()
+        relation_filter = normalize_wiki_relation_type(relation_type)
+        if relation_filter and relation_filter not in ALLOWED_WIKI_RELATION_TYPES:
+            return {
+                "slug": page["slug"],
+                "found": True,
+                "outgoing": [],
+                "incoming": [],
+                "diagnostics": {
+                    "wiki_neighbors_ms": round((time.perf_counter() - started) * 1000, 2),
+                    "reason": "invalid relationType",
+                },
+            }
+        return self._neighbors_for_page(cur, page, relation_type=relation_filter, limit=limit, started=started)
+
+    def _neighbors_for_page(
+        self,
+        cur,
+        page: dict[str, Any],
+        *,
+        relation_type: str | None,
+        limit: int,
+        started: float,
+    ) -> dict[str, Any]:
+        relation_filter = normalize_wiki_relation_type(relation_type)
         outgoing = self._edge_rows(
             cur,
             page["id"],
@@ -179,6 +469,9 @@ class WikiToolset:
                 return fn(cur)
 
     def _load_page(self, cur, slug: str) -> dict[str, Any] | None:
+        normalized_slug = normalize_wiki_slug(slug)
+        if not normalized_slug:
+            return None
         cur.execute(
             """
             SELECT id::text, slug, title, summary_text,
@@ -188,10 +481,12 @@ class WikiToolset:
                    frontmatter_json,
                    markdown_content
             FROM rag.wiki_page
-            WHERE slug = %s AND is_active = true
+            WHERE is_active = true
+              AND (slug = %s OR lower(slug) = lower(%s))
+            ORDER BY CASE WHEN slug = %s THEN 0 ELSE 1 END
             LIMIT 1
             """,
-            (slug,),
+            (normalized_slug, normalized_slug, normalized_slug),
         )
         row = cur.fetchone()
         if row is None:
@@ -207,6 +502,18 @@ class WikiToolset:
             "metadata": row[7] or {},
             "markdown": row[8] or "",
         }
+
+    def _bounded_page_payload(self, page: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(page)
+        markdown = str(payload.get("markdown") or "")
+        payload["markdown"] = self._truncate_text(markdown, MAX_WIKI_MARKDOWN_CHARS)
+        payload["markdownTruncated"] = len(markdown) > MAX_WIKI_MARKDOWN_CHARS
+        return payload
+
+    def _truncate_text(self, text: str, max_chars: int) -> str:
+        if len(text) <= max_chars:
+            return text
+        return text[:max_chars].rstrip() + "\n...[truncated]"
 
     def _edge_rows(
         self,
